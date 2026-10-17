@@ -1,0 +1,391 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tarik02/agx/main/schema/agx.package.schema.json",
+  "$defs": {
+    "Bundle": {
+      "properties": {
+        "skills": {
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "type": "array",
+          "description": "Skill IDs."
+        },
+        "instructions": {
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "type": "array",
+          "description": "Instructions IDs."
+        },
+        "mcp": {
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "type": "array",
+          "description": "MCP server IDs."
+        },
+        "bundles": {
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "type": "array",
+          "description": "Bundle IDs."
+        },
+        "override": {
+          "type": "boolean",
+          "description": "Replace an existing definition."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "FileResource": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Skill directory or instructions file, relative to this file."
+        },
+        "override": {
+          "type": "boolean",
+          "description": "Replace an existing definition."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path"
+      ]
+    },
+    "ID": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+    },
+    "MCPAuth": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+        },
+        {
+          "$ref": "#/$defs/Secret",
+          "not": {
+            "required": [
+              "override"
+            ]
+          }
+        }
+      ],
+      "description": "http: bearer credential: oauth or keychain, none, an inline secret, or !secret ID; omitted means OAuth when the server asks for it."
+    },
+    "MCPServer": {
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "command"
+            ]
+          },
+          "then": {
+            "properties": {
+              "url": false,
+              "headers": false,
+              "auth": false,
+              "transport": {
+                "const": "stdio"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "url"
+            ]
+          },
+          "then": {
+            "properties": {
+              "command": false,
+              "environment": false,
+              "cwd": false,
+              "transport": {
+                "const": "http"
+              }
+            }
+          }
+        }
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "required": [
+            "command"
+          ]
+        }
+      ],
+      "properties": {
+        "transport": {
+          "type": "string",
+          "enum": [
+            "stdio",
+            "http"
+          ],
+          "description": "How to reach the server; inferred from url (http) or command (stdio)."
+        },
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "stdio: server command and arguments."
+        },
+        "url": {
+          "type": "string",
+          "description": "http: server URL; HTTPS, or HTTP for loopback."
+        },
+        "cwd": {
+          "type": "string",
+          "description": "stdio: working directory; defaults to the launch directory."
+        },
+        "environment": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Value"
+          },
+          "propertyNames": {
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+          },
+          "type": "object",
+          "description": "stdio: environment variables for the server."
+        },
+        "headers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Value"
+          },
+          "type": "object",
+          "description": "http: extra request headers."
+        },
+        "auth": {
+          "$ref": "#/$defs/MCPAuth"
+        },
+        "override": {
+          "type": "boolean",
+          "description": "Replace an existing definition."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "Package": {
+      "oneOf": [
+        {
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "required": [
+            "git"
+          ]
+        }
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Local package directory."
+        },
+        "git": {
+          "type": "string",
+          "description": "Git repository URL."
+        },
+        "ref": {
+          "type": "string",
+          "description": "Git branch, tag, or commit."
+        },
+        "subdir": {
+          "type": "string",
+          "description": "Package root within the source."
+        },
+        "override": {
+          "type": "boolean",
+          "description": "Replace an existing definition."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "Secret": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "environment",
+                  "daemon_environment"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "variable"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "command"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "command"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "environment",
+            "daemon_environment",
+            "command",
+            "keychain",
+            "oauth"
+          ],
+          "description": "How the secret is obtained."
+        },
+        "variable": {
+          "type": "string",
+          "description": "Environment variable holding the secret."
+        },
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Command whose trimmed stdout is the secret."
+        },
+        "issuer": {
+          "type": "string",
+          "description": "OAuth issuer URL; discovered when omitted."
+        },
+        "client_id": {
+          "type": "string",
+          "description": "OAuth public client ID."
+        },
+        "resource": {
+          "type": "string",
+          "description": "OAuth resource indicator."
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "OAuth scopes to request."
+        },
+        "override": {
+          "type": "boolean",
+          "description": "Replace an existing definition."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind"
+      ]
+    },
+    "Value": {
+      "type": "string",
+      "description": "A literal string, or !env NAME, !file PATH, or !secret ID resolved at launch."
+    }
+  },
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Configuration format version."
+    },
+    "packages": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Package"
+      },
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+      },
+      "type": "object",
+      "description": "Package sources by ID."
+    },
+    "skills": {
+      "additionalProperties": {
+        "$ref": "#/$defs/FileResource"
+      },
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+      },
+      "type": "object",
+      "description": "Skill directories containing SKILL.md."
+    },
+    "instructions": {
+      "additionalProperties": {
+        "$ref": "#/$defs/FileResource"
+      },
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+      },
+      "type": "object",
+      "description": "Instruction files applied to launches."
+    },
+    "mcp": {
+      "additionalProperties": {
+        "$ref": "#/$defs/MCPServer"
+      },
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+      },
+      "type": "object",
+      "description": "MCP servers with the account and settings used to reach them."
+    },
+    "secrets": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Secret"
+      },
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+      },
+      "type": "object",
+      "description": "How credentials are obtained."
+    },
+    "bundles": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Bundle"
+      },
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+      },
+      "type": "object",
+      "description": "Named selections of resources."
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "version"
+  ],
+  "title": "agx package manifest"
+}

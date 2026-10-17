@@ -19,7 +19,7 @@ import (
 
 	"go.yaml.in/yaml/v4"
 
-	"github.com/tarik02/weft/internal/securefs"
+	"github.com/tarik02/agx/internal/securefs"
 )
 
 var (
@@ -39,7 +39,7 @@ type Lock struct {
 }
 
 // DefaultConfig is used when the root configuration file does not exist.
-const DefaultConfig = "version: 1\nimports:\n  - glob: weft.d/*.yaml\n"
+const DefaultConfig = "version: 1\nimports:\n  - glob: agx.d/*.yaml\n"
 
 func Read(root string) (*Config, error) {
 	return read(root, &Inputs{})
@@ -55,10 +55,10 @@ func read(root string, inputs *Inputs) (*Config, error) {
 		Packages:      map[ID]Package{},
 		Skills:        map[ID]FileResource{},
 		Instructions:  map[ID]FileResource{},
-		Connections:   map[ID]Connection{},
-		Auth:          map[ID]Auth{},
+		MCP:           map[ID]MCPServer{},
+		Secrets:       map[ID]Secret{},
 		Bundles:       map[ID]Bundle{},
-		Harnesses:     map[string]Harness{},
+		Harnesses:     map[string]HarnessDefinition{},
 		PackageHashes: map[ID]string{},
 		Daemon:        Daemon{LeaseSeconds: 60, RenewSeconds: 20},
 	}
@@ -133,6 +133,9 @@ func read(root string, inputs *Inputs) (*Config, error) {
 	if err := load(root); err != nil {
 		return nil, err
 	}
+	if err := c.validateHarnesses(); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 
@@ -169,11 +172,11 @@ func loadConfig(root, cache string, inputs *Inputs) (*Config, error) {
 		inputs.file(p.Lockfile)
 		lock, err := ReadLock(p.Lockfile)
 		if err != nil {
-			return fmt.Errorf("%s: %w; run weft install", p.Lockfile, err)
+			return fmt.Errorf("%s: %w; run agx install", p.Lockfile, err)
 		}
 		entry, ok := lock.Packages[id]
 		if !ok || Digest(entry.Source) != Digest(p.LockSource()) {
-			return fmt.Errorf("package %s has a missing or stale lock; run weft install", id)
+			return fmt.Errorf("package %s has a missing or stale lock; run agx install", id)
 		}
 		if !ValidHash(entry.Hash) {
 			return fmt.Errorf("invalid cache hash for %s", id)
@@ -181,7 +184,7 @@ func loadConfig(root, cache string, inputs *Inputs) (*Config, error) {
 		dir := filepath.Join(cache, "packages", entry.Hash)
 		inputs.file(dir)
 		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("package %s is not installed; run weft install", id)
+			return fmt.Errorf("package %s is not installed; run agx install", id)
 		} else if err != nil {
 			return fmt.Errorf("package %s cache: %w", id, err)
 		}
@@ -192,11 +195,11 @@ func loadConfig(root, cache string, inputs *Inputs) (*Config, error) {
 		if hash != entry.Hash {
 			return fmt.Errorf("package %s cache content does not match its lock", id)
 		}
-		d, node, err := decode(filepath.Join(dir, "weft.package.yaml"))
+		d, node, err := decode(filepath.Join(dir, "agx.package.yaml"))
 		if err != nil {
 			return err
 		}
-		if err := c.merge(d, node, filepath.Join(dir, "weft.package.yaml"), string(id), true); err != nil {
+		if err := c.merge(d, node, filepath.Join(dir, "agx.package.yaml"), string(id), true); err != nil {
 			return err
 		}
 		c.PackageHashes[id] = entry.Hash
@@ -255,6 +258,14 @@ func decode(path string) (Document, *yaml.Node, error) {
 
 func decodeBytes(path string, b []byte) (Document, *yaml.Node, error) {
 	var d Document
+	var n yaml.Node
+	if err := yaml.Unmarshal(b, &n); err != nil {
+		return d, nil, fmt.Errorf("%s: %w", path, err)
+	}
+	// Decoding ignores tags on plain strings, so they are checked first.
+	if err := checkTags(path, &n, nil); err != nil {
+		return d, nil, err
+	}
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	dec.KnownFields(true)
 	if err := dec.Decode(&d); errors.Is(err, io.EOF) {
@@ -269,10 +280,6 @@ func decodeBytes(path string, b []byte) (Document, *yaml.Node, error) {
 	if d.Version != 1 {
 		return d, nil, fmt.Errorf("%s: version must be 1", path)
 	}
-	var n yaml.Node
-	if err := yaml.Unmarshal(b, &n); err != nil {
-		return d, nil, err
-	}
 	return d, &n, nil
 }
 
@@ -280,7 +287,7 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 	base := filepath.Dir(path)
 	if manifest &&
 		(len(d.Imports) > 0 || len(d.Scopes) > 0 || len(d.Harnesses) > 0 || d.Lockfile != "" || d.Daemon != (Daemon{})) {
-		return fmt.Errorf("%s: package manifests may only declare resources, bundles, auth, and dependencies", path)
+		return fmt.Errorf("%s: package manifests may only declare resources, bundles, secrets, and dependencies", path)
 	}
 	source := func(section, key string) Source {
 		out := Source{Path: path, Line: 1, Column: 1}
@@ -345,7 +352,7 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 		p.Manifest = manifest
 		p.Lockfile = relative(base, d.Lockfile)
 		if d.Lockfile == "" {
-			p.Lockfile = filepath.Join(base, "weft.lock.json")
+			p.Lockfile = filepath.Join(base, "agx.lock.json")
 		}
 		if p.Path != "" {
 			if manifest {
@@ -411,39 +418,119 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 			section.to[name] = r
 		}
 	}
-	for id, a := range d.Auth {
+	for id, secret := range d.Secrets {
 		name := qualify(ns, id)
-		_, exists := c.Auth[name]
-		if apply, err := conflict("auth", name, exists, a.Override); err != nil {
+		existing, exists := c.Secrets[name]
+		if existing.Owner != "" {
+			return fmt.Errorf(
+				"%s: secret %s conflicts with the auth of MCP server %s, which uses that ID; rename one",
+				locate(source("secrets", string(id))),
+				name,
+				existing.Owner,
+			)
+		}
+		if apply, err := conflict("secrets", name, exists, secret.Override); err != nil {
 			return err
 		} else if !apply {
 			continue
 		}
-		a.Source = source("auth", string(id))
-		c.Auth[name] = a
+		secret.Source = source("secrets", string(id))
+		c.Secrets[name] = secret
 	}
-	for id, conn := range d.Connections {
+	// place qualifies a value's secret like other references; package files must stay inside
+	// the package, as resource paths do.
+	place := func(v Value) (Value, error) {
+		if v.Secret != "" {
+			v.Secret = qualify(ns, v.Secret)
+		}
+		if manifest && v.File != "" {
+			file, err := securefs.Contained(base, v.File)
+			if err != nil {
+				return v, fmt.Errorf("%s:%d: !file %s: %w", path, v.Source.Line, v.File, err)
+			}
+			v.File = file
+		}
+		return placeValue(v, path), nil
+	}
+	for id, server := range d.MCP {
 		name := qualify(ns, id)
-		_, exists := c.Connections[name]
-		if apply, err := conflict("connections", name, exists, conn.Override); err != nil {
+		_, exists := c.MCP[name]
+		if apply, err := conflict("mcp", name, exists, server.Override); err != nil {
 			return err
 		} else if !apply {
 			continue
 		}
-		if conn.Cwd != "" {
-			conn.Cwd = relative(base, conn.Cwd)
+		server.Source = source("mcp", string(id))
+		at := locate(server.Source)
+		transport := "stdio"
+		switch {
+		case server.URL != "" && len(server.Command) > 0:
+			return fmt.Errorf(
+				"%s: MCP server %s sets both url and command; use url for HTTP or command for stdio",
+				at,
+				name,
+			)
+		case server.URL != "":
+			transport = "http"
+		case len(server.Command) == 0:
+			return fmt.Errorf("%s: MCP server %s needs url (HTTP) or command (stdio)", at, name)
 		}
-		if conn.Auth != "" {
-			conn.Auth = qualify(ns, conn.Auth)
+		if server.Transport != "" && server.Transport != transport {
+			field := "command"
+			if transport == "http" {
+				field = "url"
+			}
+			return fmt.Errorf("%s: MCP server %s: transport %s contradicts its %s", at, name, server.Transport, field)
 		}
-		for key, id := range conn.AuthEnvironment {
-			conn.AuthEnvironment[key] = qualify(ns, id)
+		server.Transport = transport
+		if server.Cwd != "" {
+			server.Cwd = relative(base, server.Cwd)
 		}
-		conn.Source = source("connections", string(id))
-		c.Connections[name] = conn
+		// A replaced definition takes its inline secret with it.
+		if previous, ok := c.Secrets[name]; ok && previous.Owner == name {
+			delete(c.Secrets, name)
+		}
+		if server.Auth.Secret != "" {
+			server.Auth.Secret = qualify(ns, server.Auth.Secret)
+		}
+		if transport == "http" && server.Auth == (MCPAuth{}) {
+			server.Auth.Inline = &Secret{Kind: "oauth", Implicit: true}
+		}
+		if server.Auth.Inline != nil {
+			// Inline secrets share the ID space of top-level ones, as agx secret addresses both.
+			if _, taken := c.Secrets[name]; taken {
+				what := "has inline auth"
+				if server.Auth.Inline.Implicit {
+					what = "logs in on demand under its ID"
+				}
+				return fmt.Errorf(
+					"%s: MCP server %s %s, but secret %s is defined too; set auth: !secret %s or auth: none, or rename one",
+					at,
+					name,
+					what,
+					name,
+					name,
+				)
+			}
+			secret := *server.Auth.Inline
+			secret.Owner = name
+			secret.Source = server.Source
+			c.Secrets[name] = secret
+			server.Auth.Secret = name
+		}
+		for _, values := range []map[string]Value{server.Environment, server.Headers} {
+			for key, v := range values {
+				placed, err := place(v)
+				if err != nil {
+					return err
+				}
+				values[key] = placed
+			}
+		}
+		c.MCP[name] = server
 	}
 	qualifySelection := func(s Selection) Selection {
-		for _, ids := range [][]ID{s.Skills, s.Instructions, s.Connections, s.Bundles} {
+		for _, ids := range [][]ID{s.Skills, s.Instructions, s.MCP, s.Bundles} {
 			for i, id := range ids {
 				ids[i] = qualify(ns, id)
 			}
@@ -484,17 +571,8 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 		}
 		c.Scopes = append(c.Scopes, s)
 	}
-	for name, h := range d.Harnesses {
-		if name != "codex" && name != "claude" && name != "pi" {
-			return fmt.Errorf("unknown harness %q", name)
-		}
-		if h.Executable != "" && !filepath.IsAbs(h.Executable) {
-			return fmt.Errorf("harness executable must be absolute: %s", name)
-		}
-		if _, exists := c.Harnesses[name]; exists && !h.Override {
-			return fmt.Errorf("%s: conflicting harness %s; set override: true", path, name)
-		}
-		c.Harnesses[name] = h
+	if err := c.mergeHarnesses(d, node, path); err != nil {
+		return err
 	}
 	if c.daemonSet == nil {
 		c.daemonSet = map[string]bool{}
@@ -538,81 +616,151 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("instructions %s: %w", id, err)
 		}
 	}
-	for id, a := range c.Auth {
-		switch a.Kind {
+	for id, secret := range c.Secrets {
+		label := "secret " + string(id)
+		if secret.Owner != "" {
+			label = "MCP server " + string(secret.Owner) + " auth"
+		}
+		at := locate(secret.Source)
+		switch secret.Kind {
 		case "environment", "daemon_environment":
-			if !validEnvironment.MatchString(a.Variable) {
-				return fmt.Errorf("auth %s needs a valid variable", id)
+			if !validEnvironment.MatchString(secret.Variable) {
+				return fmt.Errorf("%s: %s needs a valid variable", at, label)
 			}
 		case "command":
-			if len(a.Command) == 0 || a.Command[0] == "" {
-				return fmt.Errorf("auth %s needs a command", id)
+			if len(secret.Command) == 0 || secret.Command[0] == "" {
+				return fmt.Errorf("%s: %s needs a command", at, label)
 			}
 		case "keychain":
 		case "oauth":
-			if a.Issuer != "" {
-				if err := validateURL(a.Issuer); err != nil {
-					return fmt.Errorf("auth %s: %w", id, err)
+			if secret.Issuer != "" {
+				if err := validateURL(secret.Issuer); err != nil {
+					return fmt.Errorf("%s: %s: %w", at, label, err)
 				}
 			}
 		default:
-			return fmt.Errorf("auth %s: unknown kind %q", id, a.Kind)
+			if secret.Owner != "" {
+				return fmt.Errorf(
+					"%s: %s: unknown kind %q; reference a secret with auth: !secret %s",
+					at, label, secret.Kind, secret.Kind,
+				)
+			}
+			return fmt.Errorf("%s: %s: unknown kind %q", at, label, secret.Kind)
 		}
 	}
-	for id, conn := range c.Connections {
-		switch conn.Transport {
+	// checkSecret validates a !secret reference; OAuth tokens need login and refresh per
+	// server, so they authenticate only through an HTTP MCP server's auth field.
+	checkSecret := func(i Injection) error {
+		if i.Value.Secret == "" {
+			return nil
+		}
+		secret, ok := c.Secrets[i.Value.Secret]
+		if !ok {
+			return fmt.Errorf("%s: %s: unknown secret %s", locate(i.Source), i.Target, i.Value.Secret)
+		}
+		if secret.Owner != "" {
+			return fmt.Errorf(
+				"%s: %s: secret %s is the inline auth of MCP server %s; declare it under secrets: to share it",
+				locate(i.Source),
+				i.Target,
+				i.Value.Secret,
+				secret.Owner,
+			)
+		}
+		if secret.Kind == "oauth" {
+			return fmt.Errorf(
+				"%s: %s: OAuth secret %s can only be an MCP server's auth",
+				locate(i.Source),
+				i.Target,
+				i.Value.Secret,
+			)
+		}
+		return nil
+	}
+	oauthOrigins := map[ID]struct {
+		id     ID
+		origin string
+	}{}
+	for _, id := range sortedKeys(c.MCP) {
+		server := c.MCP[id]
+		at := locate(server.Source)
+		switch server.Transport {
 		case "stdio":
-			if len(conn.Command) == 0 || conn.Command[0] == "" || conn.URL != "" || conn.Auth != "" ||
-				len(conn.Headers) > 0 {
+			if server.Command[0] == "" || server.Auth != (MCPAuth{}) || len(server.Headers) > 0 {
 				return fmt.Errorf(
-					"stdio connection %s needs command and auth_environment; no URL/headers/bearer auth",
+					"%s: stdio MCP server %s needs a command and cannot set headers or auth",
+					at,
 					id,
 				)
 			}
 		case "http":
-			if err := validateURL(conn.URL); err != nil {
-				return fmt.Errorf("connection %s: %w", id, err)
+			if err := validateURL(server.URL); err != nil {
+				return fmt.Errorf("%s: MCP server %s: %w", at, id, err)
 			}
-			if len(conn.Command) > 0 || len(conn.Environment) > 0 || len(conn.AuthEnvironment) > 0 {
-				return fmt.Errorf("HTTP connection %s cannot have command/environment", id)
+			if len(server.Environment) > 0 || server.Cwd != "" {
+				return fmt.Errorf("%s: HTTP MCP server %s cannot set environment or cwd", at, id)
 			}
 		default:
-			return fmt.Errorf("connection %s: transport must be stdio or http", id)
+			return fmt.Errorf("%s: MCP server %s: transport must be stdio or http", at, id)
 		}
-		for name := range conn.Environment {
+		for name := range server.Environment {
 			if !validEnvironment.MatchString(name) {
-				return fmt.Errorf("invalid environment name for %s", id)
+				return fmt.Errorf("%s: MCP server %s: invalid environment name %q", at, id, name)
 			}
 		}
-		ids := []ID{}
-		if conn.Auth != "" {
-			ids = append(ids, conn.Auth)
-		}
-		for name, auth := range conn.AuthEnvironment {
-
-			if source, ok := c.Auth[auth]; ok && source.Kind == "oauth" {
-				return fmt.Errorf(
-					"connection %s: OAuth sources require HTTP auth; use an environment, keychain or helper source for stdio credentials",
-					id,
-				)
-			}
-			if !validEnvironment.MatchString(name) {
-				return fmt.Errorf("invalid auth environment name for %s", id)
-			}
-			if _, ok := conn.Environment[name]; ok {
-				return fmt.Errorf("duplicate environment name for %s", id)
-			}
-			ids = append(ids, auth)
-		}
-		for _, auth := range ids {
-			if _, ok := c.Auth[auth]; !ok {
-				return fmt.Errorf("connection %s: unknown auth %s", id, auth)
-			}
-		}
-		for name := range conn.Headers {
+		for name := range server.Headers {
 			switch strings.ToLower(name) {
 			case "authorization", "proxy-authorization", "cookie", "host", "mcp-session-id":
-				return fmt.Errorf("connection %s: header %s must not be configured as a literal", id, name)
+				return fmt.Errorf(
+					"%s: MCP server %s: header %s is managed by agx; use auth for bearer credentials",
+					at,
+					id,
+					name,
+				)
+			}
+		}
+		if ref := server.Auth.Secret; ref != "" {
+			secret, ok := c.Secrets[ref]
+			switch {
+			case !ok:
+				return fmt.Errorf("%s: MCP server %s: unknown secret %s", at, id, ref)
+			case secret.Owner != "" && secret.Owner != id:
+				return fmt.Errorf(
+					"%s: MCP server %s: secret %s is the inline auth of MCP server %s; declare it under secrets: to share it",
+					at,
+					id,
+					ref,
+					secret.Owner,
+				)
+			case secret.Kind == "oauth":
+				// A stored OAuth credential is bound to one server origin.
+				origin := strings.ToLower(serverOrigin(server.URL))
+				if other, seen := oauthOrigins[ref]; seen && other.origin != origin {
+					return fmt.Errorf(
+						"%s: MCP servers %s and %s share OAuth secret %s but have different origins",
+						at, other.id, id, ref,
+					)
+				}
+				oauthOrigins[ref] = struct {
+					id     ID
+					origin string
+				}{id, origin}
+			}
+		}
+		for _, i := range server.Injections(id) {
+			if err := checkSecret(i); err != nil {
+				return err
+			}
+		}
+	}
+	for _, name := range sortedKeys(c.Harnesses) {
+		h, err := c.Harness(name)
+		if err != nil {
+			return err
+		}
+		for _, i := range h.Injections() {
+			if err := checkSecret(i); err != nil {
+				return err
 			}
 		}
 	}
@@ -629,7 +777,24 @@ func (c *Config) Validate() error {
 			}
 		}
 	}
+	for name, h := range c.Harnesses {
+		for _, s := range h.Selections {
+			for _, sel := range []Selection{s.Add, s.Exclude} {
+				if err := c.expand(sel, nil, visit); err != nil {
+					return fmt.Errorf("%s: harness %s: %w", locate(s.Source), name, err)
+				}
+			}
+		}
+	}
 	return nil
+}
+
+func serverOrigin(value string) string {
+	u, err := url.Parse(value)
+	if err != nil {
+		return value
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 func validateURL(value string) error {

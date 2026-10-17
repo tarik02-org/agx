@@ -20,6 +20,20 @@ scopes:
 #   codex:
 #     executable: /absolute/path/to/native/executable
 
+# HTTP MCP servers log in with OAuth on demand (agx secret login <id>) unless auth
+# says otherwise. Other credentials are secrets injected at launch with !secret;
+# !env and !file also work.
+# secrets:
+#   docs-key: {kind: keychain} # agx secret set docs-key --stdin
+# mcp:
+#   tracker:
+#     url: https://tracker.example.com/mcp
+#   docs:
+#     url: https://docs.example.com/mcp
+#     auth: none
+#     headers:
+#       X-Api-Key: !secret docs-key
+
 daemon:
   lease_seconds: 60
   renew_seconds: 20

@@ -1,6 +1,6 @@
 # Use Go with a separate Connect management interface
 
-Implement Weft in Go for its networking and subprocess workload and native
+Implement agx in Go for its networking and subprocess workload and native
 cross-platform executables. Use the official MCP Go SDK for the MCP runtime
 and standard `net/http` for serving HTTP; Rust's additional implementation
 complexity has no demonstrated benefit for this workload.

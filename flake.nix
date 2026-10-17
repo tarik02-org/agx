@@ -1,5 +1,5 @@
 {
-  description = "Directory-scoped skills, MCP connections, and instructions for coding agents";
+  description = "Directory-scoped skills, MCP servers, and instructions for coding agents";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
@@ -15,8 +15,8 @@
     in
     {
       packages = forAllSystems (pkgs: rec {
-        weft = pkgs.callPackage ./package.nix { };
-        default = weft;
+        agx = pkgs.callPackage ./package.nix { };
+        default = agx;
       });
 
       apps = forAllSystems (pkgs: {

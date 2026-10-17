@@ -26,15 +26,15 @@ missing or stale locks in frozen mode. Distinguish tracked and local lockfiles.
 Done when two fresh installations resolve identical content, an interrupted
 installation leaves no usable partial entry, and updates preserve active artifacts.
 
-## 3. Run the daemon and one native MCP connection
+## 3. Run the daemon and one native MCP server
 
 Implement authenticated Connect management, launch preparation, leases, and one
-HTTP MCP endpoint per selected connection. First support a local stdio upstream
+HTTP MCP endpoint per selected MCP server. First support a local stdio upstream
 and a remote HTTP upstream without auth; add static secrets afterward.
 
-Done when native tool schemas/results, cancellation, and connection status work,
+Done when native tool schemas/results, cancellation, and MCP server status work,
 and an expired launch cannot call its MCP endpoints. Keep sessions isolated per
-launch and connection. Verify protocol forwarding before adding pooling.
+launch and MCP server. Verify protocol forwarding before adding pooling.
 
 ## 4. Launch all three harnesses
 
@@ -60,7 +60,7 @@ the documented lifecycle behavior. The CLI must expose enough state for a later 
 
 ## Module ownership
 
-Use `cmd/weft` plus internal modules for config resolution, packages, harness
+Use `cmd/agx` plus internal modules for config resolution, packages, harness
 adapters, auth, launch lifecycle, MCP runtime, and the management interface.
 Resolution returns data; adapters return spawn plans. The wrapper owns the harness
 process; the daemon owns upstream MCP processes. RPC handlers translate and

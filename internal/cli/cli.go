@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,26 +19,23 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	v1 "github.com/tarik02/weft/gen/weft/v1"
-	"github.com/tarik02/weft/internal/adapters"
-	"github.com/tarik02/weft/internal/config"
-	"github.com/tarik02/weft/internal/daemon"
-	"github.com/tarik02/weft/internal/packages"
-	"github.com/tarik02/weft/internal/platform"
+	v1 "github.com/tarik02/agx/gen/agx/v1"
+	"github.com/tarik02/agx/internal/adapters"
+	"github.com/tarik02/agx/internal/cli/ui"
+	"github.com/tarik02/agx/internal/config"
+	"github.com/tarik02/agx/internal/daemon"
+	"github.com/tarik02/agx/internal/packages"
+	"github.com/tarik02/agx/internal/platform"
 )
 
 func Main() int {
 	paths, err := platform.DefaultPaths()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "weft:", err)
-		return 1
-	}
-	if name := nativeInvocation(); name != "" {
-		return exitCode(runHarness(context.Background(), paths, name, os.Args[1:]))
+		return exitCode(err)
 	}
 	root := &cobra.Command{
-		Use:           "weft",
-		Short:         "Directory-scoped skills, MCP connections, and instructions",
+		Use:           "agx",
+		Short:         "Directory-scoped skills, MCP servers, and instructions",
 		Version:       daemon.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -46,7 +44,15 @@ func Main() int {
 	root.SetErr(os.Stderr)
 	root.PersistentFlags().StringVar(&paths.Config, "config", paths.Config, "root configuration file")
 	root.PersistentFlags().StringVar(&paths.Cache, "cache", paths.Cache, "immutable package and artifact cache")
+	color := ui.ColorAuto
+	root.PersistentFlags().Var(&color, "color", "style output: auto (terminals without NO_COLOR), always, never")
+	root.AddGroup(
+		&cobra.Group{ID: "harness", Title: "Harnesses:"},
+		&cobra.Group{ID: "config", Title: "Configuration:"},
+		&cobra.Group{ID: "runtime", Title: "Runtime:"},
+	)
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		ui.Configure(color)
 		var err error
 		paths.Config, err = filepath.Abs(paths.Config)
 		if err != nil {
@@ -56,55 +62,57 @@ func Main() int {
 		paths.State = filepath.Join(paths.Cache, "runtime")
 		return err
 	}
-	for _, name := range []string{"codex", "claude", "pi"} {
-		root.AddCommand(
-			&cobra.Command{
-				Use:                name + " [native arguments...]",
-				Short:              "Launch " + name + " with directory-scoped resources",
-				DisableFlagParsing: true,
-				RunE: func(cmd *cobra.Command, args []string) error {
-					return runHarness(cmd.Context(), paths, name, args)
-				},
-			},
-		)
-	}
+	var harnesses harnessConfig
 	root.AddCommand(
 		&cobra.Command{
 			Use:                "run <harness> -- [native arguments...]",
 			Short:              "Launch a harness by name with directory-scoped resources",
+			GroupID:            "harness",
 			DisableFlagParsing: true,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				if len(args) == 0 {
-					return fmt.Errorf("harness required: codex, claude, or pi")
+					return fmt.Errorf("harness required: %s", strings.Join(harnesses.config.HarnessNames(), ", "))
 				}
 				name := args[0]
-				if name != "codex" && name != "claude" && name != "pi" {
-					return fmt.Errorf("unknown harness %s", name)
-				}
 				args = args[1:]
 				if len(args) > 0 && args[0] == "--" {
 					args = args[1:]
 				}
-				return runHarness(cmd.Context(), paths, name, args)
+				return runHarness(cmd.Context(), paths, harnesses, name, args)
 			},
 		},
 	)
-	configCmd := &cobra.Command{Use: "config", Short: "Inspect the root configuration"}
+	configCmd := &cobra.Command{Use: "config", Short: "Inspect the root configuration", GroupID: "config"}
 	configCmd.AddCommand(
 		&cobra.Command{
 			Use:   "validate",
 			Short: "Load and validate the configuration",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
-				_, err := config.Load(paths.Config, paths.Cache)
+				c, err := config.Load(paths.Config, paths.Cache)
 				if err != nil {
 					return err
 				}
-				_, err = fmt.Fprintln(os.Stdout, "Configuration valid.")
-				return err
+				return printValid(c)
 			},
 		},
 	)
+	schemaManifest := false
+	schemaCmd := &cobra.Command{
+		Use:   "schema",
+		Short: "Print the JSON Schema of configuration fragments",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			b, err := config.Schema(schemaManifest)
+			if err != nil {
+				return err
+			}
+			_, err = os.Stdout.Write(b)
+			return err
+		},
+	}
+	schemaCmd.Flags().BoolVar(&schemaManifest, "package", false, "print the package manifest schema instead")
+	configCmd.AddCommand(schemaCmd)
 	root.AddCommand(configCmd)
 	shorts := map[string]string{
 		"resolve": "Show resources selected for a directory",
@@ -112,10 +120,13 @@ func Main() int {
 	}
 	for _, name := range []string{"resolve", "explain"} {
 		asJSON := false
+		verbose := false
+		harness := ""
 		cmd := &cobra.Command{
-			Use:   name + " [directory]",
-			Short: shorts[name],
-			Args:  cobra.MaximumNArgs(1),
+			Use:     name + " [directory]",
+			Short:   shorts[name],
+			GroupID: "config",
+			Args:    cobra.MaximumNArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				directory := "."
 				if len(args) > 0 {
@@ -125,53 +136,39 @@ func Main() int {
 				if err != nil {
 					return err
 				}
-				snapshot, err := c.Resolve(directory)
+				snapshot, err := c.Resolve(directory, harness)
 				if err != nil {
 					return err
 				}
 				if name == "resolve" {
 					snapshot.Traces = nil
+					snapshot.Injections = nil
 				}
 				if asJSON {
 					return printJSON(snapshot)
 				}
-				var out strings.Builder
-				fmt.Fprintf(&out, "%s\nsnapshot %s\n", snapshot.Directory, snapshot.ID)
 				if name == "resolve" {
-					for _, r := range snapshot.Resources {
-						fmt.Fprintf(&out, "%s %s\n", r.Kind, r.ID)
-					}
-				} else {
-					for _, t := range snapshot.Traces {
-						state := "excluded"
-						if t.Selected {
-							state = "selected"
-						}
-						fmt.Fprintf(&out, "%s %s (%s)\n", t.Resource.Kind, t.Resource.ID, state)
-						for _, step := range t.Steps {
-							fmt.Fprintf(
-								&out,
-								"  %s %s:%d scope=%s bundles=%v\n",
-								step.Change,
-								step.Source.Path,
-								step.Source.Line,
-								step.Directory,
-								step.BundleChain,
-							)
-						}
-					}
+					return printResolve(snapshot)
 				}
-				_, err = io.WriteString(os.Stdout, out.String())
-				return err
+				if verbose || !ui.Stdout.Styled() {
+					return printExplain(snapshot)
+				}
+				return printExplainCompact(snapshot)
 			},
 		}
+		if name == "explain" {
+			cmd.Flags().BoolVar(&verbose, "verbose", false, "show every step with full paths")
+		}
 		cmd.Flags().BoolVar(&asJSON, "json", false, "versioned JSON output")
+		cmd.Flags().
+			StringVar(&harness, "harness", "", "resolve for a harness (default: harness-independent rules only)")
 		root.AddCommand(cmd)
 	}
 	install := &cobra.Command{
-		Use:   "install",
-		Short: "Install packages pinned by lockfiles and native harness plugins",
-		Args:  cobra.NoArgs,
+		Use:     "install",
+		Short:   "Install packages pinned by lockfiles and native harness plugins",
+		GroupID: "config",
+		Args:    cobra.NoArgs,
 	}
 	frozen := false
 	install.Flags().BoolVar(&frozen, "frozen", false, "require unchanged lockfiles and content")
@@ -181,8 +178,9 @@ func Main() int {
 	root.AddCommand(install)
 	root.AddCommand(
 		&cobra.Command{
-			Use:   "update [package-id...]",
-			Short: "Update packages and their lockfiles (all when none given)",
+			Use:     "update [package-id...]",
+			Short:   "Update packages and their lockfiles (all when none given)",
+			GroupID: "config",
 			RunE: func(cmd *cobra.Command, args []string) error {
 				ids := []config.ID{}
 				for _, id := range args {
@@ -192,7 +190,7 @@ func Main() int {
 			},
 		},
 	)
-	root.AddCommand(daemonCommand(&paths), launchCommand(&paths), authCommand(&paths))
+	root.AddCommand(daemonCommand(&paths), launchCommand(&paths), secretCommand(&paths))
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error { return &usageError{err} })
 	var wrapArgs func(*cobra.Command)
 	wrapArgs = func(cmd *cobra.Command) {
@@ -209,11 +207,25 @@ func Main() int {
 		}
 	}
 	wrapArgs(root)
+	root.InitDefaultHelpCmd()
+	root.InitDefaultCompletionCmd()
+	reserved := []string{root.Name()}
+	for _, cmd := range root.Commands() {
+		reserved = append(reserved, cmd.Name())
+		reserved = append(reserved, cmd.Aliases...)
+	}
+	config.ReserveHarnessNames(reserved...)
+	if name := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe"); name != root.Name() {
+		harnesses = loadHarnesses(paths.Config)
+		if _, builtin := config.Builtins[name]; builtin || slices.Contains(harnesses.config.HarnessNames(), name) {
+			return exitCode(runHarness(context.Background(), paths, harnesses, name, os.Args[1:]))
+		}
+	}
 	// Harness commands disable flag parsing, so leading root flags would otherwise leak into native arguments.
 	args := os.Args[1:]
 	for len(args) > 0 && strings.HasPrefix(args[0], "--") {
 		name, value, inline := strings.Cut(strings.TrimPrefix(args[0], "--"), "=")
-		if name != "config" && name != "cache" {
+		if name != "config" && name != "cache" && name != "color" {
 			break
 		}
 		args = args[1:]
@@ -227,8 +239,35 @@ func Main() int {
 			return exitCode(&usageError{err})
 		}
 	}
+	ui.Configure(color)
+	configPath, err := filepath.Abs(paths.Config)
+	if err != nil {
+		return exitCode(err)
+	}
+	harnesses = loadHarnesses(configPath)
+	for _, name := range harnesses.config.HarnessNames() {
+		short := "Launch " + name + " with directory-scoped resources"
+		if _, builtin := config.Builtins[name]; !builtin {
+			h, _ := harnesses.config.Harness(name)
+			short = "Launch " + name + " (" + h.Builtin + ")"
+		}
+		root.AddCommand(
+			&cobra.Command{
+				Use:                name + " [native arguments...]",
+				Short:              short,
+				GroupID:            "harness",
+				DisableFlagParsing: true,
+				RunE: func(cmd *cobra.Command, args []string) error {
+					return runHarness(cmd.Context(), paths, harnesses, name, args)
+				},
+			},
+		)
+	}
 	root.SetArgs(args)
 	if _, _, err := root.Find(args); err != nil {
+		if harnesses.err != nil {
+			err = fmt.Errorf("%w (harness definitions unavailable: %w)", err, harnesses.err)
+		}
 		return exitCode(&usageError{err})
 	}
 	return exitCode(root.Execute())
@@ -244,9 +283,10 @@ func exitCode(err error) int {
 	if errors.As(err, &exit) {
 		return exit.Code
 	}
-	fmt.Fprintln(os.Stderr, "weft:", err)
+	ui.Diagnose(ui.Error, "%v", err)
 	var usage *usageError
 	if errors.As(err, &usage) {
+		ui.Note("Run 'agx --help' for usage.")
 		return 2
 	}
 	return 1
@@ -268,6 +308,12 @@ func printProto(value proto.Message) error {
 }
 
 func installPackages(ctx context.Context, paths platform.Paths, frozen bool, ids []config.ID, all bool) error {
+	update := len(ids) > 0 || all
+	if update {
+		progress("Updating packages")
+	} else {
+		progress("Installing packages")
+	}
 	result, err := packages.Install(ctx, paths.Config, paths.Cache, frozen, ids, all)
 	if err != nil {
 		return err
@@ -277,16 +323,16 @@ func installPackages(ctx context.Context, paths platform.Paths, frozen bool, ids
 		return err
 	}
 	if !frozen {
+		progress("Installing native harness plugins")
 		if err := adapters.InstallNative(ctx, c, paths.Cache); err != nil {
 			return err
 		}
 	}
-	_, err = fmt.Fprintf(os.Stdout, "Installed %d packages.\n", len(result.PackageIDs))
-	return err
+	return printInstalled(result, update)
 }
 
 func daemonCommand(paths *platform.Paths) *cobra.Command {
-	command := &cobra.Command{Use: "daemon", Short: "Manage the background daemon"}
+	command := &cobra.Command{Use: "daemon", Short: "Manage the background daemon", GroupID: "runtime"}
 	foreground := false
 	start := &cobra.Command{
 		Use:   "start",
@@ -304,7 +350,7 @@ func daemonCommand(paths *platform.Paths) *cobra.Command {
 				cancel()
 				if err == nil && c.discovery.Version != daemon.Version {
 					return fmt.Errorf(
-						"daemon %s is already running (weft is %s); run weft daemon stop first",
+						"daemon %s is already running (agx is %s); run agx daemon stop first",
 						c.discovery.Version,
 						daemon.Version,
 					)
@@ -362,7 +408,12 @@ func daemonCommand(paths *platform.Paths) *cobra.Command {
 						_, err = c.runtime.GetRuntime(ctx, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
 						cancel()
 						if err == nil {
-							_, err = fmt.Fprintln(os.Stdout, "Daemon started.")
+							out := ui.Stdout
+							_, err = fmt.Fprint(
+								out,
+								out.Status(ui.OK, "Daemon started.")+"\n",
+								out.Fields([2]string{"log", out.Path(logPath)}),
+							)
 							return err
 						}
 					}
@@ -391,14 +442,7 @@ func daemonCommand(paths *platform.Paths) *cobra.Command {
 			if asJSON {
 				return printProto(view.Msg)
 			}
-			_, err = fmt.Fprintf(
-				os.Stdout,
-				"Daemon %s (%s), %d launches\n",
-				view.Msg.Runtime.Version,
-				view.Msg.Runtime.DaemonInstanceId,
-				len(view.Msg.Runtime.Launches),
-			)
-			return err
+			return printDaemonStatus(view.Msg.Runtime)
 		},
 	}
 	status.Flags().BoolVar(&asJSON, "json", false, "versioned JSON output")
@@ -441,7 +485,7 @@ func daemonCommand(paths *platform.Paths) *cobra.Command {
 				body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 				return fmt.Errorf("daemon stop failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
 			}
-			_, err = fmt.Fprintln(os.Stdout, "Daemon stopping.")
+			_, err = fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, "Daemon stopping."))
 			return err
 		},
 	}
@@ -451,7 +495,7 @@ func daemonCommand(paths *platform.Paths) *cobra.Command {
 }
 
 func launchCommand(paths *platform.Paths) *cobra.Command {
-	command := &cobra.Command{Use: "launch", Short: "Inspect and revoke harness launches"}
+	command := &cobra.Command{Use: "launch", Short: "Inspect and revoke harness launches", GroupID: "runtime"}
 	shorts := map[string]string{"list": "List active launches", "show": "Show one launch"}
 	for _, name := range []string{"list", "show"} {
 		asJSON := false
@@ -482,8 +526,7 @@ func launchCommand(paths *platform.Paths) *cobra.Command {
 							if asJSON {
 								return printProto(l)
 							}
-							_, err = fmt.Fprintf(os.Stdout, "%s %s %s %s\n", l.Id, l.Harness, l.State, l.Directory)
-							return err
+							return printLaunch(l, view.McpServers)
 						}
 					}
 					return fmt.Errorf("unknown launch %s", args[0])
@@ -491,12 +534,7 @@ func launchCommand(paths *platform.Paths) *cobra.Command {
 				if asJSON {
 					return printProto(view)
 				}
-				var out strings.Builder
-				for _, l := range view.Launches {
-					fmt.Fprintf(&out, "%s %s %s %s\n", l.Id, l.Harness, l.State, l.Directory)
-				}
-				_, err = io.WriteString(os.Stdout, out.String())
-				return err
+				return printLaunches(view.Launches)
 			},
 		}
 		sub.Flags().BoolVar(&asJSON, "json", false, "versioned JSON output")
@@ -525,12 +563,12 @@ func launchCommand(paths *platform.Paths) *cobra.Command {
 	return command
 }
 
-func authCommand(paths *platform.Paths) *cobra.Command {
-	command := &cobra.Command{Use: "auth", Short: "Manage MCP connection credentials"}
+func secretCommand(paths *platform.Paths) *cobra.Command {
+	command := &cobra.Command{Use: "secret", Short: "Manage configured secrets and OAuth logins", GroupID: "runtime"}
 	asJSON := false
 	status := &cobra.Command{
-		Use:   "status [auth-id]",
-		Short: "Show credential state",
+		Use:   "status [secret-id]",
+		Short: "Show secret state",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := newClient(*paths)
@@ -543,27 +581,25 @@ func authCommand(paths *platform.Paths) *cobra.Command {
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), callTimeout)
 			defer cancel()
-			response, err := c.auth.GetAuthStatus(ctx, request(&v1.GetAuthStatusRequest{AuthId: id}, c.discovery.Token))
+			response, err := c.secrets.GetSecretStatus(
+				ctx,
+				request(&v1.GetSecretStatusRequest{SecretId: id}, c.discovery.Token),
+			)
 			if err != nil {
 				return err
 			}
 			if asJSON {
 				return printProto(response.Msg)
 			}
-			var out strings.Builder
-			for _, s := range response.Msg.Statuses {
-				fmt.Fprintf(&out, "%s %s\n", s.AuthId, s.State)
-			}
-			_, err = io.WriteString(os.Stdout, out.String())
-			return err
+			return printSecretStatuses(response.Msg.Statuses)
 		},
 	}
 	status.Flags().BoolVar(&asJSON, "json", false, "versioned JSON output")
 	command.AddCommand(status)
 	stdin := false
 	set := &cobra.Command{
-		Use:   "set <auth-id> --stdin",
-		Short: "Store a secret read from stdin",
+		Use:   "set <secret-id> --stdin",
+		Short: "Store a keychain secret read from stdin",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !stdin {
@@ -582,9 +618,9 @@ func authCommand(paths *platform.Paths) *cobra.Command {
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), callTimeout)
 			defer cancel()
-			_, err = c.auth.SetSecret(
+			_, err = c.secrets.SetSecret(
 				ctx,
-				request(&v1.SetSecretRequest{AuthId: args[0], Secret: data}, c.discovery.Token),
+				request(&v1.SetSecretRequest{SecretId: args[0], Value: data}, c.discovery.Token),
 			)
 			return err
 		},
@@ -593,8 +629,8 @@ func authCommand(paths *platform.Paths) *cobra.Command {
 	command.AddCommand(set)
 	command.AddCommand(
 		&cobra.Command{
-			Use:   "logout <auth-id>",
-			Short: "Delete stored credentials",
+			Use:   "logout <secret-id>",
+			Short: "Delete a stored secret or OAuth login",
 			Args:  cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				c, err := newClient(*paths)
@@ -603,54 +639,24 @@ func authCommand(paths *platform.Paths) *cobra.Command {
 				}
 				ctx, cancel := context.WithTimeout(cmd.Context(), callTimeout)
 				defer cancel()
-				_, err = c.auth.Logout(ctx, request(&v1.LogoutRequest{AuthId: args[0]}, c.discovery.Token))
+				_, err = c.secrets.Logout(ctx, request(&v1.LogoutRequest{SecretId: args[0]}, c.discovery.Token))
 				return err
 			},
 		},
 	)
-	command.AddCommand(
-		&cobra.Command{
-			Use:   "login <connection-id>",
-			Short: "Begin OAuth login and print the authorization URL",
-			Args:  cobra.ExactArgs(1),
-			RunE: func(cmd *cobra.Command, args []string) error {
-				c, err := newClient(*paths)
-				if err != nil {
-					return err
-				}
-				directory, err := os.Getwd()
-				if err != nil {
-					return err
-				}
-				ctx, cancel := context.WithTimeout(cmd.Context(), callTimeout)
-				resolved, err := c.config.Resolve(
-					ctx,
-					request(&v1.ResolveRequest{Directory: directory}, c.discovery.Token),
-				)
-				cancel()
-				if err != nil {
-					return err
-				}
-				ctx, cancel = context.WithTimeout(cmd.Context(), loginTimeout)
-				defer cancel()
-				req := request(
-					&v1.BeginOAuthLoginRequest{
-						RequestId:    secureRequestID(),
-						SnapshotId:   resolved.Msg.Snapshot.Id,
-						ConnectionId: args[0],
-						Directory:    directory,
-					},
-					c.discovery.Token,
-				)
-				response, err := c.auth.BeginOAuthLogin(ctx, req)
-				if err != nil {
-					return err
-				}
-				// The URL is the explicit headless path; opening a browser remains the user's choice.
-				_, err = fmt.Fprintln(os.Stdout, response.Msg.AuthorizationUrl)
-				return err
-			},
+	noBrowser := false
+	login := &cobra.Command{
+		Use:   "login <secret-id>",
+		Short: "Log in to an OAuth secret in the browser and wait for the outcome",
+		Long: "Log in to an OAuth secret: a top-level secret, or an MCP server whose auth is inline or\n" +
+			"omitted. Opens the authorization URL in the default browser and waits until the login\n" +
+			"succeeds, fails, or expires; Ctrl-C cancels it.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return login(cmd.Context(), *paths, args[0], !noBrowser)
 		},
-	)
+	}
+	login.Flags().BoolVar(&noBrowser, "no-browser", false, "print the authorization URL without opening a browser")
+	command.AddCommand(login)
 	return command
 }

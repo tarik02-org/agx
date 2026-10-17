@@ -11,7 +11,7 @@ The daemon owns credential storage and OAuth refresh, including serialization of
 refreshes for shared credentials. Connections refer to named auth sources such
 as OAuth, an OS-keychain secret, an environment variable, or a credential command.
 Supply credentials to local upstream child processes when their integrations
-require it; harnesses receive only Weft launch grants.
+require it; harnesses receive only agx launch grants.
 
 The wrapper supervises the harness, reports exit, and maintains a lease. Ended
 or expired launches lose access and release their runtime resources. HTTP

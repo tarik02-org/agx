@@ -18,10 +18,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/tarik02/weft/internal/auth"
-	"github.com/tarik02/weft/internal/config"
-	"github.com/tarik02/weft/internal/platform"
-	"github.com/tarik02/weft/internal/securefs"
+	"github.com/tarik02/agx/internal/auth"
+	"github.com/tarik02/agx/internal/config"
+	"github.com/tarik02/agx/internal/platform"
+	"github.com/tarik02/agx/internal/securefs"
 )
 
 const (
@@ -34,16 +34,21 @@ const (
 var (
 	errEndpointClosed = errors.New("launch ended")
 	errSessionGone    = errors.New("session ended")
-	errNeedsAuth      = errors.New("upstream credential unavailable")
 )
+
+// needsAuth marks failures that logging in or storing a secret can fix.
+type needsAuth struct{ error }
+
+func (e needsAuth) Unwrap() error { return e.error }
 
 type Endpoint struct {
 	mu             sync.Mutex
+	id             config.ID
 	ctx            context.Context
 	cancel         context.CancelFunc
-	definition     config.Connection
+	definition     config.MCPServer
 	auth           *auth.Manager
-	sources        map[config.ID]config.Auth
+	secrets        map[config.ID]config.Secret
 	inputs         map[string]string
 	sessions       map[string]*stdioSession
 	starting       int
@@ -52,6 +57,8 @@ type Endpoint struct {
 	closeDone      chan struct{}
 	closed         bool
 	state          string
+	// problem explains the latest failure for runtime views; it never contains values.
+	problem string
 }
 
 type stdioSession struct {
@@ -69,14 +76,16 @@ type stdioSession struct {
 type remoteSession struct {
 	upstreamID string
 	credential string
+	headers    map[string]string
 	active     int
 	lastUsed   time.Time
 }
 
 func New(
 	ctx context.Context,
-	c config.Connection,
-	sources map[config.ID]config.Auth,
+	id config.ID,
+	c config.MCPServer,
+	secrets map[config.ID]config.Secret,
 	inputs map[string]string,
 	manager *auth.Manager,
 ) *Endpoint {
@@ -84,8 +93,9 @@ func New(
 	e := &Endpoint{
 		ctx:            ctx,
 		cancel:         cancel,
+		id:             id,
 		definition:     c,
-		sources:        sources,
+		secrets:        secrets,
 		inputs:         inputs,
 		auth:           manager,
 		sessions:       map[string]*stdioSession{},
@@ -97,10 +107,50 @@ func New(
 	return e
 }
 
-func (e *Endpoint) State() string {
+// State reports the endpoint state and, unless ready, why the last attempt failed.
+func (e *Endpoint) State() (string, string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.state
+	if e.state == "ready" {
+		return e.state, ""
+	}
+	return e.state, e.problem
+}
+
+// resolve reads an injected value when a session starts, so edited files and rotated secrets
+// reach new sessions. Secret failures mark the endpoint as needing authorization.
+func (e *Endpoint) resolve(
+	ctx context.Context,
+	target string,
+	v config.Value,
+	inputs map[string]string,
+) (string, error) {
+	return v.Resolve(
+		target,
+		func(name string) (string, bool) {
+			value, ok := inputs[name]
+			return value, ok
+		},
+		func(id config.ID) (string, error) {
+			value, err := e.auth.Value(ctx, id, e.secrets[id], inputs, "")
+			if err != nil {
+				return "", needsAuth{err}
+			}
+			return value, nil
+		},
+	)
+}
+
+// fail must be called with e.mu held.
+func (e *Endpoint) fail(err error) {
+	if e.closed {
+		return
+	}
+	e.state = "failed"
+	if errors.As(err, &needsAuth{}) {
+		e.state = "needs_auth"
+	}
+	e.problem = err.Error()
 }
 
 func (e *Endpoint) Close() {
@@ -190,13 +240,13 @@ func (e *Endpoint) release(stdio []*stdioSession, remote []*remoteSession) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			e.deleteUpstream(s.upstreamID, s.credential)
+			e.deleteUpstream(s.upstreamID, s.credential, s.headers)
 		}()
 	}
 	wg.Wait()
 }
 
-func (e *Endpoint) deleteUpstream(upstreamID, credential string) {
+func (e *Endpoint) deleteUpstream(upstreamID, credential string, headers map[string]string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, e.definition.URL, nil)
@@ -204,7 +254,7 @@ func (e *Endpoint) deleteUpstream(upstreamID, credential string) {
 		return
 	}
 	req.Header.Set("Mcp-Session-Id", upstreamID)
-	for name, value := range e.definition.Headers {
+	for name, value := range headers {
 		req.Header.Set(name, value)
 	}
 	if credential != "" {
@@ -377,7 +427,7 @@ func (e *Endpoint) openStdio(w http.ResponseWriter) (string, *stdioSession) {
 	if len(e.sessions)+e.starting >= maxSessions {
 		e.mu.Unlock()
 		go e.release(idleStdio, idleRemote)
-		http.Error(w, "too many sessions for this connection", http.StatusTooManyRequests)
+		http.Error(w, "too many sessions for this MCP server", http.StatusTooManyRequests)
 		return "", nil
 	}
 	e.starting++
@@ -396,26 +446,20 @@ func (e *Endpoint) openStdio(w http.ResponseWriter) (string, *stdioSession) {
 			http.Error(w, "launch ended", http.StatusUnauthorized)
 			return "", nil
 		}
-		if errors.Is(err, errNeedsAuth) {
-			e.state = "needs_auth"
-		} else {
-			e.state = "failed"
-		}
+		e.fail(err)
 		http.Error(
 			w,
-			"upstream connection failed; check connection command and credential source",
+			"upstream connection failed; check the MCP server command and credential source",
 			http.StatusBadGateway,
 		)
 		return "", nil
 	}
 	select {
 	case <-s.ended:
-		if !e.closed {
-			e.state = "failed"
-		}
+		e.fail(errors.New("upstream process exited during startup"))
 		http.Error(
 			w,
-			"upstream connection failed; check connection command and credential source",
+			"upstream connection failed; check the MCP server command and credential source",
 			http.StatusBadGateway,
 		)
 		return "", nil
@@ -426,14 +470,14 @@ func (e *Endpoint) openStdio(w http.ResponseWriter) (string, *stdioSession) {
 		if e.closed {
 			http.Error(w, "launch ended", http.StatusUnauthorized)
 		} else {
-			http.Error(w, "connection was reset; retry", http.StatusServiceUnavailable)
+			http.Error(w, "MCP server was reset; retry", http.StatusServiceUnavailable)
 		}
 		return "", nil
 	}
 	s.active = 1
 	s.lastUsed = time.Now()
 	e.sessions[id] = s
-	e.state = "ready"
+	e.state, e.problem = "ready", ""
 	return id, s
 }
 
@@ -442,16 +486,13 @@ func (e *Endpoint) startStdio(id string, inputs map[string]string) (*stdioSessio
 	cmd := exec.CommandContext(ctx, e.definition.Command[0], e.definition.Command[1:]...)
 	cmd.Dir = e.definition.Cwd
 	cmd.Env = auth.SystemEnvironment()
-	for key, value := range e.definition.Environment {
-		cmd.Env = append(cmd.Env, key+"="+value)
-	}
-	for key, authID := range e.definition.AuthEnvironment {
-		value, err := e.auth.Value(ctx, authID, e.sources[authID], inputs, "")
+	for name, v := range e.definition.Environment {
+		value, err := e.resolve(ctx, fmt.Sprintf("mcp %s environment %s", e.id, name), v, inputs)
 		if err != nil {
 			cancel()
-			return nil, fmt.Errorf("%w: %w", errNeedsAuth, err)
+			return nil, err
 		}
-		cmd.Env = append(cmd.Env, key+"="+value)
+		cmd.Env = append(cmd.Env, name+"="+value)
 	}
 	platform.IsolateOwned(cmd)
 	stdin, err := cmd.StdinPipe()
@@ -587,22 +628,21 @@ func (e *Endpoint) serveRemote(w http.ResponseWriter, r *http.Request) {
 
 	target, _ := url.Parse(e.definition.URL)
 	origin, _ := auth.Origin(e.definition.URL)
-	credential := ""
-	if id := e.definition.Auth; id != "" {
-		value, err := e.auth.Value(r.Context(), id, e.sources[id], inputs, origin)
-		if err != nil {
-			e.mu.Lock()
-			if !e.closed {
-				e.state = "needs_auth"
-			}
-			if initial {
-				forget()
-			}
-			e.mu.Unlock()
-			http.Error(w, "upstream credential unavailable; use weft auth", http.StatusUnauthorized)
-			return
+	// Values resolve per request like the bearer credential, so rotation applies without reconnecting.
+	credential, headers, err := e.remoteCredentials(r.Context(), inputs, origin)
+	if err != nil {
+		e.mu.Lock()
+		e.fail(err)
+		if initial {
+			forget()
 		}
-		credential = value
+		e.mu.Unlock()
+		if errors.As(err, &needsAuth{}) {
+			http.Error(w, "upstream credential unavailable; see agx secret status", http.StatusUnauthorized)
+		} else {
+			http.Error(w, "upstream header unavailable; see agx launch show", http.StatusBadGateway)
+		}
+		return
 	}
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -611,13 +651,15 @@ func (e *Endpoint) serveRemote(w http.ResponseWriter, r *http.Request) {
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
+			// SetURL appends the incoming launch path; the upstream is the configured URL itself.
+			pr.Out.URL.Path, pr.Out.URL.RawPath, pr.Out.URL.RawQuery = target.Path, target.RawPath, target.RawQuery
 			pr.Out.Host = target.Host
 			pr.Out.Header.Del("Authorization")
 			pr.Out.Header.Del("Proxy-Authorization")
 			pr.Out.Header.Del("Cookie")
 			pr.Out.Header.Del("Origin")
 			pr.Out.Header.Del("Mcp-Session-Id")
-			for name, value := range e.definition.Headers {
+			for name, value := range headers {
 				pr.Out.Header.Set(name, value)
 			}
 			if credential != "" {
@@ -630,6 +672,13 @@ func (e *Endpoint) serveRemote(w http.ResponseWriter, r *http.Request) {
 		ModifyResponse: func(resp *http.Response) error {
 			resp.Header.Del("Set-Cookie")
 			resp.Header.Del("Location")
+			// Harness credentials never reach the upstream, so its challenge is agx's to answer.
+			challenge := strings.Join(resp.Header.Values("WWW-Authenticate"), ", ")
+			resp.Header.Del("WWW-Authenticate")
+			var unauthorized error
+			if resp.StatusCode == http.StatusUnauthorized {
+				unauthorized = e.unauthorized(resp.Request.Context(), credential, challenge)
+			}
 			success := resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices
 			e.mu.Lock()
 			defer e.mu.Unlock()
@@ -638,7 +687,7 @@ func (e *Endpoint) serveRemote(w http.ResponseWriter, r *http.Request) {
 				// upstream session it created so it is not leaked.
 				if initial && success {
 					if id := resp.Header.Get("Mcp-Session-Id"); id != "" {
-						go e.deleteUpstream(id, credential)
+						go e.deleteUpstream(id, credential, headers)
 					}
 				}
 				if e.closed {
@@ -646,16 +695,23 @@ func (e *Endpoint) serveRemote(w http.ResponseWriter, r *http.Request) {
 				}
 				return errSessionGone
 			}
+			if unauthorized != nil {
+				if initial {
+					forget()
+				}
+				e.fail(unauthorized)
+				return unauthorized
+			}
 			switch {
 			case initial && success:
 				session.upstreamID = resp.Header.Get("Mcp-Session-Id")
-				session.credential = credential
-				e.state = "ready"
+				session.credential, session.headers = credential, headers
+				e.state, e.problem = "ready", ""
 			case initial:
 				forget()
-				e.state = "failed"
+				e.fail(fmt.Errorf("upstream rejected initialization with HTTP %d", resp.StatusCode))
 			case success:
-				session.credential = credential
+				session.credential, session.headers = credential, headers
 			case resp.StatusCode == http.StatusNotFound && upstreamID != "":
 				// The upstream expired its session; the client must initialize again.
 				forget()
@@ -675,11 +731,12 @@ func (e *Endpoint) serveRemote(w http.ResponseWriter, r *http.Request) {
 			case errors.Is(err, errSessionGone):
 				http.Error(w, "session not found for this endpoint", http.StatusNotFound)
 				return
+			case errors.As(err, &needsAuth{}):
+				http.Error(w, err.Error(), http.StatusUnauthorized)
+				return
 			}
 			e.mu.Lock()
-			if !e.closed {
-				e.state = "failed"
-			}
+			e.fail(errors.New("upstream MCP unavailable"))
 			if initial {
 				forget()
 			}
@@ -694,4 +751,71 @@ func (e *Endpoint) serveRemote(w http.ResponseWriter, r *http.Request) {
 		forget()
 		e.mu.Unlock()
 	}
+}
+
+func (e *Endpoint) remoteCredentials(
+	ctx context.Context,
+	inputs map[string]string,
+	origin string,
+) (string, map[string]string, error) {
+	credential := ""
+	if id := e.definition.Auth.Secret; id != "" {
+		secret := e.secrets[id]
+		value, err := e.auth.Value(ctx, id, secret, inputs, origin)
+		switch {
+		case err == nil:
+			credential = value
+		case secret.Implicit && errors.Is(err, auth.ErrNoCredential):
+			// On-demand OAuth sends no credential until the server asks for a login.
+		default:
+			return "", nil, needsAuth{fmt.Errorf("mcp %s auth: %w", e.id, err)}
+		}
+	}
+	headers := map[string]string{}
+	for name, v := range e.definition.Headers {
+		target := fmt.Sprintf("mcp %s header %s", e.id, name)
+		value, err := e.resolve(ctx, target, v, inputs)
+		if err != nil {
+			return "", nil, err
+		}
+		if !validHeaderValue(value) {
+			return "", nil, fmt.Errorf("%s: %s resolves to an invalid header value", target, v)
+		}
+		headers[name] = value
+	}
+	return credential, headers, nil
+}
+
+// unauthorized classifies an upstream 401 as needing authorization when the server has an auth
+// secret. On-demand OAuth applies only once the server advertises OAuth discovery; otherwise,
+// as for servers without auth, the 401 is an ordinary upstream failure and nil is returned.
+func (e *Endpoint) unauthorized(ctx context.Context, credential, challenge string) error {
+	id := e.definition.Auth.Secret
+	if id == "" {
+		return nil
+	}
+	secret := e.secrets[id]
+	if secret.Kind != "oauth" {
+		return needsAuth{fmt.Errorf("MCP server %s rejected the credential of secret %s", e.id, id)}
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	err := e.auth.RequireLogin(ctx, id, secret, e.definition.URL, challenge)
+	if err != nil && secret.Implicit && credential == "" {
+		return nil
+	}
+	if credential == "" {
+		return needsAuth{fmt.Errorf("MCP server %s requires login; run agx secret login %s", e.id, id)}
+	}
+	return needsAuth{fmt.Errorf("MCP server %s rejected its login; run agx secret login %s", e.id, id)}
+}
+
+// validHeaderValue follows RFC 9110 field values: no control characters except tab.
+func validHeaderValue(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if c := value[i]; c < ' ' && c != '\t' || c == 0x7f {
+			return false
+		}
+	}
+	return true
 }

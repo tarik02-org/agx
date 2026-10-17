@@ -1,20 +1,22 @@
 # Management API
 
-The contract is [weft.v1](../api/weft/v1/weft.proto), exposed through Connect over
+The contract is [agx.v1](../api/agx/v1/agx.proto), exposed through Connect over
 authenticated loopback HTTP. Generated Go/Connect and TypeScript bindings are included; `buf generate`
 regenerates them. The MCP
 endpoints are separate native MCP interfaces, not methods on these services.
-The Go module path is `weft`.
+The Go module path is `github.com/tarik02/agx`.
 
 ## Services
 
 - `ConfigurationService`: validate the daemon's configured root and resolve a
-  directory, including provenance and required environment names.
+  directory for an optional harness, including provenance and required
+  environment names.
 - `PackageService`: start install/update operations and watch their progress.
   The CLI installs in-process instead; both paths share the installer lock.
 - `LaunchService`: prepare, renew, finish, and administratively revoke a launch.
-- `RuntimeService`: inspect/watch redacted daemon, launch, and connection state.
-- `AuthService`: start OAuth, set a stored secret, inspect auth, and log out.
+- `RuntimeService`: inspect/watch redacted daemon, launch, and MCP server state.
+- `SecretService`: log in with OAuth, set a keychain secret, inspect secret
+  state, and log out.
 
 There is deliberately no client-facing `GetCredential` or `CallTool` RPC.
 Upstream credentials and tool execution remain inside the daemon.
@@ -22,8 +24,10 @@ Upstream credentials and tool execution remain inside the daemon.
 ## Launch flow
 
 Resolve the working directory locally or through the daemon. `PrepareLaunch`
-supplies the expected snapshot, harness, original native arguments, and only
-declared environment inputs. It returns a complete executable/argv/cwd plan,
+supplies the expected snapshot, harness name, original native arguments, and only
+declared environment inputs. The daemon looks up the harness definition, classifies
+the mode, rejects passthrough invocations, and resolves injected values; a missing
+input fails preparation with its configuration location. It returns a complete executable/argv/cwd plan,
 environment changes containing the harness grant, a separate lifecycle token,
 and the renewal interval.
 Treat the response as sensitive; never expose it through ordinary JSON inspection.
@@ -50,10 +54,16 @@ Package-operation watches likewise emit current state through a terminal outcome
 Losing an observer does not cancel package installation. Daemon restart may abort
 operations; atomic cache/lock writes allow a safe retry.
 
-OAuth startup accepts the canonical directory and expected snapshot. It returns the attempt and auth-source IDs plus an authorization URL.
-Clients open the URL and observe that auth source through `GetAuthStatus`; the
-daemon receives the callback. Reuse or reject a pending attempt for the same
-credential rather than racing browser flows. Redact authorization URLs from logs.
+`Login` is server-streaming and takes a secret ID: a top-level OAuth secret or an
+MCP server with inline or on-demand OAuth. Its first message, `started`, carries
+the authorization URL, its expiry, and the MCP server whose URL is authorized;
+its last, `finished`, reports success, failure with a redacted reason, or expiry.
+Clients open the URL and keep the stream open; the daemon receives the callback.
+Concurrent logins for the same secret share one attempt. Ending the stream early
+withdraws the caller, and the daemon cancels the attempt once no caller waits,
+freeing its state; a later callback gets an error page and changes nothing. A
+stopping daemon ends the stream with `Unavailable`. Like `WatchRuntime`, it
+requires management authorization. Redact authorization URLs from logs.
 
 Use standard Connect codes: `InvalidArgument` for malformed inputs,
 `Unauthenticated` for missing/expired authorization, `PermissionDenied` for an

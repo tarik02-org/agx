@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package weft.v1;
+package agx.v1;
 
-option go_package = "github.com/tarik02/weft/gen/weft/v1;weftv1";
+option go_package = "github.com/tarik02/agx/gen/agx/v1;agxv1";
 
 import "google/protobuf/timestamp.proto";
 
@@ -30,25 +30,21 @@ service RuntimeService {
   rpc WatchRuntime(WatchRuntimeRequest) returns (stream WatchRuntimeResponse);
 }
 
-service AuthService {
-  rpc BeginOAuthLogin(BeginOAuthLoginRequest) returns (BeginOAuthLoginResponse);
+service SecretService {
+  // Starts an OAuth login, or joins the one pending for the secret, and reports it until it
+  // finishes. Ending the stream early withdraws this caller; the attempt is cancelled once no
+  // caller waits for it.
+  rpc Login(LoginRequest) returns (stream LoginResponse);
   rpc SetSecret(SetSecretRequest) returns (SetSecretResponse);
-  rpc GetAuthStatus(GetAuthStatusRequest) returns (GetAuthStatusResponse);
+  rpc GetSecretStatus(GetSecretStatusRequest) returns (GetSecretStatusResponse);
   rpc Logout(LogoutRequest) returns (LogoutResponse);
-}
-
-enum Harness {
-  HARNESS_UNSPECIFIED = 0;
-  HARNESS_CODEX = 1;
-  HARNESS_CLAUDE = 2;
-  HARNESS_PI = 3;
 }
 
 message ResourceRef {
   oneof resource {
     string skill_id = 1;
     string instructions_id = 2;
-    string connection_id = 3;
+    string mcp_id = 3;
   }
 }
 
@@ -75,6 +71,8 @@ message Snapshot {
   string directory = 2;
   repeated ResourceRef resources = 3;
   repeated string required_environment = 4;
+  // Empty when resolved without a harness.
+  string harness = 5;
 }
 
 message ResolutionStep {
@@ -87,6 +85,8 @@ message ResolutionStep {
   SourceLocation source = 2;
   string scope_directory = 3;
   repeated string bundle_chain = 4;
+  // Harness whose own add/exclude produced the step; empty for directory scopes.
+  string harness = 5;
 }
 
 message ResourceTrace {
@@ -101,6 +101,8 @@ message ValidateResponse {
 
 message ResolveRequest {
   string directory = 1;
+  // Built-in or defined harness name; empty applies only harness-independent rules.
+  string harness = 2;
 }
 message ResolveResponse {
   Snapshot snapshot = 1;
@@ -149,7 +151,8 @@ message PrepareLaunchRequest {
   string request_id = 1;
   string snapshot_id = 2;
   string directory = 3;
-  Harness harness = 4;
+  // Built-in or defined harness name. The daemon resolves its definition.
+  string harness = 4;
   // Sensitive: native arguments may contain prompt bodies or credentials.
   repeated string native_arguments = 5;
   // Sensitive: only names declared by the expected snapshot are accepted.
@@ -183,9 +186,11 @@ message Launch {
   string id = 1;
   string snapshot_id = 2;
   string directory = 3;
-  Harness harness = 4;
+  string harness = 4;
   State state = 5;
   google.protobuf.Timestamp expires_at = 6;
+  // Invocation mode classified from the native arguments, such as interactive or exec.
+  string mode = 7;
 }
 
 // Renew/finish use lifecycle authorization metadata, not management/MCP grants.
@@ -212,7 +217,7 @@ message RevokeLaunchRequest {
 }
 message RevokeLaunchResponse {}
 
-message ConnectionRuntime {
+message McpRuntime {
   enum State {
     STATE_UNSPECIFIED = 0;
     STATE_CONNECTING = 1;
@@ -221,7 +226,7 @@ message ConnectionRuntime {
     STATE_FAILED = 4;
   }
   string launch_id = 1;
-  string connection_id = 2;
+  string mcp_id = 2;
   State state = 3;
   repeated Diagnostic diagnostics = 4;
 }
@@ -230,7 +235,7 @@ message RuntimeView {
   string daemon_instance_id = 1;
   string version = 2;
   repeated Launch launches = 3;
-  repeated ConnectionRuntime connections = 4;
+  repeated McpRuntime mcp_servers = 4;
   repeated Diagnostic diagnostics = 5;
 }
 
@@ -243,34 +248,51 @@ message WatchRuntimeResponse {
   RuntimeView runtime = 1;
 }
 
-message BeginOAuthLoginRequest {
-  string request_id = 1;
-  string snapshot_id = 2;
-  string connection_id = 3;
-  string directory = 4;
+message LoginRequest {
+  // A top-level OAuth secret, or the ID of an MCP server whose auth is inline or implicit.
+  string secret_id = 1;
 }
-message BeginOAuthLoginResponse {
-  string attempt_id = 1;
-  string authorization_url = 2;
-  google.protobuf.Timestamp expires_at = 3;
-  string auth_id = 4;
+message LoginResponse {
+  oneof event {
+    LoginStarted started = 1;
+    LoginFinished finished = 2;
+  }
+}
+// The first event: open authorization_url in a browser on this machine before expires_at.
+message LoginStarted {
+  string authorization_url = 1;
+  google.protobuf.Timestamp expires_at = 2;
+  // The MCP server whose URL the login authorizes.
+  string mcp_id = 3;
+}
+// The last event; the stream then ends.
+message LoginFinished {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    OUTCOME_SUCCEEDED = 1;
+    OUTCOME_FAILED = 2;
+    OUTCOME_EXPIRED = 3;
+  }
+  Outcome outcome = 1;
+  // Redacted reason for a failure.
+  string message = 2;
 }
 
 message SetSecretRequest {
-  string auth_id = 1;
+  string secret_id = 1;
   // Sensitive: credential value; must not enter RPC logs or telemetry.
-  bytes secret = 2;
+  bytes value = 2;
 }
 message SetSecretResponse {}
 
-message GetAuthStatusRequest {
-  // Empty selects all configured auth sources.
-  string auth_id = 1;
+message GetSecretStatusRequest {
+  // Empty selects all configured secrets, except on-demand OAuth no server has asked for yet.
+  string secret_id = 1;
 }
-message GetAuthStatusResponse {
-  repeated AuthStatus statuses = 1;
+message GetSecretStatusResponse {
+  repeated SecretStatus statuses = 1;
 }
-message AuthStatus {
+message SecretStatus {
   enum State {
     STATE_UNSPECIFIED = 0;
     STATE_UNCONFIGURED = 1;
@@ -279,13 +301,19 @@ message AuthStatus {
     STATE_NEEDS_LOGIN = 4;
     STATE_UNAVAILABLE = 5;
   }
-  string auth_id = 1;
+  string secret_id = 1;
   State state = 2;
   google.protobuf.Timestamp expires_at = 3;
   repeated Diagnostic diagnostics = 4;
+  // environment, daemon_environment, command, keychain, or oauth.
+  string kind = 5;
+  // Set for a secret declared inline in this MCP server's auth; equal to secret_id.
+  string mcp_id = 6;
+  // OAuth an HTTP MCP server without auth uses once the server asks for it.
+  bool on_demand = 7;
 }
 
 message LogoutRequest {
-  string auth_id = 1;
+  string secret_id = 1;
 }
 message LogoutResponse {}

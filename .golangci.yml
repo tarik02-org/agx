@@ -35,7 +35,7 @@ formatters:
       max-len: 120
     goimports:
       local-prefixes:
-        - github.com/tarik02/weft
+        - github.com/tarik02/agx
   exclusions:
     generated: strict
     paths:

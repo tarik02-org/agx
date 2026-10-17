@@ -4,7 +4,7 @@
 }:
 
 buildGoModule (finalAttrs: {
-  pname = "weft";
+  pname = "agx";
   version = "0.1.0";
 
   src = lib.fileset.toSource {
@@ -13,32 +13,32 @@ buildGoModule (finalAttrs: {
       ./go.mod
       ./go.sum
       ./cmd
-      ./gen/weft
+      ./gen/agx
       ./internal
     ];
   };
 
-  vendorHash = "sha256-tT0ytn5Mvb0PCDFFHFZx30Pzbm2YCDSmDHTYeAkWv3w=";
+  vendorHash = "sha256-oy1WcSTgo1V6TLl1pKKlTTMtX3P7shlNdUldk0cdHVY=";
 
-  subPackages = [ "cmd/weft" ];
+  subPackages = [ "cmd/agx" ];
 
   ldflags = [
     "-s"
     "-w"
-    "-X github.com/tarik02/weft/internal/daemon.Version=${finalAttrs.version}"
+    "-X github.com/tarik02/agx/internal/daemon.Version=${finalAttrs.version}"
   ];
 
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
-    "$out/bin/weft" --version >/dev/null
+    "$out/bin/agx" --version >/dev/null
     runHook postInstallCheck
   '';
 
   meta = {
-    description = "Directory-scoped skills, MCP connections, and instructions for coding agents";
+    description = "Directory-scoped skills, MCP servers, and instructions for coding agents";
     license = lib.licenses.mit;
-    mainProgram = "weft";
+    mainProgram = "agx";
     platforms = lib.platforms.linux ++ lib.platforms.darwin;
   };
 })

@@ -1,6 +1,6 @@
-# Weft
+# agx
 
-Weft composes reusable agent resources according to the directory where a
+agx composes reusable agent resources according to the directory where a
 harness runs.
 
 ## Language
@@ -20,26 +20,35 @@ supporting scripts, references, and assets.
 **Package**: A versioned distribution unit containing skills, instructions,
 MCP definitions, or bundle definitions.
 
-**Bundle**: A named selection of skills, MCP connections, and instructions.
+**Bundle**: A named selection of skills, MCP servers, and instructions.
 
-**Connection**: A named association between an MCP server and the account and
-settings used to access it.
+**MCP server**: A named entry in the `mcp` configuration section: an MCP server
+together with the account and settings used to reach it, so `github-work` and
+`github-personal` may point at the same server.
+_Avoid_: Connection
 
 **Snapshot**: The resolved selection of resources and settings for a working
 directory at launch time.
 
 **Launch**: One running harness instance associated with a snapshot.
 
-**Launch grant**: Authorization to use the selected MCP connections during a launch.
+**Launch grant**: Authorization to use the selected MCP servers during a launch.
 
 **Lifecycle credential**: Authorization held by the wrapper to renew or finish
 one launch, separate from the harness's launch grant.
 
-**Secret**: A named definition of how a credential is obtained, used by a
-connection's `auth` field or injected with `!secret`.
+**Secret**: A definition of how a credential is obtained: under `secrets`, shared
+through `!secret`, or inline in an MCP server's `auth`, where it belongs to that
+entry and takes its ID.
 _Avoid_: Auth source
 
-**Harness**: A coding agent Weft launches. Built-ins (Codex, Claude Code, Pi) have
+**On-demand OAuth**: The OAuth secret of an HTTP MCP server without `auth`, which
+needs a login only once the server answers with an authorization challenge.
+
+**Injected value**: A configuration value written with `!env`, `!file`, or
+`!secret` and resolved at launch; snapshots and explanations keep only the tag.
+
+**Harness**: A coding agent agx launches. Built-ins (Codex, Claude Code, Pi) have
 native adapters; a harness definition extends one with arguments, environment,
 and resource selection.
 

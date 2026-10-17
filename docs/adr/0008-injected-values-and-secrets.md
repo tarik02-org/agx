@@ -1,6 +1,6 @@
 # Inject launch-time values with YAML tags; call credential sources secrets
 
-Status: proposed.
+Status: accepted.
 
 Configuration values that must not live in files, or that depend on the caller,
 use YAML tags resolved at launch:
@@ -13,7 +13,7 @@ env:
   PROMPT: !file ./prompt.txt # file contents, relative to the declaring fragment
 ```
 
-Tags are allowed in harness `env` and `args`, and in connection `environment`
+Tags are allowed in harness `env` and `args`, and in `mcp` `environment`
 and `headers`. `!env` reads the wrapper's environment, which the wrapper forwards
 only for names the snapshot requires. `!file` reads at launch, so edits apply
 without reinstalling. Resolved values never enter snapshots, artifacts, `explain`,
@@ -21,9 +21,19 @@ without reinstalling. Resolved values never enter snapshots, artifacts, `explain
 
 The top-level `auth:` section becomes `secrets:`, matching `!secret`. Secret kinds
 are unchanged: `environment`, `daemon_environment`, `command`, `keychain`, `oauth`.
-An HTTP connection's `auth: <secret>` field stays: OAuth bearer tokens need login
-and refresh, not just a value. The `weft auth` command group becomes `weft secret`
-(`login`, `set`, `status`, `logout`).
+An HTTP MCP server's `auth` field stays: OAuth bearer tokens need login and
+refresh, not just a value. [ADR 0009](0009-inline-mcp-auth-and-interactive-login.md)
+later replaced its bare secret ID with inline secrets and `auth: !secret <id>`.
+The `agx auth` command group becomes `agx secret` (`login`, `set`, `status`,
+`logout`).
+
+The daemon resolves values for managed launches: harness values while preparing
+the launch, stdio MCP server environments when starting an upstream, and HTTP
+headers per request. Passthrough invocations run without the daemon, so the
+wrapper resolves their harness values itself; `environment`, `command`, and
+`keychain` secrets work there, and `daemon_environment` secrets fail. A daemon RPC
+returning secret values was rejected: it would let any management client read
+every secret. OAuth secrets cannot be injected.
 
 `auth_environment` is removed; `environment: {NAME: !secret id}` replaces it.
 Nothing has shipped, so there is no compatibility alias.

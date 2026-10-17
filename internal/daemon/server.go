@@ -21,23 +21,23 @@ import (
 	"github.com/gofrs/flock"
 	"google.golang.org/protobuf/proto"
 
-	v1 "github.com/tarik02/weft/gen/weft/v1"
-	"github.com/tarik02/weft/gen/weft/v1/weftv1connect"
-	"github.com/tarik02/weft/internal/auth"
-	"github.com/tarik02/weft/internal/config"
-	"github.com/tarik02/weft/internal/mcpruntime"
-	"github.com/tarik02/weft/internal/platform"
-	"github.com/tarik02/weft/internal/securefs"
+	v1 "github.com/tarik02/agx/gen/agx/v1"
+	"github.com/tarik02/agx/gen/agx/v1/agxv1connect"
+	"github.com/tarik02/agx/internal/auth"
+	"github.com/tarik02/agx/internal/config"
+	"github.com/tarik02/agx/internal/mcpruntime"
+	"github.com/tarik02/agx/internal/platform"
+	"github.com/tarik02/agx/internal/securefs"
 )
 
-// Version is set at build time with -ldflags "-X weft/internal/daemon.Version=...".
+// Version is set at build time with -ldflags "-X agx/internal/daemon.Version=...".
 var Version = "dev"
 
 // ErrVersionMismatch is returned by ReadDiscovery together with the decoded
 // discovery when the running daemon has a different version.
 var ErrVersionMismatch = errors.New("daemon version mismatch")
 
-// historyRetention keeps ended launches, login requests and finished operations
+// historyRetention keeps ended launches and finished operations
 // around long enough for idempotent replays and status inspection.
 const historyRetention = time.Hour
 
@@ -65,11 +65,6 @@ type prepareRecord struct {
 	response    []byte
 	launchID    string
 }
-type loginRecord struct {
-	fingerprint string
-	response    *v1.BeginOAuthLoginResponse
-	created     time.Time
-}
 
 type operation struct {
 	fingerprint string
@@ -92,7 +87,6 @@ type Server struct {
 	operations   map[string]*operation
 	// operationRequests maps idempotency keys to operations also held in operations.
 	operationRequests map[string]*operation
-	loginRequests     map[string]loginRecord
 	ctx               context.Context
 	cancel            context.CancelFunc
 	stop              chan struct{}
@@ -146,14 +140,13 @@ func Serve(ctx context.Context, paths platform.Paths) error {
 		preparations:      map[string]prepareRecord{},
 		operations:        map[string]*operation{},
 		operationRequests: map[string]*operation{},
-		loginRequests:     map[string]loginRecord{},
 	}
 	s.manager = auth.New(discovery.URL + "/oauth/callback")
 	mux := http.NewServeMux()
 	interceptor := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			if req.Spec().Procedure != weftv1connect.LaunchServiceRenewLaunchProcedure &&
-				req.Spec().Procedure != weftv1connect.LaunchServiceFinishLaunchProcedure {
+			if req.Spec().Procedure != agxv1connect.LaunchServiceRenewLaunchProcedure &&
+				req.Spec().Procedure != agxv1connect.LaunchServiceFinishLaunchProcedure {
 				if !equalBearer(req.Header().Get("Authorization"), discovery.Token) {
 					return nil, rpcError(connect.CodeUnauthenticated, "management credential required")
 				}
@@ -162,15 +155,15 @@ func Serve(ctx context.Context, paths platform.Paths) error {
 		}
 	})
 	opts := []connect.HandlerOption{connect.WithInterceptors(interceptor), connect.WithReadMaxBytes(16 * 1024 * 1024)}
-	path, handler := weftv1connect.NewConfigurationServiceHandler(s, opts...)
+	path, handler := agxv1connect.NewConfigurationServiceHandler(s, opts...)
 	mux.Handle(path, handler)
-	path, handler = weftv1connect.NewPackageServiceHandler(s, opts...)
+	path, handler = agxv1connect.NewPackageServiceHandler(s, opts...)
 	mux.Handle(path, handler)
-	path, handler = weftv1connect.NewLaunchServiceHandler(s, opts...)
+	path, handler = agxv1connect.NewLaunchServiceHandler(s, opts...)
 	mux.Handle(path, handler)
-	path, handler = weftv1connect.NewRuntimeServiceHandler(s, opts...)
+	path, handler = agxv1connect.NewRuntimeServiceHandler(s, opts...)
 	mux.Handle(path, handler)
-	path, handler = weftv1connect.NewAuthServiceHandler(s, opts...)
+	path, handler = agxv1connect.NewSecretServiceHandler(s, opts...)
 	mux.Handle(path, handler)
 	mux.HandleFunc("/launch/", s.serveMCP)
 	mux.HandleFunc("/oauth/callback", s.manager.Callback)
@@ -335,11 +328,6 @@ func (s *Server) prune(now time.Time) {
 			delete(s.preparations, requestID)
 		}
 	}
-	for requestID, record := range s.loginRequests {
-		if record.created.Before(cutoff) {
-			delete(s.loginRequests, requestID)
-		}
-	}
 	for id, op := range s.operations {
 		if !op.finished.IsZero() && op.finished.Before(cutoff) {
 			delete(s.operations, id)
@@ -378,7 +366,7 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	e := l.endpoints[config.ID(parts[1])]
 	s.mu.Unlock()
 	if e == nil {
-		http.Error(w, "connection not selected for launch", http.StatusForbidden)
+		http.Error(w, "MCP server not selected for launch", http.StatusForbidden)
 		return
 	}
 	e.ServeHTTP(w, r)
@@ -386,7 +374,7 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) runtime() *v1.RuntimeView {
 	_, _ = s.reload()
-	type connection struct {
+	type server struct {
 		launchID string
 		id       config.ID
 		endpoint *mcpruntime.Endpoint
@@ -398,39 +386,41 @@ func (s *Server) runtime() *v1.RuntimeView {
 			view.Diagnostics,
 			diagnostic(
 				"invalid_config",
-				"Configuration reload failed; active launches retain their snapshots. Run weft config validate.",
+				"Configuration reload failed; active launches retain their snapshots. Run agx config validate.",
 			),
 		)
 	}
-	connections := []connection{}
+	servers := []server{}
 	for _, l := range s.launches {
 		view.Launches = append(view.Launches, proto.Clone(l.view).(*v1.Launch))
 		if active(l.view.State) {
 			for id, e := range l.endpoints {
-				connections = append(connections, connection{launchID: l.view.Id, id: id, endpoint: e})
+				servers = append(servers, server{launchID: l.view.Id, id: id, endpoint: e})
 			}
 		}
 	}
 	s.mu.Unlock()
-	for _, c := range connections {
-		state := v1.ConnectionRuntime_STATE_CONNECTING
-		switch c.endpoint.State() {
+	for _, c := range servers {
+		state := v1.McpRuntime_STATE_CONNECTING
+		current, problem := c.endpoint.State()
+		switch current {
 		case "ready":
-			state = v1.ConnectionRuntime_STATE_READY
+			state = v1.McpRuntime_STATE_READY
 		case "needs_auth":
-			state = v1.ConnectionRuntime_STATE_NEEDS_AUTH
+			state = v1.McpRuntime_STATE_NEEDS_AUTH
 		case "failed":
-			state = v1.ConnectionRuntime_STATE_FAILED
+			state = v1.McpRuntime_STATE_FAILED
 		}
-		view.Connections = append(
-			view.Connections,
-			&v1.ConnectionRuntime{LaunchId: c.launchID, ConnectionId: string(c.id), State: state},
-		)
+		runtime := &v1.McpRuntime{LaunchId: c.launchID, McpId: string(c.id), State: state}
+		if problem != "" {
+			runtime.Diagnostics = append(runtime.Diagnostics, diagnostic("mcp_"+current, problem))
+		}
+		view.McpServers = append(view.McpServers, runtime)
 	}
 	sort.Slice(view.Launches, func(i, j int) bool { return view.Launches[i].Id < view.Launches[j].Id })
-	sort.Slice(view.Connections, func(i, j int) bool {
-		a, b := view.Connections[i], view.Connections[j]
-		return a.LaunchId+"/"+a.ConnectionId < b.LaunchId+"/"+b.ConnectionId
+	sort.Slice(view.McpServers, func(i, j int) bool {
+		a, b := view.McpServers[i], view.McpServers[j]
+		return a.LaunchId+"/"+a.McpId < b.LaunchId+"/"+b.McpId
 	})
 	return view
 }
@@ -446,7 +436,7 @@ func (s *Server) Validate(
 			out.Diagnostics,
 			diagnostic(
 				"invalid_config",
-				"Configuration is invalid; run weft config validate for local source diagnostics.",
+				"Configuration is invalid; run agx config validate for local source diagnostics.",
 			),
 		)
 	}
@@ -459,14 +449,19 @@ func (s *Server) Resolve(
 ) (*connect.Response[v1.ResolveResponse], error) {
 	c, err := s.reload()
 	if err != nil {
-		return nil, rpcError(connect.CodeFailedPrecondition, "configuration invalid; run weft config validate")
+		return nil, rpcError(connect.CodeFailedPrecondition, "configuration invalid; run agx config validate")
 	}
 	if req.Msg.Directory == "" || !filepath.IsAbs(req.Msg.Directory) {
 		return nil, rpcError(connect.CodeInvalidArgument, "directory must be absolute")
 	}
-	snapshot, err := c.Resolve(req.Msg.Directory)
+	if req.Msg.Harness != "" {
+		if _, err := c.Harness(req.Msg.Harness); err != nil {
+			return nil, rpcError(connect.CodeInvalidArgument, err.Error())
+		}
+	}
+	snapshot, err := c.Resolve(req.Msg.Directory, req.Msg.Harness)
 	if err != nil {
-		return nil, rpcError(connect.CodeFailedPrecondition, "cannot resolve directory; run weft explain locally")
+		return nil, rpcError(connect.CodeFailedPrecondition, "cannot resolve directory; run agx explain locally")
 	}
 	return connect.NewResponse(resolveMessage(snapshot)), nil
 }
@@ -510,7 +505,12 @@ func (s *Server) WatchRuntime(
 
 func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 	out := &v1.ResolveResponse{
-		Snapshot: &v1.Snapshot{Id: s.ID, Directory: s.Directory, RequiredEnvironment: s.RequiredEnvironment},
+		Snapshot: &v1.Snapshot{
+			Id:                  s.ID,
+			Directory:           s.Directory,
+			Harness:             s.Harness,
+			RequiredEnvironment: s.RequiredEnvironment,
+		},
 	}
 	resource := func(r config.Resource) *v1.ResourceRef {
 		out := &v1.ResourceRef{}
@@ -519,8 +519,8 @@ func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 			out.Resource = &v1.ResourceRef_SkillId{SkillId: string(r.ID)}
 		case "instructions":
 			out.Resource = &v1.ResourceRef_InstructionsId{InstructionsId: string(r.ID)}
-		case "connection":
-			out.Resource = &v1.ResourceRef_ConnectionId{ConnectionId: string(r.ID)}
+		case "mcp":
+			out.Resource = &v1.ResourceRef_McpId{McpId: string(r.ID)}
 		}
 		return out
 	}
@@ -548,6 +548,7 @@ func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 						Column: uint32(step.Source.Column),
 					},
 					ScopeDirectory: step.Directory,
+					Harness:        step.Harness,
 					BundleChain:    chain,
 				},
 			)
@@ -564,7 +565,7 @@ func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 	var d Discovery
 	b, err := os.ReadFile(filepath.Join(paths.State, "daemon.json"))
 	if err != nil {
-		return d, fmt.Errorf("daemon unavailable; run weft daemon start")
+		return d, fmt.Errorf("daemon unavailable; run agx daemon start")
 	}
 	if err := json.Unmarshal(b, &d); err != nil {
 		return d, fmt.Errorf("invalid daemon discovery; restart the daemon")

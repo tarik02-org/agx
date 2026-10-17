@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,11 +17,11 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/pelletier/go-toml/v2"
 
-	"github.com/tarik02/weft/internal/config"
-	"github.com/tarik02/weft/internal/securefs"
+	"github.com/tarik02/agx/internal/config"
+	"github.com/tarik02/agx/internal/securefs"
 )
 
-const GrantEnvironment = "WEFT_MCP_GRANT"
+const GrantEnvironment = "AGX_MCP_GRANT"
 
 type Plan struct {
 	Executable  string
@@ -145,66 +146,162 @@ func Directory(name string, args []string, cwd string) (string, []string, error)
 	return dir, rewritten, nil
 }
 
-func Passthrough(name string, args []string) bool {
+// Mode classifies a native invocation of a built-in harness. Help/version probes and
+// non-session commands are passthrough: they run without a managed launch.
+func Mode(builtin string, args []string) string {
 	for _, a := range args {
 		if a == "--" {
 			break
 		}
 		switch a {
 		case "--help", "-h", "--version", "-V":
-			return true
+			return config.ModePassthrough
 		case "-v":
-			if name == "pi" {
-				return true
+			if builtin == "claude" || builtin == "pi" {
+				return config.ModePassthrough
 			}
 		}
 	}
-	if len(args) == 0 {
-		return false
+	switch builtin {
+	case "codex":
+		return codexMode(args)
+	case "claude":
+		return claudeMode(args)
+	case "pi":
+		return piMode(args)
 	}
-	commands := map[string][]string{
-		"codex": {
-			"login",
-			"logout",
-			"plugin",
-			"mcp",
-			"completion",
-			"update",
-			"doctor",
-			"features",
-			"help",
-			"debug",
-			"sandbox",
-			"apply",
-			"cloud",
-			"exec-server",
-		},
-		"claude": {"auth", "plugin", "plugins", "mcp", "doctor", "install", "update", "upgrade", "setup-token", "help"},
-		"pi":     {"install", "remove", "uninstall", "update", "list", "config", "auth", "mcp"},
-	}
-	for _, cmd := range commands[name] {
-		if args[0] == cmd {
-			return true
-		}
-	}
-	if name == "codex" && len(args) > 1 && args[0] == "app-server" && args[1] != "--stdio" &&
-		!strings.HasPrefix(args[1], "-") {
-		return true
-	}
-	return false
+	return ""
 }
 
-func Build(s *config.Snapshot, harness, cache, base, grant string, endpoints []Endpoint, args []string) (Plan, error) {
-	executable, err := FindExecutable(harness, s.Config.Harnesses[harness].Executable)
+// codexValueFlags are global options taking a separate value, skipped to find the subcommand.
+var codexValueFlags = []string{
+	"-c", "--config", "--enable", "--disable", "--remote", "--remote-auth-token-env", "-i", "--image",
+	"-m", "--model", "--local-provider", "-p", "--profile", "-s", "--sandbox", "-C", "--cd", "--add-dir",
+	"-a", "--ask-for-approval",
+}
+
+func codexMode(args []string) string {
+	i := 0
+	for i < len(args) && strings.HasPrefix(args[i], "-") && args[i] != "-" {
+		if args[i] == "--" {
+			return config.ModeInteractive
+		}
+		if slices.Contains(codexValueFlags, args[i]) {
+			i++
+		}
+		i++
+	}
+	if i >= len(args) {
+		return config.ModeInteractive
+	}
+	switch args[i] {
+	case "exec", "e", "review":
+		return config.ModeExec
+	case "resume", "fork":
+		return config.ModeResume
+	case "app-server":
+		// Its subcommands (daemon, proxy, generate-ts, ...) manage or describe the server instead of serving.
+		if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+			return config.ModePassthrough
+		}
+		return config.ModeAppServer
+	case "login", "logout", "plugin", "mcp", "completion", "update", "doctor", "features", "help", "debug",
+		"sandbox", "apply", "a", "cloud", "exec-server", "agents", "remote-control", "app", "queue", "archive",
+		"unarchive", "delete", "migrate-rollouts":
+		return config.ModePassthrough
+	}
+	return config.ModeInteractive
+}
+
+func claudeMode(args []string) string {
+	if len(args) > 0 {
+		switch args[0] {
+		case "auth", "plugin", "plugins", "mcp", "doctor", "install", "update", "upgrade", "setup-token", "help",
+			"agents", "attach", "auto-mode", "gateway", "import", "logs", "purge", "respawn", "rm", "stop", "kill",
+			"ultrareview":
+			return config.ModePassthrough
+		}
+	}
+	mode := config.ModeInteractive
+	for _, a := range args {
+		if a == "--" {
+			break
+		}
+		name, _, _ := strings.Cut(a, "=")
+		switch name {
+		case "-p", "--print":
+			// Print output and its flags apply even when a print run resumes a session.
+			return config.ModePrint
+		case "-r", "--resume", "-c", "--continue", "--from-pr", "--teleport":
+			mode = config.ModeResume
+		}
+	}
+	return mode
+}
+
+func piMode(args []string) string {
+	if len(args) > 0 {
+		switch args[0] {
+		case "install", "remove", "uninstall", "update", "list", "config", "auth", "mcp":
+			return config.ModePassthrough
+		}
+	}
+	mode := config.ModeInteractive
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			break
+		}
+		name, value, inline := strings.Cut(a, "=")
+		switch name {
+		case "--list-models", "--export":
+			return config.ModePassthrough
+		case "-p", "--print":
+			if mode != config.ModeRPC {
+				mode = config.ModePrint
+			}
+		case "--mode":
+			if !inline && i+1 < len(args) {
+				i++
+				value = args[i]
+			}
+			switch value {
+			case "rpc":
+				mode = config.ModeRPC
+			case "json":
+				if mode != config.ModeRPC {
+					mode = config.ModePrint
+				}
+			}
+		}
+	}
+	return mode
+}
+
+// Build composes argv as agx's own prefix, the definition's resolved groups, then native args.
+func Build(
+	s *config.Snapshot,
+	h config.ResolvedHarness,
+	harnessArgs []string,
+	harnessEnv map[string]string,
+	cache, base, grant string,
+	endpoints []Endpoint,
+	args []string,
+) (Plan, error) {
+	executable, err := FindExecutable(h.Builtin, h.Executable)
 	if err != nil {
 		return Plan{}, err
 	}
 	plan := Plan{
 		Executable:  executable,
 		Directory:   s.Directory,
-		Environment: map[string]string{GrantEnvironment: grant},
-		Unset:       []string{"WEFT_MANAGEMENT_TOKEN", "WEFT_LIFECYCLE_TOKEN"},
+		Environment: map[string]string{},
+		Unset:       []string{"AGX_MANAGEMENT_TOKEN", "AGX_LIFECYCLE_TOKEN"},
 	}
+	for name, value := range harnessEnv {
+		plan.Environment[name] = value
+	}
+	plan.Environment[GrantEnvironment] = grant
 	root, err := artifacts(s, cache)
 	if err != nil {
 		return Plan{}, err
@@ -224,7 +321,7 @@ func Build(s *config.Snapshot, harness, cache, base, grant string, endpoints []E
 			"headers": map[string]string{"Authorization": "Bearer ${" + GrantEnvironment + "}"},
 		}
 	}
-	switch harness {
+	switch h.Builtin {
 	case "codex":
 		// Codex has no file-based developer instructions (model_instructions_file replaces the
 		// base prompt instead), so they travel in argv and replace a configured value.
@@ -255,12 +352,12 @@ func Build(s *config.Snapshot, harness, cache, base, grant string, endpoints []E
 			prefix = append(
 				prefix,
 				"-c",
-				`plugins.`+name+"@weft-managed"+`.enabled=`+strconv.FormatBool(selected[name]),
+				`plugins.`+name+"@agx-managed"+`.enabled=`+strconv.FormatBool(selected[name]),
 			)
 		}
 		for name := range selected {
 			if !known[name] {
-				return Plan{}, fmt.Errorf("selected skill plugin is not installed; run weft install")
+				return Plan{}, fmt.Errorf("selected skill plugin is not installed; run agx install")
 			}
 		}
 		for _, endpoint := range endpoints {
@@ -313,12 +410,13 @@ func Build(s *config.Snapshot, harness, cache, base, grant string, endpoints []E
 			prefix = append(prefix, "--extension", extension)
 		}
 	default:
-		return Plan{}, fmt.Errorf("unsupported harness %q", harness)
+		return Plan{}, fmt.Errorf("unsupported harness %q", h.Builtin)
 	}
+	prefix = append(prefix, harnessArgs...)
 	prefix = append(prefix, args...)
 	plan.Arguments = prefix
 	// Shell-provided upstream secrets have reached the daemon; don't leak them into the harness.
-	plan.Unset = append(plan.Unset, s.RequiredEnvironment...)
+	plan.Unset = append(plan.Unset, s.MCPEnvironment()...)
 	return plan, nil
 }
 
@@ -350,7 +448,7 @@ func skillName(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return "weft-" + hash[:24], nil
+	return "agx-" + hash[:24], nil
 }
 
 func readCatalog(cache string) (catalog, error) {
@@ -386,7 +484,7 @@ func artifacts(s *config.Snapshot, cache string) (string, error) {
 	}
 	if err := securefs.WriteJSON(
 		filepath.Join(plugin, ".claude-plugin", "plugin.json"),
-		map[string]string{"name": "weft-managed", "version": "1.0.0"},
+		map[string]string{"name": "agx-managed", "version": "1.0.0"},
 	); err != nil {
 		return "", err
 	}
@@ -413,7 +511,7 @@ func artifacts(s *config.Snapshot, cache string) (string, error) {
 		return "", err
 	}
 	// Detect edits during compilation instead of caching content under the wrong snapshot ID.
-	check, err := s.Config.Resolve(s.Directory)
+	check, err := s.Config.Resolve(s.Directory, s.Harness)
 	if err != nil {
 		return "", err
 	}
@@ -433,9 +531,10 @@ func InstallNative(ctx context.Context, c *config.Config, cache string) error {
 	if len(c.Skills) == 0 {
 		return nil
 	}
-	executable, err := FindExecutable("codex", c.Harnesses["codex"].Executable)
+	configured := c.Harnesses["codex"].Executable
+	executable, err := FindExecutable("codex", configured)
 	if err != nil {
-		if c.Harnesses["codex"].Executable != "" {
+		if configured != "" {
 			return err
 		}
 		return nil
@@ -516,7 +615,7 @@ func InstallNative(ctx context.Context, c *config.Config, cache string) error {
 	marketplace := filepath.Join(parent, "marketplace")
 	if err := securefs.WriteJSON(
 		filepath.Join(marketplace, ".agents", "plugins", "marketplace.json"),
-		map[string]any{"name": "weft-managed", "plugins": entries},
+		map[string]any{"name": "agx-managed", "plugins": entries},
 	); err != nil {
 		return err
 	}
@@ -540,7 +639,7 @@ func InstallNative(ctx context.Context, c *config.Config, cache string) error {
 		}
 	}
 	for _, name := range registry.Names {
-		if err := invoke("plugin", "add", name+"@weft-managed"); err != nil {
+		if err := invoke("plugin", "add", name+"@agx-managed"); err != nil {
 			return err
 		}
 	}
@@ -550,14 +649,14 @@ func InstallNative(ctx context.Context, c *config.Config, cache string) error {
 // maxServerName keeps harness tool names such as mcp__<server>__<tool> within model tool-name limits.
 const maxServerName = 32
 
-// serverNames gives each connection a readable native server name. The prefix keeps them apart from
+// serverNames gives each MCP server a readable native server name. The prefix keeps them apart from
 // servers configured natively; a hash suffix separates IDs that sanitize to the same name.
 func serverNames(endpoints []Endpoint) map[config.ID]string {
 	candidates := map[config.ID]string{}
 	count := map[string]int{}
 	for _, endpoint := range endpoints {
 		var name strings.Builder
-		name.WriteString("weft-")
+		name.WriteString("agx-")
 		for _, r := range string(endpoint.ID) {
 			if r < 128 && (unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-') {
 				name.WriteRune(r)

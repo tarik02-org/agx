@@ -2,10 +2,10 @@ version: v2
 plugins:
   - remote: buf.build/protocolbuffers/go:v1.36.12
     out: .
-    opt: module=github.com/tarik02/weft
+    opt: module=github.com/tarik02/agx
   - remote: buf.build/connectrpc/go:v1.19.1
     out: .
-    opt: module=github.com/tarik02/weft
+    opt: module=github.com/tarik02/agx
   - remote: buf.build/bufbuild/es:v2.16.0
     out: gen/typescript
     opt: target=ts

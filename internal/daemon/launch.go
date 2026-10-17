@@ -15,12 +15,12 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/tarik02/weft/gen/weft/v1"
-	"github.com/tarik02/weft/internal/adapters"
-	"github.com/tarik02/weft/internal/auth"
-	"github.com/tarik02/weft/internal/config"
-	"github.com/tarik02/weft/internal/mcpruntime"
-	"github.com/tarik02/weft/internal/securefs"
+	v1 "github.com/tarik02/agx/gen/agx/v1"
+	"github.com/tarik02/agx/internal/adapters"
+	"github.com/tarik02/agx/internal/auth"
+	"github.com/tarik02/agx/internal/config"
+	"github.com/tarik02/agx/internal/mcpruntime"
+	"github.com/tarik02/agx/internal/securefs"
 )
 
 func (s *Server) PrepareLaunch(
@@ -31,22 +31,8 @@ func (s *Server) PrepareLaunch(
 	if msg.RequestId == "" || len(msg.RequestId) > 256 || msg.SnapshotId == "" || !filepath.IsAbs(msg.Directory) {
 		return nil, rpcError(connect.CodeInvalidArgument, "request_id, snapshot_id and absolute directory required")
 	}
-	var harness string
-	switch msg.Harness {
-	case v1.Harness_HARNESS_CODEX:
-		harness = "codex"
-	case v1.Harness_HARNESS_CLAUDE:
-		harness = "claude"
-	case v1.Harness_HARNESS_PI:
-		harness = "pi"
-	default:
+	if msg.Harness == "" {
 		return nil, rpcError(connect.CodeInvalidArgument, "harness is required")
-	}
-	if adapters.Passthrough(harness, msg.NativeArguments) {
-		return nil, rpcError(
-			connect.CodeInvalidArgument,
-			"non-session command must pass through without launch preparation",
-		)
 	}
 	fingerprint := config.Digest(msg)
 	s.mu.Lock()
@@ -64,9 +50,21 @@ func (s *Server) PrepareLaunch(
 	}
 	c, err := s.reload()
 	if err != nil {
-		return nil, rpcError(connect.CodeFailedPrecondition, "configuration invalid; run weft config validate")
+		return nil, rpcError(connect.CodeFailedPrecondition, "configuration invalid; run agx config validate")
 	}
-	snapshot, err := c.Resolve(msg.Directory)
+	// Definitions come from the daemon's snapshot; clients send only a name and native arguments.
+	harness, err := c.Harness(msg.Harness)
+	if err != nil {
+		return nil, rpcError(connect.CodeInvalidArgument, err.Error())
+	}
+	mode := adapters.Mode(harness.Builtin, msg.NativeArguments)
+	if mode == config.ModePassthrough {
+		return nil, rpcError(
+			connect.CodeInvalidArgument,
+			"non-session command must pass through without launch preparation",
+		)
+	}
+	snapshot, err := c.Resolve(msg.Directory, msg.Harness)
 	if err != nil {
 		return nil, rpcError(connect.CodeFailedPrecondition, "directory cannot be resolved")
 	}
@@ -82,17 +80,34 @@ func (s *Server) PrepareLaunch(
 			return nil, rpcError(connect.CodeInvalidArgument, "undeclared environment input "+name)
 		}
 	}
-	missing := []string{}
-	for _, name := range snapshot.RequiredEnvironment {
-		if msg.EnvironmentInputs[name] == "" {
-			missing = append(missing, name)
-		}
+	inputs := map[string]string{}
+	for name, value := range msg.EnvironmentInputs {
+		inputs[name] = value
 	}
-	if len(missing) > 0 {
+	env := func(name string) (string, bool) {
+		value, ok := inputs[name]
+		return value, ok
+	}
+	// MCP servers resolve their values when sessions start, but the caller's environment is
+	// only available now, so missing variables fail the launch instead of a later session.
+	for _, i := range snapshot.MCPInjections() {
+		name := snapshot.Config.Variable(i.Value)
+		if name == "" || inputs[name] != "" {
+			continue
+		}
+		if i.Value.Secret != "" {
+			name += " for secret " + string(i.Value.Secret)
+		}
 		return nil, rpcError(
 			connect.CodeFailedPrecondition,
-			"missing environment variables: "+strings.Join(missing, ", "),
+			fmt.Sprintf("%s:%d: %s: environment variable %s is not set", i.Source.Path, i.Source.Line, i.Target, name),
 		)
+	}
+	harnessArgs, harnessEnv, err := harness.Resolve(mode, env, func(id config.ID) (string, error) {
+		return s.manager.Value(ctx, id, snapshot.Config.Secrets[id], inputs, "")
+	})
+	if err != nil {
+		return nil, rpcError(connect.CodeFailedPrecondition, err.Error())
 	}
 	s.mu.Lock()
 	full := len(s.launches) >= 10000
@@ -107,19 +122,15 @@ func (s *Server) PrepareLaunch(
 	launchCtx, cancel := context.WithCancel(s.ctx)
 	endpoints := map[config.ID]*mcpruntime.Endpoint{}
 	nativeEndpoints := []adapters.Endpoint{}
-	inputs := map[string]string{}
-	for name, value := range msg.EnvironmentInputs {
-		inputs[name] = value
-	}
 	for _, r := range snapshot.Resources {
-		if r.Kind != "connection" {
+		if r.Kind != "mcp" {
 			continue
 		}
-		definition := snapshot.Config.Connections[r.ID]
+		definition := snapshot.Config.MCP[r.ID]
 		if definition.Cwd == "" {
 			definition.Cwd = snapshot.Directory
 		}
-		endpoints[r.ID] = mcpruntime.New(launchCtx, definition, snapshot.Config.Auth, inputs, s.manager)
+		endpoints[r.ID] = mcpruntime.New(launchCtx, r.ID, definition, snapshot.Config.Secrets, inputs, s.manager)
 		nativeEndpoints = append(
 			nativeEndpoints,
 			adapters.Endpoint{
@@ -132,7 +143,17 @@ func (s *Server) PrepareLaunch(
 		cancel()
 		s.release(id, endpoints)
 	}
-	plan, err := adapters.Build(snapshot, harness, s.paths.Cache, id, grant, nativeEndpoints, msg.NativeArguments)
+	plan, err := adapters.Build(
+		snapshot,
+		harness,
+		harnessArgs,
+		harnessEnv,
+		s.paths.Cache,
+		id,
+		grant,
+		nativeEndpoints,
+		msg.NativeArguments,
+	)
 	if err != nil {
 		discard()
 		return nil, rpcError(connect.CodeFailedPrecondition, err.Error())
@@ -142,6 +163,7 @@ func (s *Server) PrepareLaunch(
 		SnapshotId: snapshot.ID,
 		Directory:  snapshot.Directory,
 		Harness:    msg.Harness,
+		Mode:       mode,
 		State:      v1.Launch_STATE_PREPARED,
 		ExpiresAt:  timestamppb.New(time.Now().Add(time.Duration(c.Daemon.LeaseSeconds) * time.Second)),
 	}

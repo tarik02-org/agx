@@ -22,17 +22,17 @@ type Source struct {
 }
 
 type Import struct {
-	Path     string `yaml:"path"`
-	Glob     string `yaml:"glob"`
-	Optional bool   `yaml:"optional"`
+	Path     string `yaml:"path"     jsonschema_description:"Fragment to load, relative to this file."`
+	Glob     string `yaml:"glob"     jsonschema_description:"Pattern of fragments to load in lexical order; may match nothing."`
+	Optional bool   `yaml:"optional" jsonschema_description:"Skip a path import whose file is missing."`
 }
 
 type Package struct {
-	Path     string `yaml:"path"     json:"path,omitempty"`
-	Git      string `yaml:"git"      json:"git,omitempty"`
-	Ref      string `yaml:"ref"      json:"ref,omitempty"`
-	Subdir   string `yaml:"subdir"   json:"subdir,omitempty"`
-	Override bool   `yaml:"override" json:"-"`
+	Path     string `yaml:"path"     json:"path,omitempty"   jsonschema_description:"Local package directory."`
+	Git      string `yaml:"git"      json:"git,omitempty"    jsonschema_description:"Git repository URL."`
+	Ref      string `yaml:"ref"      json:"ref,omitempty"    jsonschema_description:"Git branch, tag, or commit."`
+	Subdir   string `yaml:"subdir"   json:"subdir,omitempty" jsonschema_description:"Package root within the source."`
+	Override bool   `yaml:"override" json:"-"                jsonschema_description:"Replace an existing definition."`
 	Lockfile string `yaml:"-"        json:"-"`
 	Source   Source `yaml:"-"        json:"-"`
 	// Manifest marks definitions from package manifests rather than configuration fragments.
@@ -56,95 +56,110 @@ func (p Package) LockSource() Package {
 }
 
 type FileResource struct {
-	Path     string `yaml:"path"     json:"path"`
-	Override bool   `yaml:"override" json:"-"`
+	Path     string `yaml:"path"     json:"path"   jsonschema:"required" jsonschema_description:"Skill directory or instructions file, relative to this file."`
+	Override bool   `yaml:"override" json:"-"                            jsonschema_description:"Replace an existing definition."`
 	Source   Source `yaml:"-"        json:"source"`
 }
 
-type Connection struct {
-	Transport       string            `yaml:"transport"        json:"transport"`
-	Command         []string          `yaml:"command"          json:"command,omitempty"`
-	URL             string            `yaml:"url"              json:"url,omitempty"`
-	Cwd             string            `yaml:"cwd"              json:"cwd,omitempty"`
-	Environment     map[string]string `yaml:"environment"      json:"environment,omitempty"`
-	AuthEnvironment map[string]ID     `yaml:"auth_environment" json:"auth_environment,omitempty"`
-	Headers         map[string]string `yaml:"headers"          json:"headers,omitempty"`
-	Auth            ID                `yaml:"auth"             json:"auth,omitempty"`
-	Override        bool              `yaml:"override"         json:"-"`
-	Source          Source            `yaml:"-"                json:"source"`
+// MCPServer is an MCP server together with the account and settings used to reach it.
+type MCPServer struct {
+	// Transport follows from url (http) or command (stdio) once merged.
+	Transport   string           `yaml:"transport"   json:"transport"             jsonschema:"enum=stdio,enum=http" jsonschema_description:"How to reach the server; inferred from url (http) or command (stdio)."`
+	Command     []string         `yaml:"command"     json:"command,omitempty"                                       jsonschema_description:"stdio: server command and arguments."`
+	URL         string           `yaml:"url"         json:"url,omitempty"                                           jsonschema_description:"http: server URL; HTTPS, or HTTP for loopback."`
+	Cwd         string           `yaml:"cwd"         json:"cwd,omitempty"                                           jsonschema_description:"stdio: working directory; defaults to the launch directory."`
+	Environment map[string]Value `yaml:"environment" json:"environment,omitempty"                                   jsonschema_description:"stdio: environment variables for the server."`
+	Headers     map[string]Value `yaml:"headers"     json:"headers,omitempty"                                       jsonschema_description:"http: extra request headers."`
+	Auth        MCPAuth          `yaml:"auth"        json:"auth"`
+	Override    bool             `yaml:"override"    json:"-"                                                       jsonschema_description:"Replace an existing definition."`
+	Source      Source           `yaml:"-"           json:"source"`
 }
 
-type Auth struct {
-	Kind     string   `yaml:"kind"      json:"kind"`
-	Variable string   `yaml:"variable"  json:"variable,omitempty"`
-	Command  []string `yaml:"command"   json:"command,omitempty"`
-	Issuer   string   `yaml:"issuer"    json:"issuer,omitempty"`
-	ClientID string   `yaml:"client_id" json:"client_id,omitempty"`
-	Resource string   `yaml:"resource"  json:"resource,omitempty"`
-	Scopes   []string `yaml:"scopes"    json:"scopes,omitempty"`
-	Override bool     `yaml:"override"  json:"-"`
-	Source   Source   `yaml:"-"         json:"source"`
+// MCPAuth is the credential an HTTP MCP server sends as its bearer token: a top-level secret
+// referenced with !secret, an inline secret owned by the entry, or none. Merging stores an
+// inline secret, including the implicit on-demand OAuth of an HTTP entry without auth, in
+// Config.Secrets under the entry's ID and points Secret at it.
+type MCPAuth struct {
+	Secret ID   `json:"secret,omitempty"`
+	None   bool `json:"none,omitempty"`
+	// Inline is the entry's own secret as configured; nil for references, none, and stdio.
+	Inline *Secret `json:"-"`
+}
+
+// Secret defines how a credential is obtained.
+type Secret struct {
+	Kind     string   `yaml:"kind"      json:"kind"                jsonschema:"required"`
+	Variable string   `yaml:"variable"  json:"variable,omitempty"                        jsonschema_description:"Environment variable holding the secret."`
+	Command  []string `yaml:"command"   json:"command,omitempty"                         jsonschema_description:"Command whose trimmed stdout is the secret."`
+	Issuer   string   `yaml:"issuer"    json:"issuer,omitempty"                          jsonschema_description:"OAuth issuer URL; discovered when omitted."`
+	ClientID string   `yaml:"client_id" json:"client_id,omitempty"                       jsonschema_description:"OAuth public client ID."`
+	Resource string   `yaml:"resource"  json:"resource,omitempty"                        jsonschema_description:"OAuth resource indicator."`
+	Scopes   []string `yaml:"scopes"    json:"scopes,omitempty"                          jsonschema_description:"OAuth scopes to request."`
+	Override bool     `yaml:"override"  json:"-"                                         jsonschema_description:"Replace an existing definition."`
+	// Owner is the MCP server whose auth declares this secret inline; empty for top-level
+	// secrets. It keeps the credentials of an inline secret apart from a top-level one.
+	Owner ID `yaml:"-" json:"owner,omitempty"`
+	// Implicit marks the on-demand OAuth of an HTTP MCP server that omits auth.
+	Implicit bool   `yaml:"-" json:"implicit,omitempty"`
+	Source   Source `yaml:"-" json:"source"`
 }
 
 type Selection struct {
-	Skills       []ID `yaml:"skills"       json:"skills,omitempty"`
-	Instructions []ID `yaml:"instructions" json:"instructions,omitempty"`
-	Connections  []ID `yaml:"connections"  json:"connections,omitempty"`
-	Bundles      []ID `yaml:"bundles"      json:"bundles,omitempty"`
+	Skills       []ID `yaml:"skills"       json:"skills,omitempty"       jsonschema_description:"Skill IDs."`
+	Instructions []ID `yaml:"instructions" json:"instructions,omitempty" jsonschema_description:"Instructions IDs."`
+	MCP          []ID `yaml:"mcp"          json:"mcp,omitempty"          jsonschema_description:"MCP server IDs."`
+	Bundles      []ID `yaml:"bundles"      json:"bundles,omitempty"      jsonschema_description:"Bundle IDs."`
 }
 
 type Bundle struct {
 	Selection `       yaml:",inline"`
-	Override  bool   `yaml:"override" json:"-"`
+	Override  bool   `yaml:"override" json:"-"      jsonschema_description:"Replace an existing definition."`
 	Source    Source `yaml:"-"        json:"source"`
 }
 
 type Scope struct {
-	Directory string    `yaml:"directory" json:"directory"`
-	Add       Selection `yaml:"add"       json:"add"`
-	Exclude   Selection `yaml:"exclude"   json:"exclude"`
+	Directory string `yaml:"directory" json:"directory" jsonschema:"required" jsonschema_description:"Directory the rule applies to, with its descendants."`
+	// Harnesses limits the rule to launches of these harnesses or definitions based on them.
+	Harnesses []string  `yaml:"harnesses" json:"harnesses,omitempty" jsonschema_description:"Apply only to launches of these harnesses or definitions based on them."`
+	Add       Selection `yaml:"add"       json:"add"                 jsonschema_description:"Resources to select."`
+	Exclude   Selection `yaml:"exclude"   json:"exclude"             jsonschema_description:"Resources to deselect."`
 	Source    Source    `yaml:"-"         json:"source"`
 }
 
-type Harness struct {
-	Executable string `yaml:"executable" json:"executable"`
-	Override   bool   `yaml:"override"   json:"-"`
-}
-
 type Daemon struct {
-	LeaseSeconds int  `yaml:"lease_seconds" json:"lease_seconds"`
-	RenewSeconds int  `yaml:"renew_seconds" json:"renew_seconds"`
-	Override     bool `yaml:"override"      json:"-"`
+	LeaseSeconds int  `yaml:"lease_seconds" json:"lease_seconds" jsonschema:"minimum=3" jsonschema_description:"Launch lease length; defaults to 60."`
+	RenewSeconds int  `yaml:"renew_seconds" json:"renew_seconds" jsonschema:"minimum=1" jsonschema_description:"Lease renewal interval, shorter than the lease; defaults to 20."`
+	Override     bool `yaml:"override"      json:"-"                                    jsonschema_description:"Replace settings made by earlier fragments."`
 }
 
 type Document struct {
-	Version      int                 `yaml:"version"`
-	Imports      []Import            `yaml:"imports"`
-	Lockfile     string              `yaml:"lockfile"`
-	Packages     map[ID]Package      `yaml:"packages"`
-	Skills       map[ID]FileResource `yaml:"skills"`
-	Instructions map[ID]FileResource `yaml:"instructions"`
-	Connections  map[ID]Connection   `yaml:"connections"`
-	Auth         map[ID]Auth         `yaml:"auth"`
-	Bundles      map[ID]Bundle       `yaml:"bundles"`
-	Scopes       []Scope             `yaml:"scopes"`
-	Harnesses    map[string]Harness  `yaml:"harnesses"`
-	Daemon       Daemon              `yaml:"daemon"`
+	Version      int                 `yaml:"version"      jsonschema:"required" jsonschema_description:"Configuration format version."`
+	Imports      []Import            `yaml:"imports"                            jsonschema_description:"Fragments loaded before this file."`
+	Lockfile     string              `yaml:"lockfile"                           jsonschema_description:"Lockfile for packages declared here; defaults to agx.lock.json."`
+	Packages     map[ID]Package      `yaml:"packages"                           jsonschema_description:"Package sources by ID."`
+	Skills       map[ID]FileResource `yaml:"skills"                             jsonschema_description:"Skill directories containing SKILL.md."`
+	Instructions map[ID]FileResource `yaml:"instructions"                       jsonschema_description:"Instruction files applied to launches."`
+	MCP          map[ID]MCPServer    `yaml:"mcp"                                jsonschema_description:"MCP servers with the account and settings used to reach them."`
+	Secrets      map[ID]Secret       `yaml:"secrets"                            jsonschema_description:"How credentials are obtained."`
+	Bundles      map[ID]Bundle       `yaml:"bundles"                            jsonschema_description:"Named selections of resources."`
+	Scopes       []Scope             `yaml:"scopes"                             jsonschema_description:"Directory rules that add or exclude resources."`
+	Harnesses    map[string]Harness  `yaml:"harnesses"                          jsonschema_description:"Built-in harness customizations and new definitions."`
+	Daemon       Daemon              `yaml:"daemon"                             jsonschema_description:"Launch lease timing."`
 }
 
 type Config struct {
-	Root          string              `json:"root"`
-	Packages      map[ID]Package      `json:"packages"`
-	Skills        map[ID]FileResource `json:"skills"`
-	Instructions  map[ID]FileResource `json:"instructions"`
-	Connections   map[ID]Connection   `json:"connections"`
-	Auth          map[ID]Auth         `json:"auth"`
-	Bundles       map[ID]Bundle       `json:"bundles"`
-	Scopes        []Scope             `json:"scopes"`
-	Harnesses     map[string]Harness  `json:"harnesses"`
-	Daemon        Daemon              `json:"daemon"`
-	Files         []string            `json:"files"`
-	PackageHashes map[ID]string       `json:"package_hashes"`
+	Root          string                       `json:"root"`
+	Packages      map[ID]Package               `json:"packages"`
+	Skills        map[ID]FileResource          `json:"skills"`
+	Instructions  map[ID]FileResource          `json:"instructions"`
+	MCP           map[ID]MCPServer             `json:"mcp"`
+	Secrets       map[ID]Secret                `json:"secrets"`
+	Bundles       map[ID]Bundle                `json:"bundles"`
+	Scopes        []Scope                      `json:"scopes"`
+	Harnesses     map[string]HarnessDefinition `json:"harnesses"`
+	Daemon        Daemon                       `json:"daemon"`
+	Files         []string                     `json:"files"`
+	PackageHashes map[ID]string                `json:"package_hashes"`
 
 	// rootDefinitions maps definitions from configuration fragments to their override flag,
 	// so package manifests merged later cannot replace them.
@@ -158,9 +173,11 @@ type Resource struct {
 }
 
 type Step struct {
-	Change      string `json:"change"`
-	Source      Source `json:"source"`
-	Directory   string `json:"scope_directory"`
+	Change    string `json:"change"`
+	Source    Source `json:"source"`
+	Directory string `json:"scope_directory"`
+	// Harness names the definition whose add/exclude produced the step; empty for scopes.
+	Harness     string `json:"harness,omitempty"`
 	BundleChain []ID   `json:"bundle_chain,omitempty"`
 }
 
@@ -173,10 +190,13 @@ type Trace struct {
 type Snapshot struct {
 	ID                  string     `json:"id"`
 	Directory           string     `json:"directory"`
+	Harness             string     `json:"harness,omitempty"`
 	Resources           []Resource `json:"resources"`
 	RequiredEnvironment []string   `json:"required_environment"`
 	Traces              []Trace    `json:"traces,omitempty"`
-	Config              *Config    `json:"-"`
+	// Injections lists tagged values the launch resolves, as configured; never their values.
+	Injections []Injection `json:"injections,omitempty"`
+	Config     *Config     `json:"-"`
 }
 
 func Canonical(path string) (string, error) {
@@ -216,7 +236,9 @@ func Digest(v any) string {
 	return hex.EncodeToString(h[:])
 }
 
-func (c *Config) Resolve(directory string) (*Snapshot, error) {
+// Resolve selects resources for a directory and harness. An empty harness applies only rules
+// without a harness filter and no harness's own add/exclude.
+func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 	dir, err := Canonical(directory)
 	if err != nil {
 		return nil, err
@@ -228,61 +250,81 @@ func (c *Config) Resolve(directory string) (*Snapshot, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("not a directory: %s", dir)
 	}
+	var h ResolvedHarness
+	if harness != "" {
+		h, err = c.Harness(harness)
+		if err != nil {
+			return nil, err
+		}
+	}
+	chain := h.Chain
+	traces := map[Resource]*Trace{}
+	apply := func(change string, selection Selection, step Step) error {
+		err := c.expand(selection, nil, func(r Resource, bundles []ID) {
+			t := traces[r]
+			if t == nil {
+				t = &Trace{Resource: r}
+				traces[r] = t
+			}
+			t.Selected = change == "add"
+			step := step
+			step.Change = change
+			step.BundleChain = append([]ID(nil), bundles...)
+			t.Steps = append(t.Steps, step)
+		})
+		if err != nil {
+			return fmt.Errorf("%s: %w", locate(step.Source), err)
+		}
+		return nil
+	}
 	scopes := append([]Scope(nil), c.Scopes...)
 	sort.SliceStable(
 		scopes,
 		func(i, j int) bool { return pathDepth(scopes[i].Directory) < pathDepth(scopes[j].Directory) },
 	)
-	traces := map[Resource]*Trace{}
 	for _, scope := range scopes {
 		if !Contains(scope.Directory, dir) {
 			continue
 		}
-		for _, change := range []struct {
-			name      string
-			selection Selection
-		}{{"add", scope.Add}, {"exclude", scope.Exclude}} {
-			err := c.expand(change.selection, nil, func(r Resource, chain []ID) {
-				t := traces[r]
-				if t == nil {
-					t = &Trace{Resource: r}
-					traces[r] = t
+		if len(scope.Harnesses) > 0 && !slices.ContainsFunc(scope.Harnesses, func(name string) bool {
+			return slices.Contains(chain, name)
+		}) {
+			continue
+		}
+		step := Step{Source: scope.Source, Directory: scope.Directory}
+		if err := apply("add", scope.Add, step); err != nil {
+			return nil, err
+		}
+		if err := apply("exclude", scope.Exclude, step); err != nil {
+			return nil, err
+		}
+	}
+	// A harness's own selection follows directory scopes so it holds everywhere for that harness.
+	for _, name := range chain {
+		selections := c.Harnesses[name].Selections
+		for _, change := range []string{"add", "exclude"} {
+			for _, s := range selections {
+				selection := s.Add
+				if change == "exclude" {
+					selection = s.Exclude
 				}
-				t.Selected = change.name == "add"
-				t.Steps = append(
-					t.Steps,
-					Step{
-						Change:      change.name,
-						Source:      scope.Source,
-						Directory:   scope.Directory,
-						BundleChain: append([]ID(nil), chain...),
-					},
-				)
-			})
-			if err != nil {
-				return nil, fmt.Errorf("%s:%d: %w", scope.Source.Path, scope.Source.Line, err)
+				if err := apply(change, selection, Step{Source: s.Source, Harness: name}); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
-	s := &Snapshot{Directory: dir, Config: c, Resources: []Resource{}, RequiredEnvironment: []string{}}
-	required := map[string]bool{}
+	s := &Snapshot{
+		Directory:           dir,
+		Harness:             harness,
+		Config:              c,
+		Resources:           []Resource{},
+		RequiredEnvironment: []string{},
+	}
 	for r, t := range traces {
 		s.Traces = append(s.Traces, *t)
-		if !t.Selected {
-			continue
-		}
-		s.Resources = append(s.Resources, r)
-		if r.Kind == "connection" {
-			conn := c.Connections[r.ID]
-			auths := []ID{conn.Auth}
-			for _, id := range conn.AuthEnvironment {
-				auths = append(auths, id)
-			}
-			for _, id := range auths {
-				if a, ok := c.Auth[id]; ok && a.Kind == "environment" {
-					required[a.Variable] = true
-				}
-			}
+		if t.Selected {
+			s.Resources = append(s.Resources, r)
 		}
 	}
 	less := func(a, b Resource) bool {
@@ -293,14 +335,27 @@ func (c *Config) Resolve(directory string) (*Snapshot, error) {
 	}
 	sort.Slice(s.Resources, func(i, j int) bool { return less(s.Resources[i], s.Resources[j]) })
 	sort.Slice(s.Traces, func(i, j int) bool { return less(s.Traces[i].Resource, s.Traces[j].Resource) })
+	injections := s.MCPInjections()
+	if harness != "" {
+		injections = append(injections, h.Injections()...)
+	}
+	required := map[string]bool{}
+	for _, i := range injections {
+		if name := c.Variable(i.Value); name != "" {
+			required[name] = true
+		}
+		if i.Value.Tagged() {
+			s.Injections = append(s.Injections, i)
+		}
+	}
 	for name := range required {
 		s.RequiredEnvironment = append(s.RequiredEnvironment, name)
 	}
 	sort.Strings(s.RequiredEnvironment)
 	s.ID = Digest(struct {
-		Config              *Config
-		Directory, Platform string
-	}{c.withoutPositions(), dir, runtime.GOOS + "/" + runtime.GOARCH})
+		Config                       *Config
+		Directory, Harness, Platform string
+	}{c.withoutPositions(), dir, harness, runtime.GOOS + "/" + runtime.GOARCH})
 	// Local resources are content inputs too, even when no package is declared.
 	content := []string{s.ID}
 	for _, r := range s.Resources {
@@ -323,6 +378,42 @@ func (c *Config) Resolve(directory string) (*Snapshot, error) {
 	return s, nil
 }
 
+// MCPInjections lists the values of selected MCP servers, including their auth secrets.
+func (s *Snapshot) MCPInjections() []Injection {
+	out := []Injection{}
+	for _, r := range s.Resources {
+		if r.Kind != "mcp" {
+			continue
+		}
+		server := s.Config.MCP[r.ID]
+		if id := server.Auth.Secret; id != "" {
+			auth := injection("mcp "+string(r.ID)+" auth", Value{Secret: id, Source: server.Source})
+			if secret := s.Config.Secrets[id]; secret.Owner != "" {
+				auth.Text = secret.Kind
+				if secret.Implicit {
+					auth.Text += " (on demand)"
+				}
+			}
+			out = append(out, auth)
+		}
+		out = append(out, server.Injections(r.ID)...)
+	}
+	return out
+}
+
+// MCPEnvironment lists caller environment variables that only selected MCP servers
+// receive, which the harness must not inherit.
+func (s *Snapshot) MCPEnvironment() []string {
+	names := []string{}
+	for _, i := range s.MCPInjections() {
+		if name := s.Config.Variable(i.Value); name != "" && !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
 func Contains(root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
@@ -334,9 +425,9 @@ func pathDepth(path string) int {
 
 func (c *Config) expand(s Selection, chain []ID, visit func(Resource, []ID)) error {
 	for _, group := range []struct {
-		kind string
-		ids  []ID
-	}{{"skill", s.Skills}, {"instructions", s.Instructions}, {"connection", s.Connections}} {
+		kind, label string
+		ids         []ID
+	}{{"skill", "skill", s.Skills}, {"instructions", "instructions", s.Instructions}, {"mcp", "MCP server", s.MCP}} {
 		for _, id := range group.ids {
 			exists := false
 			switch group.kind {
@@ -344,11 +435,11 @@ func (c *Config) expand(s Selection, chain []ID, visit func(Resource, []ID)) err
 				_, exists = c.Skills[id]
 			case "instructions":
 				_, exists = c.Instructions[id]
-			case "connection":
-				_, exists = c.Connections[id]
+			case "mcp":
+				_, exists = c.MCP[id]
 			}
 			if !exists {
-				return fmt.Errorf("unknown %s %q", group.kind, id)
+				return fmt.Errorf("unknown %s %q", group.label, id)
 			}
 			visit(Resource{Kind: group.kind, ID: id}, chain)
 		}
@@ -381,12 +472,24 @@ func (c *Config) withoutPositions() *Config {
 		c.Instructions,
 		func(r FileResource) FileResource { r.Source = Source{Path: r.Source.Path}; return r },
 	)
-	out.Connections = stripPositions(
-		c.Connections,
-		func(r Connection) Connection { r.Source = Source{Path: r.Source.Path}; return r },
+	out.MCP = stripPositions(
+		c.MCP,
+		func(r MCPServer) MCPServer { r.Source = Source{Path: r.Source.Path}; return r },
 	)
-	out.Auth = stripPositions(c.Auth, func(r Auth) Auth { r.Source = Source{Path: r.Source.Path}; return r })
+	out.Secrets = stripPositions(
+		c.Secrets,
+		func(r Secret) Secret { r.Source = Source{Path: r.Source.Path}; return r },
+	)
 	out.Bundles = stripPositions(c.Bundles, func(r Bundle) Bundle { r.Source = Source{Path: r.Source.Path}; return r })
+	out.Harnesses = make(map[string]HarnessDefinition, len(c.Harnesses))
+	for name, h := range c.Harnesses {
+		h.Source = Source{Path: h.Source.Path}
+		h.Selections = append([]HarnessSelection(nil), h.Selections...)
+		for i := range h.Selections {
+			h.Selections[i].Source = Source{Path: h.Selections[i].Source.Path}
+		}
+		out.Harnesses[name] = h
+	}
 	out.Scopes = make([]Scope, len(c.Scopes))
 	for i, s := range c.Scopes {
 		s.Source = Source{Path: s.Source.Path}

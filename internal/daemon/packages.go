@@ -6,11 +6,11 @@ import (
 
 	"connectrpc.com/connect"
 
-	v1 "github.com/tarik02/weft/gen/weft/v1"
-	"github.com/tarik02/weft/internal/adapters"
-	"github.com/tarik02/weft/internal/config"
-	"github.com/tarik02/weft/internal/packages"
-	"github.com/tarik02/weft/internal/securefs"
+	v1 "github.com/tarik02/agx/gen/agx/v1"
+	"github.com/tarik02/agx/internal/adapters"
+	"github.com/tarik02/agx/internal/config"
+	"github.com/tarik02/agx/internal/packages"
+	"github.com/tarik02/agx/internal/securefs"
 )
 
 func (s *Server) Install(
@@ -91,7 +91,7 @@ func (s *Server) packageOperation(
 				State: &v1.WatchOperationResponse_Failure{
 					Failure: diagnostic(
 						"install_failed",
-						"Package installation failed; retry weft install locally for diagnostics.",
+						"Package installation failed; retry agx install locally for diagnostics.",
 					),
 				},
 			}

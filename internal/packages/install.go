@@ -13,8 +13,8 @@ import (
 
 	"github.com/gofrs/flock"
 
-	"github.com/tarik02/weft/internal/config"
-	"github.com/tarik02/weft/internal/securefs"
+	"github.com/tarik02/agx/internal/config"
+	"github.com/tarik02/agx/internal/securefs"
 )
 
 type Result struct {
@@ -200,7 +200,7 @@ func Install(
 			}
 
 		}
-		manifest := filepath.Join(dest, "weft.package.yaml")
+		manifest := filepath.Join(dest, "agx.package.yaml")
 		d, node, err := config.DecodeManifest(manifest)
 		if err != nil {
 			return err
@@ -285,7 +285,7 @@ func writeLocks(locks map[string]config.Lock) error {
 		if err := securefs.EnsureDir(filepath.Dir(path)); err != nil {
 			return err
 		}
-		f, err := os.CreateTemp(filepath.Dir(path), ".weft-*")
+		f, err := os.CreateTemp(filepath.Dir(path), ".agx-*")
 		if err != nil {
 			return err
 		}

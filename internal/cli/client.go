@@ -8,25 +8,23 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/tarik02/weft/gen/weft/v1/weftv1connect"
-	"github.com/tarik02/weft/internal/daemon"
-	"github.com/tarik02/weft/internal/platform"
+	"github.com/tarik02/agx/gen/agx/v1/agxv1connect"
+	"github.com/tarik02/agx/internal/daemon"
+	"github.com/tarik02/agx/internal/platform"
 )
 
 const (
 	callTimeout = 20 * time.Second
 	// Preparing a launch may compile and install snapshot artifacts.
 	launchTimeout = 2 * time.Minute
-	// Login waits for the daemon's OAuth metadata discovery and client registration with the provider.
-	loginTimeout = 2 * time.Minute
 )
 
 type client struct {
 	discovery daemon.Discovery
-	config    weftv1connect.ConfigurationServiceClient
-	launches  weftv1connect.LaunchServiceClient
-	runtime   weftv1connect.RuntimeServiceClient
-	auth      weftv1connect.AuthServiceClient
+	config    agxv1connect.ConfigurationServiceClient
+	launches  agxv1connect.LaunchServiceClient
+	runtime   agxv1connect.RuntimeServiceClient
+	secrets   agxv1connect.SecretServiceClient
 	http      *http.Client
 }
 
@@ -55,10 +53,10 @@ func dial(d daemon.Discovery) *client {
 	return &client{
 		discovery: d,
 		http:      httpClient,
-		config:    weftv1connect.NewConfigurationServiceClient(httpClient, d.URL),
-		launches:  weftv1connect.NewLaunchServiceClient(httpClient, d.URL),
-		runtime:   weftv1connect.NewRuntimeServiceClient(httpClient, d.URL),
-		auth:      weftv1connect.NewAuthServiceClient(httpClient, d.URL),
+		config:    agxv1connect.NewConfigurationServiceClient(httpClient, d.URL),
+		launches:  agxv1connect.NewLaunchServiceClient(httpClient, d.URL),
+		runtime:   agxv1connect.NewRuntimeServiceClient(httpClient, d.URL),
+		secrets:   agxv1connect.NewSecretServiceClient(httpClient, d.URL),
 	}
 }
 

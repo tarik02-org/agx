@@ -18,7 +18,7 @@ existing locks or leaving a partial installation.
 Isolated loopback fixtures exercise authenticated Connect management and separate
 stdio/HTTP MCP endpoints. Checks cover native schemas and annotations, structured
 and image results, resources, prompts, progress notifications, cancellation,
-connection/session isolation, lifecycle/MCP authority separation, idempotency and
+MCP server/session isolation, lifecycle/MCP authority separation, idempotency and
 conflicting keys, redacted inspection, invalid configuration reloads, revocation,
 lease renewal/expiry, wrapper exit status, and interrupt forwarding. Runtime and
 package-operation watches expose replacement/current state without credentials.
@@ -38,8 +38,19 @@ The installed native harnesses were also exercised using temporary account homes
 OAuth verification uses an isolated issuer/callback and the keyring library's
 in-memory provider. It checks discovery, pending-login reuse, PKCE S256, invalid
 state, callback replay rejection, concurrent refresh, persisted token rotation,
-server-origin binding, logout, and failure without plaintext fallback. It does
-not access the user's system keychain or authorize an external account.
+server-origin binding, logout, and failure without plaintext fallback; for
+on-demand OAuth, discovery from a `401` challenge's `resource_metadata` with RFC
+9728 resource validation, cancellation freeing the pending attempt, expiry, and
+separate keychain items for inline and top-level secrets. It does not access the
+user's system keychain or authorize an external account.
+
+A loopback end-to-end check runs the daemon against a fake protected MCP server
+and authorization server: an HTTP entry without `auth` reports `needs-auth` after
+the `401`, `agx secret login --no-browser` blocks until the printed URL is
+followed and exits 0, MCP calls then carry the bearer token, `auth: none` keeps
+the `401` an ordinary failure, SIGINT exits 130 and leaves no pending attempt, and
+a daemon stopping mid-login fails the command. This check uses the system
+keychain and logs out afterwards.
 
 ## Build checks
 
@@ -65,15 +76,15 @@ SSE streams without rewriting tool catalogs or retrying calls.
 
 OAuth currently supports public clients, with optional dynamic registration.
 Live registration and confidential-client methods have not been exercised.
-OAuth auth sources apply to HTTP connections; local child credentials can use
-keychain, environment, or command sources. Logout applies to keychain and OAuth
-sources; other kinds reject it. A daemon restart invalidates active grants.
+OAuth secrets apply to HTTP MCP servers' `auth`; injected credentials can use
+keychain, environment, or command secrets. Logout applies to keychain and OAuth
+secrets; other kinds reject it. A daemon restart invalidates active grants.
 
 The daemon reloads configuration on demand (resolution, launches, status) and
 skips the load while every file, glob, lockfile, and package cache entry it read
 keeps its modification time and size; it publishes only valid configurations.
 An invalid reload blocks new preparations while existing launches retain their
-snapshots. Ended launches, login requests, and package operations are pruned after an hour;
+snapshots. Ended launches and package operations are pruned after an hour;
 idle MCP sessions after 30 minutes. Package caches and generated artifacts are retained; automatic garbage
 collection, upstream pooling, registries, a UI, and automatic native binary updates
 are deferred. Native resume arguments pass through; exhaustive resumption and

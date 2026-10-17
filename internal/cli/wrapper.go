@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -17,34 +18,76 @@ import (
 
 	"connectrpc.com/connect"
 
-	v1 "github.com/tarik02/weft/gen/weft/v1"
-	"github.com/tarik02/weft/internal/adapters"
-	"github.com/tarik02/weft/internal/config"
-	"github.com/tarik02/weft/internal/platform"
-	"github.com/tarik02/weft/internal/securefs"
+	v1 "github.com/tarik02/agx/gen/agx/v1"
+	"github.com/tarik02/agx/internal/adapters"
+	"github.com/tarik02/agx/internal/auth"
+	"github.com/tarik02/agx/internal/cli/ui"
+	"github.com/tarik02/agx/internal/config"
+	"github.com/tarik02/agx/internal/platform"
+	"github.com/tarik02/agx/internal/securefs"
 )
 
 type ExitError struct{ Code int }
 
 func (e *ExitError) Error() string { return fmt.Sprintf("native process exited with %d", e.Code) }
 
-func runHarness(ctx context.Context, paths platform.Paths, harness string, args []string) error {
+// harnessConfig holds the definitions harness commands launch from. When configuration fails to
+// load, err records why and only the built-ins remain, so other commands keep working.
+type harnessConfig struct {
+	config *config.Config
+	err    error
+}
+
+func loadHarnesses(path string) harnessConfig {
+	// Harnesses come only from configuration fragments, so packages need not be installed.
+	c, err := config.Read(path)
+	if err != nil {
+		return harnessConfig{config: &config.Config{}, err: err}
+	}
+	return harnessConfig{config: c}
+}
+
+func runHarness(ctx context.Context, paths platform.Paths, harnesses harnessConfig, name string, args []string) error {
+	if harnesses.err != nil {
+		if _, builtin := config.Builtins[name]; !builtin {
+			return fmt.Errorf("unknown harness %s (harness definitions unavailable: %w)", name, harnesses.err)
+		}
+		ui.Diagnose(ui.Warn, "using built-in %s settings; configuration did not load: %v", name, harnesses.err)
+	}
+	h, err := harnesses.config.Harness(name)
+	if err != nil {
+		return err
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	if adapters.Passthrough(harness, args) {
-		configured := ""
-		if c, err := config.Read(paths.Config); err == nil {
-			configured = c.Harnesses[harness].Executable
-		}
-		executable, err := adapters.FindExecutable(harness, configured)
+	mode := adapters.Mode(h.Builtin, args)
+	if mode == config.ModePassthrough {
+		executable, err := adapters.FindExecutable(h.Builtin, h.Executable)
 		if err != nil {
 			return err
 		}
-		return supervise(exec.CommandContext(ctx, executable, args...), nil)
+		// Without a managed launch there is no daemon to ask, so secrets resolve here when their
+		// kind allows it: environment, command, or keychain.
+		harnessArgs, harnessEnv, err := h.Resolve(mode, os.LookupEnv, func(id config.ID) (string, error) {
+			secret, ok := harnesses.config.Secrets[id]
+			if !ok {
+				return "", fmt.Errorf("unknown secret %s; passthrough commands read only configuration fragments", id)
+			}
+			return auth.LocalValue(ctx, id, secret, os.LookupEnv)
+		})
+		if err != nil {
+			return err
+		}
+		cmd := exec.CommandContext(ctx, executable, append(harnessArgs, args...)...)
+		cmd.Env = os.Environ()
+		for _, key := range slices.Sorted(maps.Keys(harnessEnv)) {
+			cmd.Env = append(cmd.Env, key+"="+harnessEnv[key])
+		}
+		return supervise(cmd, nil)
 	}
-	directory, nativeArgs, err := adapters.Directory(harness, args, cwd)
+	directory, nativeArgs, err := adapters.Directory(h.Builtin, args, cwd)
 	if err != nil {
 		return err
 	}
@@ -54,7 +97,7 @@ func runHarness(ctx context.Context, paths platform.Paths, harness string, args 
 	}
 	if paths.Config != c.discovery.Config {
 		return fmt.Errorf(
-			"daemon uses configuration %s, not %s; rerun with --config %s, or run weft daemon stop and then weft --config %s daemon start",
+			"daemon uses configuration %s, not %s; rerun with --config %s, or run agx daemon stop and then agx --config %s daemon start",
 			c.discovery.Config,
 			paths.Config,
 			c.discovery.Config,
@@ -62,41 +105,27 @@ func runHarness(ctx context.Context, paths platform.Paths, harness string, args 
 		)
 	}
 	resolveCtx, cancel := context.WithTimeout(ctx, callTimeout)
-	resolved, err := c.config.Resolve(resolveCtx, request(&v1.ResolveRequest{Directory: directory}, c.discovery.Token))
+	resolved, err := c.config.Resolve(
+		resolveCtx,
+		request(&v1.ResolveRequest{Directory: directory, Harness: name}, c.discovery.Token),
+	)
 	cancel()
 	if err != nil {
 		return err
 	}
+	// The daemon reports a missing variable together with the configuration that needs it.
 	inputs := map[string]string{}
-	var missing []string
 	for _, name := range resolved.Msg.Snapshot.RequiredEnvironment {
-		value, ok := os.LookupEnv(name)
-		if !ok || value == "" {
-			missing = append(missing, name)
-			continue
+		if value := os.Getenv(name); value != "" {
+			inputs[name] = value
 		}
-		inputs[name] = value
-	}
-	if len(missing) > 0 {
-		return fmt.Errorf("missing environment variables: %s", strings.Join(missing, ", "))
-	}
-	var kind v1.Harness
-	switch harness {
-	case "codex":
-		kind = v1.Harness_HARNESS_CODEX
-	case "claude":
-		kind = v1.Harness_HARNESS_CLAUDE
-	case "pi":
-		kind = v1.Harness_HARNESS_PI
-	default:
-		return fmt.Errorf("unsupported harness %s", harness)
 	}
 	prepare := request(
 		&v1.PrepareLaunchRequest{
 			RequestId:         securefs.Token(),
 			SnapshotId:        resolved.Msg.Snapshot.Id,
 			Directory:         directory,
-			Harness:           kind,
+			Harness:           name,
 			NativeArguments:   nativeArgs,
 			EnvironmentInputs: inputs,
 		},
@@ -169,7 +198,7 @@ func runHarness(ctx context.Context, paths platform.Paths, harness string, args 
 			if time.Now().Before(expires) {
 				return true
 			}
-			fmt.Fprintln(os.Stderr, "weft: launch lease expired; MCP access is lost. Relaunch to reconnect.")
+			ui.Diagnose(ui.Warn, "launch lease expired; MCP access is lost. Relaunch to reconnect.")
 			return false
 		}
 		wg.Add(1)
@@ -209,7 +238,7 @@ func runHarness(ctx context.Context, paths platform.Paths, harness string, args 
 	finishCtx, cancel := boundedContext()
 	defer cancel()
 	if _, err := c.launches.FinishLaunch(finishCtx, request(finish, p.LifecycleToken)); err != nil {
-		fmt.Fprintln(os.Stderr, "weft: launch cleanup unavailable; lease expiry will release MCP resources")
+		ui.Diagnose(ui.Warn, "launch cleanup unavailable; lease expiry will release MCP resources")
 	}
 	return runErr
 }
@@ -237,7 +266,7 @@ func supervise(cmd *exec.Cmd, started func()) error {
 				continue
 			}
 			if err := cmd.Process.Signal(sig); err != nil && !errors.Is(err, os.ErrProcessDone) {
-				fmt.Fprintf(os.Stderr, "weft: cannot forward %v to native process: %v\n", sig, err)
+				ui.Diagnose(ui.Warn, "cannot forward %v to native process: %v", sig, err)
 			}
 		case err := <-done:
 			if err == nil {
@@ -258,12 +287,4 @@ func supervise(cmd *exec.Cmd, started func()) error {
 			return err
 		}
 	}
-}
-
-func nativeInvocation() string {
-	name := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
-	if name == "codex" || name == "claude" || name == "pi" {
-		return name
-	}
-	return ""
 }

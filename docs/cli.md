@@ -3,48 +3,68 @@
 This interface is implemented. See [verification notes](verification.md) for
 platform and protocol limits.
 
-The default root is `$XDG_CONFIG_HOME/weft/weft.yaml`. When it is unset, that is
+The default root is `$XDG_CONFIG_HOME/agx/agx.yaml`. When it is unset, that is
 `~/.config` on Linux, `~/Library/Application Support` on macOS, and
 `%LOCALAPPDATA%` on Windows; `daemon start --config` selects another root.
-Generated artifacts and installed packages live under `$XDG_CACHE_HOME/weft`
+Generated artifacts and installed packages live under `$XDG_CACHE_HOME/agx`
 (`~/.cache`, `~/Library/Caches`, or `%LOCALAPPDATA%\cache` when unset).
 Root selection is explicit, not automatic discovery of project-local files.
 
 ## Harness entry points
 
 ```text
-weft codex [native arguments...]
-weft claude [native arguments...]
-weft pi [native arguments...]
-weft run <harness> -- [native arguments...]
+agx codex [native arguments...]
+agx claude [native arguments...]
+agx pi [native arguments...]
+agx <definition> [native arguments...]
+agx run <harness> -- [native arguments...]
 ```
+
+Each harness definition in the configuration is a command of its own. If the
+configuration cannot be read, only the built-ins remain, with a warning when one
+launches.
 
 Harness entry points preserve native flags, including `app-server`, print/RPC
 modes, resume, and version/help probes. Codex's `-C`/`--cd` changes the
-directory used for resolution; Claude and Pi have no such flag. Do not run native arguments through Weft's
+directory used for resolution; Claude and Pi have no such flag. Do not run native arguments through agx's
 ordinary flag parser. Forward stdout, stdin, exit codes, and interrupts correctly;
-Weft diagnostics go to stderr. Help/version probes and non-session native commands
-such as login and plugin management pass through without a managed launch.
+agx diagnostics go to stderr. Each invocation is classified into a
+[mode](configuration.md#harnesses): Codex subcommands select `exec` (`exec`,
+`review`), `resume` (`resume`, `fork`), or `app-server`; Claude
+`-p`/`--print` selects `print`, else `-r`/`--resume`/`-c`/`--continue` select
+`resume`; Pi `--mode rpc` selects `rpc`, and `-p`/`--print` or `--mode json`
+select `print`. Help/version probes and non-session native commands such as
+login, plugin management, and app-server tooling are `passthrough`: they run
+without a managed launch, receiving only the definition's `passthrough` groups and
+`env`, whose [injected values](configuration.md#injected-values) the wrapper
+resolves itself.
 
 Support invocation through a harness-named wrapper or symlink. Resolve a configured
-absolute native executable first; otherwise search PATH while excluding Weft
+absolute native executable first; otherwise search PATH while excluding agx
 itself, so a `codex` symlink cannot recurse. Handle Windows executable/script
 launching explicitly rather than constructing a POSIX shell command.
 
 ## Configuration and packages
 
 ```text
-weft config validate
-weft resolve [directory] [--json]
-weft explain [directory] [--json]
-weft install [--frozen]
-weft update [package-id...]
+agx config validate
+agx config schema [--package]
+agx resolve [directory] [--harness <name>] [--json]
+agx explain [directory] [--harness <name>] [--json]
+agx install [--frozen]
+agx update [package-id...]
 ```
 
 The default directory is the current directory. `resolve` reports selected
-resources; `explain` also reports exclusions, source locations, and bundle chains.
+resources; `explain` also reports exclusions, source locations, bundle chains,
+and the injected values a launch would resolve, shown as configured (`!secret
+cpa-key`). Without
+`--harness` they apply only rules without a harness filter; with it, they also
+apply matching scope rules and the harness's own selection, as a launch does.
 These commands can read local configuration without daemon startup. They do not
-fetch missing packages; diagnostics direct the user to `install`.
+fetch missing packages; diagnostics direct the user to `install`. `config schema`
+prints the JSON Schema of configuration fragments, or with `--package` of package
+manifests ([editor support](configuration.md#editor-support)).
 
 `install` materializes the declared graph and may create/update its lockfile;
 `--frozen` permits no lockfile changes. `update` refreshes selected packages, or
@@ -54,12 +74,12 @@ lock/cache; it never silently updates dependencies.
 ## Daemon and launches
 
 ```text
-weft daemon start [--foreground] [--config <path>]
-weft daemon status [--json]
-weft daemon stop [--force]
-weft launch list [--json]
-weft launch show <launch-id> [--json]
-weft launch revoke <launch-id>
+agx daemon start [--foreground] [--config <path>]
+agx daemon status [--json]
+agx daemon stop [--force]
+agx launch list [--json]
+agx launch show <launch-id> [--json]
+agx launch revoke <launch-id>
 ```
 
 Use one daemon per OS user. v1 requires explicit startup; automatic
@@ -68,25 +88,49 @@ forced. Revocation closes MCP access and upstream sessions; it does not kill the
 harness. Launch inspection excludes secrets. A graceful wrapper exit releases
 its launch; abrupt exits are recovered through lease expiry.
 
-## Authentication
+## Secrets
 
 ```text
-weft auth login <connection-id>
-weft auth set <auth-id> --stdin
-weft auth status [auth-id] [--json]
-weft auth logout <auth-id>
+agx secret login <secret-id> [--no-browser]
+agx secret set <secret-id> --stdin
+agx secret status [secret-id] [--json]
+agx secret logout <secret-id>
 ```
 
-Login resolves the connection in the current directory and starts its OAuth flow.
-`set` writes a configured keychain-backed secret; values are never CLI arguments.
-Status returns metadata only. Logout clears the identity's credentials and closes
-affected upstream sessions. It does not revoke unrelated launches or identities.
+A secret ID names a top-level secret or, for [inline and on-demand
+auth](configuration.md#mcp-auth), the MCP server that declares it.
+
+Login runs an OAuth secret's authorization and blocks until it succeeds, fails,
+or expires (after five minutes). It opens the authorization URL in the default
+browser (`open`, `xdg-open`, or `rundll32 url.dll,FileProtocolHandler`, each given
+the URL as one argument) and prints it too; `--no-browser` only prints it. A
+browser that fails to open is a warning. On a terminal, stderr shows the
+instructions and a waiting line; when stdout is not a terminal it carries only the
+URL, and the command still waits. Success prints `Logged in to <id>.` and exits 0;
+failure or expiry exits 1. Ctrl-C, SIGTERM, or SIGHUP closes the login stream, so
+the daemon cancels the attempt, and exits 128 plus the signal number (130 for
+Ctrl-C). Concurrent logins for the same secret share one attempt, which is
+cancelled when the last one stops waiting. A daemon that stops meanwhile fails
+the login; run it again.
+
+`set` writes a configured keychain secret; values are never CLI arguments.
+Status returns metadata only: each secret's kind, whether it is inline in an MCP
+server or on-demand OAuth, its state, and its expiry. Logout clears the secret's
+stored credentials and closes upstream sessions of MCP servers using it. It does
+not revoke unrelated launches or secrets.
 
 ## Output contract
 
 JSON commands produce one versioned document on stdout; diagnostics use stderr.
+Human output is styled per stream: `--color=auto` (the default) styles a stream
+only when it is a terminal, `NO_COLOR` is unset, and `TERM` is not `dumb`;
+`CLICOLOR_FORCE` or `FORCE_COLOR` styles it anyway. `--color=always` and
+`--color=never` override detection. Styled `explain` shows one line per resource with shortened
+paths; `--verbose` shows every step with full paths, as unstyled output does. Unstyled output keeps the same words and
+order, one record per line, for pipes and grep. JSON is never styled.
+Harness entry points style only their own stderr diagnostics.
 JSON and inspection never reveal grants, credential values, or prompt bodies.
 Usage errors exit 2, operational failures exit 1, success exits 0. Harness entry
 points preserve native exit behavior. Before spawning, wrappers require the daemon to run the
-same weft version and fail with actionable instructions instead of printing into a
+same agx version and fail with actionable instructions instead of printing into a
 harness protocol stream.

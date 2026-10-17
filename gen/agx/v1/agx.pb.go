@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.36.12
 // 	protoc        (unknown)
-// source: weft/v1/weft.proto
+// source: agx/v1/agx.proto
 
-package weftv1
+package agxv1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -21,58 +21,6 @@ const (
 	// Verify that runtime/protoimpl is sufficiently up-to-date.
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
-
-type Harness int32
-
-const (
-	Harness_HARNESS_UNSPECIFIED Harness = 0
-	Harness_HARNESS_CODEX       Harness = 1
-	Harness_HARNESS_CLAUDE      Harness = 2
-	Harness_HARNESS_PI          Harness = 3
-)
-
-// Enum value maps for Harness.
-var (
-	Harness_name = map[int32]string{
-		0: "HARNESS_UNSPECIFIED",
-		1: "HARNESS_CODEX",
-		2: "HARNESS_CLAUDE",
-		3: "HARNESS_PI",
-	}
-	Harness_value = map[string]int32{
-		"HARNESS_UNSPECIFIED": 0,
-		"HARNESS_CODEX":       1,
-		"HARNESS_CLAUDE":      2,
-		"HARNESS_PI":          3,
-	}
-)
-
-func (x Harness) Enum() *Harness {
-	p := new(Harness)
-	*p = x
-	return p
-}
-
-func (x Harness) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (Harness) Descriptor() protoreflect.EnumDescriptor {
-	return file_weft_v1_weft_proto_enumTypes[0].Descriptor()
-}
-
-func (Harness) Type() protoreflect.EnumType {
-	return &file_weft_v1_weft_proto_enumTypes[0]
-}
-
-func (x Harness) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use Harness.Descriptor instead.
-func (Harness) EnumDescriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{0}
-}
 
 type Diagnostic_Severity int32
 
@@ -107,11 +55,11 @@ func (x Diagnostic_Severity) String() string {
 }
 
 func (Diagnostic_Severity) Descriptor() protoreflect.EnumDescriptor {
-	return file_weft_v1_weft_proto_enumTypes[1].Descriptor()
+	return file_agx_v1_agx_proto_enumTypes[0].Descriptor()
 }
 
 func (Diagnostic_Severity) Type() protoreflect.EnumType {
-	return &file_weft_v1_weft_proto_enumTypes[1]
+	return &file_agx_v1_agx_proto_enumTypes[0]
 }
 
 func (x Diagnostic_Severity) Number() protoreflect.EnumNumber {
@@ -120,7 +68,7 @@ func (x Diagnostic_Severity) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Diagnostic_Severity.Descriptor instead.
 func (Diagnostic_Severity) EnumDescriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{2, 0}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{2, 0}
 }
 
 type ResolutionStep_Change int32
@@ -156,11 +104,11 @@ func (x ResolutionStep_Change) String() string {
 }
 
 func (ResolutionStep_Change) Descriptor() protoreflect.EnumDescriptor {
-	return file_weft_v1_weft_proto_enumTypes[2].Descriptor()
+	return file_agx_v1_agx_proto_enumTypes[1].Descriptor()
 }
 
 func (ResolutionStep_Change) Type() protoreflect.EnumType {
-	return &file_weft_v1_weft_proto_enumTypes[2]
+	return &file_agx_v1_agx_proto_enumTypes[1]
 }
 
 func (x ResolutionStep_Change) Number() protoreflect.EnumNumber {
@@ -169,7 +117,7 @@ func (x ResolutionStep_Change) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ResolutionStep_Change.Descriptor instead.
 func (ResolutionStep_Change) EnumDescriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{4, 0}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{4, 0}
 }
 
 type Launch_State int32
@@ -214,11 +162,11 @@ func (x Launch_State) String() string {
 }
 
 func (Launch_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_weft_v1_weft_proto_enumTypes[3].Descriptor()
+	return file_agx_v1_agx_proto_enumTypes[2].Descriptor()
 }
 
 func (Launch_State) Type() protoreflect.EnumType {
-	return &file_weft_v1_weft_proto_enumTypes[3]
+	return &file_agx_v1_agx_proto_enumTypes[2]
 }
 
 func (x Launch_State) Number() protoreflect.EnumNumber {
@@ -227,29 +175,29 @@ func (x Launch_State) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Launch_State.Descriptor instead.
 func (Launch_State) EnumDescriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{21, 0}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{21, 0}
 }
 
-type ConnectionRuntime_State int32
+type McpRuntime_State int32
 
 const (
-	ConnectionRuntime_STATE_UNSPECIFIED ConnectionRuntime_State = 0
-	ConnectionRuntime_STATE_CONNECTING  ConnectionRuntime_State = 1
-	ConnectionRuntime_STATE_READY       ConnectionRuntime_State = 2
-	ConnectionRuntime_STATE_NEEDS_AUTH  ConnectionRuntime_State = 3
-	ConnectionRuntime_STATE_FAILED      ConnectionRuntime_State = 4
+	McpRuntime_STATE_UNSPECIFIED McpRuntime_State = 0
+	McpRuntime_STATE_CONNECTING  McpRuntime_State = 1
+	McpRuntime_STATE_READY       McpRuntime_State = 2
+	McpRuntime_STATE_NEEDS_AUTH  McpRuntime_State = 3
+	McpRuntime_STATE_FAILED      McpRuntime_State = 4
 )
 
-// Enum value maps for ConnectionRuntime_State.
+// Enum value maps for McpRuntime_State.
 var (
-	ConnectionRuntime_State_name = map[int32]string{
+	McpRuntime_State_name = map[int32]string{
 		0: "STATE_UNSPECIFIED",
 		1: "STATE_CONNECTING",
 		2: "STATE_READY",
 		3: "STATE_NEEDS_AUTH",
 		4: "STATE_FAILED",
 	}
-	ConnectionRuntime_State_value = map[string]int32{
+	McpRuntime_State_value = map[string]int32{
 		"STATE_UNSPECIFIED": 0,
 		"STATE_CONNECTING":  1,
 		"STATE_READY":       2,
@@ -258,47 +206,99 @@ var (
 	}
 )
 
-func (x ConnectionRuntime_State) Enum() *ConnectionRuntime_State {
-	p := new(ConnectionRuntime_State)
+func (x McpRuntime_State) Enum() *McpRuntime_State {
+	p := new(McpRuntime_State)
 	*p = x
 	return p
 }
 
-func (x ConnectionRuntime_State) String() string {
+func (x McpRuntime_State) String() string {
 	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
 }
 
-func (ConnectionRuntime_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_weft_v1_weft_proto_enumTypes[4].Descriptor()
+func (McpRuntime_State) Descriptor() protoreflect.EnumDescriptor {
+	return file_agx_v1_agx_proto_enumTypes[3].Descriptor()
 }
 
-func (ConnectionRuntime_State) Type() protoreflect.EnumType {
-	return &file_weft_v1_weft_proto_enumTypes[4]
+func (McpRuntime_State) Type() protoreflect.EnumType {
+	return &file_agx_v1_agx_proto_enumTypes[3]
 }
 
-func (x ConnectionRuntime_State) Number() protoreflect.EnumNumber {
+func (x McpRuntime_State) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use ConnectionRuntime_State.Descriptor instead.
-func (ConnectionRuntime_State) EnumDescriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{28, 0}
+// Deprecated: Use McpRuntime_State.Descriptor instead.
+func (McpRuntime_State) EnumDescriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{28, 0}
 }
 
-type AuthStatus_State int32
+type LoginFinished_Outcome int32
 
 const (
-	AuthStatus_STATE_UNSPECIFIED  AuthStatus_State = 0
-	AuthStatus_STATE_UNCONFIGURED AuthStatus_State = 1
-	AuthStatus_STATE_PENDING      AuthStatus_State = 2
-	AuthStatus_STATE_READY        AuthStatus_State = 3
-	AuthStatus_STATE_NEEDS_LOGIN  AuthStatus_State = 4
-	AuthStatus_STATE_UNAVAILABLE  AuthStatus_State = 5
+	LoginFinished_OUTCOME_UNSPECIFIED LoginFinished_Outcome = 0
+	LoginFinished_OUTCOME_SUCCEEDED   LoginFinished_Outcome = 1
+	LoginFinished_OUTCOME_FAILED      LoginFinished_Outcome = 2
+	LoginFinished_OUTCOME_EXPIRED     LoginFinished_Outcome = 3
 )
 
-// Enum value maps for AuthStatus_State.
+// Enum value maps for LoginFinished_Outcome.
 var (
-	AuthStatus_State_name = map[int32]string{
+	LoginFinished_Outcome_name = map[int32]string{
+		0: "OUTCOME_UNSPECIFIED",
+		1: "OUTCOME_SUCCEEDED",
+		2: "OUTCOME_FAILED",
+		3: "OUTCOME_EXPIRED",
+	}
+	LoginFinished_Outcome_value = map[string]int32{
+		"OUTCOME_UNSPECIFIED": 0,
+		"OUTCOME_SUCCEEDED":   1,
+		"OUTCOME_FAILED":      2,
+		"OUTCOME_EXPIRED":     3,
+	}
+)
+
+func (x LoginFinished_Outcome) Enum() *LoginFinished_Outcome {
+	p := new(LoginFinished_Outcome)
+	*p = x
+	return p
+}
+
+func (x LoginFinished_Outcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (LoginFinished_Outcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_agx_v1_agx_proto_enumTypes[4].Descriptor()
+}
+
+func (LoginFinished_Outcome) Type() protoreflect.EnumType {
+	return &file_agx_v1_agx_proto_enumTypes[4]
+}
+
+func (x LoginFinished_Outcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use LoginFinished_Outcome.Descriptor instead.
+func (LoginFinished_Outcome) EnumDescriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{37, 0}
+}
+
+type SecretStatus_State int32
+
+const (
+	SecretStatus_STATE_UNSPECIFIED  SecretStatus_State = 0
+	SecretStatus_STATE_UNCONFIGURED SecretStatus_State = 1
+	SecretStatus_STATE_PENDING      SecretStatus_State = 2
+	SecretStatus_STATE_READY        SecretStatus_State = 3
+	SecretStatus_STATE_NEEDS_LOGIN  SecretStatus_State = 4
+	SecretStatus_STATE_UNAVAILABLE  SecretStatus_State = 5
+)
+
+// Enum value maps for SecretStatus_State.
+var (
+	SecretStatus_State_name = map[int32]string{
 		0: "STATE_UNSPECIFIED",
 		1: "STATE_UNCONFIGURED",
 		2: "STATE_PENDING",
@@ -306,7 +306,7 @@ var (
 		4: "STATE_NEEDS_LOGIN",
 		5: "STATE_UNAVAILABLE",
 	}
-	AuthStatus_State_value = map[string]int32{
+	SecretStatus_State_value = map[string]int32{
 		"STATE_UNSPECIFIED":  0,
 		"STATE_UNCONFIGURED": 1,
 		"STATE_PENDING":      2,
@@ -316,31 +316,31 @@ var (
 	}
 )
 
-func (x AuthStatus_State) Enum() *AuthStatus_State {
-	p := new(AuthStatus_State)
+func (x SecretStatus_State) Enum() *SecretStatus_State {
+	p := new(SecretStatus_State)
 	*p = x
 	return p
 }
 
-func (x AuthStatus_State) String() string {
+func (x SecretStatus_State) String() string {
 	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
 }
 
-func (AuthStatus_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_weft_v1_weft_proto_enumTypes[5].Descriptor()
+func (SecretStatus_State) Descriptor() protoreflect.EnumDescriptor {
+	return file_agx_v1_agx_proto_enumTypes[5].Descriptor()
 }
 
-func (AuthStatus_State) Type() protoreflect.EnumType {
-	return &file_weft_v1_weft_proto_enumTypes[5]
+func (SecretStatus_State) Type() protoreflect.EnumType {
+	return &file_agx_v1_agx_proto_enumTypes[5]
 }
 
-func (x AuthStatus_State) Number() protoreflect.EnumNumber {
+func (x SecretStatus_State) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use AuthStatus_State.Descriptor instead.
-func (AuthStatus_State) EnumDescriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{40, 0}
+// Deprecated: Use SecretStatus_State.Descriptor instead.
+func (SecretStatus_State) EnumDescriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{42, 0}
 }
 
 type ResourceRef struct {
@@ -349,7 +349,7 @@ type ResourceRef struct {
 	//
 	//	*ResourceRef_SkillId
 	//	*ResourceRef_InstructionsId
-	//	*ResourceRef_ConnectionId
+	//	*ResourceRef_McpId
 	Resource      isResourceRef_Resource `protobuf_oneof:"resource"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -357,7 +357,7 @@ type ResourceRef struct {
 
 func (x *ResourceRef) Reset() {
 	*x = ResourceRef{}
-	mi := &file_weft_v1_weft_proto_msgTypes[0]
+	mi := &file_agx_v1_agx_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -369,7 +369,7 @@ func (x *ResourceRef) String() string {
 func (*ResourceRef) ProtoMessage() {}
 
 func (x *ResourceRef) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[0]
+	mi := &file_agx_v1_agx_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -382,7 +382,7 @@ func (x *ResourceRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceRef.ProtoReflect.Descriptor instead.
 func (*ResourceRef) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{0}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *ResourceRef) GetResource() isResourceRef_Resource {
@@ -410,10 +410,10 @@ func (x *ResourceRef) GetInstructionsId() string {
 	return ""
 }
 
-func (x *ResourceRef) GetConnectionId() string {
+func (x *ResourceRef) GetMcpId() string {
 	if x != nil {
-		if x, ok := x.Resource.(*ResourceRef_ConnectionId); ok {
-			return x.ConnectionId
+		if x, ok := x.Resource.(*ResourceRef_McpId); ok {
+			return x.McpId
 		}
 	}
 	return ""
@@ -431,15 +431,15 @@ type ResourceRef_InstructionsId struct {
 	InstructionsId string `protobuf:"bytes,2,opt,name=instructions_id,json=instructionsId,proto3,oneof"`
 }
 
-type ResourceRef_ConnectionId struct {
-	ConnectionId string `protobuf:"bytes,3,opt,name=connection_id,json=connectionId,proto3,oneof"`
+type ResourceRef_McpId struct {
+	McpId string `protobuf:"bytes,3,opt,name=mcp_id,json=mcpId,proto3,oneof"`
 }
 
 func (*ResourceRef_SkillId) isResourceRef_Resource() {}
 
 func (*ResourceRef_InstructionsId) isResourceRef_Resource() {}
 
-func (*ResourceRef_ConnectionId) isResourceRef_Resource() {}
+func (*ResourceRef_McpId) isResourceRef_Resource() {}
 
 type SourceLocation struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -452,7 +452,7 @@ type SourceLocation struct {
 
 func (x *SourceLocation) Reset() {
 	*x = SourceLocation{}
-	mi := &file_weft_v1_weft_proto_msgTypes[1]
+	mi := &file_agx_v1_agx_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -464,7 +464,7 @@ func (x *SourceLocation) String() string {
 func (*SourceLocation) ProtoMessage() {}
 
 func (x *SourceLocation) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[1]
+	mi := &file_agx_v1_agx_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -477,7 +477,7 @@ func (x *SourceLocation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceLocation.ProtoReflect.Descriptor instead.
 func (*SourceLocation) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{1}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *SourceLocation) GetPath() string {
@@ -503,7 +503,7 @@ func (x *SourceLocation) GetColumn() uint32 {
 
 type Diagnostic struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Severity      Diagnostic_Severity    `protobuf:"varint,1,opt,name=severity,proto3,enum=weft.v1.Diagnostic_Severity" json:"severity,omitempty"`
+	Severity      Diagnostic_Severity    `protobuf:"varint,1,opt,name=severity,proto3,enum=agx.v1.Diagnostic_Severity" json:"severity,omitempty"`
 	Code          string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
 	Summary       string                 `protobuf:"bytes,3,opt,name=summary,proto3" json:"summary,omitempty"`
 	Source        *SourceLocation        `protobuf:"bytes,4,opt,name=source,proto3" json:"source,omitempty"`
@@ -513,7 +513,7 @@ type Diagnostic struct {
 
 func (x *Diagnostic) Reset() {
 	*x = Diagnostic{}
-	mi := &file_weft_v1_weft_proto_msgTypes[2]
+	mi := &file_agx_v1_agx_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -525,7 +525,7 @@ func (x *Diagnostic) String() string {
 func (*Diagnostic) ProtoMessage() {}
 
 func (x *Diagnostic) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[2]
+	mi := &file_agx_v1_agx_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -538,7 +538,7 @@ func (x *Diagnostic) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Diagnostic.ProtoReflect.Descriptor instead.
 func (*Diagnostic) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{2}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Diagnostic) GetSeverity() Diagnostic_Severity {
@@ -575,13 +575,15 @@ type Snapshot struct {
 	Directory           string                 `protobuf:"bytes,2,opt,name=directory,proto3" json:"directory,omitempty"`
 	Resources           []*ResourceRef         `protobuf:"bytes,3,rep,name=resources,proto3" json:"resources,omitempty"`
 	RequiredEnvironment []string               `protobuf:"bytes,4,rep,name=required_environment,json=requiredEnvironment,proto3" json:"required_environment,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Empty when resolved without a harness.
+	Harness       string `protobuf:"bytes,5,opt,name=harness,proto3" json:"harness,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Snapshot) Reset() {
 	*x = Snapshot{}
-	mi := &file_weft_v1_weft_proto_msgTypes[3]
+	mi := &file_agx_v1_agx_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -593,7 +595,7 @@ func (x *Snapshot) String() string {
 func (*Snapshot) ProtoMessage() {}
 
 func (x *Snapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[3]
+	mi := &file_agx_v1_agx_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -606,7 +608,7 @@ func (x *Snapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Snapshot.ProtoReflect.Descriptor instead.
 func (*Snapshot) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{3}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Snapshot) GetId() string {
@@ -637,19 +639,28 @@ func (x *Snapshot) GetRequiredEnvironment() []string {
 	return nil
 }
 
+func (x *Snapshot) GetHarness() string {
+	if x != nil {
+		return x.Harness
+	}
+	return ""
+}
+
 type ResolutionStep struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	Change         ResolutionStep_Change  `protobuf:"varint,1,opt,name=change,proto3,enum=weft.v1.ResolutionStep_Change" json:"change,omitempty"`
+	Change         ResolutionStep_Change  `protobuf:"varint,1,opt,name=change,proto3,enum=agx.v1.ResolutionStep_Change" json:"change,omitempty"`
 	Source         *SourceLocation        `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
 	ScopeDirectory string                 `protobuf:"bytes,3,opt,name=scope_directory,json=scopeDirectory,proto3" json:"scope_directory,omitempty"`
 	BundleChain    []string               `protobuf:"bytes,4,rep,name=bundle_chain,json=bundleChain,proto3" json:"bundle_chain,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Harness whose own add/exclude produced the step; empty for directory scopes.
+	Harness       string `protobuf:"bytes,5,opt,name=harness,proto3" json:"harness,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ResolutionStep) Reset() {
 	*x = ResolutionStep{}
-	mi := &file_weft_v1_weft_proto_msgTypes[4]
+	mi := &file_agx_v1_agx_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -661,7 +672,7 @@ func (x *ResolutionStep) String() string {
 func (*ResolutionStep) ProtoMessage() {}
 
 func (x *ResolutionStep) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[4]
+	mi := &file_agx_v1_agx_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -674,7 +685,7 @@ func (x *ResolutionStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolutionStep.ProtoReflect.Descriptor instead.
 func (*ResolutionStep) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{4}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ResolutionStep) GetChange() ResolutionStep_Change {
@@ -705,6 +716,13 @@ func (x *ResolutionStep) GetBundleChain() []string {
 	return nil
 }
 
+func (x *ResolutionStep) GetHarness() string {
+	if x != nil {
+		return x.Harness
+	}
+	return ""
+}
+
 type ResourceTrace struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Resource      *ResourceRef           `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
@@ -715,7 +733,7 @@ type ResourceTrace struct {
 
 func (x *ResourceTrace) Reset() {
 	*x = ResourceTrace{}
-	mi := &file_weft_v1_weft_proto_msgTypes[5]
+	mi := &file_agx_v1_agx_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -727,7 +745,7 @@ func (x *ResourceTrace) String() string {
 func (*ResourceTrace) ProtoMessage() {}
 
 func (x *ResourceTrace) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[5]
+	mi := &file_agx_v1_agx_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -740,7 +758,7 @@ func (x *ResourceTrace) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceTrace.ProtoReflect.Descriptor instead.
 func (*ResourceTrace) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{5}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ResourceTrace) GetResource() *ResourceRef {
@@ -765,7 +783,7 @@ type ValidateRequest struct {
 
 func (x *ValidateRequest) Reset() {
 	*x = ValidateRequest{}
-	mi := &file_weft_v1_weft_proto_msgTypes[6]
+	mi := &file_agx_v1_agx_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -777,7 +795,7 @@ func (x *ValidateRequest) String() string {
 func (*ValidateRequest) ProtoMessage() {}
 
 func (x *ValidateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[6]
+	mi := &file_agx_v1_agx_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -790,7 +808,7 @@ func (x *ValidateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateRequest.ProtoReflect.Descriptor instead.
 func (*ValidateRequest) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{6}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{6}
 }
 
 type ValidateResponse struct {
@@ -802,7 +820,7 @@ type ValidateResponse struct {
 
 func (x *ValidateResponse) Reset() {
 	*x = ValidateResponse{}
-	mi := &file_weft_v1_weft_proto_msgTypes[7]
+	mi := &file_agx_v1_agx_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -814,7 +832,7 @@ func (x *ValidateResponse) String() string {
 func (*ValidateResponse) ProtoMessage() {}
 
 func (x *ValidateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[7]
+	mi := &file_agx_v1_agx_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -827,7 +845,7 @@ func (x *ValidateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateResponse.ProtoReflect.Descriptor instead.
 func (*ValidateResponse) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{7}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ValidateResponse) GetDiagnostics() []*Diagnostic {
@@ -838,15 +856,17 @@ func (x *ValidateResponse) GetDiagnostics() []*Diagnostic {
 }
 
 type ResolveRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Directory     string                 `protobuf:"bytes,1,opt,name=directory,proto3" json:"directory,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Directory string                 `protobuf:"bytes,1,opt,name=directory,proto3" json:"directory,omitempty"`
+	// Built-in or defined harness name; empty applies only harness-independent rules.
+	Harness       string `protobuf:"bytes,2,opt,name=harness,proto3" json:"harness,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ResolveRequest) Reset() {
 	*x = ResolveRequest{}
-	mi := &file_weft_v1_weft_proto_msgTypes[8]
+	mi := &file_agx_v1_agx_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -858,7 +878,7 @@ func (x *ResolveRequest) String() string {
 func (*ResolveRequest) ProtoMessage() {}
 
 func (x *ResolveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[8]
+	mi := &file_agx_v1_agx_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -871,12 +891,19 @@ func (x *ResolveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveRequest.ProtoReflect.Descriptor instead.
 func (*ResolveRequest) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{8}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ResolveRequest) GetDirectory() string {
 	if x != nil {
 		return x.Directory
+	}
+	return ""
+}
+
+func (x *ResolveRequest) GetHarness() string {
+	if x != nil {
+		return x.Harness
 	}
 	return ""
 }
@@ -892,7 +919,7 @@ type ResolveResponse struct {
 
 func (x *ResolveResponse) Reset() {
 	*x = ResolveResponse{}
-	mi := &file_weft_v1_weft_proto_msgTypes[9]
+	mi := &file_agx_v1_agx_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -904,7 +931,7 @@ func (x *ResolveResponse) String() string {
 func (*ResolveResponse) ProtoMessage() {}
 
 func (x *ResolveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[9]
+	mi := &file_agx_v1_agx_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -917,7 +944,7 @@ func (x *ResolveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveResponse.ProtoReflect.Descriptor instead.
 func (*ResolveResponse) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{9}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ResolveResponse) GetSnapshot() *Snapshot {
@@ -951,7 +978,7 @@ type InstallRequest struct {
 
 func (x *InstallRequest) Reset() {
 	*x = InstallRequest{}
-	mi := &file_weft_v1_weft_proto_msgTypes[10]
+	mi := &file_agx_v1_agx_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -963,7 +990,7 @@ func (x *InstallRequest) String() string {
 func (*InstallRequest) ProtoMessage() {}
 
 func (x *InstallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[10]
+	mi := &file_agx_v1_agx_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -976,7 +1003,7 @@ func (x *InstallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallRequest.ProtoReflect.Descriptor instead.
 func (*InstallRequest) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{10}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *InstallRequest) GetRequestId() string {
@@ -1002,7 +1029,7 @@ type InstallResponse struct {
 
 func (x *InstallResponse) Reset() {
 	*x = InstallResponse{}
-	mi := &file_weft_v1_weft_proto_msgTypes[11]
+	mi := &file_agx_v1_agx_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1014,7 +1041,7 @@ func (x *InstallResponse) String() string {
 func (*InstallResponse) ProtoMessage() {}
 
 func (x *InstallResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[11]
+	mi := &file_agx_v1_agx_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1027,7 +1054,7 @@ func (x *InstallResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallResponse.ProtoReflect.Descriptor instead.
 func (*InstallResponse) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{11}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *InstallResponse) GetOperationId() string {
@@ -1047,7 +1074,7 @@ type UpdateRequest struct {
 
 func (x *UpdateRequest) Reset() {
 	*x = UpdateRequest{}
-	mi := &file_weft_v1_weft_proto_msgTypes[12]
+	mi := &file_agx_v1_agx_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1059,7 +1086,7 @@ func (x *UpdateRequest) String() string {
 func (*UpdateRequest) ProtoMessage() {}
 
 func (x *UpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[12]
+	mi := &file_agx_v1_agx_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1072,7 +1099,7 @@ func (x *UpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateRequest.ProtoReflect.Descriptor instead.
 func (*UpdateRequest) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{12}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *UpdateRequest) GetRequestId() string {
@@ -1098,7 +1125,7 @@ type UpdateResponse struct {
 
 func (x *UpdateResponse) Reset() {
 	*x = UpdateResponse{}
-	mi := &file_weft_v1_weft_proto_msgTypes[13]
+	mi := &file_agx_v1_agx_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1110,7 +1137,7 @@ func (x *UpdateResponse) String() string {
 func (*UpdateResponse) ProtoMessage() {}
 
 func (x *UpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[13]
+	mi := &file_agx_v1_agx_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1123,7 +1150,7 @@ func (x *UpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateResponse.ProtoReflect.Descriptor instead.
 func (*UpdateResponse) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{13}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *UpdateResponse) GetOperationId() string {
@@ -1142,7 +1169,7 @@ type WatchOperationRequest struct {
 
 func (x *WatchOperationRequest) Reset() {
 	*x = WatchOperationRequest{}
-	mi := &file_weft_v1_weft_proto_msgTypes[14]
+	mi := &file_agx_v1_agx_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1154,7 +1181,7 @@ func (x *WatchOperationRequest) String() string {
 func (*WatchOperationRequest) ProtoMessage() {}
 
 func (x *WatchOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[14]
+	mi := &file_agx_v1_agx_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1167,7 +1194,7 @@ func (x *WatchOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchOperationRequest.ProtoReflect.Descriptor instead.
 func (*WatchOperationRequest) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{14}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *WatchOperationRequest) GetOperationId() string {
@@ -1192,7 +1219,7 @@ type WatchOperationResponse struct {
 
 func (x *WatchOperationResponse) Reset() {
 	*x = WatchOperationResponse{}
-	mi := &file_weft_v1_weft_proto_msgTypes[15]
+	mi := &file_agx_v1_agx_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1204,7 +1231,7 @@ func (x *WatchOperationResponse) String() string {
 func (*WatchOperationResponse) ProtoMessage() {}
 
 func (x *WatchOperationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[15]
+	mi := &file_agx_v1_agx_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1217,7 +1244,7 @@ func (x *WatchOperationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchOperationResponse.ProtoReflect.Descriptor instead.
 func (*WatchOperationResponse) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{15}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *WatchOperationResponse) GetOperationId() string {
@@ -1294,7 +1321,7 @@ type PackageProgress struct {
 
 func (x *PackageProgress) Reset() {
 	*x = PackageProgress{}
-	mi := &file_weft_v1_weft_proto_msgTypes[16]
+	mi := &file_agx_v1_agx_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1306,7 +1333,7 @@ func (x *PackageProgress) String() string {
 func (*PackageProgress) ProtoMessage() {}
 
 func (x *PackageProgress) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[16]
+	mi := &file_agx_v1_agx_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1319,7 +1346,7 @@ func (x *PackageProgress) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PackageProgress.ProtoReflect.Descriptor instead.
 func (*PackageProgress) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{16}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *PackageProgress) GetPackageId() string {
@@ -1353,7 +1380,7 @@ type PackageResult struct {
 
 func (x *PackageResult) Reset() {
 	*x = PackageResult{}
-	mi := &file_weft_v1_weft_proto_msgTypes[17]
+	mi := &file_agx_v1_agx_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1365,7 +1392,7 @@ func (x *PackageResult) String() string {
 func (*PackageResult) ProtoMessage() {}
 
 func (x *PackageResult) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[17]
+	mi := &file_agx_v1_agx_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1378,7 +1405,7 @@ func (x *PackageResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PackageResult.ProtoReflect.Descriptor instead.
 func (*PackageResult) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{17}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *PackageResult) GetPackageIds() []string {
@@ -1400,7 +1427,8 @@ type PrepareLaunchRequest struct {
 	RequestId  string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	SnapshotId string                 `protobuf:"bytes,2,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
 	Directory  string                 `protobuf:"bytes,3,opt,name=directory,proto3" json:"directory,omitempty"`
-	Harness    Harness                `protobuf:"varint,4,opt,name=harness,proto3,enum=weft.v1.Harness" json:"harness,omitempty"`
+	// Built-in or defined harness name. The daemon resolves its definition.
+	Harness string `protobuf:"bytes,4,opt,name=harness,proto3" json:"harness,omitempty"`
 	// Sensitive: native arguments may contain prompt bodies or credentials.
 	NativeArguments []string `protobuf:"bytes,5,rep,name=native_arguments,json=nativeArguments,proto3" json:"native_arguments,omitempty"`
 	// Sensitive: only names declared by the expected snapshot are accepted.
@@ -1411,7 +1439,7 @@ type PrepareLaunchRequest struct {
 
 func (x *PrepareLaunchRequest) Reset() {
 	*x = PrepareLaunchRequest{}
-	mi := &file_weft_v1_weft_proto_msgTypes[18]
+	mi := &file_agx_v1_agx_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1423,7 +1451,7 @@ func (x *PrepareLaunchRequest) String() string {
 func (*PrepareLaunchRequest) ProtoMessage() {}
 
 func (x *PrepareLaunchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[18]
+	mi := &file_agx_v1_agx_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1436,7 +1464,7 @@ func (x *PrepareLaunchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareLaunchRequest.ProtoReflect.Descriptor instead.
 func (*PrepareLaunchRequest) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{18}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *PrepareLaunchRequest) GetRequestId() string {
@@ -1460,11 +1488,11 @@ func (x *PrepareLaunchRequest) GetDirectory() string {
 	return ""
 }
 
-func (x *PrepareLaunchRequest) GetHarness() Harness {
+func (x *PrepareLaunchRequest) GetHarness() string {
 	if x != nil {
 		return x.Harness
 	}
-	return Harness_HARNESS_UNSPECIFIED
+	return ""
 }
 
 func (x *PrepareLaunchRequest) GetNativeArguments() []string {
@@ -1494,7 +1522,7 @@ type PrepareLaunchResponse struct {
 
 func (x *PrepareLaunchResponse) Reset() {
 	*x = PrepareLaunchResponse{}
-	mi := &file_weft_v1_weft_proto_msgTypes[19]
+	mi := &file_agx_v1_agx_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1506,7 +1534,7 @@ func (x *PrepareLaunchResponse) String() string {
 func (*PrepareLaunchResponse) ProtoMessage() {}
 
 func (x *PrepareLaunchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[19]
+	mi := &file_agx_v1_agx_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1519,7 +1547,7 @@ func (x *PrepareLaunchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareLaunchResponse.ProtoReflect.Descriptor instead.
 func (*PrepareLaunchResponse) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{19}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PrepareLaunchResponse) GetLaunch() *Launch {
@@ -1564,7 +1592,7 @@ type SpawnPlan struct {
 
 func (x *SpawnPlan) Reset() {
 	*x = SpawnPlan{}
-	mi := &file_weft_v1_weft_proto_msgTypes[20]
+	mi := &file_agx_v1_agx_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1576,7 +1604,7 @@ func (x *SpawnPlan) String() string {
 func (*SpawnPlan) ProtoMessage() {}
 
 func (x *SpawnPlan) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[20]
+	mi := &file_agx_v1_agx_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1589,7 +1617,7 @@ func (x *SpawnPlan) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SpawnPlan.ProtoReflect.Descriptor instead.
 func (*SpawnPlan) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{20}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *SpawnPlan) GetExecutable() string {
@@ -1628,20 +1656,22 @@ func (x *SpawnPlan) GetUnsetEnvironment() []string {
 }
 
 type Launch struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	SnapshotId    string                 `protobuf:"bytes,2,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
-	Directory     string                 `protobuf:"bytes,3,opt,name=directory,proto3" json:"directory,omitempty"`
-	Harness       Harness                `protobuf:"varint,4,opt,name=harness,proto3,enum=weft.v1.Harness" json:"harness,omitempty"`
-	State         Launch_State           `protobuf:"varint,5,opt,name=state,proto3,enum=weft.v1.Launch_State" json:"state,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Id         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SnapshotId string                 `protobuf:"bytes,2,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	Directory  string                 `protobuf:"bytes,3,opt,name=directory,proto3" json:"directory,omitempty"`
+	Harness    string                 `protobuf:"bytes,4,opt,name=harness,proto3" json:"harness,omitempty"`
+	State      Launch_State           `protobuf:"varint,5,opt,name=state,proto3,enum=agx.v1.Launch_State" json:"state,omitempty"`
+	ExpiresAt  *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// Invocation mode classified from the native arguments, such as interactive or exec.
+	Mode          string `protobuf:"bytes,7,opt,name=mode,proto3" json:"mode,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Launch) Reset() {
 	*x = Launch{}
-	mi := &file_weft_v1_weft_proto_msgTypes[21]
+	mi := &file_agx_v1_agx_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1653,7 +1683,7 @@ func (x *Launch) String() string {
 func (*Launch) ProtoMessage() {}
 
 func (x *Launch) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[21]
+	mi := &file_agx_v1_agx_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1666,7 +1696,7 @@ func (x *Launch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Launch.ProtoReflect.Descriptor instead.
 func (*Launch) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{21}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *Launch) GetId() string {
@@ -1690,11 +1720,11 @@ func (x *Launch) GetDirectory() string {
 	return ""
 }
 
-func (x *Launch) GetHarness() Harness {
+func (x *Launch) GetHarness() string {
 	if x != nil {
 		return x.Harness
 	}
-	return Harness_HARNESS_UNSPECIFIED
+	return ""
 }
 
 func (x *Launch) GetState() Launch_State {
@@ -1711,6 +1741,13 @@ func (x *Launch) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Launch) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
 // Renew/finish use lifecycle authorization metadata, not management/MCP grants.
 type RenewLaunchRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1722,7 +1759,7 @@ type RenewLaunchRequest struct {
 
 func (x *RenewLaunchRequest) Reset() {
 	*x = RenewLaunchRequest{}
-	mi := &file_weft_v1_weft_proto_msgTypes[22]
+	mi := &file_agx_v1_agx_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1734,7 +1771,7 @@ func (x *RenewLaunchRequest) String() string {
 func (*RenewLaunchRequest) ProtoMessage() {}
 
 func (x *RenewLaunchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[22]
+	mi := &file_agx_v1_agx_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1747,7 +1784,7 @@ func (x *RenewLaunchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewLaunchRequest.ProtoReflect.Descriptor instead.
 func (*RenewLaunchRequest) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{22}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *RenewLaunchRequest) GetLaunchId() string {
@@ -1773,7 +1810,7 @@ type RenewLaunchResponse struct {
 
 func (x *RenewLaunchResponse) Reset() {
 	*x = RenewLaunchResponse{}
-	mi := &file_weft_v1_weft_proto_msgTypes[23]
+	mi := &file_agx_v1_agx_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1785,7 +1822,7 @@ func (x *RenewLaunchResponse) String() string {
 func (*RenewLaunchResponse) ProtoMessage() {}
 
 func (x *RenewLaunchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[23]
+	mi := &file_agx_v1_agx_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1798,7 +1835,7 @@ func (x *RenewLaunchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewLaunchResponse.ProtoReflect.Descriptor instead.
 func (*RenewLaunchResponse) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{23}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *RenewLaunchResponse) GetExpiresAt() *timestamppb.Timestamp {
@@ -1823,7 +1860,7 @@ type FinishLaunchRequest struct {
 
 func (x *FinishLaunchRequest) Reset() {
 	*x = FinishLaunchRequest{}
-	mi := &file_weft_v1_weft_proto_msgTypes[24]
+	mi := &file_agx_v1_agx_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1835,7 +1872,7 @@ func (x *FinishLaunchRequest) String() string {
 func (*FinishLaunchRequest) ProtoMessage() {}
 
 func (x *FinishLaunchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[24]
+	mi := &file_agx_v1_agx_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1848,7 +1885,7 @@ func (x *FinishLaunchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FinishLaunchRequest.ProtoReflect.Descriptor instead.
 func (*FinishLaunchRequest) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{24}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *FinishLaunchRequest) GetLaunchId() string {
@@ -1922,7 +1959,7 @@ type FinishLaunchResponse struct {
 
 func (x *FinishLaunchResponse) Reset() {
 	*x = FinishLaunchResponse{}
-	mi := &file_weft_v1_weft_proto_msgTypes[25]
+	mi := &file_agx_v1_agx_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1934,7 +1971,7 @@ func (x *FinishLaunchResponse) String() string {
 func (*FinishLaunchResponse) ProtoMessage() {}
 
 func (x *FinishLaunchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[25]
+	mi := &file_agx_v1_agx_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1947,7 +1984,7 @@ func (x *FinishLaunchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FinishLaunchResponse.ProtoReflect.Descriptor instead.
 func (*FinishLaunchResponse) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{25}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{25}
 }
 
 type RevokeLaunchRequest struct {
@@ -1959,7 +1996,7 @@ type RevokeLaunchRequest struct {
 
 func (x *RevokeLaunchRequest) Reset() {
 	*x = RevokeLaunchRequest{}
-	mi := &file_weft_v1_weft_proto_msgTypes[26]
+	mi := &file_agx_v1_agx_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1971,7 +2008,7 @@ func (x *RevokeLaunchRequest) String() string {
 func (*RevokeLaunchRequest) ProtoMessage() {}
 
 func (x *RevokeLaunchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[26]
+	mi := &file_agx_v1_agx_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1984,7 +2021,7 @@ func (x *RevokeLaunchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeLaunchRequest.ProtoReflect.Descriptor instead.
 func (*RevokeLaunchRequest) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{26}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *RevokeLaunchRequest) GetLaunchId() string {
@@ -2002,7 +2039,7 @@ type RevokeLaunchResponse struct {
 
 func (x *RevokeLaunchResponse) Reset() {
 	*x = RevokeLaunchResponse{}
-	mi := &file_weft_v1_weft_proto_msgTypes[27]
+	mi := &file_agx_v1_agx_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2014,7 +2051,7 @@ func (x *RevokeLaunchResponse) String() string {
 func (*RevokeLaunchResponse) ProtoMessage() {}
 
 func (x *RevokeLaunchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[27]
+	mi := &file_agx_v1_agx_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2027,34 +2064,34 @@ func (x *RevokeLaunchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeLaunchResponse.ProtoReflect.Descriptor instead.
 func (*RevokeLaunchResponse) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{27}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{27}
 }
 
-type ConnectionRuntime struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	LaunchId      string                  `protobuf:"bytes,1,opt,name=launch_id,json=launchId,proto3" json:"launch_id,omitempty"`
-	ConnectionId  string                  `protobuf:"bytes,2,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
-	State         ConnectionRuntime_State `protobuf:"varint,3,opt,name=state,proto3,enum=weft.v1.ConnectionRuntime_State" json:"state,omitempty"`
-	Diagnostics   []*Diagnostic           `protobuf:"bytes,4,rep,name=diagnostics,proto3" json:"diagnostics,omitempty"`
+type McpRuntime struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LaunchId      string                 `protobuf:"bytes,1,opt,name=launch_id,json=launchId,proto3" json:"launch_id,omitempty"`
+	McpId         string                 `protobuf:"bytes,2,opt,name=mcp_id,json=mcpId,proto3" json:"mcp_id,omitempty"`
+	State         McpRuntime_State       `protobuf:"varint,3,opt,name=state,proto3,enum=agx.v1.McpRuntime_State" json:"state,omitempty"`
+	Diagnostics   []*Diagnostic          `protobuf:"bytes,4,rep,name=diagnostics,proto3" json:"diagnostics,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ConnectionRuntime) Reset() {
-	*x = ConnectionRuntime{}
-	mi := &file_weft_v1_weft_proto_msgTypes[28]
+func (x *McpRuntime) Reset() {
+	*x = McpRuntime{}
+	mi := &file_agx_v1_agx_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ConnectionRuntime) String() string {
+func (x *McpRuntime) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ConnectionRuntime) ProtoMessage() {}
+func (*McpRuntime) ProtoMessage() {}
 
-func (x *ConnectionRuntime) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[28]
+func (x *McpRuntime) ProtoReflect() protoreflect.Message {
+	mi := &file_agx_v1_agx_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2065,33 +2102,33 @@ func (x *ConnectionRuntime) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ConnectionRuntime.ProtoReflect.Descriptor instead.
-func (*ConnectionRuntime) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{28}
+// Deprecated: Use McpRuntime.ProtoReflect.Descriptor instead.
+func (*McpRuntime) Descriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{28}
 }
 
-func (x *ConnectionRuntime) GetLaunchId() string {
+func (x *McpRuntime) GetLaunchId() string {
 	if x != nil {
 		return x.LaunchId
 	}
 	return ""
 }
 
-func (x *ConnectionRuntime) GetConnectionId() string {
+func (x *McpRuntime) GetMcpId() string {
 	if x != nil {
-		return x.ConnectionId
+		return x.McpId
 	}
 	return ""
 }
 
-func (x *ConnectionRuntime) GetState() ConnectionRuntime_State {
+func (x *McpRuntime) GetState() McpRuntime_State {
 	if x != nil {
 		return x.State
 	}
-	return ConnectionRuntime_STATE_UNSPECIFIED
+	return McpRuntime_STATE_UNSPECIFIED
 }
 
-func (x *ConnectionRuntime) GetDiagnostics() []*Diagnostic {
+func (x *McpRuntime) GetDiagnostics() []*Diagnostic {
 	if x != nil {
 		return x.Diagnostics
 	}
@@ -2103,7 +2140,7 @@ type RuntimeView struct {
 	DaemonInstanceId string                 `protobuf:"bytes,1,opt,name=daemon_instance_id,json=daemonInstanceId,proto3" json:"daemon_instance_id,omitempty"`
 	Version          string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
 	Launches         []*Launch              `protobuf:"bytes,3,rep,name=launches,proto3" json:"launches,omitempty"`
-	Connections      []*ConnectionRuntime   `protobuf:"bytes,4,rep,name=connections,proto3" json:"connections,omitempty"`
+	McpServers       []*McpRuntime          `protobuf:"bytes,4,rep,name=mcp_servers,json=mcpServers,proto3" json:"mcp_servers,omitempty"`
 	Diagnostics      []*Diagnostic          `protobuf:"bytes,5,rep,name=diagnostics,proto3" json:"diagnostics,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -2111,7 +2148,7 @@ type RuntimeView struct {
 
 func (x *RuntimeView) Reset() {
 	*x = RuntimeView{}
-	mi := &file_weft_v1_weft_proto_msgTypes[29]
+	mi := &file_agx_v1_agx_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2123,7 +2160,7 @@ func (x *RuntimeView) String() string {
 func (*RuntimeView) ProtoMessage() {}
 
 func (x *RuntimeView) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[29]
+	mi := &file_agx_v1_agx_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2136,7 +2173,7 @@ func (x *RuntimeView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeView.ProtoReflect.Descriptor instead.
 func (*RuntimeView) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{29}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *RuntimeView) GetDaemonInstanceId() string {
@@ -2160,9 +2197,9 @@ func (x *RuntimeView) GetLaunches() []*Launch {
 	return nil
 }
 
-func (x *RuntimeView) GetConnections() []*ConnectionRuntime {
+func (x *RuntimeView) GetMcpServers() []*McpRuntime {
 	if x != nil {
-		return x.Connections
+		return x.McpServers
 	}
 	return nil
 }
@@ -2182,7 +2219,7 @@ type GetRuntimeRequest struct {
 
 func (x *GetRuntimeRequest) Reset() {
 	*x = GetRuntimeRequest{}
-	mi := &file_weft_v1_weft_proto_msgTypes[30]
+	mi := &file_agx_v1_agx_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2194,7 +2231,7 @@ func (x *GetRuntimeRequest) String() string {
 func (*GetRuntimeRequest) ProtoMessage() {}
 
 func (x *GetRuntimeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[30]
+	mi := &file_agx_v1_agx_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2207,7 +2244,7 @@ func (x *GetRuntimeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRuntimeRequest.ProtoReflect.Descriptor instead.
 func (*GetRuntimeRequest) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{30}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{30}
 }
 
 type GetRuntimeResponse struct {
@@ -2219,7 +2256,7 @@ type GetRuntimeResponse struct {
 
 func (x *GetRuntimeResponse) Reset() {
 	*x = GetRuntimeResponse{}
-	mi := &file_weft_v1_weft_proto_msgTypes[31]
+	mi := &file_agx_v1_agx_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2231,7 +2268,7 @@ func (x *GetRuntimeResponse) String() string {
 func (*GetRuntimeResponse) ProtoMessage() {}
 
 func (x *GetRuntimeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[31]
+	mi := &file_agx_v1_agx_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2244,7 +2281,7 @@ func (x *GetRuntimeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRuntimeResponse.ProtoReflect.Descriptor instead.
 func (*GetRuntimeResponse) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{31}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *GetRuntimeResponse) GetRuntime() *RuntimeView {
@@ -2262,7 +2299,7 @@ type WatchRuntimeRequest struct {
 
 func (x *WatchRuntimeRequest) Reset() {
 	*x = WatchRuntimeRequest{}
-	mi := &file_weft_v1_weft_proto_msgTypes[32]
+	mi := &file_agx_v1_agx_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2274,7 +2311,7 @@ func (x *WatchRuntimeRequest) String() string {
 func (*WatchRuntimeRequest) ProtoMessage() {}
 
 func (x *WatchRuntimeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[32]
+	mi := &file_agx_v1_agx_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2287,7 +2324,7 @@ func (x *WatchRuntimeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchRuntimeRequest.ProtoReflect.Descriptor instead.
 func (*WatchRuntimeRequest) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{32}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{32}
 }
 
 type WatchRuntimeResponse struct {
@@ -2299,7 +2336,7 @@ type WatchRuntimeResponse struct {
 
 func (x *WatchRuntimeResponse) Reset() {
 	*x = WatchRuntimeResponse{}
-	mi := &file_weft_v1_weft_proto_msgTypes[33]
+	mi := &file_agx_v1_agx_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2311,7 +2348,7 @@ func (x *WatchRuntimeResponse) String() string {
 func (*WatchRuntimeResponse) ProtoMessage() {}
 
 func (x *WatchRuntimeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[33]
+	mi := &file_agx_v1_agx_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2324,7 +2361,7 @@ func (x *WatchRuntimeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchRuntimeResponse.ProtoReflect.Descriptor instead.
 func (*WatchRuntimeResponse) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{33}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *WatchRuntimeResponse) GetRuntime() *RuntimeView {
@@ -2334,31 +2371,29 @@ func (x *WatchRuntimeResponse) GetRuntime() *RuntimeView {
 	return nil
 }
 
-type BeginOAuthLoginRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	SnapshotId    string                 `protobuf:"bytes,2,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
-	ConnectionId  string                 `protobuf:"bytes,3,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
-	Directory     string                 `protobuf:"bytes,4,opt,name=directory,proto3" json:"directory,omitempty"`
+type LoginRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A top-level OAuth secret, or the ID of an MCP server whose auth is inline or implicit.
+	SecretId      string `protobuf:"bytes,1,opt,name=secret_id,json=secretId,proto3" json:"secret_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *BeginOAuthLoginRequest) Reset() {
-	*x = BeginOAuthLoginRequest{}
-	mi := &file_weft_v1_weft_proto_msgTypes[34]
+func (x *LoginRequest) Reset() {
+	*x = LoginRequest{}
+	mi := &file_agx_v1_agx_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *BeginOAuthLoginRequest) String() string {
+func (x *LoginRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*BeginOAuthLoginRequest) ProtoMessage() {}
+func (*LoginRequest) ProtoMessage() {}
 
-func (x *BeginOAuthLoginRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[34]
+func (x *LoginRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agx_v1_agx_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2369,64 +2404,126 @@ func (x *BeginOAuthLoginRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use BeginOAuthLoginRequest.ProtoReflect.Descriptor instead.
-func (*BeginOAuthLoginRequest) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{34}
+// Deprecated: Use LoginRequest.ProtoReflect.Descriptor instead.
+func (*LoginRequest) Descriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{34}
 }
 
-func (x *BeginOAuthLoginRequest) GetRequestId() string {
+func (x *LoginRequest) GetSecretId() string {
 	if x != nil {
-		return x.RequestId
+		return x.SecretId
 	}
 	return ""
 }
 
-func (x *BeginOAuthLoginRequest) GetSnapshotId() string {
-	if x != nil {
-		return x.SnapshotId
-	}
-	return ""
+type LoginResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Event:
+	//
+	//	*LoginResponse_Started
+	//	*LoginResponse_Finished
+	Event         isLoginResponse_Event `protobuf_oneof:"event"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
-func (x *BeginOAuthLoginRequest) GetConnectionId() string {
-	if x != nil {
-		return x.ConnectionId
-	}
-	return ""
+func (x *LoginResponse) Reset() {
+	*x = LoginResponse{}
+	mi := &file_agx_v1_agx_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
 }
 
-func (x *BeginOAuthLoginRequest) GetDirectory() string {
-	if x != nil {
-		return x.Directory
-	}
-	return ""
+func (x *LoginResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
 }
 
-type BeginOAuthLoginResponse struct {
+func (*LoginResponse) ProtoMessage() {}
+
+func (x *LoginResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agx_v1_agx_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoginResponse.ProtoReflect.Descriptor instead.
+func (*LoginResponse) Descriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *LoginResponse) GetEvent() isLoginResponse_Event {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+func (x *LoginResponse) GetStarted() *LoginStarted {
+	if x != nil {
+		if x, ok := x.Event.(*LoginResponse_Started); ok {
+			return x.Started
+		}
+	}
+	return nil
+}
+
+func (x *LoginResponse) GetFinished() *LoginFinished {
+	if x != nil {
+		if x, ok := x.Event.(*LoginResponse_Finished); ok {
+			return x.Finished
+		}
+	}
+	return nil
+}
+
+type isLoginResponse_Event interface {
+	isLoginResponse_Event()
+}
+
+type LoginResponse_Started struct {
+	Started *LoginStarted `protobuf:"bytes,1,opt,name=started,proto3,oneof"`
+}
+
+type LoginResponse_Finished struct {
+	Finished *LoginFinished `protobuf:"bytes,2,opt,name=finished,proto3,oneof"`
+}
+
+func (*LoginResponse_Started) isLoginResponse_Event() {}
+
+func (*LoginResponse_Finished) isLoginResponse_Event() {}
+
+// The first event: open authorization_url in a browser on this machine before expires_at.
+type LoginStarted struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	AttemptId        string                 `protobuf:"bytes,1,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
-	AuthorizationUrl string                 `protobuf:"bytes,2,opt,name=authorization_url,json=authorizationUrl,proto3" json:"authorization_url,omitempty"`
-	ExpiresAt        *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	AuthId           string                 `protobuf:"bytes,4,opt,name=auth_id,json=authId,proto3" json:"auth_id,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	AuthorizationUrl string                 `protobuf:"bytes,1,opt,name=authorization_url,json=authorizationUrl,proto3" json:"authorization_url,omitempty"`
+	ExpiresAt        *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// The MCP server whose URL the login authorizes.
+	McpId         string `protobuf:"bytes,3,opt,name=mcp_id,json=mcpId,proto3" json:"mcp_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
-func (x *BeginOAuthLoginResponse) Reset() {
-	*x = BeginOAuthLoginResponse{}
-	mi := &file_weft_v1_weft_proto_msgTypes[35]
+func (x *LoginStarted) Reset() {
+	*x = LoginStarted{}
+	mi := &file_agx_v1_agx_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *BeginOAuthLoginResponse) String() string {
+func (x *LoginStarted) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*BeginOAuthLoginResponse) ProtoMessage() {}
+func (*LoginStarted) ProtoMessage() {}
 
-func (x *BeginOAuthLoginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[35]
+func (x *LoginStarted) ProtoReflect() protoreflect.Message {
+	mi := &file_agx_v1_agx_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2437,51 +2534,98 @@ func (x *BeginOAuthLoginResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use BeginOAuthLoginResponse.ProtoReflect.Descriptor instead.
-func (*BeginOAuthLoginResponse) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{35}
+// Deprecated: Use LoginStarted.ProtoReflect.Descriptor instead.
+func (*LoginStarted) Descriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{36}
 }
 
-func (x *BeginOAuthLoginResponse) GetAttemptId() string {
-	if x != nil {
-		return x.AttemptId
-	}
-	return ""
-}
-
-func (x *BeginOAuthLoginResponse) GetAuthorizationUrl() string {
+func (x *LoginStarted) GetAuthorizationUrl() string {
 	if x != nil {
 		return x.AuthorizationUrl
 	}
 	return ""
 }
 
-func (x *BeginOAuthLoginResponse) GetExpiresAt() *timestamppb.Timestamp {
+func (x *LoginStarted) GetExpiresAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.ExpiresAt
 	}
 	return nil
 }
 
-func (x *BeginOAuthLoginResponse) GetAuthId() string {
+func (x *LoginStarted) GetMcpId() string {
 	if x != nil {
-		return x.AuthId
+		return x.McpId
+	}
+	return ""
+}
+
+// The last event; the stream then ends.
+type LoginFinished struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Outcome LoginFinished_Outcome  `protobuf:"varint,1,opt,name=outcome,proto3,enum=agx.v1.LoginFinished_Outcome" json:"outcome,omitempty"`
+	// Redacted reason for a failure.
+	Message       string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoginFinished) Reset() {
+	*x = LoginFinished{}
+	mi := &file_agx_v1_agx_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoginFinished) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoginFinished) ProtoMessage() {}
+
+func (x *LoginFinished) ProtoReflect() protoreflect.Message {
+	mi := &file_agx_v1_agx_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoginFinished.ProtoReflect.Descriptor instead.
+func (*LoginFinished) Descriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *LoginFinished) GetOutcome() LoginFinished_Outcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return LoginFinished_OUTCOME_UNSPECIFIED
+}
+
+func (x *LoginFinished) GetMessage() string {
+	if x != nil {
+		return x.Message
 	}
 	return ""
 }
 
 type SetSecretRequest struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	AuthId string                 `protobuf:"bytes,1,opt,name=auth_id,json=authId,proto3" json:"auth_id,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	SecretId string                 `protobuf:"bytes,1,opt,name=secret_id,json=secretId,proto3" json:"secret_id,omitempty"`
 	// Sensitive: credential value; must not enter RPC logs or telemetry.
-	Secret        []byte `protobuf:"bytes,2,opt,name=secret,proto3" json:"secret,omitempty"`
+	Value         []byte `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SetSecretRequest) Reset() {
 	*x = SetSecretRequest{}
-	mi := &file_weft_v1_weft_proto_msgTypes[36]
+	mi := &file_agx_v1_agx_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2493,7 +2637,7 @@ func (x *SetSecretRequest) String() string {
 func (*SetSecretRequest) ProtoMessage() {}
 
 func (x *SetSecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[36]
+	mi := &file_agx_v1_agx_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2506,19 +2650,19 @@ func (x *SetSecretRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSecretRequest.ProtoReflect.Descriptor instead.
 func (*SetSecretRequest) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{36}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{38}
 }
 
-func (x *SetSecretRequest) GetAuthId() string {
+func (x *SetSecretRequest) GetSecretId() string {
 	if x != nil {
-		return x.AuthId
+		return x.SecretId
 	}
 	return ""
 }
 
-func (x *SetSecretRequest) GetSecret() []byte {
+func (x *SetSecretRequest) GetValue() []byte {
 	if x != nil {
-		return x.Secret
+		return x.Value
 	}
 	return nil
 }
@@ -2531,7 +2675,7 @@ type SetSecretResponse struct {
 
 func (x *SetSecretResponse) Reset() {
 	*x = SetSecretResponse{}
-	mi := &file_weft_v1_weft_proto_msgTypes[37]
+	mi := &file_agx_v1_agx_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2543,7 +2687,7 @@ func (x *SetSecretResponse) String() string {
 func (*SetSecretResponse) ProtoMessage() {}
 
 func (x *SetSecretResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[37]
+	mi := &file_agx_v1_agx_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2556,32 +2700,32 @@ func (x *SetSecretResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSecretResponse.ProtoReflect.Descriptor instead.
 func (*SetSecretResponse) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{37}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{39}
 }
 
-type GetAuthStatusRequest struct {
+type GetSecretStatusRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Empty selects all configured auth sources.
-	AuthId        string `protobuf:"bytes,1,opt,name=auth_id,json=authId,proto3" json:"auth_id,omitempty"`
+	// Empty selects all configured secrets, except on-demand OAuth no server has asked for yet.
+	SecretId      string `protobuf:"bytes,1,opt,name=secret_id,json=secretId,proto3" json:"secret_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetAuthStatusRequest) Reset() {
-	*x = GetAuthStatusRequest{}
-	mi := &file_weft_v1_weft_proto_msgTypes[38]
+func (x *GetSecretStatusRequest) Reset() {
+	*x = GetSecretStatusRequest{}
+	mi := &file_agx_v1_agx_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetAuthStatusRequest) String() string {
+func (x *GetSecretStatusRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetAuthStatusRequest) ProtoMessage() {}
+func (*GetSecretStatusRequest) ProtoMessage() {}
 
-func (x *GetAuthStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[38]
+func (x *GetSecretStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agx_v1_agx_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2592,40 +2736,40 @@ func (x *GetAuthStatusRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetAuthStatusRequest.ProtoReflect.Descriptor instead.
-func (*GetAuthStatusRequest) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{38}
+// Deprecated: Use GetSecretStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetSecretStatusRequest) Descriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{40}
 }
 
-func (x *GetAuthStatusRequest) GetAuthId() string {
+func (x *GetSecretStatusRequest) GetSecretId() string {
 	if x != nil {
-		return x.AuthId
+		return x.SecretId
 	}
 	return ""
 }
 
-type GetAuthStatusResponse struct {
+type GetSecretStatusResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Statuses      []*AuthStatus          `protobuf:"bytes,1,rep,name=statuses,proto3" json:"statuses,omitempty"`
+	Statuses      []*SecretStatus        `protobuf:"bytes,1,rep,name=statuses,proto3" json:"statuses,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetAuthStatusResponse) Reset() {
-	*x = GetAuthStatusResponse{}
-	mi := &file_weft_v1_weft_proto_msgTypes[39]
+func (x *GetSecretStatusResponse) Reset() {
+	*x = GetSecretStatusResponse{}
+	mi := &file_agx_v1_agx_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetAuthStatusResponse) String() string {
+func (x *GetSecretStatusResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetAuthStatusResponse) ProtoMessage() {}
+func (*GetSecretStatusResponse) ProtoMessage() {}
 
-func (x *GetAuthStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[39]
+func (x *GetSecretStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agx_v1_agx_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2636,43 +2780,49 @@ func (x *GetAuthStatusResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetAuthStatusResponse.ProtoReflect.Descriptor instead.
-func (*GetAuthStatusResponse) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{39}
+// Deprecated: Use GetSecretStatusResponse.ProtoReflect.Descriptor instead.
+func (*GetSecretStatusResponse) Descriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{41}
 }
 
-func (x *GetAuthStatusResponse) GetStatuses() []*AuthStatus {
+func (x *GetSecretStatusResponse) GetStatuses() []*SecretStatus {
 	if x != nil {
 		return x.Statuses
 	}
 	return nil
 }
 
-type AuthStatus struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AuthId        string                 `protobuf:"bytes,1,opt,name=auth_id,json=authId,proto3" json:"auth_id,omitempty"`
-	State         AuthStatus_State       `protobuf:"varint,2,opt,name=state,proto3,enum=weft.v1.AuthStatus_State" json:"state,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	Diagnostics   []*Diagnostic          `protobuf:"bytes,4,rep,name=diagnostics,proto3" json:"diagnostics,omitempty"`
+type SecretStatus struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	SecretId    string                 `protobuf:"bytes,1,opt,name=secret_id,json=secretId,proto3" json:"secret_id,omitempty"`
+	State       SecretStatus_State     `protobuf:"varint,2,opt,name=state,proto3,enum=agx.v1.SecretStatus_State" json:"state,omitempty"`
+	ExpiresAt   *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	Diagnostics []*Diagnostic          `protobuf:"bytes,4,rep,name=diagnostics,proto3" json:"diagnostics,omitempty"`
+	// environment, daemon_environment, command, keychain, or oauth.
+	Kind string `protobuf:"bytes,5,opt,name=kind,proto3" json:"kind,omitempty"`
+	// Set for a secret declared inline in this MCP server's auth; equal to secret_id.
+	McpId string `protobuf:"bytes,6,opt,name=mcp_id,json=mcpId,proto3" json:"mcp_id,omitempty"`
+	// OAuth an HTTP MCP server without auth uses once the server asks for it.
+	OnDemand      bool `protobuf:"varint,7,opt,name=on_demand,json=onDemand,proto3" json:"on_demand,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AuthStatus) Reset() {
-	*x = AuthStatus{}
-	mi := &file_weft_v1_weft_proto_msgTypes[40]
+func (x *SecretStatus) Reset() {
+	*x = SecretStatus{}
+	mi := &file_agx_v1_agx_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AuthStatus) String() string {
+func (x *SecretStatus) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AuthStatus) ProtoMessage() {}
+func (*SecretStatus) ProtoMessage() {}
 
-func (x *AuthStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[40]
+func (x *SecretStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_agx_v1_agx_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2683,49 +2833,70 @@ func (x *AuthStatus) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AuthStatus.ProtoReflect.Descriptor instead.
-func (*AuthStatus) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{40}
+// Deprecated: Use SecretStatus.ProtoReflect.Descriptor instead.
+func (*SecretStatus) Descriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{42}
 }
 
-func (x *AuthStatus) GetAuthId() string {
+func (x *SecretStatus) GetSecretId() string {
 	if x != nil {
-		return x.AuthId
+		return x.SecretId
 	}
 	return ""
 }
 
-func (x *AuthStatus) GetState() AuthStatus_State {
+func (x *SecretStatus) GetState() SecretStatus_State {
 	if x != nil {
 		return x.State
 	}
-	return AuthStatus_STATE_UNSPECIFIED
+	return SecretStatus_STATE_UNSPECIFIED
 }
 
-func (x *AuthStatus) GetExpiresAt() *timestamppb.Timestamp {
+func (x *SecretStatus) GetExpiresAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.ExpiresAt
 	}
 	return nil
 }
 
-func (x *AuthStatus) GetDiagnostics() []*Diagnostic {
+func (x *SecretStatus) GetDiagnostics() []*Diagnostic {
 	if x != nil {
 		return x.Diagnostics
 	}
 	return nil
 }
 
+func (x *SecretStatus) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *SecretStatus) GetMcpId() string {
+	if x != nil {
+		return x.McpId
+	}
+	return ""
+}
+
+func (x *SecretStatus) GetOnDemand() bool {
+	if x != nil {
+		return x.OnDemand
+	}
+	return false
+}
+
 type LogoutRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	AuthId        string                 `protobuf:"bytes,1,opt,name=auth_id,json=authId,proto3" json:"auth_id,omitempty"`
+	SecretId      string                 `protobuf:"bytes,1,opt,name=secret_id,json=secretId,proto3" json:"secret_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *LogoutRequest) Reset() {
 	*x = LogoutRequest{}
-	mi := &file_weft_v1_weft_proto_msgTypes[41]
+	mi := &file_agx_v1_agx_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2737,7 +2908,7 @@ func (x *LogoutRequest) String() string {
 func (*LogoutRequest) ProtoMessage() {}
 
 func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[41]
+	mi := &file_agx_v1_agx_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2750,12 +2921,12 @@ func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogoutRequest.ProtoReflect.Descriptor instead.
 func (*LogoutRequest) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{41}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{43}
 }
 
-func (x *LogoutRequest) GetAuthId() string {
+func (x *LogoutRequest) GetSecretId() string {
 	if x != nil {
-		return x.AuthId
+		return x.SecretId
 	}
 	return ""
 }
@@ -2768,7 +2939,7 @@ type LogoutResponse struct {
 
 func (x *LogoutResponse) Reset() {
 	*x = LogoutResponse{}
-	mi := &file_weft_v1_weft_proto_msgTypes[42]
+	mi := &file_agx_v1_agx_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2780,7 +2951,7 @@ func (x *LogoutResponse) String() string {
 func (*LogoutResponse) ProtoMessage() {}
 
 func (x *LogoutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_weft_v1_weft_proto_msgTypes[42]
+	mi := &file_agx_v1_agx_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2793,61 +2964,64 @@ func (x *LogoutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogoutResponse.ProtoReflect.Descriptor instead.
 func (*LogoutResponse) Descriptor() ([]byte, []int) {
-	return file_weft_v1_weft_proto_rawDescGZIP(), []int{42}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{44}
 }
 
-var File_weft_v1_weft_proto protoreflect.FileDescriptor
+var File_agx_v1_agx_proto protoreflect.FileDescriptor
 
-const file_weft_v1_weft_proto_rawDesc = "" +
+const file_agx_v1_agx_proto_rawDesc = "" +
 	"\n" +
-	"\x12weft/v1/weft.proto\x12\aweft.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x88\x01\n" +
+	"\x10agx/v1/agx.proto\x12\x06agx.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"z\n" +
 	"\vResourceRef\x12\x1b\n" +
 	"\bskill_id\x18\x01 \x01(\tH\x00R\askillId\x12)\n" +
-	"\x0finstructions_id\x18\x02 \x01(\tH\x00R\x0einstructionsId\x12%\n" +
-	"\rconnection_id\x18\x03 \x01(\tH\x00R\fconnectionIdB\n" +
+	"\x0finstructions_id\x18\x02 \x01(\tH\x00R\x0einstructionsId\x12\x17\n" +
+	"\x06mcp_id\x18\x03 \x01(\tH\x00R\x05mcpIdB\n" +
 	"\n" +
 	"\bresource\"P\n" +
 	"\x0eSourceLocation\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
 	"\x04line\x18\x02 \x01(\rR\x04line\x12\x16\n" +
-	"\x06column\x18\x03 \x01(\rR\x06column\"\xf5\x01\n" +
+	"\x06column\x18\x03 \x01(\rR\x06column\"\xf3\x01\n" +
 	"\n" +
-	"Diagnostic\x128\n" +
-	"\bseverity\x18\x01 \x01(\x0e2\x1c.weft.v1.Diagnostic.SeverityR\bseverity\x12\x12\n" +
+	"Diagnostic\x127\n" +
+	"\bseverity\x18\x01 \x01(\x0e2\x1b.agx.v1.Diagnostic.SeverityR\bseverity\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x18\n" +
-	"\asummary\x18\x03 \x01(\tR\asummary\x12/\n" +
-	"\x06source\x18\x04 \x01(\v2\x17.weft.v1.SourceLocationR\x06source\"N\n" +
+	"\asummary\x18\x03 \x01(\tR\asummary\x12.\n" +
+	"\x06source\x18\x04 \x01(\v2\x16.agx.v1.SourceLocationR\x06source\"N\n" +
 	"\bSeverity\x12\x18\n" +
 	"\x14SEVERITY_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10SEVERITY_WARNING\x10\x01\x12\x12\n" +
-	"\x0eSEVERITY_ERROR\x10\x02\"\x9f\x01\n" +
+	"\x0eSEVERITY_ERROR\x10\x02\"\xb8\x01\n" +
 	"\bSnapshot\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1c\n" +
-	"\tdirectory\x18\x02 \x01(\tR\tdirectory\x122\n" +
-	"\tresources\x18\x03 \x03(\v2\x14.weft.v1.ResourceRefR\tresources\x121\n" +
-	"\x14required_environment\x18\x04 \x03(\tR\x13requiredEnvironment\"\x8b\x02\n" +
-	"\x0eResolutionStep\x126\n" +
-	"\x06change\x18\x01 \x01(\x0e2\x1e.weft.v1.ResolutionStep.ChangeR\x06change\x12/\n" +
-	"\x06source\x18\x02 \x01(\v2\x17.weft.v1.SourceLocationR\x06source\x12'\n" +
+	"\tdirectory\x18\x02 \x01(\tR\tdirectory\x121\n" +
+	"\tresources\x18\x03 \x03(\v2\x13.agx.v1.ResourceRefR\tresources\x121\n" +
+	"\x14required_environment\x18\x04 \x03(\tR\x13requiredEnvironment\x12\x18\n" +
+	"\aharness\x18\x05 \x01(\tR\aharness\"\xa3\x02\n" +
+	"\x0eResolutionStep\x125\n" +
+	"\x06change\x18\x01 \x01(\x0e2\x1d.agx.v1.ResolutionStep.ChangeR\x06change\x12.\n" +
+	"\x06source\x18\x02 \x01(\v2\x16.agx.v1.SourceLocationR\x06source\x12'\n" +
 	"\x0fscope_directory\x18\x03 \x01(\tR\x0escopeDirectory\x12!\n" +
-	"\fbundle_chain\x18\x04 \x03(\tR\vbundleChain\"D\n" +
+	"\fbundle_chain\x18\x04 \x03(\tR\vbundleChain\x12\x18\n" +
+	"\aharness\x18\x05 \x01(\tR\aharness\"D\n" +
 	"\x06Change\x12\x16\n" +
 	"\x12CHANGE_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
 	"CHANGE_ADD\x10\x01\x12\x12\n" +
-	"\x0eCHANGE_EXCLUDE\x10\x02\"p\n" +
-	"\rResourceTrace\x120\n" +
-	"\bresource\x18\x01 \x01(\v2\x14.weft.v1.ResourceRefR\bresource\x12-\n" +
-	"\x05steps\x18\x02 \x03(\v2\x17.weft.v1.ResolutionStepR\x05steps\"\x11\n" +
-	"\x0fValidateRequest\"I\n" +
-	"\x10ValidateResponse\x125\n" +
-	"\vdiagnostics\x18\x01 \x03(\v2\x13.weft.v1.DiagnosticR\vdiagnostics\".\n" +
+	"\x0eCHANGE_EXCLUDE\x10\x02\"n\n" +
+	"\rResourceTrace\x12/\n" +
+	"\bresource\x18\x01 \x01(\v2\x13.agx.v1.ResourceRefR\bresource\x12,\n" +
+	"\x05steps\x18\x02 \x03(\v2\x16.agx.v1.ResolutionStepR\x05steps\"\x11\n" +
+	"\x0fValidateRequest\"H\n" +
+	"\x10ValidateResponse\x124\n" +
+	"\vdiagnostics\x18\x01 \x03(\v2\x12.agx.v1.DiagnosticR\vdiagnostics\"H\n" +
 	"\x0eResolveRequest\x12\x1c\n" +
-	"\tdirectory\x18\x01 \x01(\tR\tdirectory\"\xa7\x01\n" +
-	"\x0fResolveResponse\x12-\n" +
-	"\bsnapshot\x18\x01 \x01(\v2\x11.weft.v1.SnapshotR\bsnapshot\x12.\n" +
-	"\x06traces\x18\x02 \x03(\v2\x16.weft.v1.ResourceTraceR\x06traces\x125\n" +
-	"\vdiagnostics\x18\x03 \x03(\v2\x13.weft.v1.DiagnosticR\vdiagnostics\"G\n" +
+	"\tdirectory\x18\x01 \x01(\tR\tdirectory\x12\x18\n" +
+	"\aharness\x18\x02 \x01(\tR\aharness\"\xa4\x01\n" +
+	"\x0fResolveResponse\x12,\n" +
+	"\bsnapshot\x18\x01 \x01(\v2\x10.agx.v1.SnapshotR\bsnapshot\x12-\n" +
+	"\x06traces\x18\x02 \x03(\v2\x15.agx.v1.ResourceTraceR\x06traces\x124\n" +
+	"\vdiagnostics\x18\x03 \x03(\v2\x12.agx.v1.DiagnosticR\vdiagnostics\"G\n" +
 	"\x0eInstallRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x16\n" +
@@ -2862,12 +3036,12 @@ const file_weft_v1_weft_proto_rawDesc = "" +
 	"\x0eUpdateResponse\x12!\n" +
 	"\foperation_id\x18\x01 \x01(\tR\voperationId\":\n" +
 	"\x15WatchOperationRequest\x12!\n" +
-	"\foperation_id\x18\x01 \x01(\tR\voperationId\"\xdf\x01\n" +
+	"\foperation_id\x18\x01 \x01(\tR\voperationId\"\xdc\x01\n" +
 	"\x16WatchOperationResponse\x12!\n" +
-	"\foperation_id\x18\x01 \x01(\tR\voperationId\x126\n" +
-	"\bprogress\x18\x02 \x01(\v2\x18.weft.v1.PackageProgressH\x00R\bprogress\x120\n" +
-	"\x06result\x18\x03 \x01(\v2\x16.weft.v1.PackageResultH\x00R\x06result\x12/\n" +
-	"\afailure\x18\x04 \x01(\v2\x13.weft.v1.DiagnosticH\x00R\afailureB\a\n" +
+	"\foperation_id\x18\x01 \x01(\tR\voperationId\x125\n" +
+	"\bprogress\x18\x02 \x01(\v2\x17.agx.v1.PackageProgressH\x00R\bprogress\x12/\n" +
+	"\x06result\x18\x03 \x01(\v2\x15.agx.v1.PackageResultH\x00R\x06result\x12.\n" +
+	"\afailure\x18\x04 \x01(\v2\x12.agx.v1.DiagnosticH\x00R\afailureB\a\n" +
 	"\x05state\"d\n" +
 	"\x0fPackageProgress\x12\x1d\n" +
 	"\n" +
@@ -2877,44 +3051,45 @@ const file_weft_v1_weft_proto_rawDesc = "" +
 	"\rPackageResult\x12\x1f\n" +
 	"\vpackage_ids\x18\x01 \x03(\tR\n" +
 	"packageIds\x12\x1c\n" +
-	"\tlockfiles\x18\x02 \x03(\tR\tlockfiles\"\xf6\x02\n" +
+	"\tlockfiles\x18\x02 \x03(\tR\tlockfiles\"\xe3\x02\n" +
 	"\x14PrepareLaunchRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
 	"\vsnapshot_id\x18\x02 \x01(\tR\n" +
 	"snapshotId\x12\x1c\n" +
-	"\tdirectory\x18\x03 \x01(\tR\tdirectory\x12*\n" +
-	"\aharness\x18\x04 \x01(\x0e2\x10.weft.v1.HarnessR\aharness\x12)\n" +
-	"\x10native_arguments\x18\x05 \x03(\tR\x0fnativeArguments\x12c\n" +
-	"\x12environment_inputs\x18\x06 \x03(\v24.weft.v1.PrepareLaunchRequest.EnvironmentInputsEntryR\x11environmentInputs\x1aD\n" +
+	"\tdirectory\x18\x03 \x01(\tR\tdirectory\x12\x18\n" +
+	"\aharness\x18\x04 \x01(\tR\aharness\x12)\n" +
+	"\x10native_arguments\x18\x05 \x03(\tR\x0fnativeArguments\x12b\n" +
+	"\x12environment_inputs\x18\x06 \x03(\v23.agx.v1.PrepareLaunchRequest.EnvironmentInputsEntryR\x11environmentInputs\x1aD\n" +
 	"\x16EnvironmentInputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc3\x01\n" +
-	"\x15PrepareLaunchResponse\x12'\n" +
-	"\x06launch\x18\x01 \x01(\v2\x0f.weft.v1.LaunchR\x06launch\x12(\n" +
-	"\x05spawn\x18\x02 \x01(\v2\x12.weft.v1.SpawnPlanR\x05spawn\x12'\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc1\x01\n" +
+	"\x15PrepareLaunchResponse\x12&\n" +
+	"\x06launch\x18\x01 \x01(\v2\x0e.agx.v1.LaunchR\x06launch\x12'\n" +
+	"\x05spawn\x18\x02 \x01(\v2\x11.agx.v1.SpawnPlanR\x05spawn\x12'\n" +
 	"\x0flifecycle_token\x18\x03 \x01(\tR\x0elifecycleToken\x12.\n" +
-	"\x13renew_after_seconds\x18\x04 \x01(\rR\x11renewAfterSeconds\"\xc0\x02\n" +
+	"\x13renew_after_seconds\x18\x04 \x01(\rR\x11renewAfterSeconds\"\xbf\x02\n" +
 	"\tSpawnPlan\x12\x1e\n" +
 	"\n" +
 	"executable\x18\x01 \x01(\tR\n" +
 	"executable\x12\x1c\n" +
 	"\targuments\x18\x02 \x03(\tR\targuments\x12\x1c\n" +
-	"\tdirectory\x18\x03 \x01(\tR\tdirectory\x12a\n" +
-	"\x15environment_overrides\x18\x04 \x03(\v2,.weft.v1.SpawnPlan.EnvironmentOverridesEntryR\x14environmentOverrides\x12+\n" +
+	"\tdirectory\x18\x03 \x01(\tR\tdirectory\x12`\n" +
+	"\x15environment_overrides\x18\x04 \x03(\v2+.agx.v1.SpawnPlan.EnvironmentOverridesEntryR\x14environmentOverrides\x12+\n" +
 	"\x11unset_environment\x18\x05 \x03(\tR\x10unsetEnvironment\x1aG\n" +
 	"\x19EnvironmentOverridesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xec\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xed\x02\n" +
 	"\x06Launch\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vsnapshot_id\x18\x02 \x01(\tR\n" +
 	"snapshotId\x12\x1c\n" +
-	"\tdirectory\x18\x03 \x01(\tR\tdirectory\x12*\n" +
-	"\aharness\x18\x04 \x01(\x0e2\x10.weft.v1.HarnessR\aharness\x12+\n" +
-	"\x05state\x18\x05 \x01(\x0e2\x15.weft.v1.Launch.StateR\x05state\x129\n" +
+	"\tdirectory\x18\x03 \x01(\tR\tdirectory\x12\x18\n" +
+	"\aharness\x18\x04 \x01(\tR\aharness\x12*\n" +
+	"\x05state\x18\x05 \x01(\x0e2\x14.agx.v1.Launch.StateR\x05state\x129\n" +
 	"\n" +
-	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x7f\n" +
+	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x12\n" +
+	"\x04mode\x18\a \x01(\tR\x04mode\"\x7f\n" +
 	"\x05State\x12\x15\n" +
 	"\x11STATE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eSTATE_PREPARED\x10\x01\x12\x11\n" +
@@ -2939,274 +3114,284 @@ const file_weft_v1_weft_proto_rawDesc = "" +
 	"\x14FinishLaunchResponse\"2\n" +
 	"\x13RevokeLaunchRequest\x12\x1b\n" +
 	"\tlaunch_id\x18\x01 \x01(\tR\blaunchId\"\x16\n" +
-	"\x14RevokeLaunchResponse\"\xb3\x02\n" +
-	"\x11ConnectionRuntime\x12\x1b\n" +
-	"\tlaunch_id\x18\x01 \x01(\tR\blaunchId\x12#\n" +
-	"\rconnection_id\x18\x02 \x01(\tR\fconnectionId\x126\n" +
-	"\x05state\x18\x03 \x01(\x0e2 .weft.v1.ConnectionRuntime.StateR\x05state\x125\n" +
-	"\vdiagnostics\x18\x04 \x03(\v2\x13.weft.v1.DiagnosticR\vdiagnostics\"m\n" +
+	"\x14RevokeLaunchResponse\"\x95\x02\n" +
+	"\n" +
+	"McpRuntime\x12\x1b\n" +
+	"\tlaunch_id\x18\x01 \x01(\tR\blaunchId\x12\x15\n" +
+	"\x06mcp_id\x18\x02 \x01(\tR\x05mcpId\x12.\n" +
+	"\x05state\x18\x03 \x01(\x0e2\x18.agx.v1.McpRuntime.StateR\x05state\x124\n" +
+	"\vdiagnostics\x18\x04 \x03(\v2\x12.agx.v1.DiagnosticR\vdiagnostics\"m\n" +
 	"\x05State\x12\x15\n" +
 	"\x11STATE_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10STATE_CONNECTING\x10\x01\x12\x0f\n" +
 	"\vSTATE_READY\x10\x02\x12\x14\n" +
 	"\x10STATE_NEEDS_AUTH\x10\x03\x12\x10\n" +
-	"\fSTATE_FAILED\x10\x04\"\xf7\x01\n" +
+	"\fSTATE_FAILED\x10\x04\"\xec\x01\n" +
 	"\vRuntimeView\x12,\n" +
 	"\x12daemon_instance_id\x18\x01 \x01(\tR\x10daemonInstanceId\x12\x18\n" +
-	"\aversion\x18\x02 \x01(\tR\aversion\x12+\n" +
-	"\blaunches\x18\x03 \x03(\v2\x0f.weft.v1.LaunchR\blaunches\x12<\n" +
-	"\vconnections\x18\x04 \x03(\v2\x1a.weft.v1.ConnectionRuntimeR\vconnections\x125\n" +
-	"\vdiagnostics\x18\x05 \x03(\v2\x13.weft.v1.DiagnosticR\vdiagnostics\"\x13\n" +
-	"\x11GetRuntimeRequest\"D\n" +
-	"\x12GetRuntimeResponse\x12.\n" +
-	"\aruntime\x18\x01 \x01(\v2\x14.weft.v1.RuntimeViewR\aruntime\"\x15\n" +
-	"\x13WatchRuntimeRequest\"F\n" +
-	"\x14WatchRuntimeResponse\x12.\n" +
-	"\aruntime\x18\x01 \x01(\v2\x14.weft.v1.RuntimeViewR\aruntime\"\x9b\x01\n" +
-	"\x16BeginOAuthLoginRequest\x12\x1d\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12*\n" +
+	"\blaunches\x18\x03 \x03(\v2\x0e.agx.v1.LaunchR\blaunches\x123\n" +
+	"\vmcp_servers\x18\x04 \x03(\v2\x12.agx.v1.McpRuntimeR\n" +
+	"mcpServers\x124\n" +
+	"\vdiagnostics\x18\x05 \x03(\v2\x12.agx.v1.DiagnosticR\vdiagnostics\"\x13\n" +
+	"\x11GetRuntimeRequest\"C\n" +
+	"\x12GetRuntimeResponse\x12-\n" +
+	"\aruntime\x18\x01 \x01(\v2\x13.agx.v1.RuntimeViewR\aruntime\"\x15\n" +
+	"\x13WatchRuntimeRequest\"E\n" +
+	"\x14WatchRuntimeResponse\x12-\n" +
+	"\aruntime\x18\x01 \x01(\v2\x13.agx.v1.RuntimeViewR\aruntime\"+\n" +
+	"\fLoginRequest\x12\x1b\n" +
+	"\tsecret_id\x18\x01 \x01(\tR\bsecretId\"\x7f\n" +
+	"\rLoginResponse\x120\n" +
+	"\astarted\x18\x01 \x01(\v2\x14.agx.v1.LoginStartedH\x00R\astarted\x123\n" +
+	"\bfinished\x18\x02 \x01(\v2\x15.agx.v1.LoginFinishedH\x00R\bfinishedB\a\n" +
+	"\x05event\"\x8d\x01\n" +
+	"\fLoginStarted\x12+\n" +
+	"\x11authorization_url\x18\x01 \x01(\tR\x10authorizationUrl\x129\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
-	"\vsnapshot_id\x18\x02 \x01(\tR\n" +
-	"snapshotId\x12#\n" +
-	"\rconnection_id\x18\x03 \x01(\tR\fconnectionId\x12\x1c\n" +
-	"\tdirectory\x18\x04 \x01(\tR\tdirectory\"\xb9\x01\n" +
-	"\x17BeginOAuthLoginResponse\x12\x1d\n" +
+	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x15\n" +
+	"\x06mcp_id\x18\x03 \x01(\tR\x05mcpId\"\xc6\x01\n" +
+	"\rLoginFinished\x127\n" +
+	"\aoutcome\x18\x01 \x01(\x0e2\x1d.agx.v1.LoginFinished.OutcomeR\aoutcome\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"b\n" +
+	"\aOutcome\x12\x17\n" +
+	"\x13OUTCOME_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11OUTCOME_SUCCEEDED\x10\x01\x12\x12\n" +
+	"\x0eOUTCOME_FAILED\x10\x02\x12\x13\n" +
+	"\x0fOUTCOME_EXPIRED\x10\x03\"E\n" +
+	"\x10SetSecretRequest\x12\x1b\n" +
+	"\tsecret_id\x18\x01 \x01(\tR\bsecretId\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value\"\x13\n" +
+	"\x11SetSecretResponse\"5\n" +
+	"\x16GetSecretStatusRequest\x12\x1b\n" +
+	"\tsecret_id\x18\x01 \x01(\tR\bsecretId\"K\n" +
+	"\x17GetSecretStatusResponse\x120\n" +
+	"\bstatuses\x18\x01 \x03(\v2\x14.agx.v1.SecretStatusR\bstatuses\"\xa1\x03\n" +
+	"\fSecretStatus\x12\x1b\n" +
+	"\tsecret_id\x18\x01 \x01(\tR\bsecretId\x120\n" +
+	"\x05state\x18\x02 \x01(\x0e2\x1a.agx.v1.SecretStatus.StateR\x05state\x129\n" +
 	"\n" +
-	"attempt_id\x18\x01 \x01(\tR\tattemptId\x12+\n" +
-	"\x11authorization_url\x18\x02 \x01(\tR\x10authorizationUrl\x129\n" +
-	"\n" +
-	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x17\n" +
-	"\aauth_id\x18\x04 \x01(\tR\x06authId\"C\n" +
-	"\x10SetSecretRequest\x12\x17\n" +
-	"\aauth_id\x18\x01 \x01(\tR\x06authId\x12\x16\n" +
-	"\x06secret\x18\x02 \x01(\fR\x06secret\"\x13\n" +
-	"\x11SetSecretResponse\"/\n" +
-	"\x14GetAuthStatusRequest\x12\x17\n" +
-	"\aauth_id\x18\x01 \x01(\tR\x06authId\"H\n" +
-	"\x15GetAuthStatusResponse\x12/\n" +
-	"\bstatuses\x18\x01 \x03(\v2\x13.weft.v1.AuthStatusR\bstatuses\"\xd3\x02\n" +
-	"\n" +
-	"AuthStatus\x12\x17\n" +
-	"\aauth_id\x18\x01 \x01(\tR\x06authId\x12/\n" +
-	"\x05state\x18\x02 \x01(\x0e2\x19.weft.v1.AuthStatus.StateR\x05state\x129\n" +
-	"\n" +
-	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x125\n" +
-	"\vdiagnostics\x18\x04 \x03(\v2\x13.weft.v1.DiagnosticR\vdiagnostics\"\x88\x01\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x124\n" +
+	"\vdiagnostics\x18\x04 \x03(\v2\x12.agx.v1.DiagnosticR\vdiagnostics\x12\x12\n" +
+	"\x04kind\x18\x05 \x01(\tR\x04kind\x12\x15\n" +
+	"\x06mcp_id\x18\x06 \x01(\tR\x05mcpId\x12\x1b\n" +
+	"\ton_demand\x18\a \x01(\bR\bonDemand\"\x88\x01\n" +
 	"\x05State\x12\x15\n" +
 	"\x11STATE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12STATE_UNCONFIGURED\x10\x01\x12\x11\n" +
 	"\rSTATE_PENDING\x10\x02\x12\x0f\n" +
 	"\vSTATE_READY\x10\x03\x12\x15\n" +
 	"\x11STATE_NEEDS_LOGIN\x10\x04\x12\x15\n" +
-	"\x11STATE_UNAVAILABLE\x10\x05\"(\n" +
-	"\rLogoutRequest\x12\x17\n" +
-	"\aauth_id\x18\x01 \x01(\tR\x06authId\"\x10\n" +
-	"\x0eLogoutResponse*Y\n" +
-	"\aHarness\x12\x17\n" +
-	"\x13HARNESS_UNSPECIFIED\x10\x00\x12\x11\n" +
-	"\rHARNESS_CODEX\x10\x01\x12\x12\n" +
-	"\x0eHARNESS_CLAUDE\x10\x02\x12\x0e\n" +
+	"\x11STATE_UNAVAILABLE\x10\x05\",\n" +
+	"\rLogoutRequest\x12\x1b\n" +
+	"\tsecret_id\x18\x01 \x01(\tR\bsecretId\"\x10\n" +
+	"\x0eLogoutResponse2\x91\x01\n" +
+	"\x14ConfigurationService\x12=\n" +
+	"\bValidate\x12\x17.agx.v1.ValidateRequest\x1a\x18.agx.v1.ValidateResponse\x12:\n" +
+	"\aResolve\x12\x16.agx.v1.ResolveRequest\x1a\x17.agx.v1.ResolveResponse2\xd8\x01\n" +
+	"\x0ePackageService\x12:\n" +
+	"\aInstall\x12\x16.agx.v1.InstallRequest\x1a\x17.agx.v1.InstallResponse\x127\n" +
+	"\x06Update\x12\x15.agx.v1.UpdateRequest\x1a\x16.agx.v1.UpdateResponse\x12Q\n" +
+	"\x0eWatchOperation\x12\x1d.agx.v1.WatchOperationRequest\x1a\x1e.agx.v1.WatchOperationResponse0\x012\xbb\x02\n" +
+	"\rLaunchService\x12L\n" +
+	"\rPrepareLaunch\x12\x1c.agx.v1.PrepareLaunchRequest\x1a\x1d.agx.v1.PrepareLaunchResponse\x12F\n" +
+	"\vRenewLaunch\x12\x1a.agx.v1.RenewLaunchRequest\x1a\x1b.agx.v1.RenewLaunchResponse\x12I\n" +
+	"\fFinishLaunch\x12\x1b.agx.v1.FinishLaunchRequest\x1a\x1c.agx.v1.FinishLaunchResponse\x12I\n" +
+	"\fRevokeLaunch\x12\x1b.agx.v1.RevokeLaunchRequest\x1a\x1c.agx.v1.RevokeLaunchResponse2\xa2\x01\n" +
+	"\x0eRuntimeService\x12C\n" +
 	"\n" +
-	"HARNESS_PI\x10\x032\x95\x01\n" +
-	"\x14ConfigurationService\x12?\n" +
-	"\bValidate\x12\x18.weft.v1.ValidateRequest\x1a\x19.weft.v1.ValidateResponse\x12<\n" +
-	"\aResolve\x12\x17.weft.v1.ResolveRequest\x1a\x18.weft.v1.ResolveResponse2\xde\x01\n" +
-	"\x0ePackageService\x12<\n" +
-	"\aInstall\x12\x17.weft.v1.InstallRequest\x1a\x18.weft.v1.InstallResponse\x129\n" +
-	"\x06Update\x12\x16.weft.v1.UpdateRequest\x1a\x17.weft.v1.UpdateResponse\x12S\n" +
-	"\x0eWatchOperation\x12\x1e.weft.v1.WatchOperationRequest\x1a\x1f.weft.v1.WatchOperationResponse0\x012\xc3\x02\n" +
-	"\rLaunchService\x12N\n" +
-	"\rPrepareLaunch\x12\x1d.weft.v1.PrepareLaunchRequest\x1a\x1e.weft.v1.PrepareLaunchResponse\x12H\n" +
-	"\vRenewLaunch\x12\x1b.weft.v1.RenewLaunchRequest\x1a\x1c.weft.v1.RenewLaunchResponse\x12K\n" +
-	"\fFinishLaunch\x12\x1c.weft.v1.FinishLaunchRequest\x1a\x1d.weft.v1.FinishLaunchResponse\x12K\n" +
-	"\fRevokeLaunch\x12\x1c.weft.v1.RevokeLaunchRequest\x1a\x1d.weft.v1.RevokeLaunchResponse2\xa6\x01\n" +
-	"\x0eRuntimeService\x12E\n" +
-	"\n" +
-	"GetRuntime\x12\x1a.weft.v1.GetRuntimeRequest\x1a\x1b.weft.v1.GetRuntimeResponse\x12M\n" +
-	"\fWatchRuntime\x12\x1c.weft.v1.WatchRuntimeRequest\x1a\x1d.weft.v1.WatchRuntimeResponse0\x012\xb2\x02\n" +
-	"\vAuthService\x12T\n" +
-	"\x0fBeginOAuthLogin\x12\x1f.weft.v1.BeginOAuthLoginRequest\x1a .weft.v1.BeginOAuthLoginResponse\x12B\n" +
-	"\tSetSecret\x12\x19.weft.v1.SetSecretRequest\x1a\x1a.weft.v1.SetSecretResponse\x12N\n" +
-	"\rGetAuthStatus\x12\x1d.weft.v1.GetAuthStatusRequest\x1a\x1e.weft.v1.GetAuthStatusResponse\x129\n" +
-	"\x06Logout\x12\x16.weft.v1.LogoutRequest\x1a\x17.weft.v1.LogoutResponseB,Z*github.com/tarik02/weft/gen/weft/v1;weftv1b\x06proto3"
+	"GetRuntime\x12\x19.agx.v1.GetRuntimeRequest\x1a\x1a.agx.v1.GetRuntimeResponse\x12K\n" +
+	"\fWatchRuntime\x12\x1b.agx.v1.WatchRuntimeRequest\x1a\x1c.agx.v1.WatchRuntimeResponse0\x012\x96\x02\n" +
+	"\rSecretService\x126\n" +
+	"\x05Login\x12\x14.agx.v1.LoginRequest\x1a\x15.agx.v1.LoginResponse0\x01\x12@\n" +
+	"\tSetSecret\x12\x18.agx.v1.SetSecretRequest\x1a\x19.agx.v1.SetSecretResponse\x12R\n" +
+	"\x0fGetSecretStatus\x12\x1e.agx.v1.GetSecretStatusRequest\x1a\x1f.agx.v1.GetSecretStatusResponse\x127\n" +
+	"\x06Logout\x12\x15.agx.v1.LogoutRequest\x1a\x16.agx.v1.LogoutResponseB)Z'github.com/tarik02/agx/gen/agx/v1;agxv1b\x06proto3"
 
 var (
-	file_weft_v1_weft_proto_rawDescOnce sync.Once
-	file_weft_v1_weft_proto_rawDescData []byte
+	file_agx_v1_agx_proto_rawDescOnce sync.Once
+	file_agx_v1_agx_proto_rawDescData []byte
 )
 
-func file_weft_v1_weft_proto_rawDescGZIP() []byte {
-	file_weft_v1_weft_proto_rawDescOnce.Do(func() {
-		file_weft_v1_weft_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_weft_v1_weft_proto_rawDesc), len(file_weft_v1_weft_proto_rawDesc)))
+func file_agx_v1_agx_proto_rawDescGZIP() []byte {
+	file_agx_v1_agx_proto_rawDescOnce.Do(func() {
+		file_agx_v1_agx_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_agx_v1_agx_proto_rawDesc), len(file_agx_v1_agx_proto_rawDesc)))
 	})
-	return file_weft_v1_weft_proto_rawDescData
+	return file_agx_v1_agx_proto_rawDescData
 }
 
-var file_weft_v1_weft_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_weft_v1_weft_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
-var file_weft_v1_weft_proto_goTypes = []any{
-	(Harness)(0),                    // 0: weft.v1.Harness
-	(Diagnostic_Severity)(0),        // 1: weft.v1.Diagnostic.Severity
-	(ResolutionStep_Change)(0),      // 2: weft.v1.ResolutionStep.Change
-	(Launch_State)(0),               // 3: weft.v1.Launch.State
-	(ConnectionRuntime_State)(0),    // 4: weft.v1.ConnectionRuntime.State
-	(AuthStatus_State)(0),           // 5: weft.v1.AuthStatus.State
-	(*ResourceRef)(nil),             // 6: weft.v1.ResourceRef
-	(*SourceLocation)(nil),          // 7: weft.v1.SourceLocation
-	(*Diagnostic)(nil),              // 8: weft.v1.Diagnostic
-	(*Snapshot)(nil),                // 9: weft.v1.Snapshot
-	(*ResolutionStep)(nil),          // 10: weft.v1.ResolutionStep
-	(*ResourceTrace)(nil),           // 11: weft.v1.ResourceTrace
-	(*ValidateRequest)(nil),         // 12: weft.v1.ValidateRequest
-	(*ValidateResponse)(nil),        // 13: weft.v1.ValidateResponse
-	(*ResolveRequest)(nil),          // 14: weft.v1.ResolveRequest
-	(*ResolveResponse)(nil),         // 15: weft.v1.ResolveResponse
-	(*InstallRequest)(nil),          // 16: weft.v1.InstallRequest
-	(*InstallResponse)(nil),         // 17: weft.v1.InstallResponse
-	(*UpdateRequest)(nil),           // 18: weft.v1.UpdateRequest
-	(*UpdateResponse)(nil),          // 19: weft.v1.UpdateResponse
-	(*WatchOperationRequest)(nil),   // 20: weft.v1.WatchOperationRequest
-	(*WatchOperationResponse)(nil),  // 21: weft.v1.WatchOperationResponse
-	(*PackageProgress)(nil),         // 22: weft.v1.PackageProgress
-	(*PackageResult)(nil),           // 23: weft.v1.PackageResult
-	(*PrepareLaunchRequest)(nil),    // 24: weft.v1.PrepareLaunchRequest
-	(*PrepareLaunchResponse)(nil),   // 25: weft.v1.PrepareLaunchResponse
-	(*SpawnPlan)(nil),               // 26: weft.v1.SpawnPlan
-	(*Launch)(nil),                  // 27: weft.v1.Launch
-	(*RenewLaunchRequest)(nil),      // 28: weft.v1.RenewLaunchRequest
-	(*RenewLaunchResponse)(nil),     // 29: weft.v1.RenewLaunchResponse
-	(*FinishLaunchRequest)(nil),     // 30: weft.v1.FinishLaunchRequest
-	(*FinishLaunchResponse)(nil),    // 31: weft.v1.FinishLaunchResponse
-	(*RevokeLaunchRequest)(nil),     // 32: weft.v1.RevokeLaunchRequest
-	(*RevokeLaunchResponse)(nil),    // 33: weft.v1.RevokeLaunchResponse
-	(*ConnectionRuntime)(nil),       // 34: weft.v1.ConnectionRuntime
-	(*RuntimeView)(nil),             // 35: weft.v1.RuntimeView
-	(*GetRuntimeRequest)(nil),       // 36: weft.v1.GetRuntimeRequest
-	(*GetRuntimeResponse)(nil),      // 37: weft.v1.GetRuntimeResponse
-	(*WatchRuntimeRequest)(nil),     // 38: weft.v1.WatchRuntimeRequest
-	(*WatchRuntimeResponse)(nil),    // 39: weft.v1.WatchRuntimeResponse
-	(*BeginOAuthLoginRequest)(nil),  // 40: weft.v1.BeginOAuthLoginRequest
-	(*BeginOAuthLoginResponse)(nil), // 41: weft.v1.BeginOAuthLoginResponse
-	(*SetSecretRequest)(nil),        // 42: weft.v1.SetSecretRequest
-	(*SetSecretResponse)(nil),       // 43: weft.v1.SetSecretResponse
-	(*GetAuthStatusRequest)(nil),    // 44: weft.v1.GetAuthStatusRequest
-	(*GetAuthStatusResponse)(nil),   // 45: weft.v1.GetAuthStatusResponse
-	(*AuthStatus)(nil),              // 46: weft.v1.AuthStatus
-	(*LogoutRequest)(nil),           // 47: weft.v1.LogoutRequest
-	(*LogoutResponse)(nil),          // 48: weft.v1.LogoutResponse
-	nil,                             // 49: weft.v1.PrepareLaunchRequest.EnvironmentInputsEntry
-	nil,                             // 50: weft.v1.SpawnPlan.EnvironmentOverridesEntry
-	(*timestamppb.Timestamp)(nil),   // 51: google.protobuf.Timestamp
+var file_agx_v1_agx_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
+var file_agx_v1_agx_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
+var file_agx_v1_agx_proto_goTypes = []any{
+	(Diagnostic_Severity)(0),        // 0: agx.v1.Diagnostic.Severity
+	(ResolutionStep_Change)(0),      // 1: agx.v1.ResolutionStep.Change
+	(Launch_State)(0),               // 2: agx.v1.Launch.State
+	(McpRuntime_State)(0),           // 3: agx.v1.McpRuntime.State
+	(LoginFinished_Outcome)(0),      // 4: agx.v1.LoginFinished.Outcome
+	(SecretStatus_State)(0),         // 5: agx.v1.SecretStatus.State
+	(*ResourceRef)(nil),             // 6: agx.v1.ResourceRef
+	(*SourceLocation)(nil),          // 7: agx.v1.SourceLocation
+	(*Diagnostic)(nil),              // 8: agx.v1.Diagnostic
+	(*Snapshot)(nil),                // 9: agx.v1.Snapshot
+	(*ResolutionStep)(nil),          // 10: agx.v1.ResolutionStep
+	(*ResourceTrace)(nil),           // 11: agx.v1.ResourceTrace
+	(*ValidateRequest)(nil),         // 12: agx.v1.ValidateRequest
+	(*ValidateResponse)(nil),        // 13: agx.v1.ValidateResponse
+	(*ResolveRequest)(nil),          // 14: agx.v1.ResolveRequest
+	(*ResolveResponse)(nil),         // 15: agx.v1.ResolveResponse
+	(*InstallRequest)(nil),          // 16: agx.v1.InstallRequest
+	(*InstallResponse)(nil),         // 17: agx.v1.InstallResponse
+	(*UpdateRequest)(nil),           // 18: agx.v1.UpdateRequest
+	(*UpdateResponse)(nil),          // 19: agx.v1.UpdateResponse
+	(*WatchOperationRequest)(nil),   // 20: agx.v1.WatchOperationRequest
+	(*WatchOperationResponse)(nil),  // 21: agx.v1.WatchOperationResponse
+	(*PackageProgress)(nil),         // 22: agx.v1.PackageProgress
+	(*PackageResult)(nil),           // 23: agx.v1.PackageResult
+	(*PrepareLaunchRequest)(nil),    // 24: agx.v1.PrepareLaunchRequest
+	(*PrepareLaunchResponse)(nil),   // 25: agx.v1.PrepareLaunchResponse
+	(*SpawnPlan)(nil),               // 26: agx.v1.SpawnPlan
+	(*Launch)(nil),                  // 27: agx.v1.Launch
+	(*RenewLaunchRequest)(nil),      // 28: agx.v1.RenewLaunchRequest
+	(*RenewLaunchResponse)(nil),     // 29: agx.v1.RenewLaunchResponse
+	(*FinishLaunchRequest)(nil),     // 30: agx.v1.FinishLaunchRequest
+	(*FinishLaunchResponse)(nil),    // 31: agx.v1.FinishLaunchResponse
+	(*RevokeLaunchRequest)(nil),     // 32: agx.v1.RevokeLaunchRequest
+	(*RevokeLaunchResponse)(nil),    // 33: agx.v1.RevokeLaunchResponse
+	(*McpRuntime)(nil),              // 34: agx.v1.McpRuntime
+	(*RuntimeView)(nil),             // 35: agx.v1.RuntimeView
+	(*GetRuntimeRequest)(nil),       // 36: agx.v1.GetRuntimeRequest
+	(*GetRuntimeResponse)(nil),      // 37: agx.v1.GetRuntimeResponse
+	(*WatchRuntimeRequest)(nil),     // 38: agx.v1.WatchRuntimeRequest
+	(*WatchRuntimeResponse)(nil),    // 39: agx.v1.WatchRuntimeResponse
+	(*LoginRequest)(nil),            // 40: agx.v1.LoginRequest
+	(*LoginResponse)(nil),           // 41: agx.v1.LoginResponse
+	(*LoginStarted)(nil),            // 42: agx.v1.LoginStarted
+	(*LoginFinished)(nil),           // 43: agx.v1.LoginFinished
+	(*SetSecretRequest)(nil),        // 44: agx.v1.SetSecretRequest
+	(*SetSecretResponse)(nil),       // 45: agx.v1.SetSecretResponse
+	(*GetSecretStatusRequest)(nil),  // 46: agx.v1.GetSecretStatusRequest
+	(*GetSecretStatusResponse)(nil), // 47: agx.v1.GetSecretStatusResponse
+	(*SecretStatus)(nil),            // 48: agx.v1.SecretStatus
+	(*LogoutRequest)(nil),           // 49: agx.v1.LogoutRequest
+	(*LogoutResponse)(nil),          // 50: agx.v1.LogoutResponse
+	nil,                             // 51: agx.v1.PrepareLaunchRequest.EnvironmentInputsEntry
+	nil,                             // 52: agx.v1.SpawnPlan.EnvironmentOverridesEntry
+	(*timestamppb.Timestamp)(nil),   // 53: google.protobuf.Timestamp
 }
-var file_weft_v1_weft_proto_depIdxs = []int32{
-	1,  // 0: weft.v1.Diagnostic.severity:type_name -> weft.v1.Diagnostic.Severity
-	7,  // 1: weft.v1.Diagnostic.source:type_name -> weft.v1.SourceLocation
-	6,  // 2: weft.v1.Snapshot.resources:type_name -> weft.v1.ResourceRef
-	2,  // 3: weft.v1.ResolutionStep.change:type_name -> weft.v1.ResolutionStep.Change
-	7,  // 4: weft.v1.ResolutionStep.source:type_name -> weft.v1.SourceLocation
-	6,  // 5: weft.v1.ResourceTrace.resource:type_name -> weft.v1.ResourceRef
-	10, // 6: weft.v1.ResourceTrace.steps:type_name -> weft.v1.ResolutionStep
-	8,  // 7: weft.v1.ValidateResponse.diagnostics:type_name -> weft.v1.Diagnostic
-	9,  // 8: weft.v1.ResolveResponse.snapshot:type_name -> weft.v1.Snapshot
-	11, // 9: weft.v1.ResolveResponse.traces:type_name -> weft.v1.ResourceTrace
-	8,  // 10: weft.v1.ResolveResponse.diagnostics:type_name -> weft.v1.Diagnostic
-	22, // 11: weft.v1.WatchOperationResponse.progress:type_name -> weft.v1.PackageProgress
-	23, // 12: weft.v1.WatchOperationResponse.result:type_name -> weft.v1.PackageResult
-	8,  // 13: weft.v1.WatchOperationResponse.failure:type_name -> weft.v1.Diagnostic
-	0,  // 14: weft.v1.PrepareLaunchRequest.harness:type_name -> weft.v1.Harness
-	49, // 15: weft.v1.PrepareLaunchRequest.environment_inputs:type_name -> weft.v1.PrepareLaunchRequest.EnvironmentInputsEntry
-	27, // 16: weft.v1.PrepareLaunchResponse.launch:type_name -> weft.v1.Launch
-	26, // 17: weft.v1.PrepareLaunchResponse.spawn:type_name -> weft.v1.SpawnPlan
-	50, // 18: weft.v1.SpawnPlan.environment_overrides:type_name -> weft.v1.SpawnPlan.EnvironmentOverridesEntry
-	0,  // 19: weft.v1.Launch.harness:type_name -> weft.v1.Harness
-	3,  // 20: weft.v1.Launch.state:type_name -> weft.v1.Launch.State
-	51, // 21: weft.v1.Launch.expires_at:type_name -> google.protobuf.Timestamp
-	51, // 22: weft.v1.RenewLaunchResponse.expires_at:type_name -> google.protobuf.Timestamp
-	4,  // 23: weft.v1.ConnectionRuntime.state:type_name -> weft.v1.ConnectionRuntime.State
-	8,  // 24: weft.v1.ConnectionRuntime.diagnostics:type_name -> weft.v1.Diagnostic
-	27, // 25: weft.v1.RuntimeView.launches:type_name -> weft.v1.Launch
-	34, // 26: weft.v1.RuntimeView.connections:type_name -> weft.v1.ConnectionRuntime
-	8,  // 27: weft.v1.RuntimeView.diagnostics:type_name -> weft.v1.Diagnostic
-	35, // 28: weft.v1.GetRuntimeResponse.runtime:type_name -> weft.v1.RuntimeView
-	35, // 29: weft.v1.WatchRuntimeResponse.runtime:type_name -> weft.v1.RuntimeView
-	51, // 30: weft.v1.BeginOAuthLoginResponse.expires_at:type_name -> google.protobuf.Timestamp
-	46, // 31: weft.v1.GetAuthStatusResponse.statuses:type_name -> weft.v1.AuthStatus
-	5,  // 32: weft.v1.AuthStatus.state:type_name -> weft.v1.AuthStatus.State
-	51, // 33: weft.v1.AuthStatus.expires_at:type_name -> google.protobuf.Timestamp
-	8,  // 34: weft.v1.AuthStatus.diagnostics:type_name -> weft.v1.Diagnostic
-	12, // 35: weft.v1.ConfigurationService.Validate:input_type -> weft.v1.ValidateRequest
-	14, // 36: weft.v1.ConfigurationService.Resolve:input_type -> weft.v1.ResolveRequest
-	16, // 37: weft.v1.PackageService.Install:input_type -> weft.v1.InstallRequest
-	18, // 38: weft.v1.PackageService.Update:input_type -> weft.v1.UpdateRequest
-	20, // 39: weft.v1.PackageService.WatchOperation:input_type -> weft.v1.WatchOperationRequest
-	24, // 40: weft.v1.LaunchService.PrepareLaunch:input_type -> weft.v1.PrepareLaunchRequest
-	28, // 41: weft.v1.LaunchService.RenewLaunch:input_type -> weft.v1.RenewLaunchRequest
-	30, // 42: weft.v1.LaunchService.FinishLaunch:input_type -> weft.v1.FinishLaunchRequest
-	32, // 43: weft.v1.LaunchService.RevokeLaunch:input_type -> weft.v1.RevokeLaunchRequest
-	36, // 44: weft.v1.RuntimeService.GetRuntime:input_type -> weft.v1.GetRuntimeRequest
-	38, // 45: weft.v1.RuntimeService.WatchRuntime:input_type -> weft.v1.WatchRuntimeRequest
-	40, // 46: weft.v1.AuthService.BeginOAuthLogin:input_type -> weft.v1.BeginOAuthLoginRequest
-	42, // 47: weft.v1.AuthService.SetSecret:input_type -> weft.v1.SetSecretRequest
-	44, // 48: weft.v1.AuthService.GetAuthStatus:input_type -> weft.v1.GetAuthStatusRequest
-	47, // 49: weft.v1.AuthService.Logout:input_type -> weft.v1.LogoutRequest
-	13, // 50: weft.v1.ConfigurationService.Validate:output_type -> weft.v1.ValidateResponse
-	15, // 51: weft.v1.ConfigurationService.Resolve:output_type -> weft.v1.ResolveResponse
-	17, // 52: weft.v1.PackageService.Install:output_type -> weft.v1.InstallResponse
-	19, // 53: weft.v1.PackageService.Update:output_type -> weft.v1.UpdateResponse
-	21, // 54: weft.v1.PackageService.WatchOperation:output_type -> weft.v1.WatchOperationResponse
-	25, // 55: weft.v1.LaunchService.PrepareLaunch:output_type -> weft.v1.PrepareLaunchResponse
-	29, // 56: weft.v1.LaunchService.RenewLaunch:output_type -> weft.v1.RenewLaunchResponse
-	31, // 57: weft.v1.LaunchService.FinishLaunch:output_type -> weft.v1.FinishLaunchResponse
-	33, // 58: weft.v1.LaunchService.RevokeLaunch:output_type -> weft.v1.RevokeLaunchResponse
-	37, // 59: weft.v1.RuntimeService.GetRuntime:output_type -> weft.v1.GetRuntimeResponse
-	39, // 60: weft.v1.RuntimeService.WatchRuntime:output_type -> weft.v1.WatchRuntimeResponse
-	41, // 61: weft.v1.AuthService.BeginOAuthLogin:output_type -> weft.v1.BeginOAuthLoginResponse
-	43, // 62: weft.v1.AuthService.SetSecret:output_type -> weft.v1.SetSecretResponse
-	45, // 63: weft.v1.AuthService.GetAuthStatus:output_type -> weft.v1.GetAuthStatusResponse
-	48, // 64: weft.v1.AuthService.Logout:output_type -> weft.v1.LogoutResponse
-	50, // [50:65] is the sub-list for method output_type
-	35, // [35:50] is the sub-list for method input_type
-	35, // [35:35] is the sub-list for extension type_name
-	35, // [35:35] is the sub-list for extension extendee
-	0,  // [0:35] is the sub-list for field type_name
+var file_agx_v1_agx_proto_depIdxs = []int32{
+	0,  // 0: agx.v1.Diagnostic.severity:type_name -> agx.v1.Diagnostic.Severity
+	7,  // 1: agx.v1.Diagnostic.source:type_name -> agx.v1.SourceLocation
+	6,  // 2: agx.v1.Snapshot.resources:type_name -> agx.v1.ResourceRef
+	1,  // 3: agx.v1.ResolutionStep.change:type_name -> agx.v1.ResolutionStep.Change
+	7,  // 4: agx.v1.ResolutionStep.source:type_name -> agx.v1.SourceLocation
+	6,  // 5: agx.v1.ResourceTrace.resource:type_name -> agx.v1.ResourceRef
+	10, // 6: agx.v1.ResourceTrace.steps:type_name -> agx.v1.ResolutionStep
+	8,  // 7: agx.v1.ValidateResponse.diagnostics:type_name -> agx.v1.Diagnostic
+	9,  // 8: agx.v1.ResolveResponse.snapshot:type_name -> agx.v1.Snapshot
+	11, // 9: agx.v1.ResolveResponse.traces:type_name -> agx.v1.ResourceTrace
+	8,  // 10: agx.v1.ResolveResponse.diagnostics:type_name -> agx.v1.Diagnostic
+	22, // 11: agx.v1.WatchOperationResponse.progress:type_name -> agx.v1.PackageProgress
+	23, // 12: agx.v1.WatchOperationResponse.result:type_name -> agx.v1.PackageResult
+	8,  // 13: agx.v1.WatchOperationResponse.failure:type_name -> agx.v1.Diagnostic
+	51, // 14: agx.v1.PrepareLaunchRequest.environment_inputs:type_name -> agx.v1.PrepareLaunchRequest.EnvironmentInputsEntry
+	27, // 15: agx.v1.PrepareLaunchResponse.launch:type_name -> agx.v1.Launch
+	26, // 16: agx.v1.PrepareLaunchResponse.spawn:type_name -> agx.v1.SpawnPlan
+	52, // 17: agx.v1.SpawnPlan.environment_overrides:type_name -> agx.v1.SpawnPlan.EnvironmentOverridesEntry
+	2,  // 18: agx.v1.Launch.state:type_name -> agx.v1.Launch.State
+	53, // 19: agx.v1.Launch.expires_at:type_name -> google.protobuf.Timestamp
+	53, // 20: agx.v1.RenewLaunchResponse.expires_at:type_name -> google.protobuf.Timestamp
+	3,  // 21: agx.v1.McpRuntime.state:type_name -> agx.v1.McpRuntime.State
+	8,  // 22: agx.v1.McpRuntime.diagnostics:type_name -> agx.v1.Diagnostic
+	27, // 23: agx.v1.RuntimeView.launches:type_name -> agx.v1.Launch
+	34, // 24: agx.v1.RuntimeView.mcp_servers:type_name -> agx.v1.McpRuntime
+	8,  // 25: agx.v1.RuntimeView.diagnostics:type_name -> agx.v1.Diagnostic
+	35, // 26: agx.v1.GetRuntimeResponse.runtime:type_name -> agx.v1.RuntimeView
+	35, // 27: agx.v1.WatchRuntimeResponse.runtime:type_name -> agx.v1.RuntimeView
+	42, // 28: agx.v1.LoginResponse.started:type_name -> agx.v1.LoginStarted
+	43, // 29: agx.v1.LoginResponse.finished:type_name -> agx.v1.LoginFinished
+	53, // 30: agx.v1.LoginStarted.expires_at:type_name -> google.protobuf.Timestamp
+	4,  // 31: agx.v1.LoginFinished.outcome:type_name -> agx.v1.LoginFinished.Outcome
+	48, // 32: agx.v1.GetSecretStatusResponse.statuses:type_name -> agx.v1.SecretStatus
+	5,  // 33: agx.v1.SecretStatus.state:type_name -> agx.v1.SecretStatus.State
+	53, // 34: agx.v1.SecretStatus.expires_at:type_name -> google.protobuf.Timestamp
+	8,  // 35: agx.v1.SecretStatus.diagnostics:type_name -> agx.v1.Diagnostic
+	12, // 36: agx.v1.ConfigurationService.Validate:input_type -> agx.v1.ValidateRequest
+	14, // 37: agx.v1.ConfigurationService.Resolve:input_type -> agx.v1.ResolveRequest
+	16, // 38: agx.v1.PackageService.Install:input_type -> agx.v1.InstallRequest
+	18, // 39: agx.v1.PackageService.Update:input_type -> agx.v1.UpdateRequest
+	20, // 40: agx.v1.PackageService.WatchOperation:input_type -> agx.v1.WatchOperationRequest
+	24, // 41: agx.v1.LaunchService.PrepareLaunch:input_type -> agx.v1.PrepareLaunchRequest
+	28, // 42: agx.v1.LaunchService.RenewLaunch:input_type -> agx.v1.RenewLaunchRequest
+	30, // 43: agx.v1.LaunchService.FinishLaunch:input_type -> agx.v1.FinishLaunchRequest
+	32, // 44: agx.v1.LaunchService.RevokeLaunch:input_type -> agx.v1.RevokeLaunchRequest
+	36, // 45: agx.v1.RuntimeService.GetRuntime:input_type -> agx.v1.GetRuntimeRequest
+	38, // 46: agx.v1.RuntimeService.WatchRuntime:input_type -> agx.v1.WatchRuntimeRequest
+	40, // 47: agx.v1.SecretService.Login:input_type -> agx.v1.LoginRequest
+	44, // 48: agx.v1.SecretService.SetSecret:input_type -> agx.v1.SetSecretRequest
+	46, // 49: agx.v1.SecretService.GetSecretStatus:input_type -> agx.v1.GetSecretStatusRequest
+	49, // 50: agx.v1.SecretService.Logout:input_type -> agx.v1.LogoutRequest
+	13, // 51: agx.v1.ConfigurationService.Validate:output_type -> agx.v1.ValidateResponse
+	15, // 52: agx.v1.ConfigurationService.Resolve:output_type -> agx.v1.ResolveResponse
+	17, // 53: agx.v1.PackageService.Install:output_type -> agx.v1.InstallResponse
+	19, // 54: agx.v1.PackageService.Update:output_type -> agx.v1.UpdateResponse
+	21, // 55: agx.v1.PackageService.WatchOperation:output_type -> agx.v1.WatchOperationResponse
+	25, // 56: agx.v1.LaunchService.PrepareLaunch:output_type -> agx.v1.PrepareLaunchResponse
+	29, // 57: agx.v1.LaunchService.RenewLaunch:output_type -> agx.v1.RenewLaunchResponse
+	31, // 58: agx.v1.LaunchService.FinishLaunch:output_type -> agx.v1.FinishLaunchResponse
+	33, // 59: agx.v1.LaunchService.RevokeLaunch:output_type -> agx.v1.RevokeLaunchResponse
+	37, // 60: agx.v1.RuntimeService.GetRuntime:output_type -> agx.v1.GetRuntimeResponse
+	39, // 61: agx.v1.RuntimeService.WatchRuntime:output_type -> agx.v1.WatchRuntimeResponse
+	41, // 62: agx.v1.SecretService.Login:output_type -> agx.v1.LoginResponse
+	45, // 63: agx.v1.SecretService.SetSecret:output_type -> agx.v1.SetSecretResponse
+	47, // 64: agx.v1.SecretService.GetSecretStatus:output_type -> agx.v1.GetSecretStatusResponse
+	50, // 65: agx.v1.SecretService.Logout:output_type -> agx.v1.LogoutResponse
+	51, // [51:66] is the sub-list for method output_type
+	36, // [36:51] is the sub-list for method input_type
+	36, // [36:36] is the sub-list for extension type_name
+	36, // [36:36] is the sub-list for extension extendee
+	0,  // [0:36] is the sub-list for field type_name
 }
 
-func init() { file_weft_v1_weft_proto_init() }
-func file_weft_v1_weft_proto_init() {
-	if File_weft_v1_weft_proto != nil {
+func init() { file_agx_v1_agx_proto_init() }
+func file_agx_v1_agx_proto_init() {
+	if File_agx_v1_agx_proto != nil {
 		return
 	}
-	file_weft_v1_weft_proto_msgTypes[0].OneofWrappers = []any{
+	file_agx_v1_agx_proto_msgTypes[0].OneofWrappers = []any{
 		(*ResourceRef_SkillId)(nil),
 		(*ResourceRef_InstructionsId)(nil),
-		(*ResourceRef_ConnectionId)(nil),
+		(*ResourceRef_McpId)(nil),
 	}
-	file_weft_v1_weft_proto_msgTypes[15].OneofWrappers = []any{
+	file_agx_v1_agx_proto_msgTypes[15].OneofWrappers = []any{
 		(*WatchOperationResponse_Progress)(nil),
 		(*WatchOperationResponse_Result)(nil),
 		(*WatchOperationResponse_Failure)(nil),
 	}
-	file_weft_v1_weft_proto_msgTypes[24].OneofWrappers = []any{
+	file_agx_v1_agx_proto_msgTypes[24].OneofWrappers = []any{
 		(*FinishLaunchRequest_ExitCode)(nil),
 		(*FinishLaunchRequest_SignalName)(nil),
 		(*FinishLaunchRequest_SpawnFailure)(nil),
+	}
+	file_agx_v1_agx_proto_msgTypes[35].OneofWrappers = []any{
+		(*LoginResponse_Started)(nil),
+		(*LoginResponse_Finished)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_weft_v1_weft_proto_rawDesc), len(file_weft_v1_weft_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agx_v1_agx_proto_rawDesc), len(file_agx_v1_agx_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   45,
+			NumMessages:   47,
 			NumExtensions: 0,
 			NumServices:   5,
 		},
-		GoTypes:           file_weft_v1_weft_proto_goTypes,
-		DependencyIndexes: file_weft_v1_weft_proto_depIdxs,
-		EnumInfos:         file_weft_v1_weft_proto_enumTypes,
-		MessageInfos:      file_weft_v1_weft_proto_msgTypes,
+		GoTypes:           file_agx_v1_agx_proto_goTypes,
+		DependencyIndexes: file_agx_v1_agx_proto_depIdxs,
+		EnumInfos:         file_agx_v1_agx_proto_enumTypes,
+		MessageInfos:      file_agx_v1_agx_proto_msgTypes,
 	}.Build()
-	File_weft_v1_weft_proto = out.File
-	file_weft_v1_weft_proto_goTypes = nil
-	file_weft_v1_weft_proto_depIdxs = nil
+	File_agx_v1_agx_proto = out.File
+	file_agx_v1_agx_proto_goTypes = nil
+	file_agx_v1_agx_proto_depIdxs = nil
 }

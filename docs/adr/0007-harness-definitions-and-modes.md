@@ -1,11 +1,11 @@
 # Define harnesses by extending built-ins, with mode-scoped arguments
 
-Status: proposed.
+Status: accepted.
 
 Codex, Claude Code, and Pi remain the built-in harnesses with native adapters.
 Configuration defines additional harnesses under `harnesses:`, each with a
-`base` naming a built-in or another definition. `weft <name>` and `weft run
-<name>` launch it. Names cannot shadow Weft commands; `base` chains reject cycles.
+`base` naming a built-in or another definition. `agx <name>` and `agx run
+<name>` launch it. Names cannot shadow agx commands; `base` chains reject cycles.
 Package manifests cannot define harnesses.
 
 ```yaml
@@ -21,7 +21,7 @@ harnesses:
         modes: [interactive, exec, resume]
     env:
       CPA_KEY: !secret cpa-key
-    add: {connections: [github]}
+    add: {mcp: [github]}
     exclude: {skills: [workflow]}
 ```
 
@@ -30,7 +30,7 @@ scoped to modes. Each adapter classifies an invocation into one fixed mode:
 
 | Harness | Modes |
 | --- | --- |
-| codex | `interactive`, `exec`, `resume`, `app-server`, `mcp-server`, `passthrough` |
+| codex | `interactive`, `exec`, `resume`, `app-server`, `passthrough` |
 | claude | `interactive`, `print`, `resume`, `passthrough` |
 | pi | `interactive`, `print`, `rpc`, `passthrough` |
 

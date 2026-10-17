@@ -19,12 +19,12 @@ func Token() string {
 	return hex.EncodeToString(b[:])
 }
 
-// Write never changes permissions of an existing parent; callers harden weft-owned directories with EnsureDir.
+// Write never changes permissions of an existing parent; callers harden agx-owned directories with EnsureDir.
 func Write(path string, data []byte, mode os.FileMode) error {
 	if err := createPrivate(filepath.Dir(path)); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".weft-*")
+	f, err := os.CreateTemp(filepath.Dir(path), ".agx-*")
 	if err != nil {
 		return err
 	}
@@ -66,6 +66,9 @@ func Contained(root, rel string) (string, error) {
 		return "", fmt.Errorf("package paths must be relative: %s", rel)
 	}
 	p := filepath.Join(root, rel)
+	if !Within(root, p) {
+		return "", fmt.Errorf("path escapes package: %s", rel)
+	}
 	resolved, err := filepath.EvalSymlinks(p)
 	if err != nil {
 		return "", err

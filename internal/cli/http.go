@@ -3,8 +3,6 @@ package cli
 import (
 	"context"
 	"net/http"
-
-	"github.com/tarik02/weft/internal/securefs"
 )
 
 func newStopRequest(ctx context.Context, url, token string) (*http.Request, error) {
@@ -15,5 +13,3 @@ func newStopRequest(ctx context.Context, url, token string) (*http.Request, erro
 	req.Header.Set("Authorization", "Bearer "+token)
 	return req, nil
 }
-
-func secureRequestID() string { return securefs.Token() }

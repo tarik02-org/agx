@@ -1,0 +1,635 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tarik02/agx/main/schema/agx.schema.json",
+  "$defs": {
+    "ArgGroup": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/Value"
+          },
+          "type": "array",
+          "minItems": 1
+        },
+        {
+          "properties": {
+            "values": {
+              "items": {
+                "$ref": "#/$defs/Value"
+              },
+              "type": "array",
+              "minItems": 1
+            },
+            "modes": {
+              "items": {
+                "enum": [
+                  "app-server",
+                  "exec",
+                  "interactive",
+                  "passthrough",
+                  "print",
+                  "resume",
+                  "rpc"
+                ]
+              },
+              "type": "array",
+              "minItems": 1,
+              "description": "Session modes the group applies to; omit for every mode except passthrough."
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "values"
+          ]
+        }
+      ],
+      "description": "Native arguments: a list, or {values, modes} to limit them to session modes."
+    },
+    "Bundle": {
+      "properties": {
+        "skills": {
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "type": "array",
+          "description": "Skill IDs."
+        },
+        "instructions": {
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "type": "array",
+          "description": "Instructions IDs."
+        },
+        "mcp": {
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "type": "array",
+          "description": "MCP server IDs."
+        },
+        "bundles": {
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "type": "array",
+          "description": "Bundle IDs."
+        },
+        "override": {
+          "type": "boolean",
+          "description": "Replace an existing definition."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "Daemon": {
+      "properties": {
+        "lease_seconds": {
+          "type": "integer",
+          "minimum": 3,
+          "description": "Launch lease length; defaults to 60."
+        },
+        "renew_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Lease renewal interval, shorter than the lease; defaults to 20."
+        },
+        "override": {
+          "type": "boolean",
+          "description": "Replace settings made by earlier fragments."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "FileResource": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Skill directory or instructions file, relative to this file."
+        },
+        "override": {
+          "type": "boolean",
+          "description": "Replace an existing definition."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path"
+      ]
+    },
+    "Harness": {
+      "properties": {
+        "base": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$",
+          "description": "Harness this definition extends."
+        },
+        "executable": {
+          "type": "string",
+          "description": "Absolute path of the native executable."
+        },
+        "args": {
+          "items": {
+            "$ref": "#/$defs/ArgGroup"
+          },
+          "type": "array",
+          "description": "Native arguments inserted before the caller's."
+        },
+        "env": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Value"
+          },
+          "propertyNames": {
+            "pattern": "^(?![Ww][Ee][Ff][Tt]_)[a-zA-Z_][a-zA-Z0-9_]*$"
+          },
+          "type": "object",
+          "description": "Environment variables for the harness."
+        },
+        "add": {
+          "$ref": "#/$defs/Selection",
+          "description": "Resources selected for this harness."
+        },
+        "exclude": {
+          "$ref": "#/$defs/Selection",
+          "description": "Resources deselected for this harness."
+        },
+        "override": {
+          "type": "boolean",
+          "description": "Replace the definition from earlier fragments."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ID": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+    },
+    "Import": {
+      "oneOf": [
+        {
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "required": [
+            "glob"
+          ]
+        }
+      ],
+      "if": {
+        "required": [
+          "glob"
+        ]
+      },
+      "then": {
+        "properties": {
+          "optional": {
+            "const": false
+          }
+        }
+      },
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Fragment to load, relative to this file."
+        },
+        "glob": {
+          "type": "string",
+          "description": "Pattern of fragments to load in lexical order; may match nothing."
+        },
+        "optional": {
+          "type": "boolean",
+          "description": "Skip a path import whose file is missing."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "MCPAuth": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+        },
+        {
+          "$ref": "#/$defs/Secret",
+          "not": {
+            "required": [
+              "override"
+            ]
+          }
+        }
+      ],
+      "description": "http: bearer credential: oauth or keychain, none, an inline secret, or !secret ID; omitted means OAuth when the server asks for it."
+    },
+    "MCPServer": {
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "command"
+            ]
+          },
+          "then": {
+            "properties": {
+              "url": false,
+              "headers": false,
+              "auth": false,
+              "transport": {
+                "const": "stdio"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "url"
+            ]
+          },
+          "then": {
+            "properties": {
+              "command": false,
+              "environment": false,
+              "cwd": false,
+              "transport": {
+                "const": "http"
+              }
+            }
+          }
+        }
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "required": [
+            "command"
+          ]
+        }
+      ],
+      "properties": {
+        "transport": {
+          "type": "string",
+          "enum": [
+            "stdio",
+            "http"
+          ],
+          "description": "How to reach the server; inferred from url (http) or command (stdio)."
+        },
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "stdio: server command and arguments."
+        },
+        "url": {
+          "type": "string",
+          "description": "http: server URL; HTTPS, or HTTP for loopback."
+        },
+        "cwd": {
+          "type": "string",
+          "description": "stdio: working directory; defaults to the launch directory."
+        },
+        "environment": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Value"
+          },
+          "propertyNames": {
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+          },
+          "type": "object",
+          "description": "stdio: environment variables for the server."
+        },
+        "headers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Value"
+          },
+          "type": "object",
+          "description": "http: extra request headers."
+        },
+        "auth": {
+          "$ref": "#/$defs/MCPAuth"
+        },
+        "override": {
+          "type": "boolean",
+          "description": "Replace an existing definition."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "Package": {
+      "oneOf": [
+        {
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "required": [
+            "git"
+          ]
+        }
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Local package directory."
+        },
+        "git": {
+          "type": "string",
+          "description": "Git repository URL."
+        },
+        "ref": {
+          "type": "string",
+          "description": "Git branch, tag, or commit."
+        },
+        "subdir": {
+          "type": "string",
+          "description": "Package root within the source."
+        },
+        "override": {
+          "type": "boolean",
+          "description": "Replace an existing definition."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "Scope": {
+      "properties": {
+        "directory": {
+          "type": "string",
+          "description": "Directory the rule applies to, with its descendants."
+        },
+        "harnesses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Apply only to launches of these harnesses or definitions based on them."
+        },
+        "add": {
+          "$ref": "#/$defs/Selection",
+          "description": "Resources to select."
+        },
+        "exclude": {
+          "$ref": "#/$defs/Selection",
+          "description": "Resources to deselect."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "directory"
+      ]
+    },
+    "Secret": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "environment",
+                  "daemon_environment"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "variable"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "command"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "command"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "environment",
+            "daemon_environment",
+            "command",
+            "keychain",
+            "oauth"
+          ],
+          "description": "How the secret is obtained."
+        },
+        "variable": {
+          "type": "string",
+          "description": "Environment variable holding the secret."
+        },
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Command whose trimmed stdout is the secret."
+        },
+        "issuer": {
+          "type": "string",
+          "description": "OAuth issuer URL; discovered when omitted."
+        },
+        "client_id": {
+          "type": "string",
+          "description": "OAuth public client ID."
+        },
+        "resource": {
+          "type": "string",
+          "description": "OAuth resource indicator."
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "OAuth scopes to request."
+        },
+        "override": {
+          "type": "boolean",
+          "description": "Replace an existing definition."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind"
+      ]
+    },
+    "Selection": {
+      "properties": {
+        "skills": {
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "type": "array",
+          "description": "Skill IDs."
+        },
+        "instructions": {
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "type": "array",
+          "description": "Instructions IDs."
+        },
+        "mcp": {
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "type": "array",
+          "description": "MCP server IDs."
+        },
+        "bundles": {
+          "items": {
+            "$ref": "#/$defs/ID"
+          },
+          "type": "array",
+          "description": "Bundle IDs."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "Value": {
+      "type": "string",
+      "description": "A literal string, or !env NAME, !file PATH, or !secret ID resolved at launch."
+    }
+  },
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Configuration format version."
+    },
+    "imports": {
+      "items": {
+        "$ref": "#/$defs/Import"
+      },
+      "type": "array",
+      "description": "Fragments loaded before this file."
+    },
+    "lockfile": {
+      "type": "string",
+      "description": "Lockfile for packages declared here; defaults to agx.lock.json."
+    },
+    "packages": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Package"
+      },
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+      },
+      "type": "object",
+      "description": "Package sources by ID."
+    },
+    "skills": {
+      "additionalProperties": {
+        "$ref": "#/$defs/FileResource"
+      },
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+      },
+      "type": "object",
+      "description": "Skill directories containing SKILL.md."
+    },
+    "instructions": {
+      "additionalProperties": {
+        "$ref": "#/$defs/FileResource"
+      },
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+      },
+      "type": "object",
+      "description": "Instruction files applied to launches."
+    },
+    "mcp": {
+      "additionalProperties": {
+        "$ref": "#/$defs/MCPServer"
+      },
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+      },
+      "type": "object",
+      "description": "MCP servers with the account and settings used to reach them."
+    },
+    "secrets": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Secret"
+      },
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+      },
+      "type": "object",
+      "description": "How credentials are obtained."
+    },
+    "bundles": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Bundle"
+      },
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+      },
+      "type": "object",
+      "description": "Named selections of resources."
+    },
+    "scopes": {
+      "items": {
+        "$ref": "#/$defs/Scope"
+      },
+      "type": "array",
+      "description": "Directory rules that add or exclude resources."
+    },
+    "harnesses": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Harness"
+      },
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+      },
+      "type": "object",
+      "description": "Built-in harness customizations and new definitions."
+    },
+    "daemon": {
+      "$ref": "#/$defs/Daemon",
+      "description": "Launch lease timing."
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "version"
+  ],
+  "title": "agx configuration fragment"
+}
