@@ -1,0 +1,42 @@
+version: "2"
+
+run:
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errorlint
+    - exhaustive
+    - gocritic
+    - misspell
+    - nilerr
+    - noctx
+    - unconvert
+    - usestdlibvars
+    - wastedassign
+  settings:
+    exhaustive:
+      default-signifies-exhaustive: true
+  exclusions:
+    generated: strict
+    paths:
+      - gen/
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+    - golines
+  settings:
+    golines:
+      max-len: 120
+    goimports:
+      local-prefixes:
+        - github.com/tarik02/weft
+  exclusions:
+    generated: strict
+    paths:
+      - gen/

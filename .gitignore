@@ -1,0 +1,4 @@
+.tools/
+.audit/
+decisions.tsv
+result

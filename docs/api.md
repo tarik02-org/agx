@@ -1,0 +1,68 @@
+# Management API
+
+The contract is [weft.v1](../api/weft/v1/weft.proto), exposed through Connect over
+authenticated loopback HTTP. Generated Go/Connect and TypeScript bindings are included; `buf generate`
+regenerates them. The MCP
+endpoints are separate native MCP interfaces, not methods on these services.
+The Go module path is `weft`.
+
+## Services
+
+- `ConfigurationService`: validate the daemon's configured root and resolve a
+  directory, including provenance and required environment names.
+- `PackageService`: start install/update operations and watch their progress.
+  The CLI installs in-process instead; both paths share the installer lock.
+- `LaunchService`: prepare, renew, finish, and administratively revoke a launch.
+- `RuntimeService`: inspect/watch redacted daemon, launch, and connection state.
+- `AuthService`: start OAuth, set a stored secret, inspect auth, and log out.
+
+There is deliberately no client-facing `GetCredential` or `CallTool` RPC.
+Upstream credentials and tool execution remain inside the daemon.
+
+## Launch flow
+
+Resolve the working directory locally or through the daemon. `PrepareLaunch`
+supplies the expected snapshot, harness, original native arguments, and only
+declared environment inputs. It returns a complete executable/argv/cwd plan,
+environment changes containing the harness grant, a separate lifecycle token,
+and the renewal interval.
+Treat the response as sensitive; never expose it through ordinary JSON inspection.
+
+`PrepareLaunch` creates a leased, prepared launch. The wrapper spawns the returned
+executable and immediately renews with the harness PID, transitioning it to
+running. PIDs are diagnostic only. Renew/finish authenticate using the lifecycle
+token in request metadata. Prepared launches also expire, covering a wrapper that
+dies before spawning. Spawn failure is an explicit finish outcome.
+
+Use management authorization for other RPCs. Preparation and package mutations
+require an idempotency key: retries within the same daemon instance return the
+same operation/launch instead of duplicating effects. Renew and finish are
+idempotent; a terminal launch cannot be revived. Revoke releases its MCP runtime
+without signaling the harness process.
+Reject reuse of an idempotency key with different parameters.
+
+## Watches and failures
+
+Runtime watches start with a complete redacted view and send replacement views
+when state changes. Clients reconnect by requesting a fresh view; v1 does not
+promise durable event replay. Slow observers must not block MCP traffic.
+Package-operation watches likewise emit current state through a terminal outcome.
+Losing an observer does not cancel package installation. Daemon restart may abort
+operations; atomic cache/lock writes allow a safe retry.
+
+OAuth startup accepts the canonical directory and expected snapshot. It returns the attempt and auth-source IDs plus an authorization URL.
+Clients open the URL and observe that auth source through `GetAuthStatus`; the
+daemon receives the callback. Reuse or reject a pending attempt for the same
+credential rather than racing browser flows. Redact authorization URLs from logs.
+
+Use standard Connect codes: `InvalidArgument` for malformed inputs,
+`Unauthenticated` for missing/expired authorization, `PermissionDenied` for an
+out-of-scope action, `NotFound` for unknown IDs, `Aborted` for stale snapshots,
+`FailedPrecondition` for missing packages/configuration incompatibility, and
+`Unavailable` for a stopped runtime. Return redacted diagnostics with source
+locations. Reserve `Internal` for defects, not unclassified expected errors.
+
+Generated messages are boundary data. Decode them into validated internal IDs,
+paths, and variants; reject unspecified enums and unset `oneof` fields. Status
+and explanation messages must never include secret values or raw native prompts.
+MCP clients receive native MCP/HTTP errors rather than Connect envelopes.

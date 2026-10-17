@@ -1,0 +1,291 @@
+syntax = "proto3";
+
+package weft.v1;
+
+option go_package = "github.com/tarik02/weft/gen/weft/v1;weftv1";
+
+import "google/protobuf/timestamp.proto";
+
+// Control interface. Native MCP traffic uses separate HTTP endpoints.
+service ConfigurationService {
+  rpc Validate(ValidateRequest) returns (ValidateResponse);
+  rpc Resolve(ResolveRequest) returns (ResolveResponse);
+}
+
+service PackageService {
+  rpc Install(InstallRequest) returns (InstallResponse);
+  rpc Update(UpdateRequest) returns (UpdateResponse);
+  rpc WatchOperation(WatchOperationRequest) returns (stream WatchOperationResponse);
+}
+
+service LaunchService {
+  rpc PrepareLaunch(PrepareLaunchRequest) returns (PrepareLaunchResponse);
+  rpc RenewLaunch(RenewLaunchRequest) returns (RenewLaunchResponse);
+  rpc FinishLaunch(FinishLaunchRequest) returns (FinishLaunchResponse);
+  rpc RevokeLaunch(RevokeLaunchRequest) returns (RevokeLaunchResponse);
+}
+
+service RuntimeService {
+  rpc GetRuntime(GetRuntimeRequest) returns (GetRuntimeResponse);
+  rpc WatchRuntime(WatchRuntimeRequest) returns (stream WatchRuntimeResponse);
+}
+
+service AuthService {
+  rpc BeginOAuthLogin(BeginOAuthLoginRequest) returns (BeginOAuthLoginResponse);
+  rpc SetSecret(SetSecretRequest) returns (SetSecretResponse);
+  rpc GetAuthStatus(GetAuthStatusRequest) returns (GetAuthStatusResponse);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+}
+
+enum Harness {
+  HARNESS_UNSPECIFIED = 0;
+  HARNESS_CODEX = 1;
+  HARNESS_CLAUDE = 2;
+  HARNESS_PI = 3;
+}
+
+message ResourceRef {
+  oneof resource {
+    string skill_id = 1;
+    string instructions_id = 2;
+    string connection_id = 3;
+  }
+}
+
+message SourceLocation {
+  string path = 1;
+  uint32 line = 2;
+  uint32 column = 3;
+}
+
+message Diagnostic {
+  enum Severity {
+    SEVERITY_UNSPECIFIED = 0;
+    SEVERITY_WARNING = 1;
+    SEVERITY_ERROR = 2;
+  }
+  Severity severity = 1;
+  string code = 2;
+  string summary = 3;
+  SourceLocation source = 4;
+}
+
+message Snapshot {
+  string id = 1;
+  string directory = 2;
+  repeated ResourceRef resources = 3;
+  repeated string required_environment = 4;
+}
+
+message ResolutionStep {
+  enum Change {
+    CHANGE_UNSPECIFIED = 0;
+    CHANGE_ADD = 1;
+    CHANGE_EXCLUDE = 2;
+  }
+  Change change = 1;
+  SourceLocation source = 2;
+  string scope_directory = 3;
+  repeated string bundle_chain = 4;
+}
+
+message ResourceTrace {
+  ResourceRef resource = 1;
+  repeated ResolutionStep steps = 2;
+}
+
+message ValidateRequest {}
+message ValidateResponse {
+  repeated Diagnostic diagnostics = 1;
+}
+
+message ResolveRequest {
+  string directory = 1;
+}
+message ResolveResponse {
+  Snapshot snapshot = 1;
+  repeated ResourceTrace traces = 2;
+  repeated Diagnostic diagnostics = 3;
+}
+
+message InstallRequest {
+  string request_id = 1;
+  bool frozen = 2;
+}
+message InstallResponse {
+  string operation_id = 1;
+}
+
+message UpdateRequest {
+  string request_id = 1;
+  repeated string package_ids = 2;
+}
+message UpdateResponse {
+  string operation_id = 1;
+}
+
+message WatchOperationRequest {
+  string operation_id = 1;
+}
+message WatchOperationResponse {
+  string operation_id = 1;
+  oneof state {
+    PackageProgress progress = 2;
+    PackageResult result = 3;
+    Diagnostic failure = 4;
+  }
+}
+message PackageProgress {
+  string package_id = 1;
+  uint32 completed = 2;
+  uint32 total = 3;
+}
+message PackageResult {
+  repeated string package_ids = 1;
+  repeated string lockfiles = 2;
+}
+
+message PrepareLaunchRequest {
+  string request_id = 1;
+  string snapshot_id = 2;
+  string directory = 3;
+  Harness harness = 4;
+  // Sensitive: native arguments may contain prompt bodies or credentials.
+  repeated string native_arguments = 5;
+  // Sensitive: only names declared by the expected snapshot are accepted.
+  map<string, string> environment_inputs = 6;
+}
+message PrepareLaunchResponse {
+  Launch launch = 1;
+  SpawnPlan spawn = 2;
+  // Sensitive: wrapper-only credential; never inherited by the harness.
+  string lifecycle_token = 3;
+  uint32 renew_after_seconds = 4;
+}
+message SpawnPlan {
+  string executable = 1;
+  repeated string arguments = 2;
+  string directory = 3;
+  // Sensitive: includes the stable harness MCP grant for this lease.
+  map<string, string> environment_overrides = 4;
+  repeated string unset_environment = 5;
+}
+
+message Launch {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_PREPARED = 1;
+    STATE_RUNNING = 2;
+    STATE_FINISHED = 3;
+    STATE_REVOKED = 4;
+    STATE_EXPIRED = 5;
+  }
+  string id = 1;
+  string snapshot_id = 2;
+  string directory = 3;
+  Harness harness = 4;
+  State state = 5;
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+// Renew/finish use lifecycle authorization metadata, not management/MCP grants.
+message RenewLaunchRequest {
+  string launch_id = 1;
+  uint64 harness_pid = 2;
+}
+message RenewLaunchResponse {
+  google.protobuf.Timestamp expires_at = 1;
+}
+
+message FinishLaunchRequest {
+  string launch_id = 1;
+  oneof outcome {
+    int32 exit_code = 2;
+    string signal_name = 3;
+    string spawn_failure = 4;
+  }
+}
+message FinishLaunchResponse {}
+
+message RevokeLaunchRequest {
+  string launch_id = 1;
+}
+message RevokeLaunchResponse {}
+
+message ConnectionRuntime {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_CONNECTING = 1;
+    STATE_READY = 2;
+    STATE_NEEDS_AUTH = 3;
+    STATE_FAILED = 4;
+  }
+  string launch_id = 1;
+  string connection_id = 2;
+  State state = 3;
+  repeated Diagnostic diagnostics = 4;
+}
+
+message RuntimeView {
+  string daemon_instance_id = 1;
+  string version = 2;
+  repeated Launch launches = 3;
+  repeated ConnectionRuntime connections = 4;
+  repeated Diagnostic diagnostics = 5;
+}
+
+message GetRuntimeRequest {}
+message GetRuntimeResponse {
+  RuntimeView runtime = 1;
+}
+message WatchRuntimeRequest {}
+message WatchRuntimeResponse {
+  RuntimeView runtime = 1;
+}
+
+message BeginOAuthLoginRequest {
+  string request_id = 1;
+  string snapshot_id = 2;
+  string connection_id = 3;
+  string directory = 4;
+}
+message BeginOAuthLoginResponse {
+  string attempt_id = 1;
+  string authorization_url = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  string auth_id = 4;
+}
+
+message SetSecretRequest {
+  string auth_id = 1;
+  // Sensitive: credential value; must not enter RPC logs or telemetry.
+  bytes secret = 2;
+}
+message SetSecretResponse {}
+
+message GetAuthStatusRequest {
+  // Empty selects all configured auth sources.
+  string auth_id = 1;
+}
+message GetAuthStatusResponse {
+  repeated AuthStatus statuses = 1;
+}
+message AuthStatus {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_UNCONFIGURED = 1;
+    STATE_PENDING = 2;
+    STATE_READY = 3;
+    STATE_NEEDS_LOGIN = 4;
+    STATE_UNAVAILABLE = 5;
+  }
+  string auth_id = 1;
+  State state = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  repeated Diagnostic diagnostics = 4;
+}
+
+message LogoutRequest {
+  string auth_id = 1;
+}
+message LogoutResponse {}

@@ -1,0 +1,25 @@
+version: 1
+
+# All relative file paths and scope roots belong to this fragment.
+instructions:
+  repository:
+    path: instructions.md
+
+# Machine-specific mappings can live in an optional, separately locked fragment.
+imports:
+  - path: local.yaml
+    optional: true
+
+scopes:
+  - directory: ..
+    add:
+      instructions: [repository]
+
+# Configure an absolute executable if a harness-named wrapper shadows PATH.
+# harnesses:
+#   codex:
+#     executable: /absolute/path/to/native/executable
+
+daemon:
+  lease_seconds: 60
+  renew_seconds: 20

@@ -1,0 +1,313 @@
+package daemon
+
+import (
+	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"fmt"
+	"net/url"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	v1 "github.com/tarik02/weft/gen/weft/v1"
+	"github.com/tarik02/weft/internal/adapters"
+	"github.com/tarik02/weft/internal/auth"
+	"github.com/tarik02/weft/internal/config"
+	"github.com/tarik02/weft/internal/mcpruntime"
+	"github.com/tarik02/weft/internal/securefs"
+)
+
+func (s *Server) PrepareLaunch(
+	ctx context.Context,
+	req *connect.Request[v1.PrepareLaunchRequest],
+) (*connect.Response[v1.PrepareLaunchResponse], error) {
+	msg := req.Msg
+	if msg.RequestId == "" || len(msg.RequestId) > 256 || msg.SnapshotId == "" || !filepath.IsAbs(msg.Directory) {
+		return nil, rpcError(connect.CodeInvalidArgument, "request_id, snapshot_id and absolute directory required")
+	}
+	var harness string
+	switch msg.Harness {
+	case v1.Harness_HARNESS_CODEX:
+		harness = "codex"
+	case v1.Harness_HARNESS_CLAUDE:
+		harness = "claude"
+	case v1.Harness_HARNESS_PI:
+		harness = "pi"
+	default:
+		return nil, rpcError(connect.CodeInvalidArgument, "harness is required")
+	}
+	if adapters.Passthrough(harness, msg.NativeArguments) {
+		return nil, rpcError(
+			connect.CodeInvalidArgument,
+			"non-session command must pass through without launch preparation",
+		)
+	}
+	fingerprint := config.Digest(msg)
+	s.mu.Lock()
+	previous, exists := s.preparations[msg.RequestId]
+	s.mu.Unlock()
+	if exists {
+		if previous.fingerprint != fingerprint {
+			return nil, rpcError(connect.CodeInvalidArgument, "idempotency key reused with different parameters")
+		}
+		response, err := s.openResponse(previous.response)
+		if err != nil {
+			return nil, rpcError(connect.CodeInternal, "cannot recover launch response")
+		}
+		return connect.NewResponse(response), nil
+	}
+	c, err := s.reload()
+	if err != nil {
+		return nil, rpcError(connect.CodeFailedPrecondition, "configuration invalid; run weft config validate")
+	}
+	snapshot, err := c.Resolve(msg.Directory)
+	if err != nil {
+		return nil, rpcError(connect.CodeFailedPrecondition, "directory cannot be resolved")
+	}
+	if snapshot.ID != msg.SnapshotId {
+		return nil, rpcError(connect.CodeAborted, "snapshot changed; resolve again before forwarding credentials")
+	}
+	allowed := map[string]bool{}
+	for _, name := range snapshot.RequiredEnvironment {
+		allowed[name] = true
+	}
+	for name := range msg.EnvironmentInputs {
+		if !allowed[name] {
+			return nil, rpcError(connect.CodeInvalidArgument, "undeclared environment input "+name)
+		}
+	}
+	missing := []string{}
+	for _, name := range snapshot.RequiredEnvironment {
+		if msg.EnvironmentInputs[name] == "" {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		return nil, rpcError(
+			connect.CodeFailedPrecondition,
+			"missing environment variables: "+strings.Join(missing, ", "),
+		)
+	}
+	s.mu.Lock()
+	full := len(s.launches) >= 10000
+	s.mu.Unlock()
+	if full {
+		return nil, rpcError(
+			connect.CodeResourceExhausted,
+			"launch history full; retry after ended launches are pruned",
+		)
+	}
+	id, grant, lifecycle := securefs.Token(), securefs.Token(), securefs.Token()
+	launchCtx, cancel := context.WithCancel(s.ctx)
+	endpoints := map[config.ID]*mcpruntime.Endpoint{}
+	nativeEndpoints := []adapters.Endpoint{}
+	inputs := map[string]string{}
+	for name, value := range msg.EnvironmentInputs {
+		inputs[name] = value
+	}
+	for _, r := range snapshot.Resources {
+		if r.Kind != "connection" {
+			continue
+		}
+		definition := snapshot.Config.Connections[r.ID]
+		if definition.Cwd == "" {
+			definition.Cwd = snapshot.Directory
+		}
+		endpoints[r.ID] = mcpruntime.New(launchCtx, definition, snapshot.Config.Auth, inputs, s.manager)
+		nativeEndpoints = append(
+			nativeEndpoints,
+			adapters.Endpoint{
+				ID:  r.ID,
+				URL: s.discovery.URL + "/launch/" + id + "/mcp/" + url.PathEscape(string(r.ID)),
+			},
+		)
+	}
+	discard := func() {
+		cancel()
+		s.release(id, endpoints)
+	}
+	plan, err := adapters.Build(snapshot, harness, s.paths.Cache, id, grant, nativeEndpoints, msg.NativeArguments)
+	if err != nil {
+		discard()
+		return nil, rpcError(connect.CodeFailedPrecondition, err.Error())
+	}
+	view := &v1.Launch{
+		Id:         id,
+		SnapshotId: snapshot.ID,
+		Directory:  snapshot.Directory,
+		Harness:    msg.Harness,
+		State:      v1.Launch_STATE_PREPARED,
+		ExpiresAt:  timestamppb.New(time.Now().Add(time.Duration(c.Daemon.LeaseSeconds) * time.Second)),
+	}
+	l := &launch{
+		view:      view,
+		grant:     auth.Verifier(grant),
+		lifecycle: auth.Verifier(lifecycle),
+		ctx:       launchCtx,
+		cancel:    cancel,
+		endpoints: endpoints,
+		snapshot:  snapshot,
+	}
+	response := &v1.PrepareLaunchResponse{
+		Launch: proto.Clone(view).(*v1.Launch),
+		Spawn: &v1.SpawnPlan{
+			Executable:           plan.Executable,
+			Arguments:            plan.Arguments,
+			Directory:            plan.Directory,
+			EnvironmentOverrides: plan.Environment,
+			UnsetEnvironment:     plan.Unset,
+		},
+		LifecycleToken:    lifecycle,
+		RenewAfterSeconds: uint32(c.Daemon.RenewSeconds),
+	}
+	sealed, err := s.sealResponse(response)
+	if err != nil {
+		discard()
+		return nil, rpcError(connect.CodeInternal, "cannot cache launch response")
+	}
+	s.mu.Lock()
+	// A concurrent request with the same key may have finished first.
+	if previous, ok := s.preparations[msg.RequestId]; ok {
+		s.mu.Unlock()
+		discard()
+		if previous.fingerprint != fingerprint {
+			return nil, rpcError(connect.CodeInvalidArgument, "idempotency key reused with different parameters")
+		}
+		response, err := s.openResponse(previous.response)
+		if err != nil {
+			return nil, rpcError(connect.CodeInternal, "cannot recover launch response")
+		}
+		return connect.NewResponse(response), nil
+	}
+	if len(s.launches) >= 10000 {
+		s.mu.Unlock()
+		discard()
+		return nil, rpcError(
+			connect.CodeResourceExhausted,
+			"launch history full; retry after ended launches are pruned",
+		)
+	}
+	s.launches[id] = l
+	s.preparations[msg.RequestId] = prepareRecord{fingerprint: fingerprint, response: sealed, launchID: id}
+	s.mu.Unlock()
+	return connect.NewResponse(response), nil
+}
+
+func (s *Server) lifecycleLaunch(id, header string) (*launch, error) {
+	l := s.launches[id]
+	if l == nil {
+		return nil, rpcError(connect.CodeNotFound, "unknown launch")
+	}
+	if !strings.HasPrefix(header, "Bearer ") || !auth.Match(l.lifecycle, strings.TrimPrefix(header, "Bearer ")) {
+		return nil, rpcError(connect.CodeUnauthenticated, "lifecycle credential required")
+	}
+	return l, nil
+}
+
+func (s *Server) RenewLaunch(
+	ctx context.Context,
+	req *connect.Request[v1.RenewLaunchRequest],
+) (*connect.Response[v1.RenewLaunchResponse], error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	l, err := s.lifecycleLaunch(req.Msg.LaunchId, req.Header().Get("Authorization"))
+	if err != nil {
+		return nil, err
+	}
+	if !active(l.view.State) || time.Now().After(l.view.ExpiresAt.AsTime()) {
+		s.end(l, v1.Launch_STATE_EXPIRED)
+		return nil, rpcError(connect.CodeUnauthenticated, "launch has ended or expired")
+	}
+	if req.Msg.HarnessPid != 0 {
+		l.view.State = v1.Launch_STATE_RUNNING
+	}
+	l.view.ExpiresAt = timestamppb.New(
+		time.Now().Add(time.Duration(l.snapshot.Config.Daemon.LeaseSeconds) * time.Second),
+	)
+	return connect.NewResponse(
+		&v1.RenewLaunchResponse{ExpiresAt: proto.Clone(l.view.ExpiresAt).(*timestamppb.Timestamp)},
+	), nil
+}
+
+func (s *Server) FinishLaunch(
+	ctx context.Context,
+	req *connect.Request[v1.FinishLaunchRequest],
+) (*connect.Response[v1.FinishLaunchResponse], error) {
+	switch req.Msg.Outcome.(type) {
+	case *v1.FinishLaunchRequest_ExitCode, *v1.FinishLaunchRequest_SignalName, *v1.FinishLaunchRequest_SpawnFailure:
+	default:
+		return nil, rpcError(connect.CodeInvalidArgument, "finish outcome is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	l, err := s.lifecycleLaunch(req.Msg.LaunchId, req.Header().Get("Authorization"))
+	if err != nil {
+		return nil, err
+	}
+	s.end(l, v1.Launch_STATE_FINISHED)
+	return connect.NewResponse(&v1.FinishLaunchResponse{}), nil
+}
+
+func (s *Server) RevokeLaunch(
+	ctx context.Context,
+	req *connect.Request[v1.RevokeLaunchRequest],
+) (*connect.Response[v1.RevokeLaunchResponse], error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	l := s.launches[req.Msg.LaunchId]
+	if l == nil {
+		return nil, rpcError(connect.CodeNotFound, "unknown launch")
+	}
+	s.end(l, v1.Launch_STATE_REVOKED)
+	return connect.NewResponse(&v1.RevokeLaunchResponse{}), nil
+}
+
+func (s *Server) responseCipher() (cipher.AEAD, error) {
+	key := auth.Verifier(s.discovery.Token)
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(block)
+}
+
+func (s *Server) sealResponse(response *v1.PrepareLaunchResponse) ([]byte, error) {
+	aead, err := s.responseCipher()
+	if err != nil {
+		return nil, err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
+	data, err := proto.Marshal(response)
+	if err != nil {
+		return nil, err
+	}
+	return aead.Seal(nonce, nonce, data, nil), nil
+}
+
+func (s *Server) openResponse(data []byte) (*v1.PrepareLaunchResponse, error) {
+	aead, err := s.responseCipher()
+	if err != nil {
+		return nil, err
+	}
+	if len(data) < aead.NonceSize() {
+		return nil, fmt.Errorf("invalid response cache")
+	}
+	plain, err := aead.Open(nil, data[:aead.NonceSize()], data[aead.NonceSize():], nil)
+	if err != nil {
+		return nil, err
+	}
+	response := &v1.PrepareLaunchResponse{}
+	if err := proto.Unmarshal(plain, response); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
