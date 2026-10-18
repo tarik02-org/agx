@@ -270,6 +270,12 @@ func run(osArgs []string, stdout io.Writer) int {
 	}
 	args := osArgs[1:]
 	completing := len(args) > 0 && (args[0] == cobra.ShellCompRequestCmd || args[0] == cobra.ShellCompNoDescRequestCmd)
+	if completing {
+		// Cobra ends each completion with a "Completion ended with directive" line on stderr for
+		// debugging. Completion scripts are meant to drop it, but PowerShell can show it under
+		// the prompt, so completion keeps stderr quiet.
+		root.SetErr(io.Discard)
+	}
 	words := args
 	if completing {
 		words = args[1:]

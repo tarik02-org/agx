@@ -32,6 +32,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   message, like the other-build hint, names `agx daemon stop --force`.
 - A shim or link named after a definition no longer runs the agx CLI when the
   configuration fails to load; it reports the load error and exits 1.
+- Shell completion no longer writes cobra's `Completion ended with directive`
+  line to stderr, which PowerShell could show under the prompt.
 - `--json` before the command (`agx --json config validate`) works as after it.
 - Skills appear under their native names (`agx-managed:review` instead of
   `agx-managed:resource-…`; Codex plugins are `review-<hash>`).

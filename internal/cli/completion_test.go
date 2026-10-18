@@ -182,3 +182,22 @@ func TestCompletionBrokenConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestCompletionKeepsStderrQuiet(t *testing.T) {
+	isolate(t, "")
+	stderr, err := os.CreateTemp(t.TempDir(), "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stderr
+	os.Stderr = stderr
+	complete(t, "daemon", "")
+	os.Stderr = saved
+	b, err := os.ReadFile(stderr.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "Completion ended with directive") {
+		t.Fatalf("completion wrote its directive to stderr: %q", b)
+	}
+}
