@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -554,18 +555,30 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := newAnyVersionClient(*paths)
-			if err != nil {
+			if err == nil {
+				err = stopDaemon(cmd.Context(), c, force)
+			}
+			// Stopping a daemon that is not there leaves the state asked for.
+			var dial *net.OpError
+			if errors.Is(err, daemon.ErrUnavailable) || errors.As(err, &dial) && dial.Op == "dial" {
+				if scripting.enabled {
+					return printJSON(struct {
+						Running bool `json:"running"`
+					}{false})
+				}
+				_, err = fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, "Daemon is not running."))
 				return err
 			}
-			if err := stopDaemon(cmd.Context(), c, force); err != nil {
+			if err != nil {
 				return err
 			}
 			if scripting.enabled {
 				return printJSON(struct {
+					Running  bool   `json:"running"`
 					Stopping bool   `json:"stopping"`
 					Forced   bool   `json:"forced"`
 					Version  string `json:"version"`
-				}{true, force, c.discovery.Version})
+				}{true, true, force, c.discovery.Version})
 			}
 			_, err = fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, "Daemon stopping."))
 			return err

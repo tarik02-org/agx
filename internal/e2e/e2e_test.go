@@ -576,7 +576,18 @@ func TestEndToEnd(t *testing.T) {
 func TestDaemonJSON(t *testing.T) {
 	e := newEnv(t)
 	e.jsonFail("daemon_unavailable", "daemon", "status")
-	e.jsonFail("daemon_unavailable", "daemon", "stop")
+	for _, args := range [][]string{{"daemon", "stop"}, {"daemon", "stop", "--force"}} {
+		var absent struct {
+			Running *bool `json:"running"`
+		}
+		e.jsonOK(&absent, args...)
+		if absent.Running == nil || *absent.Running {
+			t.Fatalf("%q without a daemon = %+v", args, absent)
+		}
+		if r := e.ok(args...); !strings.Contains(r.stdout, "Daemon is not running.") {
+			t.Fatalf("%q without a daemon printed %q", args, r.stdout)
+		}
+	}
 	var started struct {
 		Started bool   `json:"started"`
 		Version string `json:"version"`
