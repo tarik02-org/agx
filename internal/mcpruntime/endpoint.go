@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/tarik02-org/agx/internal/auth"
@@ -546,20 +547,48 @@ func (e *Endpoint) startStdio(id string, inputs map[string]string) (*stdioSessio
 		kill:       kill,
 		ended:      make(chan struct{}),
 	}
-	relay := func(from, to mcp.Connection) {
+	go func() {
 		defer s.close()
 		for {
-			message, err := from.Read(ctx)
+			message, err := down.Read(ctx)
 			if err != nil {
 				return
 			}
-			if err := to.Write(ctx, message); err != nil {
+			if err := up.Write(ctx, message); err != nil {
 				return
 			}
 		}
-	}
-	go relay(down, up)
-	go relay(up, down)
+	}()
+	go func() {
+		defer s.close()
+		for {
+			message, err := up.Read(ctx)
+			if err != nil {
+				return
+			}
+			// The streamable transport rejects messages that have no open stream to go to:
+			// notifications while the client holds no GET stream, or responses whose request
+			// stream disconnected. Delivery is best effort per the MCP spec; the session lives on.
+			// A closed session also surfaces here and ends the loop through down.Read.
+			if err := down.Write(ctx, message); err != nil {
+				request, ok := message.(*jsonrpc.Request)
+				if !ok || !request.IsCall() {
+					continue
+				}
+				// Answer undeliverable server requests so the server does not wait forever.
+				refusal := &jsonrpc.Response{
+					ID: request.ID,
+					Error: &jsonrpc.Error{
+						Code:    jsonrpc.CodeInternalError,
+						Message: "client has no open stream for server requests",
+					},
+				}
+				if err := up.Write(ctx, refusal); err != nil {
+					return
+				}
+			}
+		}
+	}()
 	go func() {
 		_ = cmd.Wait()
 		s.close()
