@@ -34,6 +34,7 @@ func Main() int {
 // and JSON documents.
 func run(osArgs []string, stdout io.Writer) int {
 	scripting.enabled, scripting.stdout = false, stdout
+	usageCommand = "agx"
 	paths, err := platform.DefaultPaths()
 	if err != nil {
 		return exitCode(err)
@@ -377,7 +378,11 @@ func run(osArgs []string, stdout io.Writer) int {
 		}
 		return exitCode(&usageError{err})
 	}
-	return exitCode(root.Execute())
+	cmd, err := root.ExecuteC()
+	if cmd != nil {
+		usageCommand = cmd.CommandPath()
+	}
+	return exitCode(err)
 }
 
 // invokedName is the command name agx runs as, which names a harness when agx is invoked
@@ -391,6 +396,9 @@ func invokedName(arg0 string) string {
 }
 
 type usageError struct{ error }
+
+// usageCommand is the command whose help a usage error points at.
+var usageCommand = "agx"
 
 // exitCode reports err and returns the exit status: 2 for usage errors, 1 for other failures. In
 // JSON mode the report is an error document on stdout instead of a diagnostic on stderr.
@@ -417,7 +425,7 @@ func exitCode(err error) int {
 	}
 	ui.Diagnose(ui.Error, "%s", errorMessage(err))
 	if status == 2 {
-		ui.Note("Run 'agx --help' for usage.")
+		ui.Note("Run '" + usageCommand + " --help' for usage.")
 	}
 	return status
 }
