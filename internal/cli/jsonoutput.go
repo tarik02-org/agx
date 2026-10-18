@@ -9,7 +9,7 @@ import (
 	"github.com/tarik02-org/agx/internal/config"
 )
 
-// The documents --json prints: the scripting contract (docs/cli.md). Documents are built from
+// The documents --json prints: the scripting contract (docs/cli-reference.md, JSON output). Documents are built from
 // these types only, never by marshaling configuration, runtime, or protobuf types, so the
 // contract changes only here. Every type follows the same conventions:
 //

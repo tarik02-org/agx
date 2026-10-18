@@ -170,9 +170,32 @@ Conventions:
 
 - Field names are `snake_case`; enum values are lowercase strings.
 - Times are UTC, in RFC 3339 format (`2026-10-19T12:05:00Z`).
-- Lists are always present: an empty list is `[]`, never `null` or missing.
+- Every field is always present: a value that doesn't apply is `null`, an
+  empty list is `[]`, and an empty map is `{}`.
+- An object's own identifier is `id` (`name` for harnesses); a reference to
+  another object is `<kind>_id`, such as `mcp_id` or `secret_id`.
+- List commands wrap the list in an object, such as `{"mcp":[…]}` or
+  `{"launches":[…]}`.
+- An enum value this build of agx doesn't know is printed as `"unknown"`.
 - `error.code` is a stable, machine-readable string; branch on it rather than
-  on `message`. <!-- TODO: list the error codes. -->
+  on `message`. It is one of:
+
+  | Code | Meaning |
+  | --- | --- |
+  | `usage` | invalid arguments or flags |
+  | `config_invalid` | the configuration doesn't load |
+  | `not_found` | the named thing doesn't exist |
+  | `conflict` | the change clashes with existing state |
+  | `read_only` | the target can't be edited |
+  | `invalid_request` | the request was rejected as invalid |
+  | `failed_precondition` | the command can't run in the current state |
+  | `needs_login` | a secret needs `agx secret login` first |
+  | `daemon_unavailable` | the daemon isn't running and couldn't start |
+  | `version_mismatch` | the CLI and the daemon are different versions |
+  | `network` | a network request failed |
+  | `timeout` | the command timed out |
+  | `interrupted` | the command was interrupted |
+  | `internal` | anything else; see `message` |
 - `version` changes only when a document changes incompatibly; new fields may
   appear at any time.
 
@@ -183,8 +206,8 @@ see its shape.
 the login progresses:
 
 ```json
-{"version":1,"event":"started","secret":"github","mcp_id":"github","url":"https://github.com/login/oauth/authorize?…","expires_at":"2026-10-19T12:05:00Z"}
-{"version":1,"event":"finished","secret":"github","outcome":"success","message":""}
+{"version":1,"event":"started","secret_id":"github","mcp_id":"github","url":"https://github.com/login/oauth/authorize?…","expires_at":"2026-10-19T12:05:00Z"}
+{"version":1,"event":"finished","secret_id":"github","outcome":"success","message":null}
 ```
 
 With `--json`, the browser opens only when stdout is a terminal, so a script can
@@ -194,6 +217,6 @@ Examples:
 
 ```sh
 agx config validate --json | jq .data.valid
-agx mcp list --json | jq -r '.data[].id'
+agx mcp list --json | jq -r '.data.mcp[].id'
 agx doctor --json | jq '.data.checks[] | select(.status != "pass")'
 ```

@@ -92,7 +92,7 @@ func hint(text string) {
 	ui.Note(text)
 }
 
-// Error codes of JSON error documents. They are part of the output contract (docs/cli.md).
+// Error codes of JSON error documents. They are part of the output contract (docs/cli-reference.md, JSON output).
 const (
 	codeUsage              = "usage"
 	codeConfigInvalid      = "config_invalid"

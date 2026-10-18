@@ -40,7 +40,7 @@ const (
 )
 
 // minimumVersions are the oldest harness versions with every native feature agx uses
-// (docs/cli.md, Harness versions).
+// (docs/harnesses.md, Supported versions).
 var minimumVersions = map[string]string{
 	"codex":  "0.160.0",
 	"claude": "2.1.290",

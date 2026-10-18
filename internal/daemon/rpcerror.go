@@ -8,7 +8,7 @@ import (
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 )
 
-// codeReasons is the reason an error carries unless its site names one: the meaning docs/api.md
+// codeReasons is the reason an error carries unless its site names one: the meaning docs/development/api.md
 // gives each Connect code the daemon uses.
 var codeReasons = map[connect.Code]v1.ErrorDetail_Reason{
 	connect.CodeInvalidArgument:    v1.ErrorDetail_REASON_INVALID_REQUEST,
