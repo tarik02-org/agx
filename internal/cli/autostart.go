@@ -167,17 +167,10 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 	}
 	defer func() { _ = log.Close() }()
 	// The daemon must outlive this command, so its process is not tied to the command's cancellation.
-	child := exec.CommandContext(
-		context.WithoutCancel(ctx),
-		executable,
-		"--config",
-		paths.Config,
-		"--cache",
-		paths.Cache,
-		"daemon",
-		"start",
-		"--foreground",
-	)
+	child := exec.CommandContext(context.WithoutCancel(ctx), executable, "daemon", "start", "--foreground")
+	// The paths travel as environment rather than as --config, which must name an existing file:
+	// a root configuration that does not exist yet is an empty one, as it is for the caller.
+	child.Env = append(os.Environ(), "AGX_CONFIG="+paths.Config, "AGX_CACHE="+paths.Cache)
 	// A daemon started from a launch must not hold that project directory open, nor write
 	// into a harness's protocol streams.
 	child.Dir = paths.Runtime
