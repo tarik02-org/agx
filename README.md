@@ -145,12 +145,7 @@ publishes a release with GoReleaser (`.goreleaser.yaml`); `goreleaser build
 - [Management API](docs/api.md) and [Protobuf](api/agx/v1/agx.proto)
 - [Library choices](docs/libraries.md)
 
-Architecture records: [directory scopes](docs/adr/0001-additive-directory-configuration.md),
-[packages and locks](docs/adr/0002-packages-bundles-and-lockfiles.md),
-[native integration](docs/adr/0003-native-harness-integration.md),
-[MCP runtime](docs/adr/0004-daemon-owned-http-mcp-runtime.md),
-[authorization and lifecycle](docs/adr/0005-launch-authorization-and-lifecycle.md),
-[Go and Connect](docs/adr/0006-go-and-connect-management-interface.md),
+Architecture records: [background and core model](docs/adr/0000-background.md),
 [harness definitions](docs/adr/0007-harness-definitions-and-modes.md),
 [injected values and secrets](docs/adr/0008-injected-values-and-secrets.md),
 [inline MCP auth and interactive login](docs/adr/0009-inline-mcp-auth-and-interactive-login.md),
