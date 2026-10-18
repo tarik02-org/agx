@@ -242,12 +242,7 @@ func errorSource(message string) *sourceJSON {
 
 // printError writes err as a JSON error document; configuration errors name their location.
 func printError(code string, err error) {
-	b := errorJSON{Code: code, Message: err.Error()}
-	// Connect prefixes its code, which the document already carries.
-	var rpc *connect.Error
-	if errors.As(err, &rpc) {
-		b.Message = strings.Replace(b.Message, rpc.Error(), rpc.Message(), 1)
-	}
+	b := errorJSON{Code: code, Message: errorMessage(err)}
 	if code == codeConfigInvalid {
 		b.Source = errorSource(b.Message)
 	}
@@ -256,4 +251,15 @@ func printError(code string, err error) {
 		Version int       `json:"version"`
 		Error   errorJSON `json:"error"`
 	}{jsonVersion, b})
+}
+
+// errorMessage is err's message without the code Connect prefixes to an RPC error's: the error
+// document carries the code, and people need only the message.
+func errorMessage(err error) string {
+	message := err.Error()
+	var rpc *connect.Error
+	if errors.As(err, &rpc) {
+		message = strings.Replace(message, rpc.Error(), rpc.Message(), 1)
+	}
+	return message
 }

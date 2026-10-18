@@ -415,7 +415,7 @@ func exitCode(err error) int {
 		printError(errorCode(err), err)
 		return status
 	}
-	ui.Diagnose(ui.Error, "%v", err)
+	ui.Diagnose(ui.Error, "%s", errorMessage(err))
 	if status == 2 {
 		ui.Note("Run 'agx --help' for usage.")
 	}

@@ -440,7 +440,7 @@ func connectDaemon(ctx context.Context, paths platform.Paths, c *config.Config) 
 	}
 	client, err := daemonClient(ctx, paths, true)
 	if err != nil {
-		row.Status, row.Detail = checkFail, err.Error()
+		row.Status, row.Detail = checkFail, errorMessage(err)
 		switch {
 		case errors.Is(err, daemon.ErrVersionMismatch) && strings.Contains(err.Error(), "--force"):
 			row.Hint = "run agx daemon stop --force, then agx doctor again"
@@ -467,7 +467,7 @@ func daemonClientCheck(
 	view, err := c.runtime.GetRuntime(probe, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
 	cancel()
 	if err != nil {
-		row.Status, row.Detail = checkFail, "not answering: "+err.Error()
+		row.Status, row.Detail = checkFail, "not answering: "+errorMessage(err)
 		row.Hint = "inspect " + filepath.Join(paths.Runtime, "daemon.log")
 		return nil, row
 	}
@@ -632,7 +632,12 @@ func secretChecks(ctx context.Context, c *client, cfg *config.Config) []check {
 	defer cancel()
 	response, err := c.secrets.GetSecretStatus(call, request(&v1.GetSecretStatusRequest{}, c.discovery.Token))
 	if err != nil {
-		return []check{{Group: "secret", Name: "secrets", Status: checkFail, Detail: explainSecretTimeout(err).Error()}}
+		return []check{{
+			Group:  "secret",
+			Name:   "secrets",
+			Status: checkFail,
+			Detail: errorMessage(explainSecretTimeout(err)),
+		}}
 	}
 	statuses := response.Msg.Statuses
 	slices.SortFunc(statuses, func(a, b *v1.SecretStatus) int { return strings.Compare(a.SecretId, b.SecretId) })
