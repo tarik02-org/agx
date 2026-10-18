@@ -4,7 +4,9 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## Unreleased
 
-First release: agx 0.1.0.
+## 0.1.0 - 2026-10-18
+
+First release.
 
 ### Added
 
