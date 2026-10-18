@@ -66,7 +66,15 @@ func FindExecutable(name, configured string) (string, error) {
 	if script {
 		return "", fmt.Errorf("native %s must be an .exe executable; configure its absolute executable path", name)
 	}
-	return "", fmt.Errorf("native %s executable not found; configure harnesses.%s.executable", name, name)
+	if configured != "" {
+		return "", fmt.Errorf("native %s executable %s not found; fix harnesses.%s.executable", name, configured, name)
+	}
+	return "", fmt.Errorf(
+		"native %s executable not found on PATH; install %s and put it on PATH, or configure harnesses.%s.executable",
+		name,
+		name,
+		name,
+	)
 }
 
 // DirectoryFlag locates one working-directory flag value in native arguments: args[Index] holds
