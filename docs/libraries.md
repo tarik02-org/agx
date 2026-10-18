@@ -10,6 +10,8 @@ Runtime dependencies are pinned in `go.mod`; schema generators are pinned in
 | Schema tooling | Buf, Protobuf, Connect generators | Generated from `api/agx/v1` into `gen/`. The Connect generator (v1.19.1) trails the runtime library because the registry has no matching release. |
 | CLI | `github.com/spf13/cobra` | Harness subcommands bypass flag parsing to forward native arguments unchanged. |
 | Terminal styling | `charm.land/lipgloss/v2` | Tables, trees, and lists; its `colorprofile` detects terminals and strips styling for pipes and `NO_COLOR`. |
+| Launcher TUI | `charm.land/bubbletea/v2`, `charm.land/bubbles/v2` | Full-screen launcher on the alternate screen; Bubbles' text input for the search field. |
+| Fuzzy search | `github.com/sahilm/fuzzy` | Session and harness search, one term per field, ranked by its match score. |
 | YAML | `go.yaml.in/yaml/v4` | Typed decoding, unknown-field rejection, source positions. Release candidate. |
 | JSON Schema | `github.com/invopop/jsonschema` | Reflects configuration types into the published editor schemas, with hand-tuned tagged values and argument groups. |
 | Native TOML | `github.com/pelletier/go-toml/v2` | Codex configuration artifacts. |

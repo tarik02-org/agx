@@ -54,6 +54,10 @@ agx secret login work/docs
 agx daemon status --json
 ```
 
+Run `agx` alone on a terminal for a launcher: type to search, Enter starts a
+harness or resumes a Codex, Claude, or Pi session (Tab: this directory or all),
+with the same directory-scoped resources. `agx sessions [query] --all` lists them.
+
 Native arguments, standard streams, exit codes, and interrupts pass through.
 Help/version and administrative native commands work without a managed launch.
 A harness-named symlink can point to agx; executable lookup excludes agx itself.

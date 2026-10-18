@@ -25,6 +25,7 @@ import (
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/securefs"
+	"github.com/tarik02-org/agx/internal/sessions"
 )
 
 type ExitError struct{ Code int }
@@ -47,6 +48,8 @@ func loadHarnesses(path string, builtins config.Builtins) harnessConfig {
 	return harnessConfig{config: c}
 }
 
+// runHarness launches harness name with native args. resumed is the ID of the session the launch
+// resumes, when the launcher knows it, so its record names that session.
 func runHarness(
 	ctx context.Context,
 	paths platform.Paths,
@@ -54,6 +57,7 @@ func runHarness(
 	harnesses harnessConfig,
 	name string,
 	args []string,
+	resumed string,
 ) error {
 	if harnesses.err != nil {
 		if _, builtin := registry.Adapter(name); !builtin {
@@ -185,6 +189,21 @@ func runHarness(
 	for _, name := range overrides {
 		cmd.Env = append(cmd.Env, name+"="+p.Spawn.EnvironmentOverrides[name])
 	}
+	// The record lets the launcher resume this launch's sessions with the same definition.
+	records := sessions.NewRecords(paths.State)
+	record := sessions.Record{
+		Launch:    p.Launch.Id,
+		Harness:   name,
+		Builtin:   h.Builtin,
+		Directory: directory,
+		Started:   time.Now(),
+	}
+	if resumed != "" {
+		record.Sessions = []string{resumed}
+	}
+	if err := records.Start(record); err != nil {
+		ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
+	}
 	finished := make(chan struct{})
 	var wg sync.WaitGroup
 	start := func() {
@@ -245,6 +264,9 @@ func runHarness(
 		finish.Outcome = &v1.FinishLaunchRequest_ExitCode{ExitCode: int32(exit.Code)}
 	} else if runErr != nil {
 		finish.Outcome = &v1.FinishLaunchRequest_SpawnFailure{SpawnFailure: "native process could not start"}
+	}
+	if err := records.Finish(p.Launch.Id, time.Now()); err != nil {
+		ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
 	}
 	finishCtx, cancel := boundedContext()
 	defer cancel()

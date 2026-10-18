@@ -69,6 +69,10 @@ and resource selection.
 invocations into modes and turns a snapshot into that harness's native
 arguments, files, and plugins.
 
+**Session**: A conversation stored by a harness in its own store, which the
+launcher lists and resumes; agx records which harness definition started it.
+_Avoid_: Thread, rollout, transcript
+
 **Shim**: An executable named after a harness definition that runs agx as that
 definition, so the definition works from any shell or tool.
 

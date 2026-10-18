@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/list"
@@ -71,12 +74,13 @@ func Configure(mode ColorMode) {
 }
 
 type Printer struct {
-	file   *os.File
-	out    io.Writer
-	styled bool
-	tty    bool
-	width  int
-	enable sync.Once
+	file    *os.File
+	out     io.Writer
+	profile colorprofile.Profile
+	styled  bool
+	tty     bool
+	width   int
+	enable  sync.Once
 }
 
 func New(f *os.File, mode ColorMode) *Printer {
@@ -97,10 +101,11 @@ func New(f *os.File, mode ColorMode) *Printer {
 	case ColorNever:
 	}
 	p := &Printer{
-		file:   f,
-		out:    &colorprofile.Writer{Forward: f, Profile: profile},
-		styled: profile > colorprofile.ASCII,
-		tty:    tty,
+		file:    f,
+		out:     &colorprofile.Writer{Forward: f, Profile: profile},
+		profile: profile,
+		styled:  profile > colorprofile.ASCII,
+		tty:     tty,
 	}
 	if tty {
 		if w, _, err := term.GetSize(f.Fd()); err == nil && w > 0 {
@@ -133,6 +138,9 @@ func (p *Printer) Write(b []byte) (int, error) {
 }
 
 func (p *Printer) Styled() bool { return p.styled }
+
+// Profile is the color profile the stream renders with, for full-screen programs drawing to it.
+func (p *Printer) Profile() colorprofile.Profile { return p.profile }
 
 // Terminal reports whether a person is likely watching, for output such as progress and hints.
 func (p *Printer) Terminal() bool { return p.tty }
@@ -211,6 +219,49 @@ func Diagnose(level Level, format string, args ...any) {
 // Note writes a muted single line to stderr, such as a hint or progress.
 func Note(text string) {
 	_, _ = fmt.Fprintln(Stderr, Stderr.Muted(text))
+}
+
+// Ago describes how long before now t was, in the largest whole unit: "now", "5m", "3h", "2d",
+// "6w", "1y". A time after now, as under clock skew, is "now".
+func Ago(t, now time.Time) string {
+	d := now.Sub(t)
+	switch {
+	case d < time.Minute:
+		return "now"
+	case d < time.Hour:
+		return strconv.Itoa(int(d/time.Minute)) + "m"
+	case d < 24*time.Hour:
+		return strconv.Itoa(int(d/time.Hour)) + "h"
+	case d < 14*24*time.Hour:
+		return strconv.Itoa(int(d/(24*time.Hour))) + "d"
+	case d < 365*24*time.Hour:
+		return strconv.Itoa(int(d/(7*24*time.Hour))) + "w"
+	}
+	return strconv.Itoa(int(d/(365*24*time.Hour))) + "y"
+}
+
+// ShortPath writes a directory relative to cwd when it is cwd (".") or below it ("./sub"), and
+// otherwise under the home directory as ~/rest.
+func ShortPath(path, cwd string) string {
+	if rel, err := filepath.Rel(cwd, path); err == nil && cwd != "" {
+		if rel == "." {
+			return "."
+		}
+		if filepath.IsLocal(rel) {
+			return "." + string(filepath.Separator) + rel
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	if path == home {
+		return "~"
+	}
+	if rest, ok := strings.CutPrefix(path, home+string(filepath.Separator)); ok {
+		return filepath.Join("~", rest)
+	}
+	return path
 }
 
 // Fields renders aligned label/value pairs; empty values are skipped.

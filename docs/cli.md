@@ -32,8 +32,9 @@ agx diagnostics go to stderr. Each invocation is classified into a
 [mode](configuration.md#harnesses): Codex subcommands select `exec` (`exec`,
 `review`), `resume` (`resume`, `fork`), or `app-server`; Claude
 `-p`/`--print` selects `print`, else `-r`/`--resume`/`-c`/`--continue` select
-`resume`; Pi `--mode rpc` selects `rpc`, and `-p`/`--print` or `--mode json`
-select `print`. Help/version probes and non-session native commands such as
+`resume`; Pi `--mode rpc` selects `rpc`, `-p`/`--print` or `--mode json`
+select `print`, else `--session`/`-c`/`--continue`/`-r`/`--resume`/`--fork`
+select `resume`. Help/version probes and non-session native commands such as
 login, plugin management, and app-server tooling are `passthrough`: they run
 without a managed launch, receiving only the definition's `passthrough` groups and
 `env`, whose [injected values](configuration.md#injected-values) the wrapper
@@ -43,6 +44,58 @@ Support invocation through a harness-named wrapper or symlink. Resolve a configu
 absolute native executable first; otherwise search PATH while excluding agx
 itself, so a `codex` symlink cannot recurse. Handle Windows executable/script
 launching explicitly rather than constructing a POSIX shell command.
+
+## Launcher and sessions
+
+```text
+agx
+agx sessions [query] [--all] [--json]
+```
+
+Bare `agx` with stdin and stdout on a terminal opens a full-screen launcher;
+otherwise it prints help. One search field filters two groups: **New session**,
+the built-in harnesses and then the definitions, which start in the current
+directory; and **Sessions**, each showing its harness, how long ago it was
+updated, its title or first message, and its directory unless it is the current
+one (`./sub` below it, `~/...` under the home directory).
+
+| Key | Action |
+| --- | --- |
+| type | filter harnesses and sessions |
+| ↑ ↓, Ctrl-P Ctrl-N, PgUp PgDn | move |
+| Enter | start the harness, or resume the session |
+| Tab | toggle sessions between **here** (this directory and below) and **all** |
+| Ctrl-H | pick another harness of the same built-in to resume with |
+| Esc | quit (exit 0); in the picker, back |
+| Ctrl-C | quit (exit 130) |
+
+The launcher restores the terminal before the harness starts. Resuming changes
+to the session's directory and runs `agx <harness> <resume arguments>`: Codex
+`resume <id>`, Claude `--resume <id>`, Pi `--session <id>`. The launch is
+therefore managed and classified as `resume`, with the directory's resources and
+the harness's `resume` argument groups. A session resumes with the definition
+that started it when agx recorded that launch and the definition still exists,
+otherwise with its built-in. A session whose directory was deleted is listed but
+cannot be resumed.
+
+Sessions are read from the harnesses' own stores, honouring `CODEX_HOME`,
+`CLAUDE_CONFIG_DIR`, and `PI_CODING_AGENT_DIR` (and Pi's
+`PI_CODING_AGENT_SESSION_DIR` or `sessionDir` setting), so sessions started
+without agx appear too; subagent sessions do not. Only a title and the first user
+message are shown, shortened; stores are never written. Unreadable session files
+are skipped and counted. The index is cached under the cache directory and
+re-read per file when its size or modification time changes; launch records live
+in the runtime state directory ([ADR 0013](adr/0013-launcher-and-session-search.md)).
+
+`agx sessions` lists the sessions of this directory and below, or of every
+directory with `--all`, newest first; a query keeps those matching every word
+fuzzily within one field (harness, title, first message, or directory), best
+first. The table shows harness, age, session ID, directory, and title or first
+message; on a terminal the title is shortened to fit. `--json` prints
+`{scope, directory, query, sessions, files, errors}`, where each session has
+`id`, `directory`, `title`, `message`, `started`, `updated`, `builtin`,
+`harness` (the definition it resumes with), and `recorded`; `files` counts
+session files `parsed`, reused from the cache (`cached`), and `malformed`.
 
 ## Shims
 

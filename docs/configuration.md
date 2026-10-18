@@ -255,7 +255,7 @@ Each launch is classified into one mode of its built-in:
 | --- | --- |
 | codex | `interactive`, `exec`, `resume`, `app-server`, `passthrough` |
 | claude | `interactive`, `print`, `resume`, `passthrough` |
-| pi | `interactive`, `print`, `rpc`, `passthrough` |
+| pi | `interactive`, `print`, `rpc`, `resume`, `passthrough` |
 
 `args` is a flat list of strings, one group for every session mode, or a list of
 groups, each a list of strings or `{values, modes}`; mixing strings and groups

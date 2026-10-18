@@ -33,6 +33,11 @@ type Adapter interface {
 	// Install registers what the harness cannot load per launch. It runs only from explicit
 	// installation, never from a launch.
 	Install(ctx context.Context, c *config.Config, cache string) error
+	// Sessions lists the sessions in the harness's own store, honouring its home override, and
+	// parses files through files. A missing store holds no sessions; the store is never written.
+	Sessions(ctx context.Context, files SessionFiles) ([]Session, error)
+	// Resume returns the native arguments that resume a session in its directory.
+	Resume(session Session) []string
 }
 
 // Launch is what an adapter turns into native arguments.
@@ -97,6 +102,9 @@ func (r Registry) Adapter(name string) (Adapter, bool) {
 	return a, ok
 }
 
+// Names lists the registered harnesses in name order.
+func (r Registry) Names() []string { return slices.Sorted(maps.Keys(r.adapters)) }
+
 // Builtins describes the registered harnesses to configuration, which cannot import adapters.
 func (r Registry) Builtins(commands []string) config.Builtins {
 	harnesses := map[string][]string{}
@@ -108,7 +116,7 @@ func (r Registry) Builtins(commands []string) config.Builtins {
 
 // Install runs every adapter's native installation, in name order.
 func (r Registry) Install(ctx context.Context, c *config.Config, cache string) error {
-	for _, name := range slices.Sorted(maps.Keys(r.adapters)) {
+	for _, name := range r.Names() {
 		if err := r.adapters[name].Install(ctx, c, cache); err != nil {
 			return err
 		}

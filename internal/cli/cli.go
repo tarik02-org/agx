@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -82,7 +83,7 @@ func Main() int {
 				if len(args) > 0 && args[0] == "--" {
 					args = args[1:]
 				}
-				return runHarness(cmd.Context(), paths, registry, harnesses, name, args)
+				return runHarness(cmd.Context(), paths, registry, harnesses, name, args, "")
 			},
 		},
 	)
@@ -194,7 +195,14 @@ func Main() int {
 			},
 		},
 	)
+	root.RunE = func(cmd *cobra.Command, args []string) error {
+		if !ui.Stdout.Terminal() || !term.IsTerminal(os.Stdin.Fd()) {
+			return cmd.Help()
+		}
+		return runLauncher(cmd.Context(), paths, registry, harnesses)
+	}
 	root.AddCommand(
+		sessionsCommand(&paths, registry, &harnesses),
 		daemonCommand(&paths, registry, &builtins),
 		launchCommand(&paths),
 		secretCommand(&paths),
@@ -227,7 +235,7 @@ func Main() int {
 	if name := invokedName(os.Args[0]); name != root.Name() {
 		harnesses = loadHarnesses(paths.Config, builtins)
 		if slices.Contains(harnesses.config.HarnessNames(), name) {
-			return exitCode(runHarness(context.Background(), paths, registry, harnesses, name, os.Args[1:]))
+			return exitCode(runHarness(context.Background(), paths, registry, harnesses, name, os.Args[1:], ""))
 		}
 	}
 	// Harness commands disable flag parsing, so leading root flags would otherwise leak into native arguments.
@@ -267,7 +275,7 @@ func Main() int {
 				GroupID:            "harness",
 				DisableFlagParsing: true,
 				RunE: func(cmd *cobra.Command, args []string) error {
-					return runHarness(cmd.Context(), paths, registry, harnesses, name, args)
+					return runHarness(cmd.Context(), paths, registry, harnesses, name, args, "")
 				},
 			},
 		)

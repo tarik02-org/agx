@@ -18,6 +18,7 @@ const (
 	modeInteractive = "interactive"
 	modePrint       = "print"
 	modeRPC         = "rpc"
+	modeResume      = "resume"
 )
 
 const extension = `export default function (pi) {
@@ -34,7 +35,7 @@ type Adapter struct{}
 func (Adapter) Name() string { return "pi" }
 
 func (Adapter) Modes() []string {
-	return []string{modeInteractive, modePrint, modeRPC, config.ModePassthrough}
+	return []string{modeInteractive, modePrint, modeRPC, modeResume, config.ModePassthrough}
 }
 
 func (a Adapter) Executable(configured string) (string, error) {
@@ -64,6 +65,11 @@ func (Adapter) Classify(args []string) string {
 		case "-p", "--print":
 			if mode != modeRPC {
 				mode = modePrint
+			}
+		case "-c", "--continue", "-r", "--resume", "--session", "--fork":
+			// Print and RPC runs keep their mode when they continue a session, as with Claude.
+			if mode == modeInteractive {
+				mode = modeResume
 			}
 		case "--mode":
 			if !inline && i+1 < len(args) {
