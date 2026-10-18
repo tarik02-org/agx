@@ -84,7 +84,8 @@ func (s *Server) packageOperation(
 			var c *config.Config
 			c, err = config.Load(s.paths.Config, s.paths.Cache, s.builtins)
 			if err == nil {
-				err = s.adapters.Install(s.ctx, c, s.paths.Cache)
+				// Skipped installations need no action from the requester; launches warn about them.
+				_, err = s.adapters.Install(s.ctx, c, s.paths.Cache)
 			}
 		}
 		s.mu.Lock()

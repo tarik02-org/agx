@@ -11,7 +11,9 @@ import (
 	"strings"
 
 	"github.com/gofrs/flock"
+	"github.com/pelletier/go-toml/v2"
 
+	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/securefs"
 )
@@ -33,6 +35,67 @@ func pluginName(skill config.Skill) (string, error) {
 	}
 	name := strings.TrimSuffix(skill.NativeName()[:min(len(skill.NativeName()), 40)], "-")
 	return name + "-" + hash[:12], nil
+}
+
+// PluginsDisabled explains how Codex's configuration disables plugins, which agx skills need, or
+// returns "" when it does not. It reads config.toml in CODEX_HOME, as Codex does; a missing
+// file leaves plugins at their default, enabled.
+func PluginsDisabled() (string, error) {
+	path, err := configFile()
+	if err != nil {
+		return "", err
+	}
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var document struct {
+		Features struct {
+			Plugins *bool `toml:"plugins"`
+		} `toml:"features"`
+	}
+	if err := toml.Unmarshal(b, &document); err != nil {
+		return "", fmt.Errorf("reading Codex configuration %s: %w", path, err)
+	}
+	if document.Features.Plugins != nil && !*document.Features.Plugins {
+		return disabledMessage("features.plugins = false in " + path), nil
+	}
+	return "", nil
+}
+
+func disabledMessage(cause string) string {
+	return "Codex plugins are disabled (" + cause + "); agx skills for Codex need them: set features.plugins = true"
+}
+
+func configFile() (string, error) {
+	home := os.Getenv("CODEX_HOME")
+	if home == "" {
+		user, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		home = filepath.Join(user, ".codex")
+	}
+	return filepath.Join(home, "config.toml"), nil
+}
+
+// effectivelyDisabled asks Codex whether plugins are off through configuration agx does not
+// read, such as managed or profile settings.
+func effectivelyDisabled(ctx context.Context, executable string) bool {
+	out, err := exec.CommandContext(ctx, executable, "features", "list").Output()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "plugins" && fields[len(fields)-1] == "false" {
+			return true
+		}
+	}
+	return false
 }
 
 func readCatalog(cache string) (catalog, error) {
@@ -61,6 +124,13 @@ func (a Adapter) Install(ctx context.Context, c *config.Config, cache string) er
 			return err
 		}
 		return nil
+	}
+	disabled, err := PluginsDisabled()
+	if err != nil {
+		return err
+	}
+	if disabled != "" {
+		return adapters.Skipped{Reason: disabled}
 	}
 	parent := filepath.Join(cache, "native")
 	if err := securefs.EnsureDir(parent); err != nil {
@@ -147,6 +217,9 @@ func (a Adapter) Install(ctx context.Context, c *config.Config, cache string) er
 		cmd.Stdout = os.Stderr
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
+			if effectivelyDisabled(ctx, executable) {
+				return adapters.Skipped{Reason: disabledMessage("in Codex configuration")}
+			}
 			return fmt.Errorf("native plugin installation failed: %w", err)
 		}
 		return nil

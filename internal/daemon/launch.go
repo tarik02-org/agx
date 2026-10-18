@@ -189,6 +189,7 @@ func (s *Server) PrepareLaunch(
 		},
 		LifecycleToken:    lifecycle,
 		RenewAfterSeconds: uint32(c.Daemon.RenewSeconds),
+		Warnings:          plan.Warnings,
 	}
 	sealed, err := s.sealResponse(response)
 	if err != nil {

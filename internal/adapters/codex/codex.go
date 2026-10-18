@@ -113,10 +113,6 @@ func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
 		}
 		prefix = append(prefix, "-c", assignment)
 	}
-	registry, err := readCatalog(l.Cache)
-	if err != nil {
-		return nil, err
-	}
 	selected := map[string]bool{}
 	for _, r := range l.Snapshot.Resources {
 		if r.Kind == "skill" {
@@ -127,18 +123,34 @@ func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
 			selected[name] = true
 		}
 	}
-	known := map[string]bool{}
-	for _, name := range registry.Names {
-		known[name] = true
-		prefix = append(
-			prefix,
-			"-c",
-			`plugins.`+name+"@"+marketplaceName+`.enabled=`+strconv.FormatBool(selected[name]),
-		)
+	disabled, err := PluginsDisabled()
+	if err != nil {
+		return nil, err
 	}
-	for name := range selected {
-		if !known[name] {
-			return nil, fmt.Errorf("selected skill plugin is not installed; run agx install")
+	switch {
+	case disabled != "" && len(selected) > 0:
+		// MCP servers and instructions do not depend on plugins, so the launch goes on.
+		l.Warn(disabled + "; launching without skills")
+	case disabled == "":
+		registry, err := readCatalog(l.Cache)
+		if err != nil {
+			return nil, err
+		}
+		known := map[string]bool{}
+		for _, name := range registry.Names {
+			known[name] = true
+		}
+		for name := range selected {
+			if !known[name] {
+				return nil, fmt.Errorf("selected skill plugin is not installed; run agx install")
+			}
+		}
+		for _, name := range registry.Names {
+			prefix = append(
+				prefix,
+				"-c",
+				`plugins.`+name+"@"+marketplaceName+`.enabled=`+strconv.FormatBool(selected[name]),
+			)
 		}
 	}
 	names := adapters.ServerNames(l.Endpoints)

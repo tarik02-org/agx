@@ -17,6 +17,9 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Fixed
 
+- With Codex plugins disabled (`features.plugins = false`), `install` and Codex
+  launches say so and name the file; launches go on without skills.
+
 - Stdio MCP servers that send notifications while the harness holds no event
   stream no longer lose their session; undeliverable server requests get an
   error reply instead of waiting forever.

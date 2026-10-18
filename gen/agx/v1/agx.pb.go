@@ -1516,8 +1516,10 @@ type PrepareLaunchResponse struct {
 	// Sensitive: wrapper-only credential; never inherited by the harness.
 	LifecycleToken    string `protobuf:"bytes,3,opt,name=lifecycle_token,json=lifecycleToken,proto3" json:"lifecycle_token,omitempty"`
 	RenewAfterSeconds uint32 `protobuf:"varint,4,opt,name=renew_after_seconds,json=renewAfterSeconds,proto3" json:"renew_after_seconds,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Problems the launch proceeds despite, such as skills the harness cannot load.
+	Warnings      []string `protobuf:"bytes,5,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PrepareLaunchResponse) Reset() {
@@ -1576,6 +1578,13 @@ func (x *PrepareLaunchResponse) GetRenewAfterSeconds() uint32 {
 		return x.RenewAfterSeconds
 	}
 	return 0
+}
+
+func (x *PrepareLaunchResponse) GetWarnings() []string {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
 }
 
 type SpawnPlan struct {
@@ -3247,12 +3256,13 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x12environment_inputs\x18\x06 \x03(\v23.agx.v1.PrepareLaunchRequest.EnvironmentInputsEntryR\x11environmentInputs\x1aD\n" +
 	"\x16EnvironmentInputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc1\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xdd\x01\n" +
 	"\x15PrepareLaunchResponse\x12&\n" +
 	"\x06launch\x18\x01 \x01(\v2\x0e.agx.v1.LaunchR\x06launch\x12'\n" +
 	"\x05spawn\x18\x02 \x01(\v2\x11.agx.v1.SpawnPlanR\x05spawn\x12'\n" +
 	"\x0flifecycle_token\x18\x03 \x01(\tR\x0elifecycleToken\x12.\n" +
-	"\x13renew_after_seconds\x18\x04 \x01(\rR\x11renewAfterSeconds\"\xbf\x02\n" +
+	"\x13renew_after_seconds\x18\x04 \x01(\rR\x11renewAfterSeconds\x12\x1a\n" +
+	"\bwarnings\x18\x05 \x03(\tR\bwarnings\"\xbf\x02\n" +
 	"\tSpawnPlan\x12\x1e\n" +
 	"\n" +
 	"executable\x18\x01 \x01(\tR\n" +

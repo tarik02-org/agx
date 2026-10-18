@@ -166,6 +166,8 @@ message PrepareLaunchResponse {
   // Sensitive: wrapper-only credential; never inherited by the harness.
   string lifecycle_token = 3;
   uint32 renew_after_seconds = 4;
+  // Problems the launch proceeds despite, such as skills the harness cannot load.
+  repeated string warnings = 5;
 }
 message SpawnPlan {
   string executable = 1;

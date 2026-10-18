@@ -4,6 +4,7 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"os"
 	"path/filepath"
@@ -31,7 +32,8 @@ type Adapter interface {
 	// MCP servers to the harness. They precede the definition's groups and the caller's arguments.
 	Arguments(launch Launch) ([]string, error)
 	// Install registers what the harness cannot load per launch. It runs only from explicit
-	// installation, never from a launch.
+	// installation, never from a launch. It returns a Skipped error when the harness cannot
+	// take the installation and works without it.
 	Install(ctx context.Context, c *config.Config, cache string) error
 	// Sessions lists the sessions in the harness's own store, honouring its home override, and
 	// parses files through files. A missing store holds no sessions; the store is never written.
@@ -51,7 +53,21 @@ type Launch struct {
 	Artifacts string
 	// Instructions is the content of the instructions file, empty when none are selected.
 	Instructions []byte
+	warnings     *[]string
 }
+
+// Warn reports a problem the launch proceeds despite; the caller shows it before the harness starts.
+func (l Launch) Warn(message string) {
+	if l.warnings != nil {
+		*l.warnings = append(*l.warnings, message)
+	}
+}
+
+// Skipped is returned by Install when the harness cannot take the installation; installation
+// carries on and reports Reason as a warning.
+type Skipped struct{ Reason string }
+
+func (s Skipped) Error() string { return s.Reason }
 
 // InstructionsFile is the path of the concatenated instructions.
 func (l Launch) InstructionsFile() string { return filepath.Join(l.Artifacts, "instructions.md") }
@@ -72,6 +88,8 @@ func (l Launch) HTTPServers() map[string]any {
 }
 
 type Plan struct {
+	// Warnings are shown before the harness starts.
+	Warnings    []string
 	Executable  string
 	Arguments   []string
 	Directory   string
@@ -114,14 +132,21 @@ func (r Registry) Builtins(commands []string) config.Builtins {
 	return config.Builtins{Harnesses: harnesses, Commands: commands}
 }
 
-// Install runs every adapter's native installation, in name order.
-func (r Registry) Install(ctx context.Context, c *config.Config, cache string) error {
+// Install runs every adapter's native installation, in name order, and returns the reasons of
+// skipped ones as warnings.
+func (r Registry) Install(ctx context.Context, c *config.Config, cache string) ([]string, error) {
+	warnings := []string{}
 	for _, name := range r.Names() {
-		if err := r.adapters[name].Install(ctx, c, cache); err != nil {
-			return err
+		err := r.adapters[name].Install(ctx, c, cache)
+		var skipped Skipped
+		switch {
+		case errors.As(err, &skipped):
+			warnings = append(warnings, skipped.Reason)
+		case err != nil:
+			return warnings, err
 		}
 	}
-	return nil
+	return warnings, nil
 }
 
 // Build composes argv as the adapter's managed arguments, the definition's resolved groups, then
@@ -157,6 +182,7 @@ func Build(
 	if err != nil {
 		return Plan{}, err
 	}
+	l.warnings = &plan.Warnings
 	prefix, err := a.Arguments(l)
 	if err != nil {
 		return Plan{}, err

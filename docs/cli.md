@@ -157,6 +157,13 @@ need no lock entry, so a fragment declaring only pinned ones gets no lockfile.
 when none are named. Running a harness requires a complete, matching
 lock/cache; it never silently updates dependencies.
 
+`install` also registers native harness plugins: Codex loads skills only as
+plugins of a registered marketplace, so each configured skill becomes a plugin
+of agx's local marketplace. When Codex's `config.toml` (in
+`CODEX_HOME`, default `~/.codex`) sets `features.plugins = false`, agx leaves the
+setting alone: `install` warns and skips Codex, and Codex launches warn and start
+without skills; MCP servers and instructions still apply.
+
 ## Editing configuration
 
 ```text

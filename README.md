@@ -101,7 +101,8 @@ Scopes compose additions and removals with provenance. Packages use JSON locks,
 or pins by commit or content hash, and immutable content-addressed installations. Launching never
 fetches packages or modifies native account configuration. Explicit `install`
 registers managed skill plugins when Codex is installed; each launch selects its
-plugins independently. Unmanaged native global skills remain outside removals.
+plugins independently. With Codex plugins disabled
+(`features.plugins = false`), Codex launches warn and run without skills. Unmanaged native global skills remain outside removals.
 
 MCP servers retain their own HTTP endpoints and native tool schemas/results,
 resources, prompts, notifications, and cancellation. Management credentials,

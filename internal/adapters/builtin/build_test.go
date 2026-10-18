@@ -216,6 +216,7 @@ func TestBuildCodex(t *testing.T) {
 	}
 	selected := "review-" + hash[:12]
 
+	t.Setenv("CODEX_HOME", t.TempDir())
 	_, _, err = f.build(t, "codex")
 	if err == nil || !strings.Contains(err.Error(), "selected skill plugin is not installed; run agx install") {
 		t.Fatalf("without installed plugins: %v", err)
@@ -246,6 +247,40 @@ func TestBuildCodex(t *testing.T) {
 		"exec",
 		"hi",
 	})
+}
+
+func TestBuildCodexPluginsDisabled(t *testing.T) {
+	f := newFixture(t)
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	write(t, filepath.Join(home, "config.toml"), "model = \"x\"\n\n[features]\nplugins = false\n")
+	plan, s, err := f.build(t, "codex", "exec", "hi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkPlan(t, f, plan, s, []string{
+		"-c",
+		`developer_instructions="first\n\nsecond\n\n"`,
+		"-c",
+		`mcp_servers.agx-up={"bearer_token_env_var" = "AGX_MCP_GRANT", "url" = "http://127.0.0.1:9/launch/L/mcp/up"}`,
+		"-c",
+		`mcp_servers.agx-team-remote={"bearer_token_env_var" = "AGX_MCP_GRANT", ` +
+			`"url" = "http://127.0.0.1:9/launch/L/mcp/team%2Fremote"}`,
+		"--definition",
+		"exec",
+		"hi",
+	})
+	want := "Codex plugins are disabled (features.plugins = false in " + filepath.Join(home, "config.toml") +
+		"); agx skills for Codex need them: set features.plugins = true; launching without skills"
+	if !slices.Equal(plan.Warnings, []string{want}) {
+		t.Errorf("warnings = %q, want %q", plan.Warnings, want)
+	}
+
+	// Installation reports the same reason instead of running Codex.
+	warnings, err := builtin.Registry().Install(t.Context(), f.config, f.cache)
+	if err != nil || len(warnings) != 1 || !strings.HasPrefix(warnings[0], "Codex plugins are disabled") {
+		t.Errorf("install = %q, %v", warnings, err)
+	}
 }
 
 func TestSkillNames(t *testing.T) {

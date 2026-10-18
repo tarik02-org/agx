@@ -422,7 +422,11 @@ func installPackages(
 	}
 	if !frozen {
 		progress("Installing native harness plugins")
-		if err := registry.Install(ctx, c, paths.Cache); err != nil {
+		warnings, err := registry.Install(ctx, c, paths.Cache)
+		for _, warning := range warnings {
+			ui.Diagnose(ui.Warn, "%s", warning)
+		}
+		if err != nil {
 			return err
 		}
 	}

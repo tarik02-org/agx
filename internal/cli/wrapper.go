@@ -159,6 +159,9 @@ func runHarness(
 		return err
 	}
 	p := prepared.Msg
+	for _, warning := range p.Warnings {
+		ui.Diagnose(ui.Warn, "%s", warning)
+	}
 	cmd := exec.CommandContext(ctx, p.Spawn.Executable, p.Spawn.Arguments...)
 	cmd.Dir = p.Spawn.Directory
 	envKey := func(name string) string {
