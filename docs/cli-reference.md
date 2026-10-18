@@ -9,7 +9,7 @@ Put these before the command.
 
 | Option | Meaning |
 | --- | --- |
-| `--config <file>` | root configuration file (default: `agx/agx.yaml` in your config directory; `AGX_CONFIG`) |
+| `--config <file>` | root configuration file (default: `agx/agx.yaml` in your config directory; `AGX_CONFIG`); must exist, except for `add` commands, which create it |
 | `--cache <dir>` | package and artifact cache (default: `agx` in your cache directory; `AGX_CACHE`) |
 | `--color auto\|always\|never` | style output; `auto` styles terminals unless `NO_COLOR` is set |
 | `-v`, `--version` | print the version |
@@ -61,11 +61,11 @@ go before it.
 | `agx mcp add <id> -- <command> [args...]` | define a local MCP server and enable it |
 | `agx mcp list` | list MCP servers |
 | `agx mcp remove <id>` | remove an MCP server definition |
-| `agx mcp login <id> [--no-browser]` | log in to an MCP server with OAuth |
+| `agx mcp login <id> [--no-browser]` | log in to an MCP server with OAuth, as `agx secret login <id>` |
 | `agx mcp test <id>` | connect to an MCP server and list its tools |
 | `agx skill add <source>` | add skills from a folder, Git URL, or `owner/repo[@ref][/path]` |
 | `agx skill list` | list skills |
-| `agx skill remove <id>` | remove a skill definition |
+| `agx skill remove <id \| package-id>` | remove a skill definition, or a Git package `skill add` declared |
 | `agx instructions add <path>` | add instructions from a file |
 | `agx instructions add --id <id> --text <text>` | add instructions from text |
 | `agx instructions list` | list instructions |
@@ -92,7 +92,7 @@ Command-specific flags:
 
 | Command | Flags |
 | --- | --- |
-| `mcp add` | `--header KEY=VALUE` (remote), `--env KEY=VALUE` (local), `--auth none\|oauth\|keychain\|'!secret <id>'`, `--no-browser` |
+| `mcp add` | `--header KEY=VALUE` (remote), `--env KEY=VALUE` (local), `--auth none\|oauth\|keychain\|'!secret <id>'`, `--client-id <id>` (OAuth public client), `--no-browser` |
 | `skill add` | `--skill <name>` (repeatable), `--all`, `--ref <ref>`, `--path <dir>`, `--package <id>` |
 | `instructions add` | `--id <id>`, `--text <text>` |
 | `harness add` | `--base <harness>`, `--executable <path>`, `--env KEY=VALUE` (repeatable) |

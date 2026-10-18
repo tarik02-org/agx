@@ -19,7 +19,7 @@ harnesses:
       - [-c, 'model_provider="cpa"']
       - values: [--profile, cpa]
         modes: [interactive, exec, resume]
-    env:
+    environment:
       CPA_KEY: !secret cpa-key
     add: {mcp: [github]}
     exclude: {skills: [workflow]}
@@ -35,15 +35,16 @@ scoped to modes. Each adapter classifies an invocation into one fixed mode:
 | pi | `interactive`, `print`, `rpc`, `passthrough` |
 
 A group without `modes` applies to every mode except `passthrough`. Groups are
-inserted before the user's native arguments in order. `env` applies in every mode.
+inserted before the user's native arguments in order. `environment` applies in
+every mode.
 An inherited definition accepts only its base built-in's modes.
 
 Extension layers the child over its parent without conflicts: `executable` is
-replaced, argument groups follow the parent's, `env` keys are replaced per key,
+replaced, argument groups follow the parent's, `environment` keys are replaced per key,
 and the parent's `add`/`exclude` apply before the child's.
 
 Redefining a name in another fragment merges field by field. `base`,
-`executable`, and each `env` key may be set once; argument groups append in
+`executable`, and each `environment` key may be set once; argument groups append in
 fragment order; `add` and `exclude` accumulate. `override: true` replaces the
 earlier definition entirely. This matches daemon settings and resource overrides.
 

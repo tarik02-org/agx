@@ -41,8 +41,10 @@ rule removed it. Harness-specific rules only show with `agx explain --harness
 <name>`. The server appears in the harness as `agx-<id>`.
 
 **An MCP server's tools fail with an authorization error.**
-Run `agx mcp login <id>`. `agx launch show <launch-id>` shows each server's state
-in a running session, for example `needs-auth`.
+Run `agx secret login <id>` for an OAuth server, or store a new token with
+`agx secret set <id> --stdin` for a `keychain` one. `agx launch show
+<launch-id>` shows each server's state in a running session, for example
+`needs-auth`.
 
 **An MCP server does not start or answer.**
 Run `agx mcp test <id>`: it connects outside any harness and shows the server's
@@ -62,12 +64,25 @@ reports versions that are too old.
 **Codex shows no skills.**
 Codex loads skills only as plugins: run `agx install`, and check that Codex
 plugins are not turned off (`features.plugins = false` in Codex's
-`config.toml`). `agx doctor` checks both.
+`config.toml`). `agx doctor` checks both. agx installs only skills that a rule
+selects, so check with `agx explain` that the skill is selected.
 
 **"daemon of another build" or "version mismatch".**
 A daemon from another agx version is running and cannot be replaced
-automatically. Run `agx daemon stop` (or `agx daemon stop --force` if it says
-so), then try again.
+automatically, usually because it serves another configuration or is too old to
+hand over its running launches. Run `agx daemon stop` (or `agx daemon stop
+--force` if it says so), then try again.
+
+**"upgrade agx".**
+A newer agx wrote the running daemon's files, its saved launches, or one of
+agx's own files (package pins, the shim manifest, the Codex plugin catalog),
+and this older agx will not overwrite them. Use the newer agx. To downgrade
+anyway, see [The daemon](daemon.md#commands).
+
+**"the agx wrapper started agx again instead of the native harness".**
+A link or shim named after the harness, and pointing at agx, comes before the
+real harness on your `PATH`. Set the harness's `executable` to the absolute path
+of the real binary (see [Harnesses](harnesses.md#which-executable-runs)).
 
 **"daemon unavailable".**
 Automatic starting is off (`daemon.autostart: false` or `AGX_NO_AUTOSTART=1`).

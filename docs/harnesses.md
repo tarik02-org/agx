@@ -172,6 +172,9 @@ On Unix shims are symlinks; on Windows they are hard links or copies named
 - Codex loads skills only as plugins, so agx registers a local plugin
   marketplace and installs each selected skill as a plugin. `agx install` does
   this, and a Codex launch that finds a plugin missing installs it first.
+- Only skills that some rule or harness definition selects become plugins.
+  Codex also enables installed plugins when you run it without agx, so a
+  package's other skills stay uninstalled until you select them.
 - A definition can set `CODEX_HOME` in `environment` to give its launches their
   own Codex configuration; agx installs plugins there.
 - When Codex plugins are turned off (`features.plugins = false`), launches warn

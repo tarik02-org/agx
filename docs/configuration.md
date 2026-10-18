@@ -31,6 +31,10 @@ export AGX_CONFIG=/tmp/agx-test/agx.yaml AGX_CACHE=/tmp/agx-test/cache
 ```
 
 `--config` and `--cache` go before the command: `agx --config ./agx.yaml explain`.
+A `--config` file that does not exist is an error, so a typo cannot silently
+give you an empty configuration; only the `add` commands create it. The default
+location and `AGX_CONFIG` may point at a file that does not exist yet: agx then
+runs with an empty configuration, and the first `add` creates it.
 Use the same configuration and cache for every agx command in a session; the
 daemon serves one configuration at a time (see [The daemon](daemon.md)).
 
@@ -203,8 +207,9 @@ package versions. On a new machine:
    `~/.config/agx`.
 2. Provide whatever your secrets need, such as the sops age key.
 3. Run `agx install --frozen` to install exactly the locked packages.
-4. Run `agx mcp login <id>` for each MCP server that uses OAuth. OAuth tokens
-   stay in each machine's keychain.
+4. Run `agx secret login <id>` for each MCP server that uses OAuth, and `agx
+   secret set <id> --stdin` for each keychain secret. Both stay in each
+   machine's keychain.
 
 ## Editing with commands
 
@@ -251,7 +256,9 @@ A few things worth knowing:
   and lists them; `--force` removes those references too.
 - Files that are read-only, or inside `/nix/store`, are refused; use `--file`
   to write somewhere else.
-- Definitions that come from packages cannot be removed with these commands.
+- Definitions that come from packages cannot be removed one by one. `agx skill
+  remove <package-id>` removes a whole package of skills, such as one `skill
+  add` declared, with its lock entries.
 
 Anything the commands do not cover, such as bundles or `order`, you write by
 hand.

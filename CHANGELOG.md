@@ -60,7 +60,7 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - With Codex plugins disabled (`features.plugins = false`), `install` and Codex
   launches say so and name the file; launches go on without skills.
 - Codex skill plugins follow the `CODEX_HOME` each launch runs Codex with: the
-  definition's `env`, else the caller's (now forwarded to the daemon), instead of
+  definition's `environment`, else the caller's (now forwarded to the daemon), instead of
   the daemon's. `install`, launch auto-installation, `doctor` (per harness
   definition), and the plugin commands agx runs all use it, and installed
   plugins are recorded per home.
@@ -73,8 +73,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - Codex launches check that Codex still has their skill plugins (its
   `config.toml` entry and plugin cache) instead of trusting agx's record, so a
   plugin removed with `codex plugin remove` is installed again.
-- Codex installation adds only the skill versions the configuration has, instead
-  of every version ever published, and removes agx's plugins the configuration
+- Codex installation adds only the skills a rule selects, in the versions the
+  configuration has, instead of every version ever published, and removes agx's plugins the configuration
   no longer has from that `CODEX_HOME` once superseded for 7 days.
 - `agx use` writes a selection list that `unuse` emptied back in its usual place
   (`skills`, `instructions`, `mcp`, `bundles`), so use after unuse restores the

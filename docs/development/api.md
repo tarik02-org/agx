@@ -28,13 +28,14 @@ Upstream credentials and tool execution remain inside the daemon.
 
 ## Launch flow
 
-Resolve the working directory locally or through the daemon. `PrepareLaunch`
-supplies the expected snapshot, harness name, original native arguments, and only
-declared environment inputs, plus the variables the harness's adapter forwards
-(Codex: `CODEX_HOME`, empty when unset), which locate the harness's own
-configuration. The daemon looks up the harness definition, classifies
+Resolve the working directory locally or through the daemon. The wrapper
+resolves the native executable on its own `PATH`, or takes the configured absolute
+path. `PrepareLaunch` supplies the expected snapshot, harness name, original native
+arguments, that executable, and only declared environment inputs, plus the
+variables the harness's adapter forwards (Codex: `CODEX_HOME`, empty when unset),
+which locate the harness's own configuration. The daemon looks up the harness definition, classifies
 the mode, rejects passthrough invocations, and resolves injected values; a missing
-input fails preparation with its configuration location. It returns a complete executable/argv/cwd plan,
+input fails preparation with its configuration location. It returns an argv/cwd plan,
 environment changes containing the harness grant, a separate lifecycle token,
 and the renewal interval. For Claude Code reading stream-json input, the plan's
 `initialize_system_prompt` holds the instructions the wrapper prepends to the
@@ -42,9 +43,9 @@ and the renewal interval. For Claude Code reading stream-json input, the plan's
 Code otherwise uses in place of `--append-system-prompt-file`.
 Treat the response as sensitive; never expose it through ordinary JSON inspection.
 
-`PrepareLaunch` creates a leased, prepared launch. The wrapper spawns the returned
-executable and immediately renews with the harness PID, transitioning it to
-running. PIDs are diagnostic only. Renew/finish authenticate using the lifecycle
+`PrepareLaunch` creates a leased, prepared launch. The wrapper spawns the
+executable it resolved with the returned arguments and immediately renews with
+the harness PID, transitioning it to running. PIDs are diagnostic only. Renew/finish authenticate using the lifecycle
 token in request metadata. Prepared launches also expire, covering a wrapper that
 dies before spawning. Spawn failure is an explicit finish outcome.
 
@@ -66,8 +67,8 @@ the wrapper rereads discovery and renews with the daemon it names, whatever its
 build, until its lease runs out. `RenewLaunchResponse.restore_launch_ids` lists
 the launch and its thread launches that the new daemon restored and that wait for
 `RestoreLaunch`: management authorization, the lifecycle token in the message, and
-the environment inputs (plus, for the launch itself, the native arguments) it was
-prepared with, which the state file never holds. Until then a restored process
+the environment inputs (plus, for the launch itself, the native arguments and
+executable) it was prepared with, which the state file never holds. Until then a restored process
 serving threads answers `Unavailable` to thread preparation.
 
 Use management authorization for other RPCs. Preparation and package mutations

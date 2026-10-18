@@ -53,6 +53,18 @@ after the repository (`--package` picks another name); its skills get IDs like
 `skills/pdf`. `--ref` and `--path` set the branch, tag, or commit and the
 subdirectory for full Git URLs.
 
+To remove a skill again, use its ID; to remove a whole Git source, use the
+package ID:
+
+```sh
+agx skill remove deploy
+agx skill remove skills --force  # the package for anthropics/skills, with its lock entries
+```
+
+`remove` refuses while rules or bundles still use the skill or the package's
+skills, and lists them; `--force` removes those entries too. Since `skill add`
+enabled the skills it added, removing a whole package usually needs `--force`.
+
 In YAML, a skill comes from a folder, a folder in a Git repository, or is
 written inline:
 

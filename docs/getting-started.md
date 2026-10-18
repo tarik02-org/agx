@@ -31,7 +31,7 @@ agx --config examples/agx.yaml codex       # or claude, or pi
 
 `explain` shows that the `repository` instructions are selected here, and
 the harness starts with them. `--config` points agx at that file for one command
-without touching your own configuration.
+without touching your own configuration; the file must exist.
 
 ## 3. Add instructions
 
@@ -58,7 +58,7 @@ agx skill add anthropics/skills --skill pdf --skill docx
 Without `--skill`, agx lists the repository's skills and lets you choose. A
 local folder works too: `agx skill add ./skills/review`.
 
-## 5. Add an MCP server, only for one project
+## 5. Add MCP servers
 
 ```sh
 cd ~/work/my-project
@@ -66,8 +66,20 @@ agx mcp add fs --scope here -- npx -y @modelcontextprotocol/server-filesystem .
 ```
 
 `--scope here` enables it in this directory and below, nowhere else. Anything
-after `--` is the command that starts the server. For a remote server, give its
-URL instead: see [MCP servers](mcp.md).
+after `--` is the command that starts the server.
+
+A remote server takes a URL instead. GitHub's MCP server, for example, works
+with a [personal access token](https://github.com/settings/personal-access-tokens)
+that agx keeps in the OS keychain:
+
+```sh
+agx mcp add github https://api.githubcopilot.com/mcp/ --auth keychain
+agx secret set github --stdin < github-token.txt
+```
+
+`--stdin` keeps the token out of your shell history; delete the file
+afterwards. Servers that log in with OAuth instead are covered in
+[MCP servers](mcp.md#logging-in).
 
 ## 6. See what a directory gets
 
@@ -87,8 +99,8 @@ agx codex          # or: agx claude, agx pi
 
 Everything after the harness name goes to the harness unchanged, so
 `agx claude --print 'Review the current change'` or `agx codex exec '…'` work
-as usual. The agent sees your instructions, the skills, and the MCP server as
-`agx-fs`.
+as usual. The agent sees your instructions, the skills, and the MCP servers as
+`agx-fs` and `agx-github`.
 
 Or run `agx` on its own for the [launcher](sessions.md): pick a harness, or
 search and resume an earlier session.

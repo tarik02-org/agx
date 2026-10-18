@@ -33,6 +33,13 @@ harnesses themselves keep running.
 
 Upgrading agx works the same way: the first command of the new version stops
 the old daemon gracefully and starts its own, keeping running launches.
+`agx daemon status` does not replace it: it reports a daemon of another agx
+version or build with a warning to run `agx daemon restart`.
+
+Downgrading is different. An older agx does not touch a daemon or saved
+launches written by a newer one, and asks you to upgrade agx instead. To go
+back anyway, run `agx daemon stop --force` with the newer agx first; that ends
+the saved launches' MCP access.
 
 ## Its environment
 
@@ -112,3 +119,8 @@ A second Ctrl-C or SIGTERM skips the wait.
 | Saved launches | `daemon-state.json` in the state directory |
 
 Both are readable only by you.
+
+If `daemon-state.json` is damaged, for example by an edit by hand, the daemon
+moves it aside to `daemon-state.json.bad-<UTC time>`, says so in its log, and
+starts without the saved launches; harnesses that were running lose their MCP
+access and need a relaunch.

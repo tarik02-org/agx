@@ -6,15 +6,16 @@ Configuration values that must not live in files, or that depend on the caller,
 use YAML tags resolved at launch:
 
 ```yaml
-env:
+environment:
   REGION: eu
   API_KEY: !secret cpa-key   # a configured secret
   TOKEN: !env WORK_TOKEN     # the caller's environment
   PROMPT: !file ./prompt.txt # file contents, relative to the declaring fragment
 ```
 
-Tags are allowed in harness `env` and `args`, and in `mcp` `environment`
-and `headers`. `!env` reads the wrapper's environment, which the wrapper forwards
+Tags are allowed in harness `environment` and `args`, and in `mcp` `environment`
+and `headers`. Harness `args` accept only `!file`: command lines are visible to
+other processes, so `!secret` and `!env` belong in `environment`. `!env` reads the wrapper's environment, which the wrapper forwards
 only for names the snapshot requires. `!file` reads at launch, so edits apply
 without reinstalling. Resolved values never enter snapshots, artifacts, `explain`,
 `--json` output, or logs; those show the tag and its argument.

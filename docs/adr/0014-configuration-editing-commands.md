@@ -93,4 +93,5 @@ reason.
   text input, a yes/no confirmation, and a multi-select, drawn inline on stderr
   with the launcher's styling and `--color`.
 - **Hidden testing aid.** `skill add --github-base` replaces
-  `https://github.com` for `owner/repo` sources.
+  `https://github.com` for `owner/repo` sources; only builds with the
+  `agx_testing` tag have it.

@@ -49,11 +49,14 @@ agx instructions add --id pnpm --text 'Use pnpm, not npm.'
 agx skill add anthropics/skills --skill pdf
 cd ~/work/my-project
 agx mcp add fs --scope here -- npx -y @modelcontextprotocol/server-filesystem .
+agx mcp add github https://api.githubcopilot.com/mcp/ --auth keychain
+agx secret set github --stdin < github-token.txt   # a GitHub personal access token
 agx explain        # what this directory gets, and why
 agx codex          # or: agx claude, agx pi, or just agx for the launcher
 ```
 
 Each command shows its change as a diff before writing your configuration.
+The GitHub token goes to the OS keychain, not into a file.
 `agx doctor` checks the whole setup and tells you how to fix what it finds.
 
 ## Documentation

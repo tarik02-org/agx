@@ -40,8 +40,10 @@ login, and on a terminal offers to log in right away. Log in later, or again,
 with:
 
 ```sh
-agx mcp login tracker
+agx secret login tracker
 ```
+
+`agx mcp login tracker` does the same for a server's own login.
 
 This opens the authorization page in your browser and waits until you finish.
 `--no-browser` prints the URL instead, for example to open it on another device
@@ -56,23 +58,43 @@ harness fail with an error telling you to run the login.
 ### Servers that need a client ID
 
 agx registers itself with the authorization server automatically when the
-server supports it. Some, such as GitHub's, do not: register an OAuth
-application with the provider and give agx its client ID:
+server supports it. When it does not, register an OAuth application with the
+provider and give agx its client ID:
+
+```sh
+agx mcp add internal https://mcp.internal.example/mcp --client-id agx-cli
+```
+
+which writes:
 
 ```yaml
 mcp:
-  github:
-    url: https://api.githubcopilot.com/mcp/
+  internal:
+    url: https://mcp.internal.example/mcp
     auth:
       kind: oauth
-      client_id: Ov23liXXXXXXXXXXXXXX
+      client_id: agx-cli
 ```
 
 Use `http://127.0.0.1/oauth/callback` as the application's callback URL; the
 daemon receives the login there, on a port that can change. agx acts as a
-public client: it uses PKCE and no client secret.
+public client: it uses PKCE and no client secret, so this only works with
+providers that allow public clients.
 
 Optional OAuth fields: `scopes` (a list), `issuer`, and `resource`.
+
+### GitHub
+
+GitHub's OAuth applications always require a client secret, which agx does not
+support. Use a [personal access token](https://github.com/settings/personal-access-tokens)
+instead, stored in the OS keychain:
+
+```sh
+agx mcp add github https://api.githubcopilot.com/mcp/ --auth keychain
+agx secret set github --stdin < github-token.txt
+```
+
+agx sends the token as a bearer token. To replace it, run `secret set` again.
 
 ### Other ways to authenticate
 
@@ -82,11 +104,11 @@ Optional OAuth fields: `scopes` (a list), `issuer`, and `resource`.
 mcp:
   tracker:
     url: https://tracker.example.com/mcp      # no auth: OAuth when the server asks
+  sso:
+    url: https://sso.example.com/mcp
+    auth: {kind: oauth, client_id: agx-cli}   # OAuth with a registered client
   github:
     url: https://api.githubcopilot.com/mcp/
-    auth: {kind: oauth, client_id: Ov23liXXXXXXXXXXXXXX}
-  internal:
-    url: https://internal.example.com/mcp
     auth: keychain                            # a token you store once
   shared:
     url: https://shared.example.com/mcp
@@ -97,16 +119,16 @@ mcp:
 ```
 
 - **Omitted**: the server is used without credentials until it answers with an
-  OAuth challenge; then it needs `agx mcp login <id>`.
+  OAuth challenge; then it needs `agx secret login <id>`.
 - **`oauth`**, or a mapping with `kind: oauth`: always OAuth.
-- **`keychain`**: a token stored with `agx secret set internal --stdin`, sent as
+- **`keychain`**: a token stored with `agx secret set github --stdin`, sent as
   a bearer token.
 - **`!secret <id>`**: any [secret](secrets.md), such as an environment variable
   or a command's output, sent as a bearer token. Several servers can share one.
 - **`none`**: no credentials.
 
-The secret of an inline `auth` takes the server's ID: `agx secret set internal
---stdin`, `agx secret logout github`.
+The secret of an inline `auth` takes the server's ID: `agx secret set github
+--stdin`, `agx secret login sso`, `agx secret logout github`.
 
 ## Testing a server
 

@@ -36,10 +36,17 @@ last valid snapshot for active launches and reject new preparations until fixed.
 ## Launch preparation and credentials
 
 The wrapper first resolves required environment variable names, then submits only
-those allowlisted values with the expected snapshot ID, the harness name, and the
-native arguments. The daemon takes the harness definition's arguments,
-environment, and executable from its own snapshot, never from the wrapper. This supports credentials
-from a development shell that the daemon did not inherit. Reject stale snapshots
+those allowlisted values with the expected snapshot ID, the harness name, the
+native arguments, and the native executable it resolved. The wrapper resolves the
+executable, not the daemon: a configured absolute path wins, otherwise the
+caller's `PATH`, so per-directory mise or Nix shells apply; lookup skips agx
+itself, the default shim directory, and files a shim manifest lists. The wrapper
+sets `AGX_WRAPPER_PID` for the harness, and agx started by its own wrapper as that
+harness refuses instead of wrapping itself again. The daemon takes the harness
+definition's arguments and environment from its own snapshot, never from the
+wrapper, and uses the executable only for native installation on the launch's
+behalf. This supports credentials from a development shell that the daemon did
+not inherit. Reject stale snapshots
 before using forwarded values; never capture the wrapper's whole environment.
 Injected values resolve at launch and remain in launch memory, not snapshots,
 artifacts, or package storage. A missing input produces a preparation error naming
@@ -94,6 +101,14 @@ daemon listens elsewhere: launches keep their lease and grant, but harnesses
 holding the old endpoint URLs lose MCP access until relaunch (a Codex app-server
 thread gets new URLs on `thread/resume`). A forced stop revokes all launches and
 clears them from the file. Lease loss does not automatically kill a harness.
+A state file of a newer format version keeps the daemon from starting, with a hint
+to upgrade agx. One that does not decode is renamed to
+`daemon-state.json.bad-<UTC time>`; the daemon starts without restoring and keeps
+every launch file. Discovery (`daemon.json`) carries a `format` version; a build
+finding a newer one neither uses nor replaces that daemon. `daemon status` reports
+a daemon of another build with a warning instead of replacing it. Other files agx
+owns (package pins, the shim manifest, the Codex plugin catalog) carry `version:
+1`, and a newer version asks for an agx upgrade.
 
 A stopping daemon shuts down gracefully (see
 [graceful shutdown](../daemon.md#graceful-shutdown)). It refuses new launches, thread

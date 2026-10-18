@@ -80,6 +80,10 @@ pbpaste | agx secret set docs-key --stdin
 agx secret set docs-key --stdin < ~/Downloads/token.txt
 ```
 
+An MCP server with `auth: keychain` stores its token the same way, under the
+server's ID. That is how the GitHub MCP server is set up, with a personal
+access token: see [MCP servers](mcp.md#github).
+
 There is no plaintext fallback: when the OS keychain is unavailable, keychain
 and OAuth secrets fail with an error.
 
@@ -89,7 +93,7 @@ and OAuth secrets fail with an error.
 agx secret status            # every secret's kind and state, never values
 agx secret status docs-key
 agx secret set docs-key --stdin
-agx secret login team-login  # OAuth; for MCP servers, agx mcp login <id> is the same
+agx secret login team-login  # OAuth; agx mcp login <id> does the same for a server
 agx secret logout docs-key   # delete the stored value or OAuth tokens
 ```
 
