@@ -33,8 +33,8 @@ ordinary flag parser. Forward stdout, stdin, exit codes, and interrupts correctl
 agx diagnostics go to stderr. Each invocation is classified into a
 [mode](configuration.md#harnesses): Codex subcommands select `exec` (`exec`,
 `review`), `resume` (`resume`, `fork`), or `app-server`; Claude
-`-p`/`--print` selects `print`, else `-r`/`--resume`/`-c`/`--continue` select
-`resume`; Pi `--mode rpc` selects `rpc`, `-p`/`--print` or `--mode json`
+`-p`/`--print` or `--input-format stream-json` (Agent SDK hosts) selects
+`print`, else `-r`/`--resume`/`-c`/`--continue` select `resume`; Pi `--mode rpc` selects `rpc`, `-p`/`--print` or `--mode json`
 select `print`, else `--session`/`-c`/`--continue`/`-r`/`--resume`/`--fork`
 select `resume`. Help/version probes and non-session native commands such as
 login, plugin management, and app-server tooling are `passthrough`: they run

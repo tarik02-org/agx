@@ -25,6 +25,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Fixed
 
+- Claude Code driven by the Agent SDK (`--input-format stream-json`, as T3 Code
+  does) keeps agx instructions: the SDK's `initialize` request carries its own
+  `appendSystemPrompt`, which replaced `--append-system-prompt-file`, so the
+  wrapper now prepends the instructions to it. Such launches are `print` mode.
 - With Codex plugins disabled (`features.plugins = false`), `install` and Codex
   launches say so and name the file; launches go on without skills.
 

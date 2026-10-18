@@ -182,11 +182,12 @@ func (s *Server) PrepareLaunch(
 	response := &v1.PrepareLaunchResponse{
 		Launch: proto.Clone(view).(*v1.Launch),
 		Spawn: &v1.SpawnPlan{
-			Executable:           plan.Executable,
-			Arguments:            plan.Arguments,
-			Directory:            plan.Directory,
-			EnvironmentOverrides: plan.Environment,
-			UnsetEnvironment:     plan.Unset,
+			Executable:             plan.Executable,
+			Arguments:              plan.Arguments,
+			Directory:              plan.Directory,
+			EnvironmentOverrides:   plan.Environment,
+			UnsetEnvironment:       plan.Unset,
+			InitializeSystemPrompt: plan.InitializeSystemPrompt,
 		},
 		LifecycleToken:    lifecycle,
 		RenewAfterSeconds: uint32(c.Daemon.RenewSeconds),

@@ -32,7 +32,10 @@ declared environment inputs. The daemon looks up the harness definition, classif
 the mode, rejects passthrough invocations, and resolves injected values; a missing
 input fails preparation with its configuration location. It returns a complete executable/argv/cwd plan,
 environment changes containing the harness grant, a separate lifecycle token,
-and the renewal interval.
+and the renewal interval. For Claude Code reading stream-json input, the plan's
+`initialize_system_prompt` holds the instructions the wrapper prepends to the
+`appendSystemPrompt` of the first `initialize` control request, which Claude
+Code otherwise uses in place of `--append-system-prompt-file`.
 Treat the response as sensitive; never expose it through ordinary JSON inspection.
 
 `PrepareLaunch` creates a leased, prepared launch. The wrapper spawns the returned

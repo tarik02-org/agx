@@ -1,6 +1,7 @@
 // Command fakeharness stands in for Claude Code in end-to-end tests. It records its arguments,
 // selected environment variables, and launch artifacts as JSON in $FAKE_DUMP, and calls the echo
-// tool on every MCP server passed with --mcp-config. --exit=N sets its exit status.
+// tool on every MCP server passed with --mcp-config. --exit=N sets its exit status. With
+// $FAKE_STDIN set, it copies its standard input there until EOF.
 package main
 
 import (
@@ -79,6 +80,15 @@ func main() {
 				}
 				r.Tools[name] = text
 			}
+		}
+	}
+	if path := os.Getenv("FAKE_STDIN"); path != "" {
+		b, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			fail(err)
+		}
+		if err := os.WriteFile(path, b, 0o600); err != nil {
+			fail(err)
 		}
 	}
 	if path := os.Getenv("FAKE_DUMP"); path != "" {

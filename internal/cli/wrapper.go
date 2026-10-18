@@ -20,6 +20,7 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
+	"github.com/tarik02-org/agx/internal/adapters/claude"
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
@@ -100,7 +101,7 @@ func runHarness(
 		for _, key := range slices.Sorted(maps.Keys(harnessEnv)) {
 			cmd.Env = append(cmd.Env, key+"="+harnessEnv[key])
 		}
-		return supervise(cmd, nil)
+		return supervise(cmd, nil, nil)
 	}
 	directory, nativeArgs, err := adapter.Directory(args, cwd)
 	if err != nil {
@@ -258,7 +259,23 @@ func runHarness(
 			}
 		}()
 	}
-	runErr := supervise(cmd, start)
+	var connect streams
+	if prompt := p.Spawn.InitializeSystemPrompt; prompt != "" {
+		connect = func(cmd *exec.Cmd) (func(), error) {
+			input, err := cmd.StdinPipe()
+			if err != nil {
+				return nil, err
+			}
+			return func() {
+				go func() {
+					// The harness ends on its own when it stops reading; its input closing is all that matters.
+					_ = claude.RelayInput(input, os.Stdin, prompt)
+					_ = input.Close()
+				}()
+			}, nil
+		}
+	}
+	runErr := supervise(cmd, start, connect)
 	close(finished)
 	wg.Wait()
 	finish := &v1.FinishLaunchRequest{LaunchId: p.Launch.Id, Outcome: &v1.FinishLaunchRequest_ExitCode{ExitCode: 0}}
@@ -279,9 +296,24 @@ func runHarness(
 	return runErr
 }
 
-func supervise(cmd *exec.Cmd, started func()) error {
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
+// streams connects the native process's standard streams before it starts and returns what
+// runs once it has started; streams it leaves unset are the wrapper's own.
+type streams func(cmd *exec.Cmd) (func(), error)
+
+func supervise(cmd *exec.Cmd, started func(), connect streams) error {
+	var connected func()
+	if connect != nil {
+		var err error
+		if connected, err = connect(cmd); err != nil {
+			return err
+		}
+	}
+	if cmd.Stdin == nil {
+		cmd.Stdin = os.Stdin
+	}
+	if cmd.Stdout == nil {
+		cmd.Stdout = os.Stdout
+	}
 	cmd.Stderr = os.Stderr
 	// The harness shares the terminal foreground process group for native job control.
 	signals := make(chan os.Signal, 8)
@@ -289,6 +321,9 @@ func supervise(cmd *exec.Cmd, started func()) error {
 	defer signal.Stop(signals)
 	if err := cmd.Start(); err != nil {
 		return err
+	}
+	if connected != nil {
+		connected()
 	}
 	if started != nil {
 		started()

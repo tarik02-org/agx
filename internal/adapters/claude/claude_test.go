@@ -26,6 +26,11 @@ func TestClassify(t *testing.T) {
 		{[]string{"-v"}, "passthrough"},
 		{[]string{"--version"}, "passthrough"},
 		{[]string{"--", "-p"}, "interactive"},
+		{[]string{"--output-format", "stream-json", "--input-format", "stream-json", "--verbose"}, "print"},
+		{[]string{"--input-format=stream-json", "--resume=abc"}, "print"},
+		{[]string{"--input-format", "stream-json", "--input-format", "text"}, "interactive"},
+		{[]string{"--input-format", "text"}, "interactive"},
+		{[]string{"--", "--input-format", "stream-json"}, "interactive"},
 	} {
 		if got := (claude.Adapter{}).Classify(tt.args); got != tt.mode {
 			t.Errorf("Classify(%q) = %s, want %s", tt.args, got, tt.mode)

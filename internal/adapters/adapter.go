@@ -57,13 +57,24 @@ type Launch struct {
 	// Uninstalled marks a launch whose native installation was skipped; Arguments must leave out
 	// what needs it.
 	Uninstalled bool
-	warnings    *[]string
+	// Native holds the caller's native arguments, which follow the returned ones; Arguments reads
+	// them to adapt to the invocation and never repeats them.
+	Native []string
+	plan   *Plan
 }
 
 // Warn reports a problem the launch proceeds despite; the caller shows it before the harness starts.
 func (l Launch) Warn(message string) {
-	if l.warnings != nil {
-		*l.warnings = append(*l.warnings, message)
+	if l.plan != nil {
+		l.plan.Warnings = append(l.plan.Warnings, message)
+	}
+}
+
+// PrependInitializePrompt asks the wrapper to prepend text to the system prompt append of the
+// first initialize request the harness reads from a stream-json standard input.
+func (l Launch) PrependInitializePrompt(text string) {
+	if l.plan != nil {
+		l.plan.InitializeSystemPrompt = text
 	}
 }
 
@@ -103,6 +114,10 @@ type Plan struct {
 	Directory   string
 	Environment map[string]string
 	Unset       []string
+	// InitializeSystemPrompt is prepended to the appendSystemPrompt of the first stream-json initialize
+	// request on the harness's standard input, which replaces the flag-given append; empty leaves
+	// the input untouched.
+	InitializeSystemPrompt string
 }
 
 type Endpoint struct {
@@ -192,7 +207,8 @@ func Build(
 	if err != nil {
 		return Plan{}, err
 	}
-	l.warnings = &plan.Warnings
+	l.Native = args
+	l.plan = &plan
 	prefix, err := a.Arguments(l)
 	if errors.Is(err, ErrNotInstalled) {
 		var skipped Skipped

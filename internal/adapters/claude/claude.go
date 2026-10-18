@@ -56,7 +56,26 @@ func (Adapter) Classify(args []string) string {
 			mode = modeResume
 		}
 	}
+	if streamInput(args) {
+		// Agent SDK hosts run print sessions from stream-json input without -p.
+		return modePrint
+	}
 	return mode
+}
+
+// streamInput reports whether args read stream-json messages from standard input; the last
+// --input-format wins.
+func streamInput(args []string) bool {
+	format := ""
+	for i := 0; i < len(args) && args[i] != "--"; i++ {
+		if args[i] == "--input-format" && i+1 < len(args) {
+			i++
+			format = args[i]
+		} else if value, ok := strings.CutPrefix(args[i], "--input-format="); ok {
+			format = value
+		}
+	}
+	return format == "stream-json"
 }
 
 // Directory is always the process directory: Claude has no working-directory flag.
@@ -68,6 +87,10 @@ func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
 	prefix := []string{"--plugin-dir", filepath.Join(l.Artifacts, "plugin")}
 	if len(l.Instructions) > 0 {
 		prefix = append(prefix, "--append-system-prompt-file", l.InstructionsFile())
+		// An Agent SDK initialize request's appendSystemPrompt replaces the file's content.
+		if streamInput(l.Native) {
+			l.PrependInitializePrompt(strings.TrimRight(string(l.Instructions), "\n"))
+		}
 	}
 	if servers := l.HTTPServers(); len(servers) > 0 {
 		b, err := json.Marshal(map[string]any{"mcpServers": servers})

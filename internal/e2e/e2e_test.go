@@ -182,9 +182,15 @@ func (e *env) agx(extra []string, args ...string) result {
 // run runs an agx binary in the work directory with extra environment variables. It is safe
 // for concurrent use.
 func (e *env) run(binary string, extra []string, args ...string) result {
+	return e.runInput(binary, extra, "", args...)
+}
+
+// runInput runs an agx binary like run, with input as its standard input.
+func (e *env) runInput(binary string, extra []string, input string, args ...string) result {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.Stdin = strings.NewReader(input)
 	cmd.Dir = e.work
 	cmd.Env = append(slices.Clone(e.vars), extra...)
 	var stdout, stderr bytes.Buffer
@@ -514,6 +520,43 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("secret status = %+v", secrets)
 		}
 		e.jsonFail("failed_precondition", "secret", "set", "sealed", "--stdin")
+	})
+
+	t.Run("agent sdk initialize", func(t *testing.T) {
+		stdin := filepath.Join(e.dir, "stdin.jsonl")
+		dump := filepath.Join(e.dir, "dump.json")
+		user := `{"type":"user","message":{"role":"user","content":"hi <there>"}}` + "\n"
+		input := `{"type":"control_request","request_id":"r1","request":{"subtype":"initialize",` +
+			`"appendSystemPrompt":"HOST","hooks":{}}}` + "\n" + user
+		r := e.runInput(
+			binaries.agx,
+			[]string{"FAKE_STDIN=" + stdin, "FAKE_DUMP=" + dump},
+			input,
+			"claude", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose",
+		)
+		if r.code != 0 {
+			t.Fatalf("exit %d: %s", r.code, r.stderr)
+		}
+		b, err := os.ReadFile(stdin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		first, rest, _ := strings.Cut(string(b), "\n")
+		if rest != user {
+			t.Errorf("later input changed: %q", rest)
+		}
+		var initialize struct {
+			Request map[string]any `json:"request"`
+		}
+		if err := json.Unmarshal([]byte(first), &initialize); err != nil {
+			t.Fatal(err)
+		}
+		if got := initialize.Request["appendSystemPrompt"]; got != "E2E instructions.\n\nHOST" {
+			t.Errorf("appendSystemPrompt = %q", got)
+		}
+		if _, ok := initialize.Request["hooks"]; !ok {
+			t.Errorf("initialize lost a field: %s", first)
+		}
 	})
 
 	t.Run("native exit status", func(t *testing.T) {

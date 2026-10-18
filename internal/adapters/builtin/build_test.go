@@ -184,6 +184,29 @@ func TestBuildClaude(t *testing.T) {
 	}
 }
 
+func TestBuildClaudeStreamInput(t *testing.T) {
+	f := newFixture(t)
+	for _, tt := range []struct {
+		native []string
+		prompt string
+	}{
+		{[]string{"-p", "hi"}, ""},
+		{[]string{"--input-format", "stream-json", "--output-format", "stream-json"}, "first\n\nsecond"},
+		{[]string{"--input-format=stream-json", "--resume=abc"}, "first\n\nsecond"},
+	} {
+		plan, _, err := f.build(t, "claude", tt.native...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if plan.InitializeSystemPrompt != tt.prompt {
+			t.Errorf("%q: initialize prompt = %q, want %q", tt.native, plan.InitializeSystemPrompt, tt.prompt)
+		}
+		if !slices.Contains(plan.Arguments, "--append-system-prompt-file") {
+			t.Errorf("%q: arguments lack the instructions file: %q", tt.native, plan.Arguments)
+		}
+	}
+}
+
 func TestBuildPi(t *testing.T) {
 	f := newFixture(t)
 	plan, s, err := f.build(t, "pi", "--mode", "rpc")

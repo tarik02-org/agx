@@ -176,6 +176,9 @@ message SpawnPlan {
   // Sensitive: includes the stable harness MCP grant for this lease.
   map<string, string> environment_overrides = 4;
   repeated string unset_environment = 5;
+  // Prepended to the appendSystemPrompt of the first initialize request the harness reads from
+  // stream-json standard input, which replaces the flag-given append. Empty leaves input untouched.
+  string initialize_system_prompt = 6;
 }
 
 message Launch {

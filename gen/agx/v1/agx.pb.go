@@ -1595,8 +1595,11 @@ type SpawnPlan struct {
 	// Sensitive: includes the stable harness MCP grant for this lease.
 	EnvironmentOverrides map[string]string `protobuf:"bytes,4,rep,name=environment_overrides,json=environmentOverrides,proto3" json:"environment_overrides,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	UnsetEnvironment     []string          `protobuf:"bytes,5,rep,name=unset_environment,json=unsetEnvironment,proto3" json:"unset_environment,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// Prepended to the appendSystemPrompt of the first initialize request the harness reads from
+	// stream-json standard input, which replaces the flag-given append. Empty leaves input untouched.
+	InitializeSystemPrompt string `protobuf:"bytes,6,opt,name=initialize_system_prompt,json=initializeSystemPrompt,proto3" json:"initialize_system_prompt,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *SpawnPlan) Reset() {
@@ -1662,6 +1665,13 @@ func (x *SpawnPlan) GetUnsetEnvironment() []string {
 		return x.UnsetEnvironment
 	}
 	return nil
+}
+
+func (x *SpawnPlan) GetInitializeSystemPrompt() string {
+	if x != nil {
+		return x.InitializeSystemPrompt
+	}
+	return ""
 }
 
 type Launch struct {
@@ -3262,7 +3272,7 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x05spawn\x18\x02 \x01(\v2\x11.agx.v1.SpawnPlanR\x05spawn\x12'\n" +
 	"\x0flifecycle_token\x18\x03 \x01(\tR\x0elifecycleToken\x12.\n" +
 	"\x13renew_after_seconds\x18\x04 \x01(\rR\x11renewAfterSeconds\x12\x1a\n" +
-	"\bwarnings\x18\x05 \x03(\tR\bwarnings\"\xbf\x02\n" +
+	"\bwarnings\x18\x05 \x03(\tR\bwarnings\"\xf9\x02\n" +
 	"\tSpawnPlan\x12\x1e\n" +
 	"\n" +
 	"executable\x18\x01 \x01(\tR\n" +
@@ -3270,7 +3280,8 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\targuments\x18\x02 \x03(\tR\targuments\x12\x1c\n" +
 	"\tdirectory\x18\x03 \x01(\tR\tdirectory\x12`\n" +
 	"\x15environment_overrides\x18\x04 \x03(\v2+.agx.v1.SpawnPlan.EnvironmentOverridesEntryR\x14environmentOverrides\x12+\n" +
-	"\x11unset_environment\x18\x05 \x03(\tR\x10unsetEnvironment\x1aG\n" +
+	"\x11unset_environment\x18\x05 \x03(\tR\x10unsetEnvironment\x128\n" +
+	"\x18initialize_system_prompt\x18\x06 \x01(\tR\x16initializeSystemPrompt\x1aG\n" +
 	"\x19EnvironmentOverridesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xed\x02\n" +
