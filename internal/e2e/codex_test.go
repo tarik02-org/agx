@@ -106,7 +106,7 @@ harnesses:
 		if len(added) != 1 || !slices.Contains(added[0], "--enable") {
 			t.Errorf("%s: plugin installations in %s = %q, want one with plugins enabled", test.name, test.home, added)
 		}
-		if d.Env["CODEX_HOME"] != test.home || !enabled(d) {
+		if !samePath(d.Env["CODEX_HOME"], test.home) || !enabled(d) {
 			t.Errorf("%s: harness ran in %q with %q", test.name, d.Env["CODEX_HOME"], d.Args)
 		}
 		// The installation is recorded for that home: the next launch needs none.
@@ -130,4 +130,14 @@ harnesses:
 	if enabled(d) {
 		t.Errorf("disabled: skills enabled: %q", d.Args)
 	}
+}
+
+// samePath compares directories by identity: Windows may spell one with short names or forward slashes.
+func samePath(a, b string) bool {
+	ai, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	bi, err := os.Stat(b)
+	return err == nil && os.SameFile(ai, bi)
 }
