@@ -38,6 +38,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   wrapper now prepends the instructions to it. Such launches are `print` mode.
 - With Codex plugins disabled (`features.plugins = false`), `install` and Codex
   launches say so and name the file; launches go on without skills.
+- `agx daemon stop` (with or without `--force`) exits 0 with "Daemon is not
+  running." (JSON `{"running": false}`) when no daemon runs; the stop document of a
+  running daemon adds `running: true`.
+- `agx use` after `agx unuse` in the same rule deletes the `remove` entry
+  instead of also adding the ID to `add`, so the fragment returns to its earlier text.
 
 - Stdio MCP servers that send notifications while the harness holds no event
   stream no longer lose their session; undeliverable server requests get an

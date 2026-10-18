@@ -222,7 +222,9 @@ the first rule with the same directory and harness filter (`--scope user` is a
 rule without `directory`), in load order, or creates one in the file holding the
 definition. `use` enables an existing definition and drops it from that rule's
 `remove`; `unuse` removes it from the rule's `add`, or, when another rule added
-it, appends it to `remove`. `--kind skills|instructions|mcp|bundles` picks one when
+it, appends it to `remove`. `use` after such an `unuse` only deletes the `remove`
+entry, since another rule still adds the definition, so the fragment returns to
+its earlier text. `--kind skills|instructions|mcp|bundles` picks one when
 an ID names several. `remove` refuses while other entries reference the
 definition, listing them; `--force` removes those entries too, and rules left
 empty. Definitions inside packages cannot be removed this way.
@@ -304,7 +306,8 @@ replaced. `daemon status` and `daemon stop` never start it, and passthrough
 harness commands never need it. `daemon.autostart: false`, or `AGX_NO_AUTOSTART=1`
 in the environment, turns automatic startup off. The daemon inherits the
 environment of the command that starts it and runs in the cache's `runtime`
-directory, where `daemon.log` collects its output. Stopping refuses active launches unless
+directory, where `daemon.log` collects its output. `daemon stop`, with or without `--force`, succeeds with
+"Daemon is not running." when no daemon answers. Stopping refuses active launches unless
 forced: `daemon stop` then fails with error code `conflict` and points to
 `daemon stop --force`, as does a command that finds a busy daemon of another
 build. Revocation closes MCP access and upstream sessions; it does not kill the
@@ -448,7 +451,7 @@ data below.
 | `shims install`, `shims remove` | `{directory, on_path, target, changes}`; each change is a shim (`name`, `file`, `kind`, `target`) with its `action` (`created`, `updated`, `removed`, `unchanged`, `kept`); a kept shim has its `state` |
 | `doctor` | `{directory, root, files, checks, summary}`: each check is `{group, name, status, detail, hint?}` with `status` `pass`, `warn`, or `fail`; `group` is `config`, `harness`, `codex`, `daemon`, `mcp`, `secret`, or `shims`; `summary` counts `pass`, `warn`, and `fail`. A failing check exits 1 after the document. |
 | `daemon start` | `{started, version, log}` |
-| `daemon stop` | `{stopping, forced, version}` |
+| `daemon stop` | `{running, stopping, forced, version}`; `{running: false}` when no daemon was running |
 | `daemon status`, `launch list`, `launch show`, `secret status` | the Connect message as protobuf JSON (`GetRuntimeResponse`, `RuntimeView`, `Launch`, `GetSecretStatusResponse`) |
 | `launch revoke` | `{launch_id, revoked}` |
 | `secret set` | `{secret_id, stored}` |

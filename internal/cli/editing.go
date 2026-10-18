@@ -298,7 +298,7 @@ func (s *session) enable(kind, id string, target scope, fallback string) (bool, 
 	found := false
 	err := s.matchingRules(target, func(f *edit.File, r edit.Rule) (bool, error) {
 		found = true
-		changed = include(f, r.Node, kind, id)
+		changed = s.include(f, r.Node, kind, id, target)
 		return true, nil
 	})
 	if err != nil || found {
@@ -308,24 +308,73 @@ func (s *session) enable(kind, id string, target scope, fallback string) (bool, 
 	if err != nil {
 		return false, err
 	}
-	return include(f, f.AddRule(target.written, target.harnesses), kind, id), nil
+	return s.include(f, f.AddRule(target.written, target.harnesses), kind, id, target), nil
 }
 
-func include(f *edit.File, rule *yaml.Node, kind, id string) bool {
-	changed := false
+// include drops id from the rule's remove list and appends it to its add list. When the remove
+// entry was all that deselected id, as after unuse, the add entry would change nothing and is
+// left out, so use undoes unuse to the original text.
+func (s *session) include(f *edit.File, rule *yaml.Node, kind, id string, target scope) bool {
+	unremoved := false
 	if remove := f.List(edit.Get(rule, "remove"), kind, false); remove != nil {
 		if i := edit.Find(kind, remove, id); i >= 0 {
 			edit.RemoveAt(remove, i)
 			f.Touch(rule)
-			changed = true
+			unremoved = true
 		}
 	}
-	add := f.List(f.Selection(rule, "add", true), kind, true)
-	if edit.Find(kind, add, id) < 0 {
-		edit.Append(add, id)
-		changed = true
+	var without [][]config.Resource
+	if unremoved {
+		without = s.selection(target)
 	}
-	return changed
+	add := f.List(f.Selection(rule, "add", true), kind, true)
+	if edit.Find(kind, add, id) >= 0 {
+		return unremoved
+	}
+	edit.Append(add, id)
+	if without != nil && slices.EqualFunc(without, s.selection(target), slices.Equal) {
+		edit.RemoveAt(add, len(add.Content)-1)
+		// Prune then drops the add list this created.
+		f.Touch(rule)
+	}
+	return true
+}
+
+// selection resolves the edited configuration for each harness of target, in the target's
+// directory or, for everywhere, the file system root. It returns nil when it cannot resolve.
+func (s *session) selection(target scope) [][]config.Resource {
+	overlay := config.Overlay{}
+	for path, f := range s.files {
+		b, err := f.Render()
+		if err != nil {
+			return nil
+		}
+		overlay[path] = b
+	}
+	for path, b := range s.locks {
+		overlay[path] = b
+	}
+	c, err := config.LoadWith(s.paths.Config, s.paths.Cache, s.builtins, overlay)
+	if err != nil {
+		return nil
+	}
+	directory := target.directory
+	if directory == "" {
+		directory = filepath.VolumeName(s.root) + string(filepath.Separator)
+	}
+	harnesses := target.harnesses
+	if len(harnesses) == 0 {
+		harnesses = []string{""}
+	}
+	out := [][]config.Resource{}
+	for _, harness := range harnesses {
+		snapshot, err := c.Resolve(directory, harness)
+		if err != nil {
+			return nil
+		}
+		out = append(out, snapshot.Resources)
+	}
+	return out
 }
 
 // disable takes id out of the target scope: from the add list of a matching rule that selects it,
