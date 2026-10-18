@@ -13,8 +13,10 @@ Release archives for Linux, macOS, and Windows on amd64 and arm64 are on the
 [releases page](https://github.com/tarik02-org/agx/releases/latest); unpack
 `agx` (`agx.exe` on Windows) onto PATH and check `checksums.txt`. The rolling
 [nightly prerelease](https://github.com/tarik02-org/agx/releases/tag/nightly) is
-rebuilt from every `master` commit that passes CI, with versions such as
-`0.1.0+nightly.12.abc1234`; its archive names stay the same between builds.
+rebuilt from every `master` commit that passes CI. Its version is the latest
+release tag plus the commits since it, such as `0.1.0+nightly.12.abc1234`; until
+the first tag it counts from `0.0.0` (`0.0.0+nightly.57.abc1234`). Its archive
+names stay the same between builds.
 
 With Nix, run `nix run github:tarik02-org/agx`, or add the flake's
 `packages.<system>.agx` to a profile or system configuration.
