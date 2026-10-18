@@ -174,7 +174,7 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 					p.Git,
 					gitDir,
 				); err != nil {
-					return err
+					return cloneError(p.Git, err)
 				}
 				ref := cmp.Or(p.Rev, p.Ref, "HEAD")
 				if sourceMatches && !updateAll && !wanted[id] {
@@ -429,11 +429,61 @@ func git(ctx context.Context, protocols string, isolated bool, args ...string) (
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && len(exit.Stderr) > 0 {
-			return nil, mark(ErrFetch, fmt.Errorf(
-				"git package operation failed: %w: %s", err, strings.TrimSpace(string(exit.Stderr)),
-			))
+			return nil, mark(ErrFetch, gitError{err: err, stderr: strings.TrimSpace(string(exit.Stderr))})
 		}
 		return nil, mark(ErrFetch, fmt.Errorf("git package operation failed: %w", err))
 	}
 	return out, nil
+}
+
+// gitError is a git command that failed with a message on standard error.
+type gitError struct {
+	err    error
+	stderr string
+}
+
+func (e gitError) Error() string {
+	return fmt.Sprintf("git package operation failed: %v: %s", e.err, e.stderr)
+}
+
+func (e gitError) Unwrap() error { return e.err }
+
+// unreachable are what git says, over HTTPS or SSH, about a repository that does not exist or
+// that it has no credentials for: hosts such as GitHub answer a private repository as missing.
+var unreachable = []string{
+	"could not read Username",
+	"Repository not found",
+	"repository not found",
+	"' not found",
+	"Authentication failed",
+	"Permission denied (publickey",
+	"Could not read from remote repository",
+}
+
+// cloneError explains a failed clone of url whose repository is missing or private, keeping git's
+// own words as detail.
+func cloneError(url string, err error) error {
+	var failed gitError
+	if !errors.As(err, &failed) {
+		return err
+	}
+	for _, line := range strings.Split(failed.stderr, "\n") {
+		for _, phrase := range unreachable {
+			if !strings.Contains(line, phrase) {
+				continue
+			}
+			access := "check that an SSH key with access to it is loaded"
+			if strings.HasPrefix(url, "https://") {
+				access = "set up git credentials for HTTPS (such as gh auth setup-git) or use an SSH URL"
+			}
+			return mark(ErrFetch, fmt.Errorf(
+				"cannot clone %s: the repository does not exist, or it is private and git has no "+
+					"credentials for it; for a private repository, %s (git: %s)",
+				url,
+				access,
+				strings.TrimSpace(line),
+			))
+		}
+	}
+	return err
 }

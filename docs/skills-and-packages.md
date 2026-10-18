@@ -53,6 +53,10 @@ after the repository (`--package` picks another name); its skills get IDs like
 `skills/pdf`. `--ref` and `--path` set the branch, tag, or commit and the
 subdirectory for full Git URLs.
 
+agx clones with your own git setup and never prompts for a password. For a
+private repository, set up git credentials first (for GitHub over HTTPS, `gh
+auth setup-git`), or use an SSH URL such as `git@github.com:owner/repo.git`.
+
 To remove a skill again, use its ID; to remove a whole Git source, use the
 package ID:
 
