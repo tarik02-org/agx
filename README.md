@@ -79,7 +79,7 @@ with the same directory-scoped resources. `agx sessions [query] --all` lists the
 Native arguments, standard streams, exit codes, and interrupts pass through.
 Help/version and administrative native commands work without a managed launch.
 A harness-named symlink can point to agx; executable lookup excludes agx itself.
-`agx shims install` creates such links in `~/.local/bin` for every harness
+`agx shims install` creates such links in `~/.local/share/agx/shims` for every harness
 definition, so `codex-cpa` works from any shell.
 Use a configured absolute native executable when another wrapper shadows PATH.
 

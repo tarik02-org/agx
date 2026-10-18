@@ -112,7 +112,7 @@ Shims put harness definitions on PATH: after `install`, `codex-cpa` runs `agx
 codex-cpa`. Each is agx under the definition's name: a symlink on Unix, a hard
 link or copy named `<name>.exe` on Windows, and a script running `agx <name>`
 only where linking fails. Built-ins get no shim. The directory defaults to
-`~/.local/bin` (`%LOCALAPPDATA%\agx\bin` on Windows). Shims target the path agx
+`$XDG_DATA_HOME/agx/shims` (`~/.local/share/agx/shims`, also on macOS; `%LOCALAPPDATA%\agx\shims` on Windows), a directory only agx writes to; add it to PATH to run shims by name. Shims target the path agx
 was invoked through when it is a stable link to the running binary, such as
 `~/.nix-profile/bin/agx`, and otherwise the resolved binary, with a warning when
 that lies in `/nix/store`.

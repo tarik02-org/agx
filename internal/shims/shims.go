@@ -84,20 +84,25 @@ type manifest struct {
 	Shims []Shim `json:"shims"`
 }
 
-// DefaultDir is ~/.local/bin, or %LOCALAPPDATA%\agx\bin on Windows.
+// DefaultDir is a directory of agx's own, $XDG_DATA_HOME/agx/shims (~/.local/share/agx/shims), or
+// %LOCALAPPDATA%\agx\shims on Windows. macOS uses the XDG path too rather than Application
+// Support: the directory goes on PATH, where a space is easy to break.
 func DefaultDir() (string, error) {
 	if runtime.GOOS == "windows" {
 		local := os.Getenv("LOCALAPPDATA")
 		if local == "" {
 			return "", errors.New("LOCALAPPDATA is not set; pass --dir")
 		}
-		return filepath.Join(local, "agx", "bin"), nil
+		return filepath.Join(local, "agx", "shims"), nil
+	}
+	if data := os.Getenv("XDG_DATA_HOME"); filepath.IsAbs(data) {
+		return filepath.Join(data, "agx", "shims"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".local", "bin"), nil
+	return filepath.Join(home, ".local", "share", "agx", "shims"), nil
 }
 
 // kinds lists how shims are made, most faithful first. A link runs agx itself, so signals, exit

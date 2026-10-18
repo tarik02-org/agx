@@ -65,7 +65,7 @@ versioned directory that an upgrade or garbage collection removes. A target
 inside `/nix/store` gets a warning. Running `install` again after agx moves
 updates the shims.
 
-Shims go to `~/.local/bin` (`%LOCALAPPDATA%\agx\bin` on Windows) or `--dir`.
+Shims go to `$XDG_DATA_HOME/agx/shims` (`~/.local/share/agx/shims`, also on macOS, where Application Support would put a space on PATH; `%LOCALAPPDATA%\agx\shims` on Windows) or `--dir`, a directory only agx writes to.
 `.agx-shims.json` in that directory records each shim's file, kind, and target,
 plus a content hash for hard links, copies, and scripts, so agx recognizes its
 own files: `install` adds, updates, and removes shims to match the current
