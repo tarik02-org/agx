@@ -188,7 +188,8 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 	// The log names why the daemon did not come up, for a person; scripts learn only that no
 	// daemon answers.
 	failed := func(code, reason string) error {
-		if line := lastLine(logPath); line != "" {
+		// The daemon's own diagnostics carry the agx: prefix this error is reported under again.
+		if line := strings.TrimPrefix(lastLine(logPath), "agx: "); line != "" {
 			return codedf(code, "daemon %s: %s; inspect %s", reason, line, logPath)
 		}
 		return codedf(code, "daemon %s; inspect %s", reason, logPath)
