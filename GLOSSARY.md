@@ -8,7 +8,7 @@ harness runs.
 **Fragment**: An importable portion of configuration, such as personal, work,
 or machine-local settings.
 
-**Scope**: A directory rule that adds resources to, or excludes resources from,
+**Scope**: A directory rule that adds resources to, or removes resources from,
 the configuration inherited by that directory and its descendants.
 _Avoid_: Environment, profile
 
@@ -21,6 +21,19 @@ supporting scripts, references, and assets.
 MCP definitions, or bundle definitions.
 
 **Bundle**: A named selection of skills, MCP servers, and instructions.
+
+**Inline definition**: A skill, instructions, or MCP server defined inside a
+selection list rather than its top-level section; its ID shares the top-level
+ID space and cannot be redefined.
+
+**Generated skill**: A skill written in configuration with `content` and
+optional `files`, materialized as a skill directory for each launch.
+
+**Anonymous package**: The Git source of a skill or instructions definition,
+fetched and locked like a package under the resource's kind and ID.
+
+**Pinned source**: A package or Git source whose content is fixed by a full
+commit `rev`, a content `hash`, or a `/nix/store` path, so it needs no lock entry.
 
 **MCP server**: A named entry in the `mcp` configuration section: an MCP server
 together with the account and settings used to reach it, so `github-work` and

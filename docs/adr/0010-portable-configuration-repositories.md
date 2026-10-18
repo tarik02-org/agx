@@ -1,4 +1,4 @@
-# Keep configuration portable: sops secrets and home-relative paths
+# Keep configuration portable: sops secrets
 
 Status: proposed.
 
@@ -36,13 +36,7 @@ provide the sops key, `agx install --frozen`, start the daemon, and run `agx
 secret login` for OAuth servers. OAuth tokens remain runtime state in the keychain
 because refresh tokens rotate; only client registration belongs in configuration.
 
-## Home-relative paths
-
-Paths in configuration accept a leading `~` or `~/`, expanded to the home
-directory of the user running agx: scope directories, imports, local package
-sources, resource paths, `!file`, sops files, and executables. `~user` is not
-supported. Machine-specific settings belong in an ignored fragment such as
-`agx.d/50-local.yaml`.
+Home-relative paths are covered by [ADR 0011](0011-straightforward-configuration.md).
 
 Rejected: linking the sops Go library, which pulls cloud SDKs into the binary;
 an agx-specific age format, which duplicates sops; `${VAR}` interpolation, which

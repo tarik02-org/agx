@@ -339,7 +339,7 @@ func Build(
 		selected := map[string]bool{}
 		for _, r := range s.Resources {
 			if r.Kind == "skill" {
-				name, err := skillName(s.Config.Skills[r.ID].Path)
+				name, err := skillName(s.Config.Skills[r.ID])
 				if err != nil {
 					return Plan{}, err
 				}
@@ -443,8 +443,8 @@ func tomlAssignment(key string, value any) (string, error) {
 }
 
 func artifactName(id config.ID) string { return "resource-" + config.Digest(string(id))[:16] }
-func skillName(path string) (string, error) {
-	hash, err := config.TreeHash(path)
+func skillName(skill config.Skill) (string, error) {
+	hash, err := skill.TreeHash()
 	if err != nil {
 		return "", err
 	}
@@ -492,14 +492,13 @@ func artifacts(s *config.Snapshot, cache string) (string, error) {
 	for _, r := range s.Resources {
 		switch r.Kind {
 		case "skill":
-			if err := securefs.CopyTree(
-				s.Config.Skills[r.ID].Path,
+			if err := s.Config.Skills[r.ID].Materialize(
 				filepath.Join(plugin, "skills", artifactName(r.ID)),
 			); err != nil {
 				return "", err
 			}
 		case "instructions":
-			b, err := os.ReadFile(s.Config.Instructions[r.ID].Path)
+			b, err := s.Config.Instructions[r.ID].Read()
 			if err != nil {
 				return "", err
 			}
@@ -561,7 +560,7 @@ func InstallNative(ctx context.Context, c *config.Config, cache string) error {
 		known[name] = true
 	}
 	for _, r := range c.Skills {
-		name, err := skillName(r.Path)
+		name, err := skillName(r)
 		if err != nil {
 			return err
 		}
@@ -571,7 +570,7 @@ func InstallNative(ctx context.Context, c *config.Config, cache string) error {
 			if err != nil {
 				return err
 			}
-			err = securefs.CopyTree(r.Path, filepath.Join(tmp, "skills", "managed"))
+			err = r.Materialize(filepath.Join(tmp, "skills", "managed"))
 			if err == nil {
 				err = securefs.WriteJSON(
 					filepath.Join(tmp, ".codex-plugin", "plugin.json"),

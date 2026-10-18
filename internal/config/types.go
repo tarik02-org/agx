@@ -30,13 +30,20 @@ type Import struct {
 type Package struct {
 	Path     string `yaml:"path"     json:"path,omitempty"   jsonschema_description:"Local package directory."`
 	Git      string `yaml:"git"      json:"git,omitempty"    jsonschema_description:"Git repository URL."`
-	Ref      string `yaml:"ref"      json:"ref,omitempty"    jsonschema_description:"Git branch, tag, or commit."`
+	Ref      string `yaml:"ref"      json:"ref,omitempty"    jsonschema_description:"Git branch, tag, or commit, locked at install."`
+	Rev      string `yaml:"rev"      json:"rev,omitempty"    jsonschema_description:"Full 40-character Git commit; pins the source without a lock entry."`
+	Hash     string `yaml:"hash"     json:"hash,omitempty"   jsonschema_description:"Content hash verified at install; pins the source without a lock entry."`
 	Subdir   string `yaml:"subdir"   json:"subdir,omitempty" jsonschema_description:"Package root within the source."`
 	Override bool   `yaml:"override" json:"-"                jsonschema_description:"Replace an existing definition."`
 	Lockfile string `yaml:"-"        json:"-"`
 	Source   Source `yaml:"-"        json:"-"`
 	// Manifest marks definitions from package manifests rather than configuration fragments.
 	Manifest bool `yaml:"-" json:"-"`
+	// Anonymous marks the Git source of a skill or instructions definition: plain content
+	// without a manifest, whose resources point into its checkout.
+	Anonymous bool `yaml:"-" json:"anonymous,omitempty"`
+	// Parent is the package whose manifest declared an anonymous package; empty for fragments.
+	Parent ID `yaml:"-" json:"-"`
 	// LockPath is the local path or Git source as recorded in the lockfile: relative to the
 	// lockfile directory for configuration fragments, or to the package root for manifests.
 	LockPath string `yaml:"-" json:"-"`
@@ -55,10 +62,48 @@ func (p Package) LockSource() Package {
 	return out
 }
 
-type FileResource struct {
-	Path     string `yaml:"path"     json:"path"   jsonschema:"required" jsonschema_description:"Skill directory or instructions file, relative to this file."`
-	Override bool   `yaml:"override" json:"-"                            jsonschema_description:"Replace an existing definition."`
-	Source   Source `yaml:"-"        json:"source"`
+// Pinned reports whether the source determines its content without a lock entry: a full commit,
+// a content hash, or a directory inside the read-only Nix store.
+func (p Package) Pinned() bool {
+	return p.Rev != "" || p.Hash != "" || p.Path != "" && inNixStore(p.Path)
+}
+
+// GitSource fetches a skill or instructions file from a repository as an anonymous package.
+type GitSource struct {
+	Git  string `yaml:"git"  json:"git,omitempty"  jsonschema_description:"Git repository holding the resource, fetched like a package; path is then relative to the checkout."`
+	Ref  string `yaml:"ref"  json:"ref,omitempty"  jsonschema_description:"git: branch, tag, or commit, locked at install."`
+	Rev  string `yaml:"rev"  json:"rev,omitempty"  jsonschema_description:"git: full 40-character commit; pins the source without a lock entry."`
+	Hash string `yaml:"hash" json:"hash,omitempty" jsonschema_description:"git: content hash of the checkout, verified at install; pins the source without a lock entry."`
+}
+
+// Skill is a skill directory: local, from a Git source, or generated from configuration.
+type Skill struct {
+	Path        string `yaml:"path"        json:"path,omitempty"        jsonschema_description:"Skill directory containing SKILL.md, relative to this file; with git, relative to the checkout."`
+	GitSource   `                     yaml:",inline"`
+	Name        string               `yaml:"name"        json:"name,omitempty"        jsonschema_description:"content: native skill name, lowercase letters, digits, and hyphens; defaults to the ID's last segment."`
+	Description string               `yaml:"description" json:"description,omitempty" jsonschema_description:"content: what the skill does and when to use it."`
+	Frontmatter map[string]any       `yaml:"frontmatter" json:"frontmatter,omitempty" jsonschema_description:"content: extra SKILL.md front matter, passed through."`
+	Content     string               `yaml:"content"     json:"content,omitempty"     jsonschema_description:"SKILL.md body of a skill generated from configuration."`
+	Files       map[string]SkillFile `yaml:"files"       json:"files,omitempty"       jsonschema_description:"content: other files by path relative to the skill root; a trailing slash copies a directory."`
+	Override    bool                 `yaml:"override"    json:"-"                     jsonschema_description:"Replace an existing definition."`
+	// Package is the anonymous package of a Git skill; until it is placed, Path is relative to
+	// its checkout.
+	Package ID `yaml:"-" json:"package,omitempty"`
+	// Inline marks definitions written in a selection list, whose IDs may not be reused.
+	Inline bool   `yaml:"-" json:"-"`
+	Source Source `yaml:"-" json:"source"`
+}
+
+// Instructions is guidance text: a file, a file from a Git source, or text in configuration.
+type Instructions struct {
+	Path      string `yaml:"path"     json:"path,omitempty"    jsonschema_description:"Instructions file, relative to this file; with git, relative to the checkout."`
+	GitSource `       yaml:",inline"`
+	Text      string `yaml:"text"     json:"text,omitempty"    jsonschema_description:"Instructions written in configuration."`
+	Order     int    `yaml:"order"    json:"order,omitempty"   jsonschema_description:"Sorts selected instructions, lower first, before resolution order; defaults to 0."`
+	Override  bool   `yaml:"override" json:"-"                 jsonschema_description:"Replace an existing definition."`
+	Package   ID     `yaml:"-"        json:"package,omitempty"`
+	Inline    bool   `yaml:"-"        json:"-"`
+	Source    Source `yaml:"-"        json:"source"`
 }
 
 // MCPServer is an MCP server together with the account and settings used to reach it.
@@ -72,6 +117,7 @@ type MCPServer struct {
 	Headers     map[string]Value `yaml:"headers"     json:"headers,omitempty"                                       jsonschema_description:"http: extra request headers."`
 	Auth        MCPAuth          `yaml:"auth"        json:"auth"`
 	Override    bool             `yaml:"override"    json:"-"                                                       jsonschema_description:"Replace an existing definition."`
+	Inline      bool             `yaml:"-"           json:"-"`
 	Source      Source           `yaml:"-"           json:"source"`
 }
 
@@ -104,26 +150,46 @@ type Secret struct {
 	Source   Source `yaml:"-" json:"source"`
 }
 
+// Selection lists resources by ID once inline definitions are merged.
 type Selection struct {
-	Skills       []ID `yaml:"skills"       json:"skills,omitempty"       jsonschema_description:"Skill IDs."`
-	Instructions []ID `yaml:"instructions" json:"instructions,omitempty" jsonschema_description:"Instructions IDs."`
-	MCP          []ID `yaml:"mcp"          json:"mcp,omitempty"          jsonschema_description:"MCP server IDs."`
-	Bundles      []ID `yaml:"bundles"      json:"bundles,omitempty"      jsonschema_description:"Bundle IDs."`
+	Skills       []ID `json:"skills,omitempty"`
+	Instructions []ID `json:"instructions,omitempty"`
+	MCP          []ID `json:"mcp,omitempty"`
+	Bundles      []ID `json:"bundles,omitempty"`
+}
+
+// SelectionSpec is a selection as written: references, paths, and inline definitions.
+type SelectionSpec struct {
+	Skills       []SkillItem        `yaml:"skills"       jsonschema_description:"Skill IDs, skill directory paths, or inline skill definitions."`
+	Instructions []InstructionsItem `yaml:"instructions" jsonschema_description:"Instructions IDs, file paths, or inline instructions definitions."`
+	MCP          []MCPItem          `yaml:"mcp"          jsonschema_description:"MCP server IDs or inline MCP server definitions with an id."`
+	Bundles      []ID               `yaml:"bundles"      jsonschema_description:"Bundle IDs."`
 }
 
 type Bundle struct {
-	Selection `       yaml:",inline"`
-	Override  bool   `yaml:"override" json:"-"      jsonschema_description:"Replace an existing definition."`
-	Source    Source `yaml:"-"        json:"source"`
+	Selection
+	Source Source `json:"source"`
+}
+
+type BundleSpec struct {
+	SelectionSpec `     yaml:",inline"`
+	Override      bool `yaml:"override" jsonschema_description:"Replace an existing definition."`
 }
 
 type Scope struct {
-	Directory string `yaml:"directory" json:"directory" jsonschema:"required" jsonschema_description:"Directory the rule applies to, with its descendants."`
+	Directory string `json:"directory"`
 	// Harnesses limits the rule to launches of these harnesses or definitions based on them.
-	Harnesses []string  `yaml:"harnesses" json:"harnesses,omitempty" jsonschema_description:"Apply only to launches of these harnesses or definitions based on them."`
-	Add       Selection `yaml:"add"       json:"add"                 jsonschema_description:"Resources to select."`
-	Exclude   Selection `yaml:"exclude"   json:"exclude"             jsonschema_description:"Resources to deselect."`
-	Source    Source    `yaml:"-"         json:"source"`
+	Harnesses []string  `json:"harnesses,omitempty"`
+	Add       Selection `json:"add"`
+	Remove    Selection `json:"remove"`
+	Source    Source    `json:"source"`
+}
+
+type ScopeSpec struct {
+	Directory string        `yaml:"directory" jsonschema:"required" jsonschema_description:"Directory the rule applies to, with its descendants."`
+	Harnesses []string      `yaml:"harnesses"                       jsonschema_description:"Apply only to launches of these harnesses or definitions based on them."`
+	Add       SelectionSpec `yaml:"add"                             jsonschema_description:"Resources to select."`
+	Remove    SelectionSpec `yaml:"remove"                          jsonschema_description:"Resources to deselect."`
 }
 
 type Daemon struct {
@@ -133,25 +199,24 @@ type Daemon struct {
 }
 
 type Document struct {
-	Version      int                 `yaml:"version"      jsonschema:"required" jsonschema_description:"Configuration format version."`
-	Imports      []Import            `yaml:"imports"                            jsonschema_description:"Fragments loaded before this file."`
-	Lockfile     string              `yaml:"lockfile"                           jsonschema_description:"Lockfile for packages declared here; defaults to agx.lock.json."`
-	Packages     map[ID]Package      `yaml:"packages"                           jsonschema_description:"Package sources by ID."`
-	Skills       map[ID]FileResource `yaml:"skills"                             jsonschema_description:"Skill directories containing SKILL.md."`
-	Instructions map[ID]FileResource `yaml:"instructions"                       jsonschema_description:"Instruction files applied to launches."`
-	MCP          map[ID]MCPServer    `yaml:"mcp"                                jsonschema_description:"MCP servers with the account and settings used to reach them."`
-	Secrets      map[ID]Secret       `yaml:"secrets"                            jsonschema_description:"How credentials are obtained."`
-	Bundles      map[ID]Bundle       `yaml:"bundles"                            jsonschema_description:"Named selections of resources."`
-	Scopes       []Scope             `yaml:"scopes"                             jsonschema_description:"Directory rules that add or exclude resources."`
-	Harnesses    map[string]Harness  `yaml:"harnesses"                          jsonschema_description:"Built-in harness customizations and new definitions."`
-	Daemon       Daemon              `yaml:"daemon"                             jsonschema_description:"Launch lease timing."`
+	Imports      []Import            `yaml:"imports"      jsonschema_description:"Fragments loaded before this file."`
+	Lockfile     string              `yaml:"lockfile"     jsonschema_description:"Lockfile for unpinned packages declared here; defaults to agx.lock.json."`
+	Packages     map[ID]Package      `yaml:"packages"     jsonschema_description:"Package sources by ID."`
+	Skills       map[ID]Skill        `yaml:"skills"       jsonschema_description:"Skills: directories containing SKILL.md, Git sources, or generated from content."`
+	Instructions map[ID]Instructions `yaml:"instructions" jsonschema_description:"Instructions applied to launches: files, Git sources, or text."`
+	MCP          map[ID]MCPServer    `yaml:"mcp"          jsonschema_description:"MCP servers with the account and settings used to reach them."`
+	Secrets      map[ID]Secret       `yaml:"secrets"      jsonschema_description:"How credentials are obtained."`
+	Bundles      map[ID]BundleSpec   `yaml:"bundles"      jsonschema_description:"Named selections of resources."`
+	Scopes       []ScopeSpec         `yaml:"scopes"       jsonschema_description:"Directory rules that add or remove resources."`
+	Harnesses    map[string]Harness  `yaml:"harnesses"    jsonschema_description:"Built-in harness customizations and new definitions."`
+	Daemon       Daemon              `yaml:"daemon"       jsonschema_description:"Launch lease timing."`
 }
 
 type Config struct {
 	Root          string                       `json:"root"`
 	Packages      map[ID]Package               `json:"packages"`
-	Skills        map[ID]FileResource          `json:"skills"`
-	Instructions  map[ID]FileResource          `json:"instructions"`
+	Skills        map[ID]Skill                 `json:"skills"`
+	Instructions  map[ID]Instructions          `json:"instructions"`
 	MCP           map[ID]MCPServer             `json:"mcp"`
 	Secrets       map[ID]Secret                `json:"secrets"`
 	Bundles       map[ID]Bundle                `json:"bundles"`
@@ -176,7 +241,7 @@ type Step struct {
 	Change    string `json:"change"`
 	Source    Source `json:"source"`
 	Directory string `json:"scope_directory"`
-	// Harness names the definition whose add/exclude produced the step; empty for scopes.
+	// Harness names the definition whose add/remove produced the step; empty for scopes.
 	Harness     string `json:"harness,omitempty"`
 	BundleChain []ID   `json:"bundle_chain,omitempty"`
 }
@@ -184,7 +249,9 @@ type Step struct {
 type Trace struct {
 	Resource Resource `json:"resource"`
 	Selected bool     `json:"selected"`
-	Steps    []Step   `json:"steps"`
+	// Order is a selected instructions definition's sort key; zero otherwise.
+	Order int    `json:"order,omitempty"`
+	Steps []Step `json:"steps"`
 }
 
 type Snapshot struct {
@@ -237,7 +304,7 @@ func Digest(v any) string {
 }
 
 // Resolve selects resources for a directory and harness. An empty harness applies only rules
-// without a harness filter and no harness's own add/exclude.
+// without a harness filter and no harness's own add/remove.
 func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 	dir, err := Canonical(directory)
 	if err != nil {
@@ -259,12 +326,20 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 	}
 	chain := h.Chain
 	traces := map[Resource]*Trace{}
+	// selectedAt records when each resource was last newly selected, which orders instructions:
+	// shallower scopes first, harness rules last, and list order within a rule.
+	selectedAt := map[Resource]int{}
+	sequence := 0
 	apply := func(change string, selection Selection, step Step) error {
 		err := c.expand(selection, nil, func(r Resource, bundles []ID) {
 			t := traces[r]
 			if t == nil {
 				t = &Trace{Resource: r}
 				traces[r] = t
+			}
+			sequence++
+			if change == "add" && !t.Selected {
+				selectedAt[r] = sequence
 			}
 			t.Selected = change == "add"
 			step := step
@@ -295,18 +370,18 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 		if err := apply("add", scope.Add, step); err != nil {
 			return nil, err
 		}
-		if err := apply("exclude", scope.Exclude, step); err != nil {
+		if err := apply("remove", scope.Remove, step); err != nil {
 			return nil, err
 		}
 	}
 	// A harness's own selection follows directory scopes so it holds everywhere for that harness.
 	for _, name := range chain {
 		selections := c.Harnesses[name].Selections
-		for _, change := range []string{"add", "exclude"} {
+		for _, change := range []string{"add", "remove"} {
 			for _, s := range selections {
 				selection := s.Add
-				if change == "exclude" {
-					selection = s.Exclude
+				if change == "remove" {
+					selection = s.Remove
 				}
 				if err := apply(change, selection, Step{Source: s.Source, Harness: name}); err != nil {
 					return nil, err
@@ -322,10 +397,13 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 		RequiredEnvironment: []string{},
 	}
 	for r, t := range traces {
-		s.Traces = append(s.Traces, *t)
 		if t.Selected {
 			s.Resources = append(s.Resources, r)
+			if r.Kind == "instructions" {
+				t.Order = c.Instructions[r.ID].Order
+			}
 		}
+		s.Traces = append(s.Traces, *t)
 	}
 	less := func(a, b Resource) bool {
 		if a.Kind != b.Kind {
@@ -333,8 +411,18 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 		}
 		return a.ID < b.ID
 	}
-	sort.Slice(s.Resources, func(i, j int) bool { return less(s.Resources[i], s.Resources[j]) })
 	sort.Slice(s.Traces, func(i, j int) bool { return less(s.Traces[i].Resource, s.Traces[j].Resource) })
+	// Instructions concatenate in this order, so it is part of the snapshot.
+	sort.Slice(s.Resources, func(i, j int) bool {
+		a, b := s.Resources[i], s.Resources[j]
+		if a.Kind == "instructions" && b.Kind == "instructions" {
+			if oa, ob := c.Instructions[a.ID].Order, c.Instructions[b.ID].Order; oa != ob {
+				return oa < ob
+			}
+			return selectedAt[a] < selectedAt[b]
+		}
+		return less(a, b)
+	})
 	injections := s.MCPInjections()
 	if harness != "" {
 		injections = append(injections, h.Injections()...)
@@ -361,15 +449,15 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 	for _, r := range s.Resources {
 		switch r.Kind {
 		case "skill":
-			h, err := TreeHash(c.Skills[r.ID].Path)
+			h, err := c.Skills[r.ID].TreeHash()
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("skill %s: %w", r.ID, err)
 			}
 			content = append(content, h)
 		case "instructions":
-			b, err := os.ReadFile(c.Instructions[r.ID].Path)
+			b, err := c.Instructions[r.ID].Read()
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("instructions %s: %w", r.ID, err)
 			}
 			content = append(content, Digest(string(b)))
 		}
@@ -466,11 +554,11 @@ func (c *Config) withoutPositions() *Config {
 	out := *c
 	out.Skills = stripPositions(
 		c.Skills,
-		func(r FileResource) FileResource { r.Source = Source{Path: r.Source.Path}; return r },
+		func(r Skill) Skill { r.Source = Source{Path: r.Source.Path}; return r },
 	)
 	out.Instructions = stripPositions(
 		c.Instructions,
-		func(r FileResource) FileResource { r.Source = Source{Path: r.Source.Path}; return r },
+		func(r Instructions) Instructions { r.Source = Source{Path: r.Source.Path}; return r },
 	)
 	out.MCP = stripPositions(
 		c.MCP,

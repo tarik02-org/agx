@@ -1,5 +1,3 @@
-version: 1
-
 # All relative file paths and scope roots belong to this fragment.
 instructions:
   repository:
@@ -14,6 +12,13 @@ scopes:
   - directory: ..
     add:
       instructions: [repository]
+      # Selection lists also take paths and inline definitions:
+      # skills:
+      #   - ./skills/review              # ID = folder name
+      #   - id: deploy
+      #     description: Deploy this service.
+      #     content: |
+      #       Run `make deploy` and report the release URL.
 
 # Configure an absolute executable if a harness-named wrapper shadows PATH.
 # harnesses:

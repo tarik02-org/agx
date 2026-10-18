@@ -1,6 +1,7 @@
 package packages
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -69,36 +70,51 @@ func Install(
 		if !ok {
 			return fmt.Errorf("unknown package %s", id)
 		}
+		pinned := p.Pinned()
 		l, ok := locks[p.Lockfile]
 		if !ok {
 			l, err = config.ReadLock(p.Lockfile)
-			if err != nil {
-				if !os.IsNotExist(err) {
-					return err
-				}
-				if frozen {
-					return fmt.Errorf("missing lockfile %s", p.Lockfile)
-				}
+			switch {
+			case err == nil:
+				locks[p.Lockfile] = l
+			case !os.IsNotExist(err):
+				return err
+			// Pinned packages need no lockfile, so none is created for them.
+			case pinned:
+			case frozen:
+				return fmt.Errorf("missing lockfile %s", p.Lockfile)
+			default:
 				l = config.Lock{Version: 1, Packages: map[config.ID]config.LockedPackage{}}
+				locks[p.Lockfile] = l
 			}
-			locks[p.Lockfile] = l
 		}
 		previous, locked := l.Packages[id]
 		source := p.LockSource()
-		sourceMatches := locked && config.Digest(previous.Source) == config.Digest(source)
-		if frozen && !sourceMatches {
+		sourceMatches := !pinned && locked && config.Digest(previous.Source) == config.Digest(source)
+		if frozen && !pinned && !sourceMatches {
 			return fmt.Errorf("stale lock for %s", id)
 		}
 		hash, revision, dest := "", "", ""
-		if p.Git != "" && sourceMatches && !updateAll && !wanted[id] {
-			candidate := filepath.Join(cache, "packages", previous.Hash)
-			if config.ValidHash(previous.Hash) {
-				if cached, err := config.TreeHash(candidate); err == nil && cached == previous.Hash {
-					hash = previous.Hash
-					revision = previous.Revision
+		reuse := func(candidateHash, candidateRevision string) {
+			candidate := filepath.Join(cache, "packages", candidateHash)
+			if config.ValidHash(candidateHash) {
+				if cached, err := config.TreeHash(candidate); err == nil && cached == candidateHash {
+					hash = candidateHash
+					revision = candidateRevision
 					dest = candidate
 				}
 			}
+		}
+		pin := config.PinPath(cache, p)
+		switch {
+		case p.Hash != "":
+			reuse(p.Hash, p.Rev)
+		case pinned:
+			if recorded, err := config.ReadPin(pin); err == nil {
+				reuse(recorded, p.Rev)
+			}
+		case p.Git != "" && sourceMatches && !updateAll && !wanted[id]:
+			reuse(previous.Hash, previous.Revision)
 		}
 		if dest == "" {
 			stage, err := os.MkdirTemp(filepath.Join(cache, "packages"), ".install-*")
@@ -128,24 +144,32 @@ func Install(
 				); err != nil {
 					return err
 				}
-				ref := p.Ref
-				if ref == "" {
-					ref = "HEAD"
-				}
+				ref := cmp.Or(p.Rev, p.Ref, "HEAD")
 				if sourceMatches && !updateAll && !wanted[id] {
 					ref = previous.Revision
 				}
-				out, err := git(
-					ctx,
-					protocols,
-					true,
-					"-C",
-					gitDir,
-					"rev-parse",
-					"--verify",
-					"--end-of-options",
-					ref+"^{commit}",
-				)
+				resolve := func() ([]byte, error) {
+					return git(
+						ctx,
+						protocols,
+						true,
+						"-C",
+						gitDir,
+						"rev-parse",
+						"--verify",
+						"--end-of-options",
+						ref+"^{commit}",
+					)
+				}
+				out, err := resolve()
+				// A pinned commit may be reachable only by its hash, which a clone does not fetch.
+				if err != nil && p.Rev != "" {
+					if _, fetchErr := git(
+						ctx, protocols, false, "-C", gitDir, "fetch", "--quiet", "origin", "--end-of-options", p.Rev,
+					); fetchErr == nil {
+						out, err = resolve()
+					}
+				}
 				if err != nil {
 					return fmt.Errorf("cannot resolve revision for package %s", id)
 				}
@@ -179,7 +203,10 @@ func Install(
 			if err != nil {
 				return err
 			}
-			if frozen && (hash != previous.Hash || revision != previous.Revision) {
+			if p.Hash != "" && hash != p.Hash {
+				return fmt.Errorf("package %s content hash %s does not match its pinned hash %s", id, hash, p.Hash)
+			}
+			if frozen && !pinned && (hash != previous.Hash || revision != previous.Revision) {
 				return fmt.Errorf("locked package %s content changed", id)
 			}
 			dest = filepath.Join(cache, "packages", hash)
@@ -198,31 +225,34 @@ func Install(
 					return fmt.Errorf("corrupt cache entry for %s", id)
 				}
 			}
-
-		}
-		manifest := filepath.Join(dest, "agx.package.yaml")
-		d, node, err := config.DecodeManifest(manifest)
-		if err != nil {
-			return err
-		}
-		if err := c.AddManifest(d, node, manifest, id); err != nil {
-			return err
+			if pinned && p.Hash == "" {
+				if err := config.WritePin(pin, hash); err != nil {
+					return err
+				}
+			}
 		}
 		deps := []config.ID{}
-		for dep := range d.Packages {
-			name := config.ID(string(id) + "/" + string(dep))
-			// Configuration overrides of a dependency keep their own lockfile.
-			if child := c.Packages[name]; child.Manifest {
-				child.Lockfile = p.Lockfile
-				c.Packages[name] = child
+		if p.Anonymous {
+			if err := c.AddContent(id, dest); err != nil {
+				return err
 			}
-			deps = append(deps, name)
+		} else {
+			manifest := filepath.Join(dest, "agx.package.yaml")
+			d, node, err := config.DecodeManifest(manifest)
+			if err != nil {
+				return err
+			}
+			if err := c.AddManifest(d, node, manifest, id); err != nil {
+				return err
+			}
+			deps = c.Dependencies(id, d)
 		}
-		sort.Slice(deps, func(i, j int) bool { return deps[i] < deps[j] })
-		if frozen && config.Digest(deps) != config.Digest(previous.Dependencies) {
-			return fmt.Errorf("stale dependencies for %s", id)
+		if !pinned {
+			if frozen && config.Digest(deps) != config.Digest(previous.Dependencies) {
+				return fmt.Errorf("stale dependencies for %s", id)
+			}
+			l.Packages[id] = config.LockedPackage{Source: source, Revision: revision, Hash: hash, Dependencies: deps}
 		}
-		l.Packages[id] = config.LockedPackage{Source: source, Revision: revision, Hash: hash, Dependencies: deps}
 		for _, dep := range deps {
 			if err := install(dep, append(chain, id)); err != nil {
 				return err
@@ -252,7 +282,7 @@ func Install(
 	}
 	for path, l := range locks {
 		for id := range l.Packages {
-			if !loaded[id] || c.Packages[id].Lockfile != path {
+			if !loaded[id] || c.Packages[id].Lockfile != path || c.Packages[id].Pinned() {
 				delete(l.Packages, id)
 			}
 		}

@@ -76,7 +76,7 @@ type ResolutionStep_Change int32
 const (
 	ResolutionStep_CHANGE_UNSPECIFIED ResolutionStep_Change = 0
 	ResolutionStep_CHANGE_ADD         ResolutionStep_Change = 1
-	ResolutionStep_CHANGE_EXCLUDE     ResolutionStep_Change = 2
+	ResolutionStep_CHANGE_REMOVE      ResolutionStep_Change = 2
 )
 
 // Enum value maps for ResolutionStep_Change.
@@ -84,12 +84,12 @@ var (
 	ResolutionStep_Change_name = map[int32]string{
 		0: "CHANGE_UNSPECIFIED",
 		1: "CHANGE_ADD",
-		2: "CHANGE_EXCLUDE",
+		2: "CHANGE_REMOVE",
 	}
 	ResolutionStep_Change_value = map[string]int32{
 		"CHANGE_UNSPECIFIED": 0,
 		"CHANGE_ADD":         1,
-		"CHANGE_EXCLUDE":     2,
+		"CHANGE_REMOVE":      2,
 	}
 )
 
@@ -652,7 +652,7 @@ type ResolutionStep struct {
 	Source         *SourceLocation        `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
 	ScopeDirectory string                 `protobuf:"bytes,3,opt,name=scope_directory,json=scopeDirectory,proto3" json:"scope_directory,omitempty"`
 	BundleChain    []string               `protobuf:"bytes,4,rep,name=bundle_chain,json=bundleChain,proto3" json:"bundle_chain,omitempty"`
-	// Harness whose own add/exclude produced the step; empty for directory scopes.
+	// Harness whose own add/remove produced the step; empty for directory scopes.
 	Harness       string `protobuf:"bytes,5,opt,name=harness,proto3" json:"harness,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2997,18 +2997,18 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\tdirectory\x18\x02 \x01(\tR\tdirectory\x121\n" +
 	"\tresources\x18\x03 \x03(\v2\x13.agx.v1.ResourceRefR\tresources\x121\n" +
 	"\x14required_environment\x18\x04 \x03(\tR\x13requiredEnvironment\x12\x18\n" +
-	"\aharness\x18\x05 \x01(\tR\aharness\"\xa3\x02\n" +
+	"\aharness\x18\x05 \x01(\tR\aharness\"\xa2\x02\n" +
 	"\x0eResolutionStep\x125\n" +
 	"\x06change\x18\x01 \x01(\x0e2\x1d.agx.v1.ResolutionStep.ChangeR\x06change\x12.\n" +
 	"\x06source\x18\x02 \x01(\v2\x16.agx.v1.SourceLocationR\x06source\x12'\n" +
 	"\x0fscope_directory\x18\x03 \x01(\tR\x0escopeDirectory\x12!\n" +
 	"\fbundle_chain\x18\x04 \x03(\tR\vbundleChain\x12\x18\n" +
-	"\aharness\x18\x05 \x01(\tR\aharness\"D\n" +
+	"\aharness\x18\x05 \x01(\tR\aharness\"C\n" +
 	"\x06Change\x12\x16\n" +
 	"\x12CHANGE_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
-	"CHANGE_ADD\x10\x01\x12\x12\n" +
-	"\x0eCHANGE_EXCLUDE\x10\x02\"n\n" +
+	"CHANGE_ADD\x10\x01\x12\x11\n" +
+	"\rCHANGE_REMOVE\x10\x02\"n\n" +
 	"\rResourceTrace\x12/\n" +
 	"\bresource\x18\x01 \x01(\v2\x13.agx.v1.ResourceRefR\bresource\x12,\n" +
 	"\x05steps\x18\x02 \x03(\v2\x16.agx.v1.ResolutionStepR\x05steps\"\x11\n" +

@@ -116,7 +116,7 @@ func Main() int {
 	root.AddCommand(configCmd)
 	shorts := map[string]string{
 		"resolve": "Show resources selected for a directory",
-		"explain": "Show why each resource is selected or excluded for a directory",
+		"explain": "Show why each resource is selected or removed for a directory",
 	}
 	for _, name := range []string{"resolve", "explain"} {
 		asJSON := false

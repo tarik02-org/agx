@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -39,7 +41,7 @@ type Lock struct {
 }
 
 // DefaultConfig is used when the root configuration file does not exist.
-const DefaultConfig = "version: 1\nimports:\n  - glob: agx.d/*.yaml\n"
+const DefaultConfig = "imports:\n  - glob: agx.d/*.yaml\n"
 
 func Read(root string) (*Config, error) {
 	return read(root, &Inputs{})
@@ -53,8 +55,8 @@ func read(root string, inputs *Inputs) (*Config, error) {
 	c := &Config{
 		Root:          root,
 		Packages:      map[ID]Package{},
-		Skills:        map[ID]FileResource{},
-		Instructions:  map[ID]FileResource{},
+		Skills:        map[ID]Skill{},
+		Instructions:  map[ID]Instructions{},
 		MCP:           map[ID]MCPServer{},
 		Secrets:       map[ID]Secret{},
 		Bundles:       map[ID]Bundle{},
@@ -97,7 +99,11 @@ func read(root string, inputs *Inputs) (*Config, error) {
 						imp.Glob,
 					)
 				}
-				pattern := relative(filepath.Dir(path), imp.Glob)
+				glob, err := expandHome(imp.Glob)
+				if err != nil {
+					return fmt.Errorf("%s: import %w", path, err)
+				}
+				pattern := relative(filepath.Dir(path), glob)
 				files, err := globFiles(pattern)
 				if err != nil {
 					return fmt.Errorf("%s: import %s: %w", path, imp.Glob, err)
@@ -110,7 +116,11 @@ func read(root string, inputs *Inputs) (*Config, error) {
 				}
 				continue
 			}
-			p := relative(filepath.Dir(path), imp.Path)
+			p, err := expandHome(imp.Path)
+			if err != nil {
+				return fmt.Errorf("%s: import %w", path, err)
+			}
+			p = relative(filepath.Dir(path), p)
 			if imp.Optional {
 				inputs.file(p)
 				if _, err := os.Stat(p); errors.Is(err, fs.ErrNotExist) {
@@ -169,31 +179,55 @@ func loadConfig(root, cache string, inputs *Inputs) (*Config, error) {
 			return nil
 		}
 		p := c.Packages[id]
-		inputs.file(p.Lockfile)
-		lock, err := ReadLock(p.Lockfile)
-		if err != nil {
-			return fmt.Errorf("%s: %w; run agx install", p.Lockfile, err)
+		var entry LockedPackage
+		hash := p.Hash
+		switch {
+		case p.Pinned() && hash == "":
+			pin := PinPath(cache, p)
+			inputs.file(pin)
+			var err error
+			if hash, err = ReadPin(pin); errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("package %s is not installed; run agx install", id)
+			} else if err != nil {
+				return fmt.Errorf("package %s: %w", id, err)
+			}
+		case !p.Pinned():
+			inputs.file(p.Lockfile)
+			lock, err := ReadLock(p.Lockfile)
+			if err != nil {
+				return fmt.Errorf("%s: %w; run agx install", p.Lockfile, err)
+			}
+			var ok bool
+			entry, ok = lock.Packages[id]
+			if !ok || Digest(entry.Source) != Digest(p.LockSource()) {
+				return fmt.Errorf("package %s has a missing or stale lock; run agx install", id)
+			}
+			if !ValidHash(entry.Hash) {
+				return fmt.Errorf("invalid cache hash for %s", id)
+			}
+			hash = entry.Hash
 		}
-		entry, ok := lock.Packages[id]
-		if !ok || Digest(entry.Source) != Digest(p.LockSource()) {
-			return fmt.Errorf("package %s has a missing or stale lock; run agx install", id)
-		}
-		if !ValidHash(entry.Hash) {
-			return fmt.Errorf("invalid cache hash for %s", id)
-		}
-		dir := filepath.Join(cache, "packages", entry.Hash)
+		dir := filepath.Join(cache, "packages", hash)
 		inputs.file(dir)
 		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("package %s is not installed; run agx install", id)
 		} else if err != nil {
 			return fmt.Errorf("package %s cache: %w", id, err)
 		}
-		hash, err := TreeHash(dir)
+		cached, err := TreeHash(dir)
 		if err != nil {
 			return fmt.Errorf("package %s cache: %w", id, err)
 		}
-		if hash != entry.Hash {
+		if cached != hash {
 			return fmt.Errorf("package %s cache content does not match its lock", id)
+		}
+		c.PackageHashes[id] = hash
+		if p.Anonymous {
+			if err := c.AddContent(id, dir); err != nil {
+				return err
+			}
+			loaded[id] = true
+			return nil
 		}
 		d, node, err := decode(filepath.Join(dir, "agx.package.yaml"))
 		if err != nil {
@@ -202,22 +236,13 @@ func loadConfig(root, cache string, inputs *Inputs) (*Config, error) {
 		if err := c.merge(d, node, filepath.Join(dir, "agx.package.yaml"), string(id), true); err != nil {
 			return err
 		}
-		c.PackageHashes[id] = entry.Hash
-		deps := []ID{}
-		for dep := range d.Packages {
-			qualified := qualify(string(id), dep)
-			deps = append(deps, qualified)
-			// Configuration overrides of a dependency keep their own lockfile.
-			if value := c.Packages[qualified]; value.Manifest {
-				value.Lockfile = p.Lockfile
-				c.Packages[qualified] = value
+		deps := c.Dependencies(id, d)
+		if !p.Pinned() {
+			expected := append([]ID{}, entry.Dependencies...)
+			sort.Slice(expected, func(i, j int) bool { return expected[i] < expected[j] })
+			if Digest(deps) != Digest(expected) {
+				return fmt.Errorf("stale dependency lock for %s", id)
 			}
-		}
-		sort.Slice(deps, func(i, j int) bool { return deps[i] < deps[j] })
-		expected := append([]ID{}, entry.Dependencies...)
-		sort.Slice(expected, func(i, j int) bool { return expected[i] < expected[j] })
-		if Digest(deps) != Digest(expected) {
-			return fmt.Errorf("stale dependency lock for %s", id)
 		}
 		for _, dep := range deps {
 			if err := load(dep, append(chain, id)); err != nil {
@@ -248,6 +273,85 @@ func (c *Config) AddManifest(d Document, node *yaml.Node, path string, namespace
 	return c.merge(d, node, path, string(namespace), true)
 }
 
+// AddContent points the resources of an anonymous package at its installed checkout.
+func (c *Config) AddContent(id ID, dir string) error {
+	for name, s := range c.Skills {
+		if s.Package != id {
+			continue
+		}
+		path, err := securefs.Contained(dir, filepath.FromSlash(cmp.Or(s.Path, ".")))
+		if err != nil {
+			return fmt.Errorf("%s: skill %s: %w", locate(s.Source), name, err)
+		}
+		s.Path = path
+		c.Skills[name] = s
+	}
+	for name, i := range c.Instructions {
+		if i.Package != id {
+			continue
+		}
+		path, err := securefs.Contained(dir, filepath.FromSlash(i.Path))
+		if err != nil {
+			return fmt.Errorf("%s: instructions %s: %w", locate(i.Source), name, err)
+		}
+		i.Path = path
+		c.Instructions[name] = i
+	}
+	return nil
+}
+
+// Dependencies lists the packages a manifest declares, including the anonymous Git sources of its
+// resources, and moves those locked with it into its lockfile.
+func (c *Config) Dependencies(id ID, d Document) []ID {
+	lockfile := c.Packages[id].Lockfile
+	deps := []ID{}
+	for dep := range d.Packages {
+		qualified := qualify(string(id), dep)
+		// Configuration overrides of a dependency keep their own lockfile.
+		if value := c.Packages[qualified]; value.Manifest {
+			value.Lockfile = lockfile
+			c.Packages[qualified] = value
+		}
+		deps = append(deps, qualified)
+	}
+	for name, p := range c.Packages {
+		if p.Anonymous && p.Parent == id {
+			p.Lockfile = lockfile
+			c.Packages[name] = p
+			deps = append(deps, name)
+		}
+	}
+	slices.Sort(deps)
+	return deps
+}
+
+// PinPath locates the cache record of the content a pinned rev or /nix/store source installed;
+// a hash pin names its cache entry directly.
+func PinPath(cache string, p Package) string {
+	key := Digest(Package{Path: p.Path, Git: p.Git, Rev: p.Rev, Subdir: p.Subdir})
+	return filepath.Join(cache, "packages", "pins", key+".json")
+}
+
+type pin struct {
+	Hash string `json:"hash"`
+}
+
+func ReadPin(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	var p pin
+	if err := json.Unmarshal(b, &p); err != nil || !ValidHash(p.Hash) {
+		return "", fmt.Errorf("invalid pin record %s; run agx install", path)
+	}
+	return p.Hash, nil
+}
+
+func WritePin(path, hash string) error {
+	return securefs.WriteJSON(path, pin{Hash: hash})
+}
+
 func decode(path string) (Document, *yaml.Node, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -269,7 +373,7 @@ func decodeBytes(path string, b []byte) (Document, *yaml.Node, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	dec.KnownFields(true)
 	if err := dec.Decode(&d); errors.Is(err, io.EOF) {
-		return d, nil, fmt.Errorf("%s: file is empty; expected a document with version: 1", path)
+		return d, nil, fmt.Errorf("%s: file is empty; write {} for a fragment that declares nothing", path)
 	} else if err != nil {
 		return d, nil, fmt.Errorf("%s: %w", path, err)
 	}
@@ -277,10 +381,30 @@ func decodeBytes(path string, b []byte) (Document, *yaml.Node, error) {
 	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
 		return d, nil, fmt.Errorf("%s: expected one YAML document", path)
 	}
-	if d.Version != 1 {
-		return d, nil, fmt.Errorf("%s: version must be 1", path)
-	}
 	return d, &n, nil
+}
+
+// merger merges one file: a configuration fragment, or a package manifest under its namespace.
+type merger struct {
+	c        *Config
+	node     *yaml.Node
+	path     string
+	base     string
+	ns       string
+	manifest bool
+	// lockfile records the unpinned packages this file declares.
+	lockfile string
+}
+
+// prior describes an existing definition with the ID being merged.
+type prior struct {
+	exists, inline bool
+	source         Source
+}
+
+var kindLabels = map[string]string{
+	"packages": "package", "skills": "skill", "instructions": "instructions", "mcp": "MCP server",
+	"secrets": "secret", "bundles": "bundle",
 }
 
 func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bool) error {
@@ -289,289 +413,144 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 		(len(d.Imports) > 0 || len(d.Scopes) > 0 || len(d.Harnesses) > 0 || d.Lockfile != "" || d.Daemon != (Daemon{})) {
 		return fmt.Errorf("%s: package manifests may only declare resources, bundles, secrets, and dependencies", path)
 	}
-	source := func(section, key string) Source {
-		out := Source{Path: path, Line: 1, Column: 1}
-		if len(node.Content) == 0 {
-			return out
+	m := &merger{
+		c: c, node: node, path: path, base: base, ns: ns, manifest: manifest,
+		lockfile: filepath.Join(base, "agx.lock.json"),
+	}
+	if d.Lockfile != "" {
+		lockfile, err := expandHome(d.Lockfile)
+		if err != nil {
+			return fmt.Errorf("%s: lockfile %w", path, err)
 		}
-		root := node.Content[0]
-		for i := 0; i+1 < len(root.Content); i += 2 {
-			if root.Content[i].Value != section {
-				continue
-			}
-			n := root.Content[i+1]
-			for j := 0; j+1 < len(n.Content); j += 2 {
-				if n.Content[j].Value == key {
-					return Source{path, n.Content[j].Line, n.Content[j].Column}
-				}
-			}
-		}
-		return out
+		m.lockfile = relative(base, lockfile)
 	}
 	if c.rootDefinitions == nil {
 		c.rootDefinitions = map[string]bool{}
 	}
-	// Configuration fragments merge before package manifests, so precedence is decided by
-	// origin rather than order: a configuration override wins over package definitions, and
-	// packages can never replace configuration definitions.
-	conflict := func(kind string, id ID, exists, override bool) (bool, error) {
-		if !validID(id) {
-			return false, fmt.Errorf("%s: invalid ID %q", path, id)
-		}
-		key := kind + "\x00" + string(id)
-		rootOverride, fromRoot := c.rootDefinitions[key]
-		if manifest && fromRoot {
-			if rootOverride {
-				return false, nil
-			}
-			return false, fmt.Errorf(
-				"%s: package definition %s conflicts with configuration; set override: true on the configuration definition",
-				path,
-				id,
-			)
-		}
-		if exists && !override {
-			return false, fmt.Errorf("%s: conflicting definition %s; set override: true", path, id)
-		}
-		if !manifest {
-			c.rootDefinitions[key] = override
-		}
-		return true, nil
-	}
-	for id, p := range d.Packages {
+	for _, id := range sortedKeys(d.Packages) {
+		p := d.Packages[id]
 		name := qualify(ns, id)
-		_, exists := c.Packages[name]
-		if apply, err := conflict("packages", name, exists, p.Override); err != nil {
+		at := m.source("packages", string(id))
+		existing, exists := c.Packages[name]
+		if apply, err := m.conflict(
+			"packages",
+			name,
+			prior{exists: exists, source: existing.Source},
+			p.Override,
+			false,
+			at,
+		); err != nil {
 			return err
 		} else if !apply {
 			continue
 		}
-		if (p.Path == "") == (p.Git == "") {
-			return fmt.Errorf("package %s needs exactly one of path or git", name)
+		if err := m.placePackage(name, &p, at); err != nil {
+			return err
 		}
-		p.Manifest = manifest
-		p.Lockfile = relative(base, d.Lockfile)
-		if d.Lockfile == "" {
-			p.Lockfile = filepath.Join(base, "agx.lock.json")
-		}
-		if p.Path != "" {
-			if manifest {
-				packageRoot, err := filepath.EvalSymlinks(base)
-				if err != nil {
-					return err
-				}
-				p.Path, err = securefs.Contained(base, p.Path)
-				if err != nil {
-					return err
-				}
-				p.LockPath = slashRel(packageRoot, p.Path)
-			} else {
-				p.Path = relative(base, p.Path)
-				p.LockPath = slashRel(filepath.Dir(p.Lockfile), p.Path)
-			}
-		}
-		if filepath.IsAbs(p.Subdir) || strings.HasPrefix(filepath.Clean(p.Subdir), "..") {
-			return fmt.Errorf("invalid subdir for %s", name)
-		}
-		if p.Git != "" {
-			if strings.HasPrefix(p.Git, "-") {
-				return fmt.Errorf("invalid git source for %s", name)
-			}
-			transport := gitTransport(p.Git)
-			if manifest && transport != "https" && transport != "ssh" {
-				return fmt.Errorf("%s: package %s must use an https, ssh, or scp-style Git source", path, name)
-			}
-			if transport == "file" && !strings.HasPrefix(strings.ToLower(p.Git), "file:") {
-				p.Git = relative(base, p.Git)
-				p.LockPath = slashRel(filepath.Dir(p.Lockfile), p.Git)
-			}
-		}
-		p.Source = source("packages", string(id))
 		c.Packages[name] = p
 	}
-	for _, section := range []struct {
-		name string
-		from map[ID]FileResource
-		to   map[ID]FileResource
-	}{{"skills", d.Skills, c.Skills}, {"instructions", d.Instructions, c.Instructions}} {
-		for id, r := range section.from {
-			name := qualify(ns, id)
-			_, exists := section.to[name]
-			if apply, err := conflict(section.name, name, exists, r.Override); err != nil {
-				return err
-			} else if !apply {
-				continue
-			}
-			if r.Path == "" {
-				return fmt.Errorf("%s %s needs a path", section.name, name)
-			}
-			var err error
-			if manifest {
-				r.Path, err = securefs.Contained(base, r.Path)
-			} else {
-				r.Path = relative(base, r.Path)
-			}
-			if err != nil {
-				return err
-			}
-			r.Source = source(section.name, string(id))
-			section.to[name] = r
+	for _, id := range sortedKeys(d.Skills) {
+		if err := m.addSkill(id, d.Skills[id], m.source("skills", string(id)), false); err != nil {
+			return err
 		}
 	}
-	for id, secret := range d.Secrets {
+	for _, id := range sortedKeys(d.Instructions) {
+		if err := m.addInstructions(id, d.Instructions[id], m.source("instructions", string(id)), false); err != nil {
+			return err
+		}
+	}
+	for _, id := range sortedKeys(d.Secrets) {
+		secret := d.Secrets[id]
 		name := qualify(ns, id)
+		at := m.source("secrets", string(id))
 		existing, exists := c.Secrets[name]
 		if existing.Owner != "" {
 			return fmt.Errorf(
 				"%s: secret %s conflicts with the auth of MCP server %s, which uses that ID; rename one",
-				locate(source("secrets", string(id))),
+				locate(at),
 				name,
 				existing.Owner,
 			)
 		}
-		if apply, err := conflict("secrets", name, exists, secret.Override); err != nil {
+		if apply, err := m.conflict(
+			"secrets",
+			name,
+			prior{exists: exists, source: existing.Source},
+			secret.Override,
+			false,
+			at,
+		); err != nil {
 			return err
 		} else if !apply {
 			continue
 		}
-		secret.Source = source("secrets", string(id))
+		secret.Source = at
 		c.Secrets[name] = secret
 	}
-	// place qualifies a value's secret like other references; package files must stay inside
-	// the package, as resource paths do.
-	place := func(v Value) (Value, error) {
-		if v.Secret != "" {
-			v.Secret = qualify(ns, v.Secret)
+	for _, id := range sortedKeys(d.MCP) {
+		if err := m.addMCP(id, d.MCP[id], m.source("mcp", string(id)), false); err != nil {
+			return err
 		}
-		if manifest && v.File != "" {
-			file, err := securefs.Contained(base, v.File)
-			if err != nil {
-				return v, fmt.Errorf("%s:%d: !file %s: %w", path, v.Source.Line, v.File, err)
-			}
-			v.File = file
-		}
-		return placeValue(v, path), nil
 	}
-	for id, server := range d.MCP {
+	for _, id := range sortedKeys(d.Bundles) {
+		b := d.Bundles[id]
 		name := qualify(ns, id)
-		_, exists := c.MCP[name]
-		if apply, err := conflict("mcp", name, exists, server.Override); err != nil {
+		at := m.source("bundles", string(id))
+		existing, exists := c.Bundles[name]
+		if apply, err := m.conflict(
+			"bundles",
+			name,
+			prior{exists: exists, source: existing.Source},
+			b.Override,
+			false,
+			at,
+		); err != nil {
 			return err
 		} else if !apply {
 			continue
 		}
-		server.Source = source("mcp", string(id))
-		at := locate(server.Source)
-		transport := "stdio"
-		switch {
-		case server.URL != "" && len(server.Command) > 0:
-			return fmt.Errorf(
-				"%s: MCP server %s sets both url and command; use url for HTTP or command for stdio",
-				at,
-				name,
-			)
-		case server.URL != "":
-			transport = "http"
-		case len(server.Command) == 0:
-			return fmt.Errorf("%s: MCP server %s needs url (HTTP) or command (stdio)", at, name)
-		}
-		if server.Transport != "" && server.Transport != transport {
-			field := "command"
-			if transport == "http" {
-				field = "url"
-			}
-			return fmt.Errorf("%s: MCP server %s: transport %s contradicts its %s", at, name, server.Transport, field)
-		}
-		server.Transport = transport
-		if server.Cwd != "" {
-			server.Cwd = relative(base, server.Cwd)
-		}
-		// A replaced definition takes its inline secret with it.
-		if previous, ok := c.Secrets[name]; ok && previous.Owner == name {
-			delete(c.Secrets, name)
-		}
-		if server.Auth.Secret != "" {
-			server.Auth.Secret = qualify(ns, server.Auth.Secret)
-		}
-		if transport == "http" && server.Auth == (MCPAuth{}) {
-			server.Auth.Inline = &Secret{Kind: "oauth", Implicit: true}
-		}
-		if server.Auth.Inline != nil {
-			// Inline secrets share the ID space of top-level ones, as agx secret addresses both.
-			if _, taken := c.Secrets[name]; taken {
-				what := "has inline auth"
-				if server.Auth.Inline.Implicit {
-					what = "logs in on demand under its ID"
-				}
-				return fmt.Errorf(
-					"%s: MCP server %s %s, but secret %s is defined too; set auth: !secret %s or auth: none, or rename one",
-					at,
-					name,
-					what,
-					name,
-					name,
-				)
-			}
-			secret := *server.Auth.Inline
-			secret.Owner = name
-			secret.Source = server.Source
-			c.Secrets[name] = secret
-			server.Auth.Secret = name
-		}
-		for _, values := range []map[string]Value{server.Environment, server.Headers} {
-			for key, v := range values {
-				placed, err := place(v)
-				if err != nil {
-					return err
-				}
-				values[key] = placed
-			}
-		}
-		c.MCP[name] = server
-	}
-	qualifySelection := func(s Selection) Selection {
-		for _, ids := range [][]ID{s.Skills, s.Instructions, s.MCP, s.Bundles} {
-			for i, id := range ids {
-				ids[i] = qualify(ns, id)
-			}
-		}
-		return s
-	}
-	for id, b := range d.Bundles {
-		name := qualify(ns, id)
-		_, exists := c.Bundles[name]
-		if apply, err := conflict("bundles", name, exists, b.Override); err != nil {
-			return err
-		} else if !apply {
-			continue
-		}
-		b.Selection = qualifySelection(b.Selection)
-		b.Source = source("bundles", string(id))
-		c.Bundles[name] = b
-	}
-	for i, s := range d.Scopes {
-		if s.Directory == "" {
-			return fmt.Errorf("%s: scope directory is required", path)
-		}
-		var err error
-		s.Directory, err = Canonical(relative(base, s.Directory))
+		selection, err := m.selection(b.SelectionSpec)
 		if err != nil {
 			return err
 		}
-		s.Source = Source{Path: path, Line: 1, Column: 1}
+		c.Bundles[name] = Bundle{Selection: selection, Source: at}
+	}
+	for i, s := range d.Scopes {
+		at := Source{Path: path, Line: 1, Column: 1}
 		if len(node.Content) > 0 {
 			n := node.Content[0]
 			for j := 0; j+1 < len(n.Content); j += 2 {
 				if n.Content[j].Value == "scopes" && i < len(n.Content[j+1].Content) {
 					pos := n.Content[j+1].Content[i]
-					s.Source.Line = pos.Line
-					s.Source.Column = pos.Column
+					at.Line = pos.Line
+					at.Column = pos.Column
 				}
 			}
 		}
-		c.Scopes = append(c.Scopes, s)
+		if s.Directory == "" {
+			return fmt.Errorf("%s: scope directory is required", locate(at))
+		}
+		directory, err := expandHome(s.Directory)
+		if err != nil {
+			return fmt.Errorf("%s: scope directory %w", locate(at), err)
+		}
+		directory, err = Canonical(relative(base, directory))
+		if err != nil {
+			return err
+		}
+		add, err := m.selection(s.Add)
+		if err != nil {
+			return err
+		}
+		remove, err := m.selection(s.Remove)
+		if err != nil {
+			return err
+		}
+		c.Scopes = append(c.Scopes, Scope{
+			Directory: directory, Harnesses: s.Harnesses, Add: add, Remove: remove, Source: at,
+		})
 	}
-	if err := c.mergeHarnesses(d, node, path); err != nil {
+	if err := m.harnesses(d); err != nil {
 		return err
 	}
 	if c.daemonSet == nil {
@@ -598,22 +577,402 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 	return nil
 }
 
+// source locates a top-level definition.
+func (m *merger) source(section, key string) Source {
+	out := Source{Path: m.path, Line: 1, Column: 1}
+	if len(m.node.Content) == 0 {
+		return out
+	}
+	root := m.node.Content[0]
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value != section {
+			continue
+		}
+		n := root.Content[i+1]
+		for j := 0; j+1 < len(n.Content); j += 2 {
+			if n.Content[j].Value == key {
+				return Source{m.path, n.Content[j].Line, n.Content[j].Column}
+			}
+		}
+	}
+	return out
+}
+
+// conflict decides whether a definition applies. Configuration fragments merge before package
+// manifests, so precedence is decided by origin rather than order: a configuration override wins
+// over package definitions, and packages can never replace configuration definitions. Inline
+// definitions are never replaced, so a reference never silently changes meaning.
+func (m *merger) conflict(kind string, id ID, p prior, override, inline bool, at Source) (bool, error) {
+	if !validID(id) {
+		return false, fmt.Errorf("%s: invalid ID %q", locate(at), id)
+	}
+	label := kindLabels[kind]
+	if p.exists && (p.inline || inline) {
+		return false, fmt.Errorf(
+			"%s: %s %s is also defined at %s; define it once, under top-level %s:, and reference its ID elsewhere",
+			locate(at), label, id, locate(p.source), kind,
+		)
+	}
+	key := kind + "\x00" + string(id)
+	rootOverride, fromRoot := m.c.rootDefinitions[key]
+	if m.manifest && fromRoot {
+		if rootOverride {
+			return false, nil
+		}
+		return false, fmt.Errorf(
+			"%s: package definition %s conflicts with configuration at %s; set override: true on the configuration definition",
+			locate(at),
+			id,
+			locate(p.source),
+		)
+	}
+	if p.exists && !override {
+		return false, fmt.Errorf(
+			"%s: conflicting definition of %s %s, also defined at %s; set override: true",
+			locate(at), label, id, locate(p.source),
+		)
+	}
+	if !m.manifest {
+		m.c.rootDefinitions[key] = override
+	}
+	return true, nil
+}
+
+// file resolves a path written in this file: relative to a configuration fragment, with ~
+// expanded, or contained in the package root for manifests.
+func (m *merger) file(path string) (string, error) {
+	if m.manifest {
+		if strings.HasPrefix(path, "~") {
+			return "", fmt.Errorf("%s: package manifests cannot use home-relative paths", path)
+		}
+		return securefs.Contained(m.base, path)
+	}
+	expanded, err := expandHome(path)
+	if err != nil {
+		return "", err
+	}
+	return relative(m.base, expanded), nil
+}
+
+// expand expands ~ in a path that is not resolved against this file.
+func (m *merger) expand(path string) (string, error) {
+	if m.manifest && strings.HasPrefix(path, "~") {
+		return "", fmt.Errorf("%s: package manifests cannot use home-relative paths", path)
+	}
+	return expandHome(path)
+}
+
+// place qualifies a value's secret like other references and anchors a !file path to this file;
+// package files must stay inside the package, as resource paths do.
+func (m *merger) place(v Value) (Value, error) {
+	v.Source.Path = m.path
+	if v.Secret != "" {
+		v.Secret = qualify(m.ns, v.Secret)
+	}
+	if v.File != "" {
+		file, err := m.file(v.File)
+		if err != nil {
+			return v, fmt.Errorf("%s:%d: !file %s: %w", m.path, v.Source.Line, v.File, err)
+		}
+		v.File = file
+	}
+	return v, nil
+}
+
+func (m *merger) placePackage(name ID, p *Package, at Source) error {
+	p.Source = at
+	if (p.Path == "") == (p.Git == "") {
+		return fmt.Errorf("%s: package %s needs exactly one of path or git", locate(at), name)
+	}
+	if err := checkGitSource(p.Rev, p.Ref, p.Hash, p.Git != ""); err != nil {
+		return fmt.Errorf("%s: package %s: %w", locate(at), name, err)
+	}
+	p.Manifest = m.manifest
+	p.Lockfile = m.lockfile
+	if p.Path != "" {
+		var err error
+		p.Path, err = m.file(p.Path)
+		if err != nil {
+			return fmt.Errorf("%s: package %s: %w", locate(at), name, err)
+		}
+		if m.manifest {
+			packageRoot, err := filepath.EvalSymlinks(m.base)
+			if err != nil {
+				return err
+			}
+			p.LockPath = slashRel(packageRoot, p.Path)
+		} else {
+			p.LockPath = slashRel(filepath.Dir(p.Lockfile), p.Path)
+		}
+	}
+	if filepath.IsAbs(p.Subdir) || strings.HasPrefix(filepath.Clean(p.Subdir), "..") {
+		return fmt.Errorf("%s: invalid subdir for %s", locate(at), name)
+	}
+	if p.Git != "" {
+		if strings.HasPrefix(p.Git, "-") {
+			return fmt.Errorf("%s: invalid git source for %s", locate(at), name)
+		}
+		transport := gitTransport(p.Git)
+		if m.manifest && transport != "https" && transport != "ssh" {
+			return fmt.Errorf("%s: package %s must use an https, ssh, or scp-style Git source", locate(at), name)
+		}
+		if transport == "file" && !strings.HasPrefix(strings.ToLower(p.Git), "file:") {
+			git, err := expandHome(p.Git)
+			if err != nil {
+				return fmt.Errorf("%s: package %s: %w", locate(at), name, err)
+			}
+			p.Git = relative(m.base, git)
+			p.LockPath = slashRel(filepath.Dir(p.Lockfile), p.Git)
+		}
+	}
+	return nil
+}
+
+// anonymous declares the Git source of a skill or instructions definition as a package. Its ID
+// contains a colon, which declared package IDs cannot, and names the resource it holds.
+func (m *merger) anonymous(kind string, resource ID, g GitSource, at Source) (ID, error) {
+	id := ID(kind + ":" + string(resource))
+	p := Package{Git: g.Git, Ref: g.Ref, Rev: g.Rev, Hash: g.Hash, Anonymous: true, Parent: ID(m.ns)}
+	if err := m.placePackage(id, &p, at); err != nil {
+		return "", err
+	}
+	m.c.Packages[id] = p
+	return id, nil
+}
+
+// checkoutPath validates a path inside a Git checkout.
+func checkoutPath(at Source, kind string, id ID, path string) error {
+	if path != "" && (strings.HasPrefix(path, "~") || !filepath.IsLocal(filepath.FromSlash(path))) {
+		return fmt.Errorf("%s: %s %s: path %s must stay inside the Git checkout", locate(at), kind, id, path)
+	}
+	return nil
+}
+
+func (m *merger) addSkill(id ID, s Skill, at Source, inline bool) error {
+	name := qualify(m.ns, id)
+	existing, exists := m.c.Skills[name]
+	if apply, err := m.conflict(
+		"skills",
+		name,
+		prior{exists, existing.Inline, existing.Source},
+		s.Override,
+		inline,
+		at,
+	); err != nil ||
+		!apply {
+		return err
+	}
+	if s.Git == "" && (s.Ref != "" || s.Rev != "" || s.Hash != "") {
+		return fmt.Errorf("%s: skill %s: ref, rev, and hash apply only with git", locate(at), name)
+	}
+	if s.Generated() && s.Name == "" {
+		s.Name = string(name)[strings.LastIndex(string(name), "/")+1:]
+	}
+	for key, f := range s.Files {
+		f.Directory = strings.HasSuffix(f.Path, "/") || strings.HasSuffix(f.Path, `\`)
+		s.Files[key] = f
+	}
+	if err := checkSkill(name, s); err != nil {
+		return fmt.Errorf("%s: %w", locate(at), err)
+	}
+	// A replaced definition takes its anonymous package with it.
+	if existing.Package != "" {
+		delete(m.c.Packages, existing.Package)
+	}
+	s.Package = ""
+	var err error
+	switch {
+	case s.Git != "":
+		if err := checkoutPath(at, "skill", name, s.Path); err != nil {
+			return err
+		}
+		s.Package, err = m.anonymous("skill", name, s.GitSource, at)
+	case s.Generated():
+		for _, key := range sortedKeys(s.Files) {
+			f := s.Files[key]
+			if f.Path == "" {
+				continue
+			}
+			if f.Path, err = m.file(f.Path); err != nil {
+				return fmt.Errorf("%s: skill %s: files %s: %w", locate(at), name, key, err)
+			}
+			s.Files[key] = f
+		}
+	default:
+		if s.Path, err = m.file(s.Path); err != nil {
+			err = fmt.Errorf("%s: skill %s: %w", locate(at), name, err)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	s.Inline, s.Override, s.Source = inline, false, at
+	m.c.Skills[name] = s
+	return nil
+}
+
+func (m *merger) addInstructions(id ID, i Instructions, at Source, inline bool) error {
+	name := qualify(m.ns, id)
+	existing, exists := m.c.Instructions[name]
+	if apply, err := m.conflict(
+		"instructions",
+		name,
+		prior{exists, existing.Inline, existing.Source},
+		i.Override,
+		inline,
+		at,
+	); err != nil ||
+		!apply {
+		return err
+	}
+	if i.Git == "" && (i.Ref != "" || i.Rev != "" || i.Hash != "") {
+		return fmt.Errorf("%s: instructions %s: ref, rev, and hash apply only with git", locate(at), name)
+	}
+	if err := checkInstructions(name, i); err != nil {
+		return fmt.Errorf("%s: %w", locate(at), err)
+	}
+	if existing.Package != "" {
+		delete(m.c.Packages, existing.Package)
+	}
+	i.Package = ""
+	var err error
+	switch {
+	case i.Git != "":
+		if err := checkoutPath(at, "instructions", name, i.Path); err != nil {
+			return err
+		}
+		i.Package, err = m.anonymous("instructions", name, i.GitSource, at)
+	case i.Path != "":
+		if i.Path, err = m.file(i.Path); err != nil {
+			err = fmt.Errorf("%s: instructions %s: %w", locate(at), name, err)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	i.Inline, i.Override, i.Source = inline, false, at
+	m.c.Instructions[name] = i
+	return nil
+}
+
+func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
+	c := m.c
+	name := qualify(m.ns, id)
+	existing, exists := c.MCP[name]
+	if apply, err := m.conflict(
+		"mcp",
+		name,
+		prior{exists, existing.Inline, existing.Source},
+		server.Override,
+		inline,
+		at,
+	); err != nil ||
+		!apply {
+		return err
+	}
+	server.Source, server.Inline, server.Override = at, inline, false
+	where := locate(at)
+	transport := "stdio"
+	switch {
+	case server.URL != "" && len(server.Command) > 0:
+		return fmt.Errorf(
+			"%s: MCP server %s sets both url and command; use url for HTTP or command for stdio",
+			where,
+			name,
+		)
+	case server.URL != "":
+		transport = "http"
+	case len(server.Command) == 0:
+		return fmt.Errorf("%s: MCP server %s needs url (HTTP) or command (stdio)", where, name)
+	}
+	if server.Transport != "" && server.Transport != transport {
+		field := "command"
+		if transport == "http" {
+			field = "url"
+		}
+		return fmt.Errorf("%s: MCP server %s: transport %s contradicts its %s", where, name, server.Transport, field)
+	}
+	server.Transport = transport
+	if server.Cwd != "" {
+		cwd, err := m.expand(server.Cwd)
+		if err != nil {
+			return fmt.Errorf("%s: MCP server %s: cwd %w", where, name, err)
+		}
+		server.Cwd = relative(m.base, cwd)
+	}
+	if len(server.Command) > 0 && strings.HasPrefix(server.Command[0], "~") {
+		command := slices.Clone(server.Command)
+		var err error
+		if command[0], err = m.expand(command[0]); err != nil {
+			return fmt.Errorf("%s: MCP server %s: command %w", where, name, err)
+		}
+		server.Command = command
+	}
+	// A replaced definition takes its inline secret with it.
+	if previous, ok := c.Secrets[name]; ok && previous.Owner == name {
+		delete(c.Secrets, name)
+	}
+	if server.Auth.Secret != "" {
+		server.Auth.Secret = qualify(m.ns, server.Auth.Secret)
+	}
+	if transport == "http" && server.Auth == (MCPAuth{}) {
+		server.Auth.Inline = &Secret{Kind: "oauth", Implicit: true}
+	}
+	if server.Auth.Inline != nil {
+		// Inline secrets share the ID space of top-level ones, as agx secret addresses both.
+		if _, taken := c.Secrets[name]; taken {
+			what := "has inline auth"
+			if server.Auth.Inline.Implicit {
+				what = "logs in on demand under its ID"
+			}
+			return fmt.Errorf(
+				"%s: MCP server %s %s, but secret %s is defined too; set auth: !secret %s or auth: none, or rename one",
+				where,
+				name,
+				what,
+				name,
+				name,
+			)
+		}
+		secret := *server.Auth.Inline
+		secret.Owner = name
+		secret.Source = server.Source
+		c.Secrets[name] = secret
+		server.Auth.Secret = name
+	}
+	for _, values := range []map[string]Value{server.Environment, server.Headers} {
+		for key, v := range values {
+			placed, err := m.place(v)
+			if err != nil {
+				return err
+			}
+			values[key] = placed
+		}
+	}
+	c.MCP[name] = server
+	return nil
+}
+
 func (c *Config) Validate() error {
 	if c.Daemon.LeaseSeconds < 3 || c.Daemon.RenewSeconds < 1 || c.Daemon.RenewSeconds >= c.Daemon.LeaseSeconds {
 		return fmt.Errorf("daemon renewal must be positive and shorter than lease (minimum 3 seconds)")
 	}
-	for id, r := range c.Skills {
+	for _, id := range sortedKeys(c.Skills) {
+		r := c.Skills[id]
 		// Apply the same symlink rules as hashing and copying, so a valid skill can always be launched.
-		if _, err := TreeHash(r.Path); err != nil {
-			return fmt.Errorf("skill %s: %w", id, err)
+		if _, err := r.TreeHash(); err != nil {
+			return fmt.Errorf("%s: skill %s: %w", locate(r.Source), id, err)
 		}
-		if _, err := os.ReadFile(filepath.Join(r.Path, "SKILL.md")); err != nil {
-			return fmt.Errorf("skill %s: %w", id, err)
+		if !r.Generated() {
+			if _, err := os.ReadFile(filepath.Join(r.Path, "SKILL.md")); err != nil {
+				return fmt.Errorf("%s: skill %s: %w", locate(r.Source), id, err)
+			}
 		}
 	}
-	for id, r := range c.Instructions {
-		if _, err := os.ReadFile(r.Path); err != nil {
-			return fmt.Errorf("instructions %s: %w", id, err)
+	for _, id := range sortedKeys(c.Instructions) {
+		r := c.Instructions[id]
+		if _, err := r.Read(); err != nil {
+			return fmt.Errorf("%s: instructions %s: %w", locate(r.Source), id, err)
 		}
 	}
 	for id, secret := range c.Secrets {
@@ -771,7 +1130,7 @@ func (c *Config) Validate() error {
 		}
 	}
 	for _, s := range c.Scopes {
-		for _, sel := range []Selection{s.Add, s.Exclude} {
+		for _, sel := range []Selection{s.Add, s.Remove} {
 			if err := c.expand(sel, nil, visit); err != nil {
 				return fmt.Errorf("%s:%d: %w", s.Source.Path, s.Source.Line, err)
 			}
@@ -779,7 +1138,7 @@ func (c *Config) Validate() error {
 	}
 	for name, h := range c.Harnesses {
 		for _, s := range h.Selections {
-			for _, sel := range []Selection{s.Add, s.Exclude} {
+			for _, sel := range []Selection{s.Add, s.Remove} {
 				if err := c.expand(sel, nil, visit); err != nil {
 					return fmt.Errorf("%s: harness %s: %w", locate(s.Source), name, err)
 				}

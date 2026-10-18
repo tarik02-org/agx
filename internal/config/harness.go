@@ -72,14 +72,51 @@ func (g *ArgGroup) UnmarshalYAML(node *yaml.Node) error {
 	}
 }
 
+// Args is a harness's argument groups: a flat list of strings is one group for every session mode.
+type Args []ArgGroup
+
+func (a *Args) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.SequenceNode {
+		return errors.New("args must be a list of strings or a list of argument groups")
+	}
+	scalars := 0
+	for _, child := range node.Content {
+		if child.Kind == yaml.ScalarNode {
+			scalars++
+		}
+	}
+	switch {
+	case len(node.Content) == 0:
+		*a = nil
+		return nil
+	case scalars == len(node.Content):
+		var group ArgGroup
+		if err := node.Load(&group.Values, yaml.WithKnownFields()); err != nil {
+			return err
+		}
+		*a = Args{group}
+		return nil
+	case scalars > 0:
+		return errors.New(
+			"args mixes strings with argument groups; write a flat list of strings or a list of groups",
+		)
+	}
+	var groups []ArgGroup
+	if err := node.Load(&groups, yaml.WithKnownFields()); err != nil {
+		return err
+	}
+	*a = groups
+	return nil
+}
+
 // Harness is one fragment's declaration of a harness.
 type Harness struct {
 	Base       string           `yaml:"base"       jsonschema_description:"Harness this definition extends."`
-	Executable string           `yaml:"executable" jsonschema_description:"Absolute path of the native executable."`
-	Args       []ArgGroup       `yaml:"args"       jsonschema_description:"Native arguments inserted before the caller's."`
+	Executable string           `yaml:"executable" jsonschema_description:"Absolute path of the native executable; may start with ~/."`
+	Args       Args             `yaml:"args"       jsonschema_description:"Native arguments inserted before the caller's: a list of strings for every session mode, or a list of groups."`
 	Env        map[string]Value `yaml:"env"        jsonschema_description:"Environment variables for the harness."`
-	Add        Selection        `yaml:"add"        jsonschema_description:"Resources selected for this harness."`
-	Exclude    Selection        `yaml:"exclude"    jsonschema_description:"Resources deselected for this harness."`
+	Add        SelectionSpec    `yaml:"add"        jsonschema_description:"Resources selected for this harness."`
+	Remove     SelectionSpec    `yaml:"remove"     jsonschema_description:"Resources deselected for this harness."`
 	Override   bool             `yaml:"override"   jsonschema_description:"Replace the definition from earlier fragments."`
 }
 
@@ -95,11 +132,11 @@ type HarnessDefinition struct {
 	sources map[string]Source
 }
 
-// HarnessSelection is one fragment's add/exclude contribution to a harness.
+// HarnessSelection is one fragment's add/remove contribution to a harness.
 type HarnessSelection struct {
-	Add     Selection `json:"add"`
-	Exclude Selection `json:"exclude"`
-	Source  Source    `json:"source"`
+	Add    Selection `json:"add"`
+	Remove Selection `json:"remove"`
+	Source Source    `json:"source"`
 }
 
 // ResolvedHarness layers a definition over its base chain.
@@ -180,7 +217,8 @@ func (c *Config) HarnessNames() []string {
 	return names
 }
 
-func (c *Config) mergeHarnesses(d Document, node *yaml.Node, path string) error {
+func (m *merger) harnesses(d Document) error {
+	c, node, path := m.c, m.node, m.path
 	names := []string{}
 	for name := range d.Harnesses {
 		names = append(names, name)
@@ -194,8 +232,15 @@ func (c *Config) mergeHarnesses(d Document, node *yaml.Node, path string) error 
 		at := func(keys ...string) Source {
 			return position(node, path, append([]string{"harnesses", name}, keys...)...)
 		}
-		if h.Executable != "" && !filepath.IsAbs(h.Executable) {
-			return fmt.Errorf("%s: harness %s: executable must be absolute", locate(at("executable")), name)
+		if h.Executable != "" {
+			executable, err := expandHome(h.Executable)
+			if err != nil {
+				return fmt.Errorf("%s: harness %s: executable %w", locate(at("executable")), name, err)
+			}
+			if !filepath.IsAbs(executable) {
+				return fmt.Errorf("%s: harness %s: executable must be absolute", locate(at("executable")), name)
+			}
+			h.Executable = filepath.Clean(executable)
 		}
 		def, exists := c.Harnesses[name]
 		if h.Override || !exists {
@@ -226,7 +271,10 @@ func (c *Config) mergeHarnesses(d Document, node *yaml.Node, path string) error 
 			}
 		}
 		for _, key := range sortedKeys(h.Env) {
-			value := placeValue(h.Env[key], path)
+			value, err := m.place(h.Env[key])
+			if err != nil {
+				return err
+			}
 			if err := set("env."+key, at("env", key), func() { def.Env[key] = value }); err != nil {
 				return err
 			}
@@ -234,12 +282,23 @@ func (c *Config) mergeHarnesses(d Document, node *yaml.Node, path string) error 
 		for _, g := range h.Args {
 			values := make([]Value, len(g.Values))
 			for i, v := range g.Values {
-				values[i] = placeValue(v, path)
+				var err error
+				if values[i], err = m.place(v); err != nil {
+					return err
+				}
 			}
 			def.Args = append(def.Args, ArgGroup{Values: values, Modes: g.Modes})
 		}
-		if !h.Add.empty() || !h.Exclude.empty() {
-			def.Selections = append(def.Selections, HarnessSelection{Add: h.Add, Exclude: h.Exclude, Source: at()})
+		add, err := m.selection(h.Add)
+		if err != nil {
+			return err
+		}
+		remove, err := m.selection(h.Remove)
+		if err != nil {
+			return err
+		}
+		if !add.empty() || !remove.empty() {
+			def.Selections = append(def.Selections, HarnessSelection{Add: add, Remove: remove, Source: at()})
 		}
 		c.Harnesses[name] = def
 	}

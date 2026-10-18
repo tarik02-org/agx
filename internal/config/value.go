@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -90,15 +89,6 @@ func (a *MCPAuth) UnmarshalYAML(node *yaml.Node) error {
 		a.Inline = &Secret{Kind: node.Value}
 	}
 	return nil
-}
-
-// placeValue records the declaring fragment and anchors a !file path to its directory.
-func placeValue(v Value, fragment string) Value {
-	v.Source.Path = fragment
-	if v.File != "" {
-		v.File = relative(filepath.Dir(fragment), v.File)
-	}
-	return v
 }
 
 // Tagged reports whether the value is resolved at launch rather than literal.
@@ -272,14 +262,29 @@ func (c *Config) Variable(v Value) string {
 }
 
 // taggedFields are the paths where tags may appear; "*" matches a key and "#" a list item.
-var taggedFields = [][]string{
-	{"harnesses", "*", "env", "*"},
-	{"harnesses", "*", "args", "#", "#"},
-	{"harnesses", "*", "args", "#", "values", "#"},
-	{"mcp", "*", "environment", "*"},
-	{"mcp", "*", "headers", "*"},
-	{"mcp", "*", "auth"},
-}
+var taggedFields = func() [][]string {
+	out := [][]string{
+		{"harnesses", "*", "env", "*"},
+		{"harnesses", "*", "args", "#"},
+		{"harnesses", "*", "args", "#", "#"},
+		{"harnesses", "*", "args", "#", "values", "#"},
+	}
+	// MCP servers are defined at top level or inline in any selection list.
+	servers := [][]string{
+		{"mcp", "*"},
+		{"bundles", "*", "mcp", "#"},
+		{"scopes", "#", "add", "mcp", "#"},
+		{"scopes", "#", "remove", "mcp", "#"},
+		{"harnesses", "*", "add", "mcp", "#"},
+		{"harnesses", "*", "remove", "mcp", "#"},
+	}
+	for _, server := range servers {
+		for _, field := range [][]string{{"environment", "*"}, {"headers", "*"}, {"auth"}} {
+			out = append(out, slices.Concat(server, field))
+		}
+	}
+	return out
+}()
 
 // checkTags rejects unknown tags and tags outside taggedFields, which YAML decoding would
 // otherwise silently ignore.

@@ -13,6 +13,10 @@ const schemaBase = "https://raw.githubusercontent.com/tarik02-org/agx/master/sch
 var (
 	idPattern          = `^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$`
 	environmentPattern = `^(?![Ww][Ee][Ff][Tt]_)[a-zA-Z_][a-zA-Z0-9_]*$`
+	// pathPattern matches selection entries read as paths: ., /, ~, or an absolute Windows path.
+	pathPattern = `^([./~]|[A-Za-z]:[\\/]|\\\\)`
+	// skillFileKey rejects absolute keys, . and .. segments, backslashes, and SKILL.md.
+	skillFileKey = `^/|(^|/)\.{1,2}(/|$)|//|\\|(^|/)\.git(/|$)|^[Ss][Kk][Ii][Ll][Ll]\.[Mm][Dd]$`
 )
 
 // manifestExcluded lists the top-level fields package manifests cannot declare.
@@ -80,8 +84,6 @@ func pruneDefinitions(root *jsonschema.Schema) {
 }
 
 func (Document) JSONSchemaExtend(s *jsonschema.Schema) {
-	version, _ := s.Properties.Get("version")
-	version.Const = 1
 	for _, name := range []string{"packages", "skills", "instructions", "mcp", "secrets", "bundles"} {
 		property, _ := s.Properties.Get(name)
 		property.PropertyNames = &jsonschema.Schema{Pattern: idPattern}
@@ -101,6 +103,16 @@ func (Value) JSONSchema() *jsonschema.Schema {
 
 func (ID) JSONSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{Type: "string", Pattern: idPattern}
+}
+
+// JSONSchema accepts a flat list of values, or a list of groups; an empty list is both.
+func (Args) JSONSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{
+		AnyOf: []*jsonschema.Schema{
+			{Type: "array", Items: &jsonschema.Schema{Ref: "#/$defs/Value"}},
+			{Type: "array", Items: ArgGroup{}.JSONSchema()},
+		},
+	}
 }
 
 func (ArgGroup) JSONSchema() *jsonschema.Schema {
@@ -152,10 +164,113 @@ func (Import) JSONSchemaExtend(s *jsonschema.Schema) {
 }
 
 func (Package) JSONSchemaExtend(s *jsonschema.Schema) {
+	pinning(s)
 	s.OneOf = []*jsonschema.Schema{requires("path"), requires("git")}
+	s.AllOf = append(s.AllOf, &jsonschema.Schema{If: requires("rev"), Then: requires("git")})
 }
 
-func (MCPServer) JSONSchemaExtend(s *jsonschema.Schema) {
+// pinning constrains the rev and hash fields of a source and keeps ref and rev apart.
+func pinning(s *jsonschema.Schema) {
+	rev, _ := s.Properties.Get("rev")
+	rev.Pattern = revPattern.String()
+	hash, _ := s.Properties.Get("hash")
+	hash.Pattern = contentHashPattern.String()
+	s.AllOf = append(s.AllOf, &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{"ref", "rev"}}})
+}
+
+var gitFields = []string{"git", "ref", "rev", "hash"}
+
+func (Skill) JSONSchemaExtend(s *jsonschema.Schema) { skillSchema(s) }
+
+func skillSchema(s *jsonschema.Schema) {
+	pinning(s)
+	name, _ := s.Properties.Get("name")
+	name.Pattern = skillNamePattern.String()
+	name.MaxLength = ptr(uint64(maxSkillName))
+	frontmatter, _ := s.Properties.Get("frontmatter")
+	frontmatter.PropertyNames = &jsonschema.Schema{Not: &jsonschema.Schema{Enum: []any{"name", "description"}}}
+	files, _ := s.Properties.Get("files")
+	files.PropertyNames = &jsonschema.Schema{Not: &jsonschema.Schema{Pattern: skillFileKey}}
+	generatedOnly := []string{"name", "description", "frontmatter", "files"}
+	generated := forbid(append([]string{"path"}, gitFields...)...)
+	generated.Required = []string{"content", "description"}
+	git := forbid(append([]string{"content"}, generatedOnly...)...)
+	git.Required = []string{"git"}
+	local := forbid(append(append([]string{"content"}, generatedOnly...), gitFields...)...)
+	local.Required = []string{"path"}
+	s.OneOf = []*jsonschema.Schema{generated, git, local}
+}
+
+func (Instructions) JSONSchemaExtend(s *jsonschema.Schema) { instructionsSchema(s) }
+
+func instructionsSchema(s *jsonschema.Schema) {
+	pinning(s)
+	text := forbid(append([]string{"path"}, gitFields...)...)
+	text.Required = []string{"text"}
+	git := forbid("text")
+	git.Required = []string{"git", "path"}
+	local := forbid(append([]string{"text"}, gitFields...)...)
+	local.Required = []string{"path"}
+	s.OneOf = []*jsonschema.Schema{text, git, local}
+}
+
+// JSONSchema accepts text, a path to copy, or {content, executable}.
+func (SkillFile) JSONSchema() *jsonschema.Schema {
+	properties := jsonschema.NewProperties()
+	properties.Set("content", &jsonschema.Schema{Type: "string"})
+	properties.Set("executable", &jsonschema.Schema{Type: "boolean"})
+	return &jsonschema.Schema{
+		Description: "File text, a path to copy (ending in / for a directory), or {content, executable}.",
+		OneOf: []*jsonschema.Schema{
+			{Type: "string"},
+			{
+				Type:                 "object",
+				Properties:           properties,
+				Required:             []string{"content"},
+				AdditionalProperties: jsonschema.FalseSchema,
+			},
+		},
+	}
+}
+
+// selectionEntry turns the reflected inline definition into one choice beside a string entry.
+func selectionEntry(s *jsonschema.Schema, description string, reference *jsonschema.Schema) {
+	s.Properties.Delete("override")
+	inline := *s
+	*s = jsonschema.Schema{Description: description, OneOf: []*jsonschema.Schema{reference, &inline}}
+}
+
+func (SkillItem) JSONSchemaExtend(s *jsonschema.Schema) {
+	skillSchema(s)
+	s.AllOf = append(s.AllOf, &jsonschema.Schema{If: requires("content"), Then: requires("id")})
+	selectionEntry(s, "A skill ID, a skill directory path, or an inline skill definition.", pathOrID())
+}
+
+func (InstructionsItem) JSONSchemaExtend(s *jsonschema.Schema) {
+	instructionsSchema(s)
+	s.AllOf = append(s.AllOf, &jsonschema.Schema{If: requires("text"), Then: requires("id")})
+	selectionEntry(s, "An instructions ID, a file path, or an inline instructions definition.", pathOrID())
+}
+
+func (MCPItem) JSONSchemaExtend(s *jsonschema.Schema) {
+	mcpSchema(s)
+	s.Required = []string{"id"}
+	selectionEntry(
+		s,
+		"An MCP server ID, or an inline MCP server definition with an id.",
+		&jsonschema.Schema{Ref: "#/$defs/ID"},
+	)
+}
+
+func pathOrID() *jsonschema.Schema {
+	return &jsonschema.Schema{Type: "string", AnyOf: []*jsonschema.Schema{{Pattern: idPattern}, {Pattern: pathPattern}}}
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func (MCPServer) JSONSchemaExtend(s *jsonschema.Schema) { mcpSchema(s) }
+
+func mcpSchema(s *jsonschema.Schema) {
 	env, _ := s.Properties.Get("environment")
 	env.PropertyNames = &jsonschema.Schema{Pattern: `^[a-zA-Z_][a-zA-Z0-9_]*$`}
 	stdio := forbid("url", "headers", "auth")

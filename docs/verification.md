@@ -8,12 +8,24 @@ they are excluded from version control. No CI or permanent test suite was added.
 
 Configuration/package verification covers ordered imports, optional missing
 imports, import and bundle cycles, explicit overrides, nested package namespaces,
-parent inheritance, leaf exclusions, deeper re-additions, component-based matching,
+parent inheritance, leaf removals, deeper re-additions, component-based matching,
 symlink canonicalization, provenance, and content-sensitive snapshot IDs. Local
 and Git packages install into content-addressed entries. Frozen installs preserve
 locks and reject changed local sources; ordinary Git installs retain the locked
 commit, and explicit updates advance it. Escaping symlinks fail without changing
 existing locks or leaving a partial installation.
+
+Inline definitions are checked in every form: path, generated, and Git skills,
+instruction files and text, and inline MCP servers, with ID collisions reported
+at both locations. Generated skills are checked for their `SKILL.md` front matter,
+executable scripts, and copied files and directories, and for rejected `files`
+keys and names. Pinned sources write no lock entries: a `hash` mismatch fails
+installation, `/nix/store` and rev-pinned sources need no lockfile, and frozen
+installs pass without one; unpinned Git skills lock and update like packages.
+Instruction concatenation follows `order` and resolution order. `~` expands in
+scope directories, imports, lockfiles, package and resource paths, `!file`,
+harness executables, and stdio MCP commands and working directories; `~user`,
+`version`, and `exclude` are rejected.
 
 Isolated loopback fixtures exercise authenticated Connect management and separate
 stdio/HTTP MCP endpoints. Checks cover native schemas and annotations, structured
@@ -26,8 +38,9 @@ package-operation watches expose replacement/current state without credentials.
 The installed native harnesses were also exercised using temporary account homes:
 
 - Codex 0.162.1: app-server discovers a selected plugin skill, reads always-on
-  developer instructions, discovers and executes a native MCP tool, and excludes
-  the skill for a child directory. No model request is required for these RPCs.
+  developer instructions, discovers and executes a native MCP tool, and removes
+  the skill for a child directory. A generated skill is discovered with its
+  script, copied file, and copied directory. No model request is required for these RPCs.
 - Claude Code 2.1.300: a local Anthropic-compatible model fixture observes the
   selected skill and appended instructions, requests a native MCP tool, receives
   its result, and completes the turn.

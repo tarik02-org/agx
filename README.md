@@ -59,11 +59,11 @@ Help/version and administrative native commands work without a managed launch.
 A harness-named symlink can point to agx; executable lookup excludes agx itself.
 Use a configured absolute native executable when another wrapper shadows PATH.
 
-Scopes compose additions and exclusions with provenance. Packages use pinned
-JSON locks and immutable content-addressed installations. Launching never
+Scopes compose additions and removals with provenance. Packages use JSON locks,
+or pins by commit or content hash, and immutable content-addressed installations. Launching never
 fetches packages or modifies native account configuration. Explicit `install`
 registers managed skill plugins when Codex is installed; each launch selects its
-plugins independently. Unmanaged native global skills remain outside exclusions.
+plugins independently. Unmanaged native global skills remain outside removals.
 
 MCP servers retain their own HTTP endpoints and native tool schemas/results,
 resources, prompts, notifications, and cancellation. Management credentials,
@@ -93,8 +93,9 @@ Architecture records: [directory scopes](docs/adr/0001-additive-directory-config
 [authorization and lifecycle](docs/adr/0005-launch-authorization-and-lifecycle.md),
 [Go and Connect](docs/adr/0006-go-and-connect-management-interface.md),
 [harness definitions](docs/adr/0007-harness-definitions-and-modes.md),
-[injected values and secrets](docs/adr/0008-injected-values-and-secrets.md), and
-[inline MCP auth and interactive login](docs/adr/0009-inline-mcp-auth-and-interactive-login.md).
+[injected values and secrets](docs/adr/0008-injected-values-and-secrets.md),
+[inline MCP auth and interactive login](docs/adr/0009-inline-mcp-auth-and-interactive-login.md), and
+[straightforward configuration](docs/adr/0011-straightforward-configuration.md).
 
 Go messages and Connect handlers live in `gen/agx/v1`; TypeScript Protobuf
 messages and service descriptors live in `gen/typescript`. Regenerate with

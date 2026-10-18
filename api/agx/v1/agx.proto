@@ -79,13 +79,13 @@ message ResolutionStep {
   enum Change {
     CHANGE_UNSPECIFIED = 0;
     CHANGE_ADD = 1;
-    CHANGE_EXCLUDE = 2;
+    CHANGE_REMOVE = 2;
   }
   Change change = 1;
   SourceLocation source = 2;
   string scope_directory = 3;
   repeated string bundle_chain = 4;
-  // Harness whose own add/exclude produced the step; empty for directory scopes.
+  // Harness whose own add/remove produced the step; empty for directory scopes.
   string harness = 5;
 }
 

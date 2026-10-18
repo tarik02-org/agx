@@ -121,13 +121,16 @@ func printExplain(snapshot *config.Snapshot) error {
 	}
 	resources := out.Tree()
 	for _, t := range snapshot.Traces {
-		state, level := "excluded", ui.Error
+		state, level := "removed", ui.Error
 		if t.Selected {
 			state, level = "selected", ui.OK
 		}
 		root := fmt.Sprintf("%s %s (%s)", t.Resource.Kind, t.Resource.ID, state)
 		if out.Styled() {
 			root = fmt.Sprintf("%s %s  %s", t.Resource.Kind, out.ID(string(t.Resource.ID)), out.Badge(level, state))
+		}
+		if t.Order != 0 {
+			root += " " + out.Muted("order ") + strconv.Itoa(t.Order)
 		}
 		node := out.Node(root)
 		for _, step := range t.Steps {
@@ -198,6 +201,9 @@ func printExplainCompact(snapshot *config.Snapshot) error {
 			pad(string(t.Resource.ID), idWidth),
 		)
 		steps := []string{}
+		if t.Order != 0 {
+			steps = append(steps, out.Muted("order ")+strconv.Itoa(t.Order))
+		}
 		for _, step := range t.Steps {
 			steps = append(steps, compactStep(out, short, snapshot.Directory, step))
 		}
@@ -218,8 +224,8 @@ func printExplainCompact(snapshot *config.Snapshot) error {
 
 func compactStep(out *ui.Printer, short pathShortener, directory string, step config.Step) string {
 	parts := []string{}
-	if step.Change == "exclude" {
-		parts = append(parts, out.Badge(ui.Error, "excluded"))
+	if step.Change == "remove" {
+		parts = append(parts, out.Badge(ui.Error, "removed"))
 	}
 	if len(step.BundleChain) > 0 {
 		chain := []string{}
@@ -288,7 +294,7 @@ func explainStep(out *ui.Printer, step config.Step, changeWidth int) string {
 		return fmt.Sprintf("%s %s %s bundles=%v", step.Change, location, origin, step.BundleChain)
 	}
 	level := ui.OK
-	if step.Change == "exclude" {
+	if step.Change == "remove" {
 		level = ui.Error
 	}
 	change := out.Badge(level, step.Change+strings.Repeat(" ", changeWidth-len(step.Change)))

@@ -1,12 +1,13 @@
 # Configuration reference
 
-Configuration and package manifests use version `1`. Unknown fields, duplicate
-YAML keys, import cycles, bundle cycles, missing resources, and conflicting
-resource definitions fail validation. An empty file is an error. A replacement
-definition needs `override: true`; root-fragment definitions with `override`
-take precedence over package definitions, and packages never replace root
-definitions. Harnesses and `daemon` settings merge field by field; `override:
-true` replaces the whole definition or section.
+Configuration fragments and package manifests are unversioned YAML. Unknown
+fields, duplicate YAML keys, import cycles, bundle cycles, missing resources, and
+conflicting resource definitions fail validation. An empty file is an error;
+write `{}` for a fragment that declares nothing. A replacement definition needs
+`override: true`; root-fragment definitions with `override` take precedence over
+package definitions, and packages never replace root definitions. Harnesses and
+`daemon` settings merge field by field; `override: true` replaces the whole
+definition or section.
 Imports run in their declared order before the importing file. An optional
 import is skipped only when its own file is missing; errors inside it fail. A
 `glob` import loads every matching regular file in lexical order and may match
@@ -17,13 +18,11 @@ When the root file does not exist, agx uses a built-in default that imports
 `agx.d/*.yaml` beside it, so drop-in fragments work without a root file:
 
 ```yaml
-version: 1
 imports:
   - glob: agx.d/*.yaml
 ```
 
 ```yaml
-version: 1
 imports:
   - path: personal.yaml
   - path: local.yaml
@@ -52,7 +51,7 @@ mcp:
     url: https://mcp.example.com/mcp
     auth: !secret work-token
   local-tools:
-    command: [python3, /absolute/path/server.py]
+    command: [~/.local/bin/local-tools, --stdio]
     environment:
       LOG_LEVEL: warning
       API_TOKEN: !secret work-token
@@ -62,25 +61,46 @@ bundles:
     instructions: [conventions]
     mcp: [work, local-tools]
 scopes:
-  - directory: /home/me/work
+  - directory: ~/work
     add:
       bundles: [development]
-  - directory: /absolute/work/private
-    exclude:
+      skills:
+        - ./skills/local-thing            # path; ID = folder name
+        - id: deploy                      # generated from content
+          description: Deploy this service.
+          content: |
+            Run `make deploy` and report the release URL.
+        - git: https://github.com/team/skills.git   # inline Git source
+          rev: 3f2c9e1a8b7d6c5e4f3a2b1c0d9e8f7a6b5c4d3e
+          path: skills/review-strict      # ID = folder name
+      instructions:
+        - ./AGENTS.md                     # ID = file stem
+        - id: pnpm
+          text: Use pnpm, not npm.
+      mcp:
+        - id: aperture
+          url: https://aperture.tarik02.me/mcp
+  - directory: ~/work/private
+    remove:
       skills: [team/review]
-  - directory: /home/me/work
+  - directory: ~/work
     harnesses: [claude]
     add:
       mcp: [work]
 harnesses:
   codex:
-    executable: /absolute/path/to/codex
+    executable: ~/.local/bin/codex
 ```
 
-Use literal paths, with absolute machine-specific scope directories in local
-fragments. Relative paths are relative to their declaring file, including scope
-roots, imports, local package sources, and resource files. Bare command names use
-the daemon's PATH; use absolute command/script paths for portable definitions.
+Relative paths are relative to their declaring file, including scope roots,
+imports, local package sources, resource files, and copied skill files. A
+leading `~` or `~/` expands to the home directory of the user running agx in
+scope directories, imports, `lockfile`, package and resource paths, `!file`,
+harness executables, and an MCP server's `cwd` and executable (`command[0]`);
+`~user` and `${VAR}` are not supported, and package manifests cannot use `~`.
+Machine-specific settings belong in an ignored fragment such as
+`agx.d/50-local.yaml`. Bare command names use the daemon's PATH; use absolute or
+`~/` command and script paths for portable definitions.
 An MCP entry with `url` is reached over HTTP; one with `command` runs as a stdio
 child. `transport: http` or `stdio` may still be written but must agree, and an
 entry sets exactly one of `url` and `command`. A stdio MCP server's optional `cwd`
@@ -95,11 +115,90 @@ long or colliding names get a short hash suffix.
 
 Rules match canonical directory roots and descendants by path components. Rules
 run from shallowest to deepest, preserving import/rule order at equal depth.
-Within each rule, additions precede exclusions. Bundle exclusions remove all
+Within each rule, additions precede removals. Bundle removals remove all
 expanded leaves, even if another bundle also added them. A deeper rule can add
 those leaves again. A rule with `harnesses` applies only to launches of those
 harnesses or definitions based on them. `explain` includes each operation and its
 source location.
+
+## Selection lists
+
+Every selection list (scope `add`/`remove`, bundles, harness `add`/`remove`)
+accepts references and inline definitions:
+
+- A string starting with `.`, `/`, or `~`, or an absolute Windows path, is a
+  path: a skill directory, whose ID is its folder name, or an instructions file,
+  whose ID is its file stem. MCP servers have no path form.
+- Any other string is an ID reference, qualified like other references inside
+  packages. IDs cannot start with `.`, `/`, or `~`, so the forms never overlap.
+- A mapping is an inline definition with the fields of its top-level section
+  (`override` excluded) plus `id`. Path and Git skills default `id` to the folder
+  name, instruction files to their stem; skills with `content`, instructions with
+  `text`, and MCP servers need an explicit `id`, which logins and native server
+  names use.
+
+Bundle lists take bundle IDs only; an inline bundle would just be its own
+selection. Inline definitions share the ID space of top-level ones (`team/deploy`
+inside package `team`), and an inline ID that collides with any other definition
+is an error naming both locations, even with `override`, so a reference never
+silently changes meaning. Define a resource once, inline or at top level, and
+refer to it by ID elsewhere, including in `remove` lists: repeating a path there
+defines it a second time.
+
+## Skills and instructions
+
+A skill is a directory with `SKILL.md` (`path`), a directory in a Git repository
+(`git`, with `path` inside the checkout), or generated from configuration
+(`content`). Instructions are a file (`path`), a file in a Git repository (`git`
+with `path`), or `text`. A Git source is an anonymous package: it is fetched by
+`agx install` and locked like a [package](#packages-and-locks) unless
+[pinned](#pinned-sources), takes `ref`, `rev`, or `hash` like one, and its
+`path` must stay inside the checkout. Configuration fragments may name local
+repositories; package manifests need `https`, `ssh`, or scp-style sources.
+
+A skill with `content` is a whole skill directory described in YAML:
+
+```yaml
+skills:
+  deploy:
+    name: deploy-service          # native skill name; default: last ID segment
+    description: Deploy this service and report the release URL.
+    frontmatter:                  # extra SKILL.md front matter, passed through
+      allowed-tools: [Bash]
+    content: |                    # SKILL.md body
+      Run `scripts/deploy.sh`, then follow `references/checklist.md`.
+    files:                        # other files, relative to the skill root
+      scripts/deploy.sh:
+        executable: true
+        content: |
+          #!/bin/sh
+          set -eu
+          make deploy
+      references/checklist.md: ./docs/release-checklist.md   # copied file
+      assets/: ./deploy-assets/   # copied directory (trailing slash)
+```
+
+The ID addresses the skill in configuration; `name` is what harnesses show and
+invoke, defaulting to the ID's last segment, and must use lowercase letters,
+digits, and single hyphens, at most 64 characters. `description` is required.
+Generated `SKILL.md` front matter holds `name`, `description`, and
+`frontmatter`, which cannot redefine those two. `files` keys are `/`-separated
+relative paths that stay inside the skill root and cannot name `SKILL.md`, `.`,
+`..`, or `.git`, or overlap. A value is inline text, a `{content, executable}`
+mapping, or a one-line string starting with `.`, `/`, or `~`, which copies that
+file, or that directory when both the key and the path end in `/`; write
+`{content: ...}` for text that would read as a path. Copied paths resolve like
+resource paths and keep their executable bits. Generated skills are hashed into
+the snapshot like path skills, so editing a copied file or the configuration
+selects new artifacts. Path and Git skills take `name` and `description` from
+their own `SKILL.md`; setting them, `frontmatter`, or `files` on such a skill is
+an error.
+
+Selected instructions concatenate in resolution order: shallower scopes before
+deeper ones, harness rules last, and list order within a rule, so more specific
+guidance comes later. An optional integer `order` (default `0`) sorts before
+that, lower first, for text that must lead or close regardless of where it was
+selected; `explain` shows non-default orders.
 
 ## Editor support
 
@@ -110,7 +209,7 @@ modeline at the top of the file:
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/tarik02-org/agx/master/schema/agx.schema.json
-version: 1
+scopes: []
 ```
 
 Use `agx.package.schema.json` for `agx.package.yaml`. Declare the injected-value
@@ -144,7 +243,10 @@ harnesses:
     env:
       CPA_REGION: eu
       CPA_KEY: !secret cpa-key
-    exclude: {skills: [workflow]}
+    remove: {skills: [workflow]}
+  pi-cpa:
+    base: pi
+    args: [--model, cpa/gpt-6-sol]   # flat: one group for every session mode
 ```
 
 Each launch is classified into one mode of its built-in:
@@ -155,19 +257,21 @@ Each launch is classified into one mode of its built-in:
 | claude | `interactive`, `print`, `resume`, `passthrough` |
 | pi | `interactive`, `print`, `rpc`, `passthrough` |
 
-`args` groups whose `modes` include the launch mode are inserted, in order, after
-agx's own arguments and before the native ones. A plain list, or a group
-without `modes`, applies to every mode except `passthrough`. `env` values apply
+`args` is a flat list of strings, one group for every session mode, or a list of
+groups, each a list of strings or `{values, modes}`; mixing strings and groups
+is an error. Groups whose `modes` include the launch mode are inserted, in order,
+after agx's own arguments and before the native ones. A flat list, a plain group,
+or a group without `modes` applies to every mode except `passthrough`. `env` values apply
 in every mode; values in `env` and in argument groups may be
 [tags](#injected-values); names starting with `AGX_` are reserved. An extension
 replaces `executable`, appends its groups after its base's, and replaces `env`
-per key. `executable` must be absolute.
+per key. `executable` must be absolute once `~` is expanded.
 
 Selection gains a harness dimension: after directory scopes, each harness in the
-base chain applies its `add` and then `exclude`, built-in first, so a harness's
+base chain applies its `add` and then `remove`, built-in first, so a harness's
 selection holds in every directory. Across fragments, `base`, `executable`, and
 each `env` key may be set once; groups append in fragment order and `add` and
-`exclude` accumulate.
+`remove` accumulate.
 
 ## Injected values
 
@@ -193,8 +297,8 @@ mcp:
 
 - `!env NAME` reads the caller's environment. The wrapper forwards only names the
   snapshot requires; `AGX_` names are reserved. An empty variable counts as unset.
-- `!file PATH` reads a file relative to the declaring fragment, or to the package
-  root inside a package, where it must stay within the package. Trailing newlines
+- `!file PATH` reads a file relative to the declaring fragment, `~/` expanded, or
+  to the package root inside a package, where it must stay within the package. Trailing newlines
   are dropped, as in shell command substitution; files are limited to 1 MiB.
 - `!secret ID` resolves a top-level [secret](#secrets). IDs are qualified like
   other references inside packages. OAuth secrets cannot be injected; they only
@@ -202,8 +306,8 @@ mcp:
   belongs to it and cannot be referenced.
 
 Tags are allowed in harness `env` and `args`, and in `mcp` `environment`,
-`headers`, and `auth` (`!secret` only); anywhere else, and unknown tags, fail
-validation. Plain strings
+`headers`, and `auth` (`!secret` only), including inline MCP servers; anywhere
+else, and unknown tags, fail validation. Plain strings
 stay literal. Resolution happens at launch, never earlier: snapshot IDs include
 the tag and its argument, so editing a `!file` or rotating a secret needs no
 reinstall. Resolved values never enter snapshots, artifacts, `explain`, `--json`
@@ -226,7 +330,6 @@ the wrapper resolves their harness values itself from configuration fragments:
 A package root contains `agx.package.yaml`:
 
 ```yaml
-version: 1
 skills:
   review:
     path: skills/review
@@ -243,7 +346,7 @@ packages:
 ```
 
 Package manifests may declare resources, MCP servers, secrets, bundles, and
-dependencies. They cannot declare directory scopes, imports, daemon settings,
+dependencies, including inline definitions in bundles. They cannot declare directory scopes, imports, daemon settings,
 harnesses, or lockfile destinations. Their Git sources must be
 `https`, `ssh`, or scp-style URLs. Package references are relative
 to their namespace: `shared/review` inside package `team` names
@@ -263,6 +366,25 @@ requires matching sources, local content, dependencies, and locks. Resolution an
 launching never fetch or update packages. Installation writes cache entries before
 replacing affected lockfiles together; failed installs leave the previous locks
 usable. Entries for removed packages are pruned. Old package and artifact entries are retained for active launches.
+
+Anonymous packages from Git skills and instructions lock under the resource's
+kind and ID, such as `skill:review-strict` or `instructions:team/rules`, in the
+declaring fragment's lockfile, or with their package's dependencies inside a
+manifest; `agx update skill:review-strict` advances one.
+
+### Pinned sources
+
+A source is pinned when it carries a full 40-character commit `rev`, a `hash`,
+or a local `path` inside `/nix/store` (literally; symlinks into the store, such
+as profiles, can be repointed). Packages and Git skills and instructions accept
+these fields; `rev` needs `git` and excludes `ref`. `hash` is the content hash
+agx records in locks, verified at install, which fails on a mismatch and names
+the actual hash. Pinned sources write no lock entry: `agx install` fetches them
+into the cache, and resolution finds them there, so a fragment whose packages
+are all pinned, such as one generated by Nix, needs no lockfile and none is
+created; an existing one is pruned of their entries. Unpinned sources keep
+per-fragment lockfiles, so fragments from different repositories carry their
+own locks. `update` leaves pinned sources unchanged.
 
 ## MCP auth
 

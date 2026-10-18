@@ -531,8 +531,8 @@ func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 		trace := &v1.ResourceTrace{Resource: resource(t.Resource)}
 		for _, step := range t.Steps {
 			change := v1.ResolutionStep_CHANGE_ADD
-			if step.Change == "exclude" {
-				change = v1.ResolutionStep_CHANGE_EXCLUDE
+			if step.Change == "remove" {
+				change = v1.ResolutionStep_CHANGE_REMOVE
 			}
 			chain := []string{}
 			for _, id := range step.BundleChain {

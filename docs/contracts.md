@@ -17,11 +17,12 @@ components: `/work/app` must not match `/work/apple`. Show canonical paths in
 explanations. Machine-local fragments supply different root paths on each OS.
 
 Apply scopes from shallowest to deepest, then import/rule order at equal depth.
-Within one rule, expand additions first and exclusions second. Use sets of
-qualified leaf IDs, not reference counts: excluding a skill removes it even if
-several bundles supplied it. A deeper addition can restore it. Bundle exclusions
-expand to exclusions of their contents. Sort final output deterministically;
-record every step for explanation.
+Within one rule, expand additions first and removals second. Use sets of
+qualified leaf IDs, not reference counts: removing a skill removes it even if
+several bundles supplied it. A deeper addition can restore it. Bundle removals
+expand to removals of their contents. Sort final output deterministically, except
+that selected instructions keep their concatenation order: `order`, then the
+resolution step that selected each; record every step for explanation.
 
 Snapshot IDs fingerprint resolved configuration, lock/package content, relevant
 platform inputs, canonical directory, and harness. Tokens, timestamps, and injected

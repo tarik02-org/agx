@@ -56,7 +56,8 @@ agx update [package-id...]
 ```
 
 The default directory is the current directory. `resolve` reports selected
-resources; `explain` also reports exclusions, source locations, bundle chains,
+resources; `explain` also reports removals, source locations, bundle chains,
+non-default instruction `order`,
 and the injected values a launch would resolve, shown as configured (`!secret
 cpa-key`). Without
 `--harness` they apply only rules without a harness filter; with it, they also
@@ -66,9 +67,12 @@ fetch missing packages; diagnostics direct the user to `install`. `config schema
 prints the JSON Schema of configuration fragments, or with `--package` of package
 manifests ([editor support](configuration.md#editor-support)).
 
-`install` materializes the declared graph and may create/update its lockfile;
-`--frozen` permits no lockfile changes. `update` refreshes selected packages, or
-all packages when none are named. Running a harness requires a complete, matching
+`install` materializes the declared graph, including the anonymous packages of
+Git skills and instructions, and may create/update its lockfiles; pinned sources
+need no lock entry, so a fragment declaring only pinned ones gets no lockfile.
+`--frozen` permits no lockfile changes. `update` refreshes selected packages
+(an anonymous one by its lock key, such as `skill:review-strict`), or all packages
+when none are named. Running a harness requires a complete, matching
 lock/cache; it never silently updates dependencies.
 
 ## Daemon and launches
