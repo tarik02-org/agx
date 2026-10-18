@@ -68,7 +68,7 @@ func printValidation(root string, c *config.Config, loadErr error) error {
 	return printJSON(validationJSON{
 		Valid:       true,
 		Root:        c.Root,
-		Files:       jsonList(c.Files),
+		Files:       jsonList(configFiles(c)),
 		Counts:      &counts,
 		Diagnostics: []diagnosticJSON{},
 	})
@@ -97,7 +97,7 @@ func printValid(c *config.Config) error {
 		out.Status(ui.OK, "Configuration valid.")+"\n",
 		out.Fields(
 			[2]string{"root", out.Path(c.Root)},
-			[2]string{"files", strconv.Itoa(len(c.Files))},
+			[2]string{"files", strconv.Itoa(len(configFiles(c)))},
 			[2]string{"defines", strings.Join(counts, ", ")},
 		),
 	)

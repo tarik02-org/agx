@@ -349,11 +349,20 @@ func TestStateCheck(t *testing.T) {
 	if got := stateCheck(path); got.Status != checkPass || got.Detail != "no saved launches" {
 		t.Fatalf("missing state = %+v", got)
 	}
-	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := stateCheck(path); got.Status != checkPass {
-		t.Fatalf("private state = %+v", got)
+	for _, test := range []struct {
+		data   string
+		status checkStatus
+	}{
+		{`{"version":1}`, checkPass},
+		{`{"version":99}`, checkFail},
+		{`{"version":`, checkWarn},
+	} {
+		if err := os.WriteFile(path, []byte(test.data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := stateCheck(path); got.Status != test.status {
+			t.Fatalf("state %s = %+v", test.data, got)
+		}
 	}
 	if runtime.GOOS == "windows" {
 		return

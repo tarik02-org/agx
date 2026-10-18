@@ -136,7 +136,7 @@ func runDoctor(
 		report.Root = c.Root
 	}
 	if c.Files != nil {
-		report.Files = c.Files
+		report.Files = configFiles(c)
 	}
 
 	executables := map[string]string{}
@@ -211,15 +211,35 @@ func configChecks(paths platform.Paths, builtins config.Builtins) (*config.Confi
 			Hint:   "fix the reported fragment; agx config validate shows the error",
 		}}
 	}
-	files := plural(len(read.Files), "file")
 	c, loadErr := config.Load(paths.Config, paths.Cache, builtins)
-	return packageChecks(read, c, loadErr, files)
+	return packageChecks(read, c, loadErr, filesDetail(read))
+}
+
+// filesDetail describes the files configuration was read from. A root file that does not exist
+// is no file: agx reads the default configuration in its place.
+func filesDetail(c *config.Config) string {
+	files := configFiles(c)
+	switch {
+	case len(files) == len(c.Files):
+		return plural(len(files), "file") + " from " + c.Root
+	case len(files) == 0:
+		return "no configuration file at " + c.Root + "; empty configuration"
+	}
+	return plural(len(files), "file") + "; no root file at " + c.Root
+}
+
+// configFiles is c.Files without a root file that does not exist.
+func configFiles(c *config.Config) []string {
+	if _, err := os.Stat(c.Root); !errors.Is(err, fs.ErrNotExist) {
+		return c.Files
+	}
+	return slices.DeleteFunc(slices.Clone(c.Files), func(path string) bool { return path == c.Root })
 }
 
 // packageChecks classifies a failed full load: missing or stale packages are the installer's to
 // fix, anything else is the configuration's.
 func packageChecks(read, c *config.Config, loadErr error, files string) (*config.Config, bool, []check) {
-	configRow := check{Group: "config", Name: "configuration", Status: checkPass, Detail: files + " from " + read.Root}
+	configRow := check{Group: "config", Name: "configuration", Status: checkPass, Detail: files}
 	switch {
 	case loadErr == nil:
 		detail := "no packages"
@@ -481,6 +501,16 @@ func stateCheck(path string) check {
 		row.Status = checkFail
 		row.Detail = fmt.Sprintf("%s is accessible to other users (mode %04o)", path, info.Mode().Perm())
 		row.Hint = "run chmod 600 " + path
+	default:
+		switch err := daemon.CheckState(path); {
+		case errors.Is(err, daemon.ErrNewerState):
+			row.Status, row.Detail = checkFail, err.Error()
+			row.Hint = "upgrade agx; a daemon of this agx cannot start while the file holds a newer format"
+		case err != nil:
+			// The daemon moves a file it cannot read aside and starts without its launches.
+			row.Status, row.Detail = checkWarn, err.Error()
+			row.Hint = "the next daemon moves it aside and forgets its saved launches"
+		}
 	}
 	return row
 }

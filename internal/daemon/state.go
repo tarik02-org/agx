@@ -118,6 +118,12 @@ type newerState struct {
 	version int
 }
 
+// ErrNewerState matches the error of a state file written by a newer agx, which keeps a daemon
+// of this build from starting.
+var ErrNewerState = errors.New("daemon state from a newer agx")
+
+func (e newerState) Is(target error) bool { return target == ErrNewerState }
+
 func (e newerState) Error() string {
 	return fmt.Sprintf(
 		"daemon state %s has format version %d, newer than this agx reads (%d); upgrade agx, "+
@@ -141,6 +147,41 @@ func (e invalidState) Error() string {
 
 func (e invalidState) Unwrap() error { return e.err }
 
+// CheckState reports whether a daemon of this build can read the state file at path: a missing
+// file is fine, one of a newer format version or one that does not decode is not.
+func CheckState(path string) error {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = decodeState(path, b)
+	return err
+}
+
+func decodeState(path string, b []byte) (savedState, error) {
+	// The version decodes first, so a newer format is recognized even when its fields changed.
+	var header struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(b, &header); err != nil {
+		return savedState{}, invalidState{path: path, err: err}
+	}
+	if header.Version > stateVersion {
+		return savedState{}, newerState{path: path, version: header.Version}
+	}
+	var saved savedState
+	if err := json.Unmarshal(b, &saved); err != nil {
+		return savedState{}, invalidState{path: path, err: err}
+	}
+	if saved.Version != stateVersion {
+		return savedState{}, invalidState{path: path, err: fmt.Errorf("unknown format version %d", saved.Version)}
+	}
+	return saved, nil
+}
+
 // loadState reads the state file for configuration root config at now. It keeps the launches
 // still active, parents before their thread launches, and drops expired ones, those of another
 // configuration, and thread launches whose parent is gone. A missing file holds nothing; a file
@@ -153,22 +194,9 @@ func loadState(path, config string, now time.Time) (int, []restoredLaunch, error
 	if err != nil {
 		return 0, nil, err
 	}
-	// The version decodes first, so a newer format is recognized even when its fields changed.
-	var header struct {
-		Version int `json:"version"`
-	}
-	if err := json.Unmarshal(b, &header); err != nil {
-		return 0, nil, invalidState{path: path, err: err}
-	}
-	if header.Version > stateVersion {
-		return 0, nil, newerState{path: path, version: header.Version}
-	}
-	var saved savedState
-	if err := json.Unmarshal(b, &saved); err != nil {
-		return 0, nil, invalidState{path: path, err: err}
-	}
-	if saved.Version != stateVersion {
-		return 0, nil, invalidState{path: path, err: fmt.Errorf("unknown format version %d", saved.Version)}
+	saved, err := decodeState(path, b)
+	if err != nil {
+		return 0, nil, err
 	}
 	if saved.Config != config {
 		return saved.Port, nil, nil
