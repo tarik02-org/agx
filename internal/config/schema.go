@@ -309,7 +309,7 @@ func (MCPAuth) JSONSchema() *jsonschema.Schema {
 
 func (Secret) JSONSchemaExtend(s *jsonschema.Schema) {
 	kind, _ := s.Properties.Get("kind")
-	kind.Enum = []any{"environment", "daemon_environment", "command", "keychain", "oauth"}
+	kind.Enum = []any{"environment", "daemon_environment", "command", "keychain", "oauth", "sops"}
 	kind.Description = "How the secret is obtained."
 	s.AllOf = []*jsonschema.Schema{
 		{
@@ -317,6 +317,18 @@ func (Secret) JSONSchemaExtend(s *jsonschema.Schema) {
 			Then: requires("variable"),
 		},
 		{If: when("kind", &jsonschema.Schema{Const: "command"}), Then: requires("command")},
+		{If: when("kind", &jsonschema.Schema{Const: "sops"}), Then: requires("file")},
+	}
+}
+
+// JSONSchema accepts a dotted key path or a list of segments.
+func (SecretKey) JSONSchema() *jsonschema.Schema {
+	segment := &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1))}
+	return &jsonschema.Schema{
+		OneOf: []*jsonschema.Schema{
+			{Type: "string", Pattern: `^[^.]+(\.[^.]+)*$`},
+			{Type: "array", Items: segment, MinItems: ptr(uint64(1))},
+		},
 	}
 }
 

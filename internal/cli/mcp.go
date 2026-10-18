@@ -80,6 +80,11 @@ func loginSecret(c *config.Config, id string) (string, error) {
 		return "", fmt.Errorf("MCP server %s runs over stdio and has no login", id)
 	case server.Auth.None:
 		return "", fmt.Errorf("MCP server %s has auth: none", id)
+	case secret.Kind == "sops":
+		return "", fmt.Errorf(
+			"MCP server %s authenticates with sops secret %s; edit it with sops %s",
+			id, server.Auth.Secret, secret.File,
+		)
 	case secret.Kind != "oauth":
 		return "", fmt.Errorf(
 			"MCP server %s authenticates with %s secret %s; store it with agx secret set %s --stdin",

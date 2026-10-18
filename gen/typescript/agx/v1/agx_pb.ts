@@ -1319,7 +1319,7 @@ export type SecretStatus = Message<"agx.v1.SecretStatus"> & {
   diagnostics: Diagnostic[];
 
   /**
-   * environment, daemon_environment, command, keychain, or oauth.
+   * environment, daemon_environment, command, keychain, oauth, or sops.
    *
    * @generated from field: string kind = 5;
    */

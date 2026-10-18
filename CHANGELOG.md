@@ -26,8 +26,9 @@ First release: agx 0.1.0.
   management API.
 - Injected values (`!env`, `!file`, `!secret`) resolved at launch and never
   written to snapshots, output, or logs; secrets from the environment, commands,
-  the OS keychain, or OAuth, including on-demand OAuth after a `401` and
-  `agx secret login`.
+  the OS keychain, sops-encrypted files, or OAuth, including on-demand OAuth after
+  a `401` and `agx secret login`. sops secrets let a configuration directory be a
+  Git repository restored on another machine.
 - Configuration editing commands (`agx mcp|skill|instructions|harness
   add|list|remove`, `agx use`, `agx unuse`) that keep comments and layout and
   validate before writing.

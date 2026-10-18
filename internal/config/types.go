@@ -134,14 +134,16 @@ type MCPAuth struct {
 
 // Secret defines how a credential is obtained.
 type Secret struct {
-	Kind     string   `yaml:"kind"      json:"kind"                jsonschema:"required"`
-	Variable string   `yaml:"variable"  json:"variable,omitempty"                        jsonschema_description:"Environment variable holding the secret."`
-	Command  []string `yaml:"command"   json:"command,omitempty"                         jsonschema_description:"Command whose trimmed stdout is the secret."`
-	Issuer   string   `yaml:"issuer"    json:"issuer,omitempty"                          jsonschema_description:"OAuth issuer URL; discovered when omitted."`
-	ClientID string   `yaml:"client_id" json:"client_id,omitempty"                       jsonschema_description:"OAuth public client ID."`
-	Resource string   `yaml:"resource"  json:"resource,omitempty"                        jsonschema_description:"OAuth resource indicator."`
-	Scopes   []string `yaml:"scopes"    json:"scopes,omitempty"                          jsonschema_description:"OAuth scopes to request."`
-	Override bool     `yaml:"override"  json:"-"                                         jsonschema_description:"Replace an existing definition."`
+	Kind     string    `yaml:"kind"      json:"kind"                jsonschema:"required"`
+	Variable string    `yaml:"variable"  json:"variable,omitempty"                        jsonschema_description:"Environment variable holding the secret."`
+	Command  []string  `yaml:"command"   json:"command,omitempty"                         jsonschema_description:"Command whose trimmed stdout is the secret."`
+	File     string    `yaml:"file"      json:"file,omitempty"                            jsonschema_description:"sops: encrypted file, relative to the declaring fragment."`
+	Key      SecretKey `yaml:"key"       json:"key,omitempty"                             jsonschema_description:"sops: dotted key path or list of segments to extract; omit to read the whole file."`
+	Issuer   string    `yaml:"issuer"    json:"issuer,omitempty"                          jsonschema_description:"OAuth issuer URL; discovered when omitted."`
+	ClientID string    `yaml:"client_id" json:"client_id,omitempty"                       jsonschema_description:"OAuth public client ID."`
+	Resource string    `yaml:"resource"  json:"resource,omitempty"                        jsonschema_description:"OAuth resource indicator."`
+	Scopes   []string  `yaml:"scopes"    json:"scopes,omitempty"                          jsonschema_description:"OAuth scopes to request."`
+	Override bool      `yaml:"override"  json:"-"                                         jsonschema_description:"Replace an existing definition."`
 	// Owner is the MCP server whose auth declares this secret inline; empty for top-level
 	// secrets. It keeps the credentials of an inline secret apart from a top-level one.
 	Owner ID `yaml:"-" json:"owner,omitempty"`

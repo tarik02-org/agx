@@ -575,6 +575,9 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 			continue
 		}
 		secret.Source = at
+		if err := m.placeSecret(&secret); err != nil {
+			return fmt.Errorf("%s: secret %s: %w", locate(at), name, err)
+		}
 		c.Secrets[name] = secret
 	}
 	for _, id := range sortedKeys(d.MCP) {
@@ -754,6 +757,19 @@ func (m *merger) file(path string) (string, error) {
 		return "", err
 	}
 	return relative(m.base, expanded), nil
+}
+
+// placeSecret anchors a sops secret's file to this file, like a !file path.
+func (m *merger) placeSecret(secret *Secret) error {
+	if secret.File == "" {
+		return nil
+	}
+	file, err := m.file(secret.File)
+	if err != nil {
+		return fmt.Errorf("file %s: %w", secret.File, err)
+	}
+	secret.File = file
+	return nil
 }
 
 // expand expands ~ in a path that is not resolved against this file.
@@ -1039,6 +1055,9 @@ func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
 		secret := *server.Auth.Inline
 		secret.Owner = name
 		secret.Source = server.Source
+		if err := m.placeSecret(&secret); err != nil {
+			return fmt.Errorf("%s: MCP server %s auth: %w", where, name, err)
+		}
 		c.Secrets[name] = secret
 		server.Auth.Secret = name
 	}
@@ -1083,6 +1102,9 @@ func (c *Config) Validate() error {
 			label = "MCP server " + string(secret.Owner) + " auth"
 		}
 		at := locate(secret.Source)
+		if secret.Kind != "sops" && (secret.File != "" || len(secret.Key) > 0) {
+			return fmt.Errorf("%s: %s: file and key apply only to sops secrets", at, label)
+		}
 		switch secret.Kind {
 		case "environment", "daemon_environment":
 			if !validEnvironment.MatchString(secret.Variable) {
@@ -1093,6 +1115,19 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("%s: %s needs a command", at, label)
 			}
 		case "keychain":
+		case "sops":
+			// The encrypted file belongs to the configuration, so a missing one is an error
+			// rather than a runtime state: committing it is what makes the configuration portable.
+			if secret.File == "" {
+				return fmt.Errorf("%s: %s needs a file", at, label)
+			}
+			info, err := os.Stat(secret.File)
+			if err != nil {
+				return fmt.Errorf("%s: %s: cannot read sops file: %w", at, label, err)
+			}
+			if !info.Mode().IsRegular() {
+				return fmt.Errorf("%s: %s: sops file %s is not a regular file", at, label, secret.File)
+			}
 		case "oauth":
 			if secret.Issuer != "" {
 				if err := validateURL(secret.Issuer); err != nil {

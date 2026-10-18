@@ -114,6 +114,9 @@ func (s *Server) GetSecretStatus(
 			McpId:    string(secret.Owner),
 			OnDemand: secret.Implicit,
 		}
+		if status.Problem != "" {
+			message.Diagnostics = append(message.Diagnostics, diagnostic("secret_unavailable", status.Problem))
+		}
 		if !status.Expires.IsZero() {
 			message.ExpiresAt = timestamppb.New(status.Expires)
 		}
@@ -157,6 +160,12 @@ func (s *Server) Login(
 		return err
 	}
 	id := config.ID(req.Msg.SecretId)
+	if secret.Kind == "sops" {
+		return rpcError(
+			connect.CodeFailedPrecondition,
+			"secret "+req.Msg.SecretId+" is encrypted in "+secret.File+"; edit it with sops "+secret.File,
+		)
+	}
 	if secret.Kind != "oauth" {
 		return rpcError(
 			connect.CodeFailedPrecondition,

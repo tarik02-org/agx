@@ -91,6 +91,49 @@ func (a *MCPAuth) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
+// SecretKey is the path of a value inside a sops file: a dotted string, or a list of segments
+// when a segment contains a dot. Segments are map keys; list indexes are not supported.
+type SecretKey []string
+
+func (k *SecretKey) UnmarshalYAML(node *yaml.Node) error {
+	*k = nil
+	var segments []string
+	switch {
+	case node.Kind == yaml.ScalarNode && node.ShortTag() == "!!null":
+		return nil
+	case node.Kind == yaml.ScalarNode && node.ShortTag() == "!!str":
+		segments = strings.Split(node.Value, ".")
+	case node.Kind == yaml.SequenceNode:
+		for _, item := range node.Content {
+			if item.Kind != yaml.ScalarNode || item.ShortTag() != "!!str" {
+				return errors.New("key segments must be strings; quote numbers")
+			}
+			segments = append(segments, item.Value)
+		}
+	default:
+		return errors.New("key must be a dotted string or a list of strings")
+	}
+	if len(segments) == 0 {
+		return errors.New("key must name at least one segment; omit it to read the whole file")
+	}
+	for _, segment := range segments {
+		if segment == "" {
+			return errors.New("key has an empty segment; write a list when a segment contains a dot")
+		}
+		// sops splits its --extract path at "][", which no quoting escapes.
+		if strings.Contains(segment, "][") {
+			return fmt.Errorf("key segment %q cannot contain ][", segment)
+		}
+	}
+	*k = segments
+	return nil
+}
+
+// Extract renders the key as the argument of sops decrypt --extract.
+func (k SecretKey) Extract() string {
+	return `["` + strings.Join(k, `"]["`) + `"]`
+}
+
 // Tagged reports whether the value is resolved at launch rather than literal.
 func (v Value) Tagged() bool { return v.Env != "" || v.File != "" || v.Secret != "" }
 

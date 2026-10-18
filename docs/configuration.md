@@ -460,6 +460,7 @@ secrets:
   cpa-key: {kind: command, command: [pass, show, cpa]}
   docs-key: {kind: keychain}
   team-login: {kind: oauth, scopes: [read]}
+  github: {kind: sops, file: ./secrets.yaml, key: github.token}
 ```
 
 - `environment`: requires `variable`; the wrapper forwards only selected names.
@@ -469,6 +470,8 @@ secrets:
 - `keychain`: `agx secret set <id> --stdin` stores a secret in the OS keychain.
 - `oauth`: uses discovery, optional public-client registration, PKCE, and the OS
   keychain. Optional fields: `issuer`, `client_id`, `resource`, and `scopes`.
+- `sops`: decrypts one value from a [sops](https://getsops.io)-encrypted `file`
+  with the `sops` CLI (3.9 or later). Optional `key`; see [sops secrets](#sops-secrets).
 
 OAuth supports public clients using authorization code and refresh tokens.
 `agx secret login <id>` opens the authorization URL in the browser and waits
@@ -482,6 +485,69 @@ into a stdio child or header. There is no plaintext fallback when keychain stora
 is unavailable. Login and logout close sessions of affected MCP servers; one that
 cannot resolve a secret, or whose upstream rejects it, reports `needs-auth` with
 the reason in its runtime diagnostics.
+
+### sops secrets
+
+A `sops` secret keeps a credential encrypted in the configuration directory, so
+the directory can be a Git repository restored on another machine:
+
+```yaml
+secrets:
+  github:
+    kind: sops
+    file: ./secrets.yaml   # relative to the declaring fragment; ~ allowed
+    key: github.token      # omit to read the whole file
+  dotted:
+    kind: sops
+    file: ./secrets.yaml
+    key: [api.example.com, token]   # a list when a segment contains a dot
+mcp:
+  github:
+    url: https://api.githubcopilot.com/mcp
+    auth: !secret github
+  internal:
+    url: https://internal.example/mcp
+    auth: {kind: sops, file: ./secrets.yaml, key: internal}   # inline
+```
+
+agx runs `sops decrypt --extract '["github"]["token"]' -- <file>`, without a shell,
+for at most 20 seconds, and trims one trailing newline from its output. Key
+segments are map keys: list indexes are not supported, and a segment cannot
+contain `][`. Without `key`, the decrypted file is the value, which suits dotenv
+and binary files. sops chooses the decryption key (age, PGP, cloud KMS, Vault)
+from its own configuration, so `.sops.yaml` creation rules and editing with
+`sops secrets.yaml` work unchanged.
+
+sops receives the environment baseline of `command` secrets plus the variables it
+needs to find a key: names starting with `SOPS_`, `AGE_`, `AWS_`, `GOOGLE_`,
+`CLOUDSDK_`, `AZURE_`, or `VAULT_`, and `XDG_CONFIG_HOME`, `XDG_RUNTIME_DIR`,
+`GNUPGHOME`, `GPG_AGENT_INFO`, `GPG_TTY`, and the proxy variables. For managed
+launches and MCP servers these come from the daemon's environment, so a daemon
+started by a service manager needs, for example, `SOPS_AGE_KEY_FILE` there or the
+age key at the default location.
+
+The file must exist when the configuration is validated; package files stay
+inside the package. Decrypted values are cached in memory by file and key until
+the file's modification time or size changes, and are never written to disk. A
+missing `sops` executable, a decryption failure, or a missing key marks dependent
+MCP servers `needs-auth` with sops's first error line, shows the secret as
+`unavailable` in `agx secret status` with that reason, and fails a launch whose
+harness uses the secret with an error naming the secret and file. Passthrough
+commands decrypt themselves, as for `command` and `keychain` secrets. `agx secret
+set` and `login` do not apply; edit the value with `sops <file>`.
+
+To restore a machine from a configuration repository:
+
+1. Clone the repository as the configuration directory (for example
+   `~/.config/agx`).
+2. Provide the sops key, for example the age key at
+   `~/.config/sops/age/keys.txt` (`~/Library/Application Support/sops/age/keys.txt`
+   on macOS) or `SOPS_AGE_KEY_FILE`.
+3. Run `agx install --frozen`.
+4. Start the daemon: `agx daemon start`, or let a command start it.
+5. Run `agx secret login <id>` for OAuth servers. OAuth tokens stay in the OS
+   keychain because refresh tokens rotate; only the client registration belongs
+   in configuration.
 
 ## Runtime settings
 

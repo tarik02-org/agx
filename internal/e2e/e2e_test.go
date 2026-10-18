@@ -24,10 +24,11 @@ const (
 	version    = "0.0.0-e2e"
 	oldVersion = "0.0.0-e2e-old"
 	token      = "e2e-secret-token"
+	sealed     = "e2e-sops-value"
 )
 
-// binaries holds the executables TestMain builds.
-var binaries struct{ agx, oldAgx, harness, mcp string }
+// binaries holds the executables TestMain builds; tools is the directory of those found on PATH.
+var binaries struct{ agx, oldAgx, harness, mcp, tools string }
 
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "agx-e2e-bin-")
@@ -43,12 +44,19 @@ func TestMain(m *testing.M) {
 	}
 	binaries.agx, binaries.oldAgx = exe("agx"), exe("agx-old")
 	binaries.harness, binaries.mcp = exe("fakeharness"), exe("fakemcp")
+	binaries.tools = filepath.Join(dir, "tools")
+	sops := filepath.Join(binaries.tools, filepath.Base(exe("sops")))
+	if err := os.MkdirAll(binaries.tools, 0o755); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	const versionFlag = "-ldflags=-X github.com/tarik02-org/agx/internal/daemon.Version="
 	for _, b := range [][]string{
 		{binaries.agx, versionFlag + version, "github.com/tarik02-org/agx/cmd/agx"},
 		{binaries.oldAgx, versionFlag + oldVersion, "github.com/tarik02-org/agx/cmd/agx"},
 		{binaries.harness, "./testdata/fakeharness"},
 		{binaries.mcp, "./testdata/fakemcp"},
+		{sops, "../auth/testdata/fakesops"},
 	} {
 		cmd := exec.CommandContext(context.Background(), "go", append([]string{"build", "-o", b[0]}, b[1:]...)...)
 		cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
@@ -91,6 +99,7 @@ func newEnv(t *testing.T) *env {
 		"E2E_TOKEN":           token,
 		"FAKE_ENV":            "AGX_MCP_GRANT,DEFINED,E2E_TOKEN",
 		"NO_COLOR":            "1",
+		"PATH":                binaries.tools + string(os.PathListSeparator) + os.Getenv("PATH"),
 	}
 	for _, pair := range os.Environ() {
 		name, _, _ := strings.Cut(pair, "=")
@@ -112,17 +121,21 @@ func newEnv(t *testing.T) *env {
 		"config/skills/review/SKILL.md",
 		"---\nname: review\ndescription: Review changes.\n---\nReview carefully.\n",
 	)
+	// The fake sops reads "encrypted" files as plain JSON.
+	e.write("config/sealed.json", `{"echo": {"extra": "`+sealed+`"}}`)
 	e.write("config/agx.yaml", `skills:
   review: {path: ./skills/review}
 instructions:
   rules: {text: E2E instructions.}
 secrets:
   token: {kind: environment, variable: E2E_TOKEN}
+  sealed: {kind: sops, file: ./sealed.json, key: echo.extra}
 mcp:
   echo:
     command: ['`+filepath.ToSlash(binaries.mcp)+`']
     environment:
       ECHO_TOKEN: !secret token
+      ECHO_EXTRA: !secret sealed
 scopes:
   - directory: ../work
     add:
@@ -353,8 +366,22 @@ func TestEndToEnd(t *testing.T) {
 		if !strings.Contains(d.Instructions, "E2E instructions.") {
 			t.Errorf("instructions = %q", d.Instructions)
 		}
-		if got := d.Tools["agx-echo"]; got != "echo:hello:"+token {
+		if got := d.Tools["agx-echo"]; got != "echo:hello:"+token+":"+sealed {
 			t.Errorf("echo tool through the daemon = %q", got)
+		}
+	})
+
+	t.Run("sops secret status", func(t *testing.T) {
+		r := e.ok("secret", "status", "sealed", "--json")
+		if !strings.Contains(r.stdout, `"kind":"sops"`) || !strings.Contains(r.stdout, "STATE_READY") {
+			t.Fatalf("status = %s", r.stdout)
+		}
+		if strings.Contains(r.stdout, sealed) {
+			t.Fatal("secret status reveals the value")
+		}
+		if r := e.agx(nil, "secret", "set", "sealed", "--stdin"); r.code == 0 ||
+			!strings.Contains(r.stderr, "edit it with sops") {
+			t.Fatalf("secret set of a sops secret: exit %d, %s", r.code, r.stderr)
 		}
 	})
 
@@ -417,7 +444,7 @@ func TestAutostart(t *testing.T) {
 		if r.code != 0 {
 			t.Fatalf("exit %d: %s", r.code, r.stderr)
 		}
-		if d.Env["AGX_MCP_GRANT"] == "" || d.Tools["agx-echo"] != "echo:hello:"+token {
+		if d.Env["AGX_MCP_GRANT"] == "" || d.Tools["agx-echo"] != "echo:hello:"+token+":"+sealed {
 			t.Fatalf("launch did not go through the daemon: env %v, tools %v", d.Env, d.Tools)
 		}
 		if r.stdout != "" {

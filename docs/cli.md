@@ -302,8 +302,12 @@ cancelled when the last one stops waiting. A daemon that stops meanwhile fails
 the login; run it again.
 
 `set` writes a configured keychain secret; values are never CLI arguments.
-Status returns metadata only: each secret's kind, whether it is inline in an MCP
-server or on-demand OAuth, its state, and its expiry. Logout clears the secret's
+`set` and `login` reject [sops secrets](configuration.md#sops-secrets) with a
+hint to edit them with `sops <file>`. Status returns metadata only: each secret's
+kind, whether it is inline in an MCP server or on-demand OAuth, its state, and its
+expiry. A sops secret is `ready` once it decrypts and `unavailable` otherwise, with
+sops's first error line as a diagnostic; status decrypts it to check, reusing the
+cached value while the file is unchanged. Logout clears the secret's
 stored credentials and closes upstream sessions of MCP servers using it. It does
 not revoke unrelated launches or secrets.
 

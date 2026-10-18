@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +58,8 @@ type Status struct {
 	ID      config.ID
 	State   string
 	Expires time.Time
+	// Problem explains an unavailable state; it never contains a secret value.
+	Problem string
 }
 
 func New(callback string) *Manager {
@@ -134,6 +137,8 @@ func LocalValue(
 		return "", fmt.Errorf("secret %s: environment variable %s is not set", id, s.Variable)
 	case "command":
 		return runHelper(ctx, id, s.Command)
+	case "sops":
+		return sopsValue(ctx, id, s)
 	case "keychain":
 		value, err := keyring.Get("agx", key(id, s))
 		if err != nil {
@@ -149,25 +154,54 @@ func LocalValue(
 }
 
 func runHelper(ctx context.Context, id config.ID, command []string) (string, error) {
+	out, _, err := runBounded(ctx, command, SystemEnvironment(), "")
+	switch {
+	case errors.Is(err, errOutputLimit):
+		return "", fmt.Errorf("credential helper output failed or exceeded 1 MiB")
+	case errors.Is(err, errSupervise):
+		return "", fmt.Errorf("cannot supervise credential helper for %s", id)
+	case err != nil:
+		return "", fmt.Errorf("credential helper for %s failed", id)
+	}
+	value := strings.TrimSpace(string(out))
+	if value == "" {
+		return "", fmt.Errorf("credential helper for %s returned no credential", id)
+	}
+	return value, nil
+}
+
+var (
+	errOutputLimit = errors.New("output failed or exceeded 1 MiB")
+	errSupervise   = errors.New("cannot supervise process")
+)
+
+// runBounded runs a credential process for at most 20 seconds, keeping up to 1 MiB of stdout
+// and the start of stderr; it kills the process and its descendants when either bound is hit.
+func runBounded(ctx context.Context, command, env []string, dir string) ([]byte, []byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
-	cmd.Env = SystemEnvironment()
+	cmd.Env = env
+	cmd.Dir = dir
+	stderr := &limitedBuffer{limit: 16 * 1024}
+	cmd.Stderr = stderr
+	// A descendant holding stderr open must not keep Wait from returning.
+	cmd.WaitDelay = time.Second
 	platform.IsolateOwned(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return "", fmt.Errorf("credential helper for %s failed", id)
+		return nil, nil, err
 	}
 	if err := cmd.Start(); err != nil {
 		_ = stdout.Close()
-		return "", fmt.Errorf("credential helper for %s failed", id)
+		return nil, nil, err
 	}
 	kill, err := platform.Own(cmd)
 	if err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
-		return "", fmt.Errorf("cannot supervise credential helper for %s", id)
+		return nil, nil, errSupervise
 	}
 	kill = sync.OnceFunc(kill)
 	// On Unix the group ID may be recycled once the leader is reaped, so the
@@ -198,17 +232,38 @@ func runHelper(ctx context.Context, id config.ID, command []string) (string, err
 	if readErr != nil || len(out) > 1024*1024 {
 		killGroup()
 		_ = wait()
-		return "", fmt.Errorf("credential helper output failed or exceeded 1 MiB")
+		return nil, stderr.Bytes(), errOutputLimit
 	}
 	if err := wait(); err != nil {
-		return "", fmt.Errorf("credential helper for %s failed", id)
+		if ctx.Err() != nil {
+			return nil, stderr.Bytes(), fmt.Errorf("timed out: %w", ctx.Err())
+		}
+		return nil, stderr.Bytes(), err
 	}
+	return out, stderr.Bytes(), nil
+}
 
-	value := strings.TrimSpace(string(out))
-	if value == "" {
-		return "", fmt.Errorf("credential helper for %s returned no credential", id)
+// limitedBuffer keeps the first limit bytes written and discards the rest without failing the
+// writer, so a chatty process is not killed by a closed pipe.
+type limitedBuffer struct {
+	mu    sync.Mutex
+	limit int
+	data  []byte
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if room := b.limit - len(b.data); room > 0 {
+		b.data = append(b.data, p[:min(room, len(p))]...)
 	}
-	return value, nil
+	return len(p), nil
+}
+
+func (b *limitedBuffer) Bytes() []byte {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return slices.Clone(b.data)
 }
 
 func (m *Manager) oauthValue(ctx context.Context, id config.ID, a config.Secret, origin string) (string, error) {
@@ -325,6 +380,9 @@ func (m *Manager) refresh(ctx context.Context, saved credential) (*oauth2.Token,
 }
 
 func (m *Manager) Set(id config.ID, a config.Secret, secret []byte) error {
+	if a.Kind == "sops" {
+		return fmt.Errorf("secret %s is encrypted in %s; edit it with sops %s", id, a.File, a.File)
+	}
 	if a.Kind != "keychain" {
 		return fmt.Errorf("secret %s is not keychain-backed; only keychain secrets can be set", id)
 	}
@@ -398,6 +456,16 @@ func (m *Manager) Status(id config.ID, a config.Secret) Status {
 		}
 	case "command":
 		s.State = "ready"
+	case "sops":
+		// Decrypting proves the key is available; the cache makes repeated checks cheap.
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if _, err := sopsValue(ctx, id, a); err != nil {
+			s.State = "unavailable"
+			s.Problem = err.Error()
+		} else {
+			s.State = "ready"
+		}
 	case "keychain", "oauth":
 		if inMemory {
 			s.State = "ready"

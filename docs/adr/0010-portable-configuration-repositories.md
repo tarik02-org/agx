@@ -1,6 +1,6 @@
 # Keep configuration portable: sops secrets
 
-Status: proposed.
+Status: accepted.
 
 A configuration directory should work as a Git repository that is committed and
 restored on another machine, without Nix or other tooling. Two things prevent it:
@@ -23,13 +23,37 @@ mcp:
     auth: !secret github
 ```
 
-It runs `sops decrypt --extract '["github"]["token"]' <file>`. Keys may also be a
-list (`key: [github, token]`) when a segment contains a dot. sops chooses the
-decryption key (age, PGP, KMS, Vault) from its own configuration, so `.sops.yaml`
-creation rules and `sops secrets.yaml` editing work unchanged. The daemon caches
-decrypted values in memory until the file's modification time or size changes;
-values are never written to disk. A missing `sops` executable or decryption
-failure marks dependent servers `needs-auth` with sops's first error line.
+It runs `sops decrypt --extract '["github"]["token"]' -- <file>` without a shell,
+under the time and output bounds of `command` secrets, and trims one trailing
+newline. Keys may also be a list (`key: [github, token]`) when a segment contains
+a dot. Segments are always map keys: list indexes are not supported, and a
+segment cannot contain `][`, which sops's path syntax cannot escape. Like other
+secrets, a sops secret can be top-level, inline in an MCP entry's `auth`, or used
+through `!secret`. Its file resolves like a `!file` path: `~` is allowed, and a
+package's file must stay inside the package.
+
+sops chooses the decryption key (age, PGP, KMS, Vault) from its own configuration,
+so `.sops.yaml` creation rules and `sops secrets.yaml` editing work unchanged. It
+receives the environment baseline of `command` secrets plus an allowlist of what
+key discovery reads: `SOPS_*`, `AGE_*`, the cloud and Vault credential prefixes
+(`AWS_`, `GOOGLE_`, `CLOUDSDK_`, `AZURE_`, `VAULT_`), `XDG_CONFIG_HOME` for the
+default age key, GnuPG's home and agent variables, and proxies. Inheriting the
+whole daemon environment was rejected: it would hand sops variables unrelated to
+decryption, which `command` secrets deliberately withhold, while prefixes cover
+every key source sops supports.
+
+The daemon caches decrypted values in memory, by file and key, until the file's
+modification time or size changes; values are never written to disk or logged.
+A missing `sops` executable, decryption failure, or missing key marks dependent
+servers `needs-auth` with sops's first error line, `agx secret status` reports the
+secret `unavailable` with that line, and a launch whose harness needs the secret
+fails naming the secret and file. Passthrough commands decrypt without the daemon,
+as for `command` and `keychain` secrets. `agx secret set` and `login` reject sops
+secrets with a hint to edit the file with `sops`.
+
+Validation fails when the file is missing: the configuration is portable only with
+the encrypted file committed beside it, so a missing one is a broken checkout, not
+a runtime state.
 
 Restoring a machine is then: clone the repository as the configuration directory,
 provide the sops key, `agx install --frozen`, start the daemon, and run `agx

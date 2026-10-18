@@ -320,7 +320,7 @@ message SecretStatus {
   State state = 2;
   google.protobuf.Timestamp expires_at = 3;
   repeated Diagnostic diagnostics = 4;
-  // environment, daemon_environment, command, keychain, or oauth.
+  // environment, daemon_environment, command, keychain, oauth, or sops.
   string kind = 5;
   // Set for a secret declared inline in this MCP server's auth; equal to secret_id.
   string mcp_id = 6;

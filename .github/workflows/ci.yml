@@ -24,6 +24,18 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+      - name: Install sops and age
+        # The real sops round-trip test skips without them; Windows runners lack Homebrew.
+        if: runner.os != 'Windows'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+            echo "$HOMEBREW_PREFIX/bin" >> "$GITHUB_PATH"
+          fi
+          brew install sops age
       - name: Test
         run: go test ./...
       - name: Test with the race detector

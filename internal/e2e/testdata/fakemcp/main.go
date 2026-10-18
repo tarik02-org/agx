@@ -1,5 +1,5 @@
 // Command fakemcp is a stdio MCP server for end-to-end tests. Its echo tool answers
-// echo:<text>:<$ECHO_TOKEN>, proving the daemon injected the server's environment.
+// echo:<text>:<$ECHO_TOKEN>[:<$ECHO_EXTRA>], proving the daemon injected the server's environment.
 package main
 
 import (
@@ -40,6 +40,9 @@ func main() {
 			}}}
 		case "tools/call":
 			text := "echo:" + m.Params.Arguments.Text + ":" + os.Getenv("ECHO_TOKEN")
+			if extra := os.Getenv("ECHO_EXTRA"); extra != "" {
+				text += ":" + extra
+			}
 			if _, leaked := os.LookupEnv("AGX_MCP_GRANT"); leaked {
 				text += ":grant-leaked"
 			}
