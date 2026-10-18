@@ -369,7 +369,8 @@ func TestEndToEnd(t *testing.T) {
 	if r.code != 1 || !strings.Contains(r.stderr, "agx daemon start") || e.daemonRunning() {
 		t.Fatalf("a managed launch with autostart disabled: exit %d, %q", r.code, r.stderr)
 	}
-	if r := e.agx(nil, "daemon", "status"); r.code != 1 || e.daemonRunning() {
+	if r := e.agx(nil, "daemon", "status"); r.code != 0 || !strings.Contains(r.stdout, "not running") ||
+		e.daemonRunning() {
 		t.Fatalf("daemon status without a daemon: exit %d, %q", r.code, r.stderr)
 	}
 
@@ -566,15 +567,22 @@ func TestEndToEnd(t *testing.T) {
 
 	t.Run("daemon stop", func(t *testing.T) {
 		e.stopDaemon(false)
-		if r := e.agx(nil, "daemon", "status"); r.code != 1 {
-			t.Fatalf("status after stop: exit %d", r.code)
+		if r := e.agx(nil, "daemon", "status"); r.code != 0 || !strings.Contains(r.stdout, "Daemon is not running.") {
+			t.Fatalf("status after stop: exit %d: %s", r.code, r.stdout)
 		}
 	})
 }
 
 func TestDaemonJSON(t *testing.T) {
 	e := newEnv(t)
-	e.jsonFail("daemon_unavailable", "daemon", "status")
+	var status struct {
+		Running *bool   `json:"running"`
+		Version *string `json:"version"`
+	}
+	e.jsonOK(&status, "daemon", "status")
+	if status.Running == nil || *status.Running || status.Version != nil {
+		t.Fatalf("daemon status without a daemon = %+v", status)
+	}
 	for _, args := range [][]string{{"daemon", "stop"}, {"daemon", "stop", "--force"}} {
 		var absent struct {
 			Running  *bool `json:"running"`

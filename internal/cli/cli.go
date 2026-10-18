@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
@@ -575,12 +576,15 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// A daemon of another build, such as one started before agx was upgraded, still reports.
 			c, err := newAnyVersionClient(*paths)
-			if err != nil {
-				return err
+			var view *connect.Response[v1.GetRuntimeResponse]
+			if err == nil {
+				ctx, cancel := context.WithTimeout(cmd.Context(), callTimeout)
+				defer cancel()
+				view, err = c.runtime.GetRuntime(ctx, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
 			}
-			ctx, cancel := context.WithTimeout(cmd.Context(), callTimeout)
-			defer cancel()
-			view, err := c.runtime.GetRuntime(ctx, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
+			if daemonGone(err) {
+				return printDaemonAbsent(*paths)
+			}
 			if err != nil {
 				return err
 			}

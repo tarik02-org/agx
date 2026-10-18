@@ -96,7 +96,14 @@ func (s daemonState) action() daemonAction {
 // starts one in the background, as agx daemon start does, and waits until it is ready.
 func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*client, error) {
 	if !enabled {
-		return newClient(paths)
+		c, err := newClient(paths)
+		// Suggesting agx daemon start is no help when it would be refused.
+		if errors.Is(err, daemon.ErrUnavailable) {
+			if refusal := startRefusal(paths); refusal != nil {
+				return nil, fmt.Errorf("daemon is not running and cannot start: %w", refusal)
+			}
+		}
+		return c, err
 	}
 	d, err := daemon.ReadDiscovery(paths)
 	state := daemonState{discovery: err, sameConfig: d.Config == paths.Config, restores: d.RestoresLaunches}

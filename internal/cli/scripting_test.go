@@ -373,7 +373,6 @@ func TestJSONCommands(t *testing.T) {
 
 	// Without a daemon, and with autostart off, daemon-backed commands report it as JSON.
 	for _, args := range [][]string{
-		{"daemon", "status"},
 		{"launch", "list"},
 		{"launch", "show", "x"},
 		{"launch", "revoke", "x"},
@@ -384,6 +383,14 @@ func TestJSONCommands(t *testing.T) {
 		{"mcp", "test", "fs"},
 	} {
 		failJSON(t, 1, codeDaemonUnavailable, append(args, "--json")...)
+	}
+	var status struct {
+		Running *bool   `json:"running"`
+		Version *string `json:"version"`
+	}
+	okJSON(t, &status, "daemon", "status", "--json")
+	if status.Running == nil || *status.Running || status.Version != nil {
+		t.Fatalf("daemon status without a daemon = %+v", status)
 	}
 	for _, args := range [][]string{{"daemon", "stop"}, {"daemon", "stop", "--force"}} {
 		var stopped struct {

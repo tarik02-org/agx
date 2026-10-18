@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"os/signal"
@@ -12,6 +13,7 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
+	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/daemon"
 	"github.com/tarik02-org/agx/internal/platform"
@@ -129,4 +131,36 @@ func configuredGrace(paths platform.Paths, builtins config.Builtins) time.Durati
 		seconds = c.Daemon.ShutdownGraceSeconds
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+// startRefusal is why a daemon of this build cannot start, as far as files tell before trying:
+// saved launches of a newer agx, which it must not replace.
+func startRefusal(paths platform.Paths) error {
+	if err := daemon.CheckState(daemon.StatePath(paths)); errors.Is(err, daemon.ErrNewerState) {
+		return err
+	}
+	return nil
+}
+
+// printDaemonAbsent reports daemon status without a running daemon, and why none can start when
+// a file says so.
+func printDaemonAbsent(paths platform.Paths) error {
+	refusal := startRefusal(paths)
+	if scripting.enabled {
+		document := daemonStatusJSON{Diagnostics: []diagnosticJSON{}}
+		if refusal != nil {
+			document.Diagnostics = append(
+				document.Diagnostics,
+				diagnosticJSON{Severity: "error", Message: "the daemon cannot start: " + refusal.Error()},
+			)
+		}
+		return printJSON(document)
+	}
+	if _, err := fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, "Daemon is not running.")); err != nil {
+		return err
+	}
+	if refusal != nil {
+		ui.Diagnose(ui.Error, "the daemon cannot start: %v", refusal)
+	}
+	return nil
 }

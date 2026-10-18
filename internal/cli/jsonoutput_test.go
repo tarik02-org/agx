@@ -223,7 +223,7 @@ func TestDaemonDocuments(t *testing.T) {
 		{
 			"daemon status",
 			daemonStatusDocument(view),
-			`{"version":"0.1.0","instance_id":"instance","launch_count":2,"running_launch_count":1,` +
+			`{"running":true,"version":"0.1.0","instance_id":"instance","launch_count":2,"running_launch_count":1,` +
 				`"mcp_server_count":1,"diagnostics":[]}`,
 		},
 		{

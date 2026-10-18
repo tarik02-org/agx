@@ -445,11 +445,12 @@ type daemonStartJSON struct {
 	Log     string `json:"log"`
 }
 
-// daemonStatusJSON describes the running daemon; without one, daemon status fails with
-// daemon_unavailable.
+// daemonStatusJSON describes the daemon: without a running one, running is false, version and
+// instance_id are null, and diagnostics say when none can start.
 type daemonStatusJSON struct {
-	Version            string           `json:"version"`
-	InstanceID         string           `json:"instance_id"`
+	Running            bool             `json:"running"`
+	Version            *string          `json:"version"`
+	InstanceID         *string          `json:"instance_id"`
 	LaunchCount        int              `json:"launch_count"`
 	RunningLaunchCount int              `json:"running_launch_count"`
 	MCPServerCount     int              `json:"mcp_server_count"`
@@ -464,8 +465,9 @@ func daemonStatusDocument(view *v1.RuntimeView) daemonStatusJSON {
 		}
 	}
 	return daemonStatusJSON{
-		Version:            view.Version,
-		InstanceID:         view.DaemonInstanceId,
+		Running:            true,
+		Version:            jsonString(view.Version),
+		InstanceID:         jsonString(view.DaemonInstanceId),
 		LaunchCount:        len(view.Launches),
 		RunningLaunchCount: running,
 		MCPServerCount:     len(view.McpServers),
