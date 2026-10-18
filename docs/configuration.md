@@ -235,7 +235,7 @@ Options shared by the commands that write:
 | --- | --- |
 | `--scope user` | everywhere (the default) |
 | `--scope here` | the current directory and below |
-| `--scope <dir>` | that directory and below |
+| `--scope <dir>` | that directory and below; it must exist, except for `unuse` |
 | `--harness <name>` | only for launches of that harness; repeatable |
 | `--file <path>` | write new definitions into this file instead of the root |
 | `--define-only` | define without enabling (`add` commands) |

@@ -376,6 +376,9 @@ func useCommands(paths *platform.Paths, builtins *config.Builtins) []*cobra.Comm
 					return err
 				}
 				target, err := flags.target()
+				if use {
+					target, err = flags.enableTarget()
+				}
 				if err != nil {
 					return err
 				}

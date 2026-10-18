@@ -99,6 +99,22 @@ func (f *editFlags) target() (scope, error) {
 	return scope{directory: directory, written: homeRelative(directory), harnesses: harnesses}, nil
 }
 
+// enableTarget is target for a rule that enables resources: its directory must exist, so a
+// mistyped --scope does not write a rule that never applies. Disabling takes any directory, so
+// rules of a removed one can go.
+func (f *editFlags) enableTarget() (scope, error) {
+	target, err := f.target()
+	if err != nil || target.directory == "" {
+		return target, err
+	}
+	if info, err := os.Stat(target.directory); err != nil {
+		return scope{}, statError("scope directory", target.directory, err)
+	} else if !info.IsDir() {
+		return scope{}, codedf(codeInvalidRequest, "scope is not a directory: %s", target.directory)
+	}
+	return target, nil
+}
+
 // homeRelative writes a path under the home directory as ~/rest, so configuration stays portable.
 func homeRelative(path string) string {
 	home, err := os.UserHomeDir()
@@ -677,7 +693,7 @@ func (s *session) enableAfterDefine(kind, id, file string, flags editFlags) erro
 	if flags.defineOnly {
 		return nil
 	}
-	target, err := flags.target()
+	target, err := flags.enableTarget()
 	if err != nil {
 		return err
 	}
