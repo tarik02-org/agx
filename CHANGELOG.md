@@ -54,6 +54,21 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Fixed
 
+- Without a root configuration file, harness launches and other commands that
+  start the daemon work again with an empty configuration (or only `agx.d`
+  fragments); the daemon no longer receives the path as a `--config` that must
+  exist.
+- `agx doctor` reports a missing configuration file as such, fails on a daemon
+  state file of a newer agx (and warns on one that does not decode), and spells
+  every path with symbolic links resolved.
+- Human error messages no longer include RPC code names, the daemon log's
+  `agx:` prefix, or `agx --help` for subcommand usage errors; a launch in a
+  missing directory, a Git source that is missing or private, a harness not on
+  `PATH`, and an unknown configuration key (with a suggestion) are explained.
+- `agx launch revoke` confirms the revocation; `--scope` must name an existing
+  directory when enabling resources.
+- `go install` builds report their module version instead of `dev`.
+
 - `agx codex app-server` gives each thread the resources of its own directory.
   Hosts such as T3 Code start one app server and create every thread through
   it; agx now relays its JSON-RPC and prepares a thread launch per started,
