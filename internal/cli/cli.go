@@ -162,14 +162,13 @@ func run(osArgs []string, stdout io.Writer) int {
 					return err
 				}
 				if name == "resolve" {
-					snapshot.Traces = nil
-					snapshot.Injections = nil
+					if scripting.enabled {
+						return printJSON(resolveDocument(snapshot))
+					}
+					return printResolve(snapshot)
 				}
 				if scripting.enabled {
-					return printJSON(snapshot)
-				}
-				if name == "resolve" {
-					return printResolve(snapshot)
+					return printJSON(explainDocument(snapshot))
 				}
 				if verbose || !ui.Stdout.Styled() {
 					return printExplain(snapshot)
@@ -462,24 +461,18 @@ func installPackages(
 		}
 	}
 	if scripting.enabled {
-		return printJSON(struct {
-			Packages  []config.ID `json:"packages"`
-			Lockfiles []string    `json:"lockfiles"`
-			Frozen    bool        `json:"frozen"`
-			Updated   bool        `json:"updated"`
-		}{result.PackageIDs, result.Lockfiles, frozen, update})
+		ids := []string{}
+		for _, id := range result.PackageIDs {
+			ids = append(ids, string(id))
+		}
+		return printJSON(installJSON{
+			Packages:  ids,
+			Lockfiles: jsonList(result.Lockfiles),
+			Frozen:    frozen,
+			Updated:   update,
+		})
 	}
 	return printInstalled(result, update)
-}
-
-// daemonStopped is the daemon stop document; with no daemon running, every field is zero.
-type daemonStopped struct {
-	Running  bool   `json:"running"`
-	Stopping bool   `json:"stopping"`
-	Forced   bool   `json:"forced"`
-	Version  string `json:"version"`
-	// KeptLaunches counts the active launches the next daemon restores.
-	KeptLaunches int `json:"kept_launches"`
 }
 
 func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *config.Builtins) *cobra.Command {
@@ -514,11 +507,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 				return err
 			}
 			if scripting.enabled {
-				return printJSON(struct {
-					Started bool   `json:"started"`
-					Version string `json:"version"`
-					Log     string `json:"log"`
-				}{true, daemon.Version, logPath})
+				return printJSON(daemonStartJSON{Started: true, Version: daemon.Version, Log: logPath})
 			}
 			out := ui.Stdout
 			_, err = fmt.Fprint(
@@ -548,7 +537,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 				return err
 			}
 			if scripting.enabled {
-				return printProto(view.Msg)
+				return printJSON(daemonStatusDocument(view.Msg.Runtime))
 			}
 			return printDaemonStatus(view.Msg.Runtime)
 		},
@@ -570,7 +559,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			// Stopping a daemon that is not there leaves the state asked for.
 			if daemonGone(err) {
 				if scripting.enabled {
-					return printJSON(daemonStopped{})
+					return printJSON(daemonStopJSON{})
 				}
 				_, err = fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, "Daemon is not running."))
 				return err
@@ -579,11 +568,11 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 				return err
 			}
 			if scripting.enabled {
-				return printJSON(daemonStopped{
+				return printJSON(daemonStopJSON{
 					Running:      true,
 					Stopping:     true,
 					Forced:       force,
-					Version:      c.discovery.Version,
+					Version:      jsonString(c.discovery.Version),
 					KeptLaunches: kept,
 				})
 			}
@@ -612,7 +601,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 				return err
 			}
 			if scripting.enabled {
-				return printJSON(result)
+				return printJSON(daemonRestartJSON(result))
 			}
 			message := "Daemon started"
 			if result.Stopped {
@@ -678,7 +667,7 @@ func launchCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 					for _, l := range view.Launches {
 						if l.Id == args[0] {
 							if scripting.enabled {
-								return printProto(l)
+								return printJSON(launchDocument(l, view.McpServers))
 							}
 							return printLaunch(l, view.McpServers)
 						}
@@ -686,7 +675,7 @@ func launchCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 					return codedf(codeNotFound, "unknown launch %s", args[0])
 				}
 				if scripting.enabled {
-					return printProto(view)
+					return printJSON(launchListDocument(view))
 				}
 				return printLaunches(view.Launches)
 			},
@@ -712,10 +701,7 @@ func launchCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			if err != nil || !scripting.enabled {
 				return err
 			}
-			return printJSON(struct {
-				LaunchID string `json:"launch_id"`
-				Revoked  bool   `json:"revoked"`
-			}{args[0], true})
+			return printJSON(launchRevokeJSON{LaunchID: args[0], Revoked: true})
 		},
 	}
 	jsonFlag(revoke)
@@ -748,7 +734,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 				return err
 			}
 			if scripting.enabled {
-				return printProto(response.Msg)
+				return printJSON(secretStatusDocument(response.Msg.Statuses))
 			}
 			return printSecretStatuses(response.Msg.Statuses)
 		},
@@ -784,10 +770,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			if err != nil || !scripting.enabled {
 				return err
 			}
-			return printJSON(struct {
-				SecretID string `json:"secret_id"`
-				Stored   bool   `json:"stored"`
-			}{args[0], true})
+			return printJSON(secretSetJSON{SecretID: args[0], Stored: true})
 		},
 	}
 	set.Flags().BoolVar(&stdin, "stdin", false, "read secret from stdin")
@@ -808,10 +791,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			if err != nil || !scripting.enabled {
 				return err
 			}
-			return printJSON(struct {
-				SecretID  string `json:"secret_id"`
-				LoggedOut bool   `json:"logged_out"`
-			}{args[0], true})
+			return printJSON(secretLogoutJSON{SecretID: args[0], LoggedOut: true})
 		},
 	}
 	jsonFlag(logout)

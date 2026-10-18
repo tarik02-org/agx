@@ -113,7 +113,11 @@ func (s *Server) revive(
 	}
 	c, err := s.reload()
 	if err != nil {
-		return rpcError(connect.CodeUnavailable, "daemon configuration invalid: "+err.Error())
+		return reasonError(
+			connect.CodeUnavailable,
+			v1.ErrorDetail_REASON_CONFIG_INVALID,
+			"daemon configuration invalid: "+err.Error(),
+		)
 	}
 	snapshot, err := c.Resolve(view.Directory, view.Harness)
 	if err != nil {

@@ -94,7 +94,7 @@ func testFailure(ctx context.Context, endpoint *mcpruntime.Endpoint, err error) 
 	state, problem := endpoint.State()
 	switch {
 	case state == "needs_auth":
-		return rpcError(connect.CodeFailedPrecondition, "needs-auth: "+problem)
+		return reasonError(connect.CodeFailedPrecondition, v1.ErrorDetail_REASON_NEEDS_LOGIN, problem)
 	case problem != "":
 		return rpcError(connect.CodeFailedPrecondition, problem)
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):

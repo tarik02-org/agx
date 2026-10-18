@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agx/v1/agx.proto.
  */
 export const file_agx_v1_agx: GenFile = /*@__PURE__*/
-  fileDesc("ChBhZ3gvdjEvYWd4LnByb3RvEgZhZ3gudjEiWgoLUmVzb3VyY2VSZWYSEgoIc2tpbGxfaWQYASABKAlIABIZCg9pbnN0cnVjdGlvbnNfaWQYAiABKAlIABIQCgZtY3BfaWQYAyABKAlIAEIKCghyZXNvdXJjZSI8Cg5Tb3VyY2VMb2NhdGlvbhIMCgRwYXRoGAEgASgJEgwKBGxpbmUYAiABKA0SDgoGY29sdW1uGAMgASgNItIBCgpEaWFnbm9zdGljEi0KCHNldmVyaXR5GAEgASgOMhsuYWd4LnYxLkRpYWdub3N0aWMuU2V2ZXJpdHkSDAoEY29kZRgCIAEoCRIPCgdzdW1tYXJ5GAMgASgJEiYKBnNvdXJjZRgEIAEoCzIWLmFneC52MS5Tb3VyY2VMb2NhdGlvbiJOCghTZXZlcml0eRIYChRTRVZFUklUWV9VTlNQRUNJRklFRBAAEhQKEFNFVkVSSVRZX1dBUk5JTkcQARISCg5TRVZFUklUWV9FUlJPUhACIoABCghTbmFwc2hvdBIKCgJpZBgBIAEoCRIRCglkaXJlY3RvcnkYAiABKAkSJgoJcmVzb3VyY2VzGAMgAygLMhMuYWd4LnYxLlJlc291cmNlUmVmEhwKFHJlcXVpcmVkX2Vudmlyb25tZW50GAQgAygJEg8KB2hhcm5lc3MYBSABKAki7AEKDlJlc29sdXRpb25TdGVwEi0KBmNoYW5nZRgBIAEoDjIdLmFneC52MS5SZXNvbHV0aW9uU3RlcC5DaGFuZ2USJgoGc291cmNlGAIgASgLMhYuYWd4LnYxLlNvdXJjZUxvY2F0aW9uEhcKD3Njb3BlX2RpcmVjdG9yeRgDIAEoCRIUCgxidW5kbGVfY2hhaW4YBCADKAkSDwoHaGFybmVzcxgFIAEoCSJDCgZDaGFuZ2USFgoSQ0hBTkdFX1VOU1BFQ0lGSUVEEAASDgoKQ0hBTkdFX0FERBABEhEKDUNIQU5HRV9SRU1PVkUQAiJdCg1SZXNvdXJjZVRyYWNlEiUKCHJlc291cmNlGAEgASgLMhMuYWd4LnYxLlJlc291cmNlUmVmEiUKBXN0ZXBzGAIgAygLMhYuYWd4LnYxLlJlc29sdXRpb25TdGVwIhEKD1ZhbGlkYXRlUmVxdWVzdCI7ChBWYWxpZGF0ZVJlc3BvbnNlEicKC2RpYWdub3N0aWNzGAEgAygLMhIuYWd4LnYxLkRpYWdub3N0aWMiNAoOUmVzb2x2ZVJlcXVlc3QSEQoJZGlyZWN0b3J5GAEgASgJEg8KB2hhcm5lc3MYAiABKAkihQEKD1Jlc29sdmVSZXNwb25zZRIiCghzbmFwc2hvdBgBIAEoCzIQLmFneC52MS5TbmFwc2hvdBIlCgZ0cmFjZXMYAiADKAsyFS5hZ3gudjEuUmVzb3VyY2VUcmFjZRInCgtkaWFnbm9zdGljcxgDIAMoCzISLmFneC52MS5EaWFnbm9zdGljIjQKDkluc3RhbGxSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSDgoGZnJvemVuGAIgASgIIicKD0luc3RhbGxSZXNwb25zZRIUCgxvcGVyYXRpb25faWQYASABKAkiOAoNVXBkYXRlUmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEhMKC3BhY2thZ2VfaWRzGAIgAygJIiYKDlVwZGF0ZVJlc3BvbnNlEhQKDG9wZXJhdGlvbl9pZBgBIAEoCSItChVXYXRjaE9wZXJhdGlvblJlcXVlc3QSFAoMb3BlcmF0aW9uX2lkGAEgASgJIrQBChZXYXRjaE9wZXJhdGlvblJlc3BvbnNlEhQKDG9wZXJhdGlvbl9pZBgBIAEoCRIrCghwcm9ncmVzcxgCIAEoCzIXLmFneC52MS5QYWNrYWdlUHJvZ3Jlc3NIABInCgZyZXN1bHQYAyABKAsyFS5hZ3gudjEuUGFja2FnZVJlc3VsdEgAEiUKB2ZhaWx1cmUYBCABKAsyEi5hZ3gudjEuRGlhZ25vc3RpY0gAQgcKBXN0YXRlIkcKD1BhY2thZ2VQcm9ncmVzcxISCgpwYWNrYWdlX2lkGAEgASgJEhEKCWNvbXBsZXRlZBgCIAEoDRINCgV0b3RhbBgDIAEoDSI3Cg1QYWNrYWdlUmVzdWx0EhMKC3BhY2thZ2VfaWRzGAEgAygJEhEKCWxvY2tmaWxlcxgCIAMoCSKIAgoUUHJlcGFyZUxhdW5jaFJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRITCgtzbmFwc2hvdF9pZBgCIAEoCRIRCglkaXJlY3RvcnkYAyABKAkSDwoHaGFybmVzcxgEIAEoCRIYChBuYXRpdmVfYXJndW1lbnRzGAUgAygJEk8KEmVudmlyb25tZW50X2lucHV0cxgGIAMoCzIzLmFneC52MS5QcmVwYXJlTGF1bmNoUmVxdWVzdC5FbnZpcm9ubWVudElucHV0c0VudHJ5GjgKFkVudmlyb25tZW50SW5wdXRzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKhAQoVUHJlcGFyZUxhdW5jaFJlc3BvbnNlEh4KBmxhdW5jaBgBIAEoCzIOLmFneC52MS5MYXVuY2gSIAoFc3Bhd24YAiABKAsyES5hZ3gudjEuU3Bhd25QbGFuEhcKD2xpZmVjeWNsZV90b2tlbhgDIAEoCRIbChNyZW5ld19hZnRlcl9zZWNvbmRzGAQgASgNEhAKCHdhcm5pbmdzGAUgAygJIosCCglTcGF3blBsYW4SEgoKZXhlY3V0YWJsZRgBIAEoCRIRCglhcmd1bWVudHMYAiADKAkSEQoJZGlyZWN0b3J5GAMgASgJEkoKFWVudmlyb25tZW50X292ZXJyaWRlcxgEIAMoCzIrLmFneC52MS5TcGF3blBsYW4uRW52aXJvbm1lbnRPdmVycmlkZXNFbnRyeRIZChF1bnNldF9lbnZpcm9ubWVudBgFIAMoCRIgChhpbml0aWFsaXplX3N5c3RlbV9wcm9tcHQYBiABKAkaOwoZRW52aXJvbm1lbnRPdmVycmlkZXNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIt8CCgZMYXVuY2gSCgoCaWQYASABKAkSEwoLc25hcHNob3RfaWQYAiABKAkSEQoJZGlyZWN0b3J5GAMgASgJEg8KB2hhcm5lc3MYBCABKAkSIwoFc3RhdGUYBSABKA4yFC5hZ3gudjEuTGF1bmNoLlN0YXRlEi4KCmV4cGlyZXNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEgwKBG1vZGUYByABKAkSGAoQcGFyZW50X2xhdW5jaF9pZBgIIAEoCRISCgpzZXNzaW9uX2lkGAkgASgJIn8KBVN0YXRlEhUKEVNUQVRFX1VOU1BFQ0lGSUVEEAASEgoOU1RBVEVfUFJFUEFSRUQQARIRCg1TVEFURV9SVU5OSU5HEAISEgoOU1RBVEVfRklOSVNIRUQQAxIRCg1TVEFURV9SRVZPS0VEEAQSEQoNU1RBVEVfRVhQSVJFRBAFIkMKFFJlc29sdmVUaHJlYWRSZXF1ZXN0EhgKEHBhcmVudF9sYXVuY2hfaWQYASABKAkSEQoJZGlyZWN0b3J5GAIgASgJIlUKFVJlc29sdmVUaHJlYWRSZXNwb25zZRIiCghzbmFwc2hvdBgBIAEoCzIQLmFneC52MS5TbmFwc2hvdBIYChBkaXNhYmxlZF9wbHVnaW5zGAIgAygJIoMCChpQcmVwYXJlVGhyZWFkTGF1bmNoUmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEhgKEHBhcmVudF9sYXVuY2hfaWQYAiABKAkSEwoLc25hcHNob3RfaWQYAyABKAkSEQoJZGlyZWN0b3J5GAQgASgJElUKEmVudmlyb25tZW50X2lucHV0cxgFIAMoCzI5LmFneC52MS5QcmVwYXJlVGhyZWFkTGF1bmNoUmVxdWVzdC5FbnZpcm9ubWVudElucHV0c0VudHJ5GjgKFkVudmlyb25tZW50SW5wdXRzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASJzChtQcmVwYXJlVGhyZWFkTGF1bmNoUmVzcG9uc2USHgoGbGF1bmNoGAEgASgLMg4uYWd4LnYxLkxhdW5jaBIiCgZ0aHJlYWQYAiABKAsyEi5hZ3gudjEuVGhyZWFkUGxhbhIQCgh3YXJuaW5ncxgDIAMoCSJRCgpUaHJlYWRQbGFuEhMKC2NvbmZpZ19qc29uGAEgASgJEhQKDGluc3RydWN0aW9ucxgCIAEoCRIYChBkaXNhYmxlZF9wbHVnaW5zGAMgAygJIlAKElJlbmV3TGF1bmNoUmVxdWVzdBIRCglsYXVuY2hfaWQYASABKAkSEwoLaGFybmVzc19waWQYAiABKAQSEgoKc2Vzc2lvbl9pZBgDIAEoCSJhChNSZW5ld0xhdW5jaFJlc3BvbnNlEi4KCmV4cGlyZXNfYXQYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhoKEnJlc3RvcmVfbGF1bmNoX2lkcxgCIAMoCSLnAQoUUmVzdG9yZUxhdW5jaFJlcXVlc3QSEQoJbGF1bmNoX2lkGAEgASgJEhcKD2xpZmVjeWNsZV90b2tlbhgCIAEoCRJPChJlbnZpcm9ubWVudF9pbnB1dHMYAyADKAsyMy5hZ3gudjEuUmVzdG9yZUxhdW5jaFJlcXVlc3QuRW52aXJvbm1lbnRJbnB1dHNFbnRyeRIYChBuYXRpdmVfYXJndW1lbnRzGAQgAygJGjgKFkVudmlyb25tZW50SW5wdXRzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASIXChVSZXN0b3JlTGF1bmNoUmVzcG9uc2UikQEKE0ZpbmlzaExhdW5jaFJlcXVlc3QSEQoJbGF1bmNoX2lkGAEgASgJEhMKCWV4aXRfY29kZRgCIAEoBUgAEhUKC3NpZ25hbF9uYW1lGAMgASgJSAASFwoNc3Bhd25fZmFpbHVyZRgEIAEoCUgAEhcKDXRocmVhZF9jbG9zZWQYBSABKAhIAEIJCgdvdXRjb21lIhYKFEZpbmlzaExhdW5jaFJlc3BvbnNlIigKE1Jldm9rZUxhdW5jaFJlcXVlc3QSEQoJbGF1bmNoX2lkGAEgASgJIhYKFFJldm9rZUxhdW5jaFJlc3BvbnNlIvABCgpNY3BSdW50aW1lEhEKCWxhdW5jaF9pZBgBIAEoCRIOCgZtY3BfaWQYAiABKAkSJwoFc3RhdGUYAyABKA4yGC5hZ3gudjEuTWNwUnVudGltZS5TdGF0ZRInCgtkaWFnbm9zdGljcxgEIAMoCzISLmFneC52MS5EaWFnbm9zdGljIm0KBVN0YXRlEhUKEVNUQVRFX1VOU1BFQ0lGSUVEEAASFAoQU1RBVEVfQ09OTkVDVElORxABEg8KC1NUQVRFX1JFQURZEAISFAoQU1RBVEVfTkVFRFNfQVVUSBADEhAKDFNUQVRFX0ZBSUxFRBAEIq4BCgtSdW50aW1lVmlldxIaChJkYWVtb25faW5zdGFuY2VfaWQYASABKAkSDwoHdmVyc2lvbhgCIAEoCRIgCghsYXVuY2hlcxgDIAMoCzIOLmFneC52MS5MYXVuY2gSJwoLbWNwX3NlcnZlcnMYBCADKAsyEi5hZ3gudjEuTWNwUnVudGltZRInCgtkaWFnbm9zdGljcxgFIAMoCzISLmFneC52MS5EaWFnbm9zdGljIhMKEUdldFJ1bnRpbWVSZXF1ZXN0IjoKEkdldFJ1bnRpbWVSZXNwb25zZRIkCgdydW50aW1lGAEgASgLMhMuYWd4LnYxLlJ1bnRpbWVWaWV3IhUKE1dhdGNoUnVudGltZVJlcXVlc3QiPAoUV2F0Y2hSdW50aW1lUmVzcG9uc2USJAoHcnVudGltZRgBIAEoCzITLmFneC52MS5SdW50aW1lVmlldyLEAQoUVGVzdE1jcFNlcnZlclJlcXVlc3QSDgoGbWNwX2lkGAEgASgJEhEKCWRpcmVjdG9yeRgCIAEoCRJPChJlbnZpcm9ubWVudF9pbnB1dHMYAyADKAsyMy5hZ3gudjEuVGVzdE1jcFNlcnZlclJlcXVlc3QuRW52aXJvbm1lbnRJbnB1dHNFbnRyeRo4ChZFbnZpcm9ubWVudElucHV0c0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiuAEKFVRlc3RNY3BTZXJ2ZXJSZXNwb25zZRITCgtzZXJ2ZXJfbmFtZRgBIAEoCRIWCg5zZXJ2ZXJfdmVyc2lvbhgCIAEoCRINCgV0b29scxgDIAMoCRI4Cgx0b29sX2RldGFpbHMYBCADKAsyIi5hZ3gudjEuVGVzdE1jcFNlcnZlclJlc3BvbnNlLlRvb2waKQoEVG9vbBIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJIiEKDExvZ2luUmVxdWVzdBIRCglzZWNyZXRfaWQYASABKAkibAoNTG9naW5SZXNwb25zZRInCgdzdGFydGVkGAEgASgLMhQuYWd4LnYxLkxvZ2luU3RhcnRlZEgAEikKCGZpbmlzaGVkGAIgASgLMhUuYWd4LnYxLkxvZ2luRmluaXNoZWRIAEIHCgVldmVudCJpCgxMb2dpblN0YXJ0ZWQSGQoRYXV0aG9yaXphdGlvbl91cmwYASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDgoGbWNwX2lkGAMgASgJIrQBCg1Mb2dpbkZpbmlzaGVkEi4KB291dGNvbWUYASABKA4yHS5hZ3gudjEuTG9naW5GaW5pc2hlZC5PdXRjb21lEg8KB21lc3NhZ2UYAiABKAkiYgoHT3V0Y29tZRIXChNPVVRDT01FX1VOU1BFQ0lGSUVEEAASFQoRT1VUQ09NRV9TVUNDRUVERUQQARISCg5PVVRDT01FX0ZBSUxFRBACEhMKD09VVENPTUVfRVhQSVJFRBADIjQKEFNldFNlY3JldFJlcXVlc3QSEQoJc2VjcmV0X2lkGAEgASgJEg0KBXZhbHVlGAIgASgMIhMKEVNldFNlY3JldFJlc3BvbnNlIisKFkdldFNlY3JldFN0YXR1c1JlcXVlc3QSEQoJc2VjcmV0X2lkGAEgASgJIkEKF0dldFNlY3JldFN0YXR1c1Jlc3BvbnNlEiYKCHN0YXR1c2VzGAEgAygLMhQuYWd4LnYxLlNlY3JldFN0YXR1cyLhAgoMU2VjcmV0U3RhdHVzEhEKCXNlY3JldF9pZBgBIAEoCRIpCgVzdGF0ZRgCIAEoDjIaLmFneC52MS5TZWNyZXRTdGF0dXMuU3RhdGUSLgoKZXhwaXJlc19hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJwoLZGlhZ25vc3RpY3MYBCADKAsyEi5hZ3gudjEuRGlhZ25vc3RpYxIMCgRraW5kGAUgASgJEg4KBm1jcF9pZBgGIAEoCRIRCglvbl9kZW1hbmQYByABKAgiiAEKBVN0YXRlEhUKEVNUQVRFX1VOU1BFQ0lGSUVEEAASFgoSU1RBVEVfVU5DT05GSUdVUkVEEAESEQoNU1RBVEVfUEVORElORxACEg8KC1NUQVRFX1JFQURZEAMSFQoRU1RBVEVfTkVFRFNfTE9HSU4QBBIVChFTVEFURV9VTkFWQUlMQUJMRRAFIiIKDUxvZ291dFJlcXVlc3QSEQoJc2VjcmV0X2lkGAEgASgJIhAKDkxvZ291dFJlc3BvbnNlMpEBChRDb25maWd1cmF0aW9uU2VydmljZRI9CghWYWxpZGF0ZRIXLmFneC52MS5WYWxpZGF0ZVJlcXVlc3QaGC5hZ3gudjEuVmFsaWRhdGVSZXNwb25zZRI6CgdSZXNvbHZlEhYuYWd4LnYxLlJlc29sdmVSZXF1ZXN0GhcuYWd4LnYxLlJlc29sdmVSZXNwb25zZTLYAQoOUGFja2FnZVNlcnZpY2USOgoHSW5zdGFsbBIWLmFneC52MS5JbnN0YWxsUmVxdWVzdBoXLmFneC52MS5JbnN0YWxsUmVzcG9uc2USNwoGVXBkYXRlEhUuYWd4LnYxLlVwZGF0ZVJlcXVlc3QaFi5hZ3gudjEuVXBkYXRlUmVzcG9uc2USUQoOV2F0Y2hPcGVyYXRpb24SHS5hZ3gudjEuV2F0Y2hPcGVyYXRpb25SZXF1ZXN0Gh4uYWd4LnYxLldhdGNoT3BlcmF0aW9uUmVzcG9uc2UwATK3BAoNTGF1bmNoU2VydmljZRJMCg1QcmVwYXJlTGF1bmNoEhwuYWd4LnYxLlByZXBhcmVMYXVuY2hSZXF1ZXN0Gh0uYWd4LnYxLlByZXBhcmVMYXVuY2hSZXNwb25zZRJGCgtSZW5ld0xhdW5jaBIaLmFneC52MS5SZW5ld0xhdW5jaFJlcXVlc3QaGy5hZ3gudjEuUmVuZXdMYXVuY2hSZXNwb25zZRJJCgxGaW5pc2hMYXVuY2gSGy5hZ3gudjEuRmluaXNoTGF1bmNoUmVxdWVzdBocLmFneC52MS5GaW5pc2hMYXVuY2hSZXNwb25zZRJJCgxSZXZva2VMYXVuY2gSGy5hZ3gudjEuUmV2b2tlTGF1bmNoUmVxdWVzdBocLmFneC52MS5SZXZva2VMYXVuY2hSZXNwb25zZRJMCg1SZXNvbHZlVGhyZWFkEhwuYWd4LnYxLlJlc29sdmVUaHJlYWRSZXF1ZXN0Gh0uYWd4LnYxLlJlc29sdmVUaHJlYWRSZXNwb25zZRJeChNQcmVwYXJlVGhyZWFkTGF1bmNoEiIuYWd4LnYxLlByZXBhcmVUaHJlYWRMYXVuY2hSZXF1ZXN0GiMuYWd4LnYxLlByZXBhcmVUaHJlYWRMYXVuY2hSZXNwb25zZRJMCg1SZXN0b3JlTGF1bmNoEhwuYWd4LnYxLlJlc3RvcmVMYXVuY2hSZXF1ZXN0Gh0uYWd4LnYxLlJlc3RvcmVMYXVuY2hSZXNwb25zZTLwAQoOUnVudGltZVNlcnZpY2USQwoKR2V0UnVudGltZRIZLmFneC52MS5HZXRSdW50aW1lUmVxdWVzdBoaLmFneC52MS5HZXRSdW50aW1lUmVzcG9uc2USSwoMV2F0Y2hSdW50aW1lEhsuYWd4LnYxLldhdGNoUnVudGltZVJlcXVlc3QaHC5hZ3gudjEuV2F0Y2hSdW50aW1lUmVzcG9uc2UwARJMCg1UZXN0TWNwU2VydmVyEhwuYWd4LnYxLlRlc3RNY3BTZXJ2ZXJSZXF1ZXN0Gh0uYWd4LnYxLlRlc3RNY3BTZXJ2ZXJSZXNwb25zZTKWAgoNU2VjcmV0U2VydmljZRI2CgVMb2dpbhIULmFneC52MS5Mb2dpblJlcXVlc3QaFS5hZ3gudjEuTG9naW5SZXNwb25zZTABEkAKCVNldFNlY3JldBIYLmFneC52MS5TZXRTZWNyZXRSZXF1ZXN0GhkuYWd4LnYxLlNldFNlY3JldFJlc3BvbnNlElIKD0dldFNlY3JldFN0YXR1cxIeLmFneC52MS5HZXRTZWNyZXRTdGF0dXNSZXF1ZXN0Gh8uYWd4LnYxLkdldFNlY3JldFN0YXR1c1Jlc3BvbnNlEjcKBkxvZ291dBIVLmFneC52MS5Mb2dvdXRSZXF1ZXN0GhYuYWd4LnYxLkxvZ291dFJlc3BvbnNlQi1aK2dpdGh1Yi5jb20vdGFyaWswMi1vcmcvYWd4L2dlbi9hZ3gvdjE7YWd4djFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChBhZ3gvdjEvYWd4LnByb3RvEgZhZ3gudjEiWgoLUmVzb3VyY2VSZWYSEgoIc2tpbGxfaWQYASABKAlIABIZCg9pbnN0cnVjdGlvbnNfaWQYAiABKAlIABIQCgZtY3BfaWQYAyABKAlIAEIKCghyZXNvdXJjZSI8Cg5Tb3VyY2VMb2NhdGlvbhIMCgRwYXRoGAEgASgJEgwKBGxpbmUYAiABKA0SDgoGY29sdW1uGAMgASgNItIBCgpEaWFnbm9zdGljEi0KCHNldmVyaXR5GAEgASgOMhsuYWd4LnYxLkRpYWdub3N0aWMuU2V2ZXJpdHkSDAoEY29kZRgCIAEoCRIPCgdzdW1tYXJ5GAMgASgJEiYKBnNvdXJjZRgEIAEoCzIWLmFneC52MS5Tb3VyY2VMb2NhdGlvbiJOCghTZXZlcml0eRIYChRTRVZFUklUWV9VTlNQRUNJRklFRBAAEhQKEFNFVkVSSVRZX1dBUk5JTkcQARISCg5TRVZFUklUWV9FUlJPUhACItMCCgtFcnJvckRldGFpbBIqCgZyZWFzb24YASABKA4yGi5hZ3gudjEuRXJyb3JEZXRhaWwuUmVhc29uIpcCCgZSZWFzb24SFgoSUkVBU09OX1VOU1BFQ0lGSUVEEAASGgoWUkVBU09OX0lOVkFMSURfUkVRVUVTVBABEhQKEFJFQVNPTl9OT1RfRk9VTkQQAhITCg9SRUFTT05fQ09ORkxJQ1QQAxIeChpSRUFTT05fRkFJTEVEX1BSRUNPTkRJVElPThAEEhYKElJFQVNPTl9ORUVEU19MT0dJThAFEhkKFVJFQVNPTl9DT05GSUdfSU5WQUxJRBAGEhYKElJFQVNPTl9VTkFWQUlMQUJMRRAHEhoKFlJFQVNPTl9VTkFVVEhFTlRJQ0FURUQQCBISCg5SRUFTT05fVElNRU9VVBAJEhMKD1JFQVNPTl9JTlRFUk5BTBAKIoABCghTbmFwc2hvdBIKCgJpZBgBIAEoCRIRCglkaXJlY3RvcnkYAiABKAkSJgoJcmVzb3VyY2VzGAMgAygLMhMuYWd4LnYxLlJlc291cmNlUmVmEhwKFHJlcXVpcmVkX2Vudmlyb25tZW50GAQgAygJEg8KB2hhcm5lc3MYBSABKAki7AEKDlJlc29sdXRpb25TdGVwEi0KBmNoYW5nZRgBIAEoDjIdLmFneC52MS5SZXNvbHV0aW9uU3RlcC5DaGFuZ2USJgoGc291cmNlGAIgASgLMhYuYWd4LnYxLlNvdXJjZUxvY2F0aW9uEhcKD3Njb3BlX2RpcmVjdG9yeRgDIAEoCRIUCgxidW5kbGVfY2hhaW4YBCADKAkSDwoHaGFybmVzcxgFIAEoCSJDCgZDaGFuZ2USFgoSQ0hBTkdFX1VOU1BFQ0lGSUVEEAASDgoKQ0hBTkdFX0FERBABEhEKDUNIQU5HRV9SRU1PVkUQAiJdCg1SZXNvdXJjZVRyYWNlEiUKCHJlc291cmNlGAEgASgLMhMuYWd4LnYxLlJlc291cmNlUmVmEiUKBXN0ZXBzGAIgAygLMhYuYWd4LnYxLlJlc29sdXRpb25TdGVwIhEKD1ZhbGlkYXRlUmVxdWVzdCI7ChBWYWxpZGF0ZVJlc3BvbnNlEicKC2RpYWdub3N0aWNzGAEgAygLMhIuYWd4LnYxLkRpYWdub3N0aWMiNAoOUmVzb2x2ZVJlcXVlc3QSEQoJZGlyZWN0b3J5GAEgASgJEg8KB2hhcm5lc3MYAiABKAkihQEKD1Jlc29sdmVSZXNwb25zZRIiCghzbmFwc2hvdBgBIAEoCzIQLmFneC52MS5TbmFwc2hvdBIlCgZ0cmFjZXMYAiADKAsyFS5hZ3gudjEuUmVzb3VyY2VUcmFjZRInCgtkaWFnbm9zdGljcxgDIAMoCzISLmFneC52MS5EaWFnbm9zdGljIjQKDkluc3RhbGxSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSDgoGZnJvemVuGAIgASgIIicKD0luc3RhbGxSZXNwb25zZRIUCgxvcGVyYXRpb25faWQYASABKAkiOAoNVXBkYXRlUmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEhMKC3BhY2thZ2VfaWRzGAIgAygJIiYKDlVwZGF0ZVJlc3BvbnNlEhQKDG9wZXJhdGlvbl9pZBgBIAEoCSItChVXYXRjaE9wZXJhdGlvblJlcXVlc3QSFAoMb3BlcmF0aW9uX2lkGAEgASgJIrQBChZXYXRjaE9wZXJhdGlvblJlc3BvbnNlEhQKDG9wZXJhdGlvbl9pZBgBIAEoCRIrCghwcm9ncmVzcxgCIAEoCzIXLmFneC52MS5QYWNrYWdlUHJvZ3Jlc3NIABInCgZyZXN1bHQYAyABKAsyFS5hZ3gudjEuUGFja2FnZVJlc3VsdEgAEiUKB2ZhaWx1cmUYBCABKAsyEi5hZ3gudjEuRGlhZ25vc3RpY0gAQgcKBXN0YXRlIkcKD1BhY2thZ2VQcm9ncmVzcxISCgpwYWNrYWdlX2lkGAEgASgJEhEKCWNvbXBsZXRlZBgCIAEoDRINCgV0b3RhbBgDIAEoDSI3Cg1QYWNrYWdlUmVzdWx0EhMKC3BhY2thZ2VfaWRzGAEgAygJEhEKCWxvY2tmaWxlcxgCIAMoCSKIAgoUUHJlcGFyZUxhdW5jaFJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRITCgtzbmFwc2hvdF9pZBgCIAEoCRIRCglkaXJlY3RvcnkYAyABKAkSDwoHaGFybmVzcxgEIAEoCRIYChBuYXRpdmVfYXJndW1lbnRzGAUgAygJEk8KEmVudmlyb25tZW50X2lucHV0cxgGIAMoCzIzLmFneC52MS5QcmVwYXJlTGF1bmNoUmVxdWVzdC5FbnZpcm9ubWVudElucHV0c0VudHJ5GjgKFkVudmlyb25tZW50SW5wdXRzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKhAQoVUHJlcGFyZUxhdW5jaFJlc3BvbnNlEh4KBmxhdW5jaBgBIAEoCzIOLmFneC52MS5MYXVuY2gSIAoFc3Bhd24YAiABKAsyES5hZ3gudjEuU3Bhd25QbGFuEhcKD2xpZmVjeWNsZV90b2tlbhgDIAEoCRIbChNyZW5ld19hZnRlcl9zZWNvbmRzGAQgASgNEhAKCHdhcm5pbmdzGAUgAygJIosCCglTcGF3blBsYW4SEgoKZXhlY3V0YWJsZRgBIAEoCRIRCglhcmd1bWVudHMYAiADKAkSEQoJZGlyZWN0b3J5GAMgASgJEkoKFWVudmlyb25tZW50X292ZXJyaWRlcxgEIAMoCzIrLmFneC52MS5TcGF3blBsYW4uRW52aXJvbm1lbnRPdmVycmlkZXNFbnRyeRIZChF1bnNldF9lbnZpcm9ubWVudBgFIAMoCRIgChhpbml0aWFsaXplX3N5c3RlbV9wcm9tcHQYBiABKAkaOwoZRW52aXJvbm1lbnRPdmVycmlkZXNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIt8CCgZMYXVuY2gSCgoCaWQYASABKAkSEwoLc25hcHNob3RfaWQYAiABKAkSEQoJZGlyZWN0b3J5GAMgASgJEg8KB2hhcm5lc3MYBCABKAkSIwoFc3RhdGUYBSABKA4yFC5hZ3gudjEuTGF1bmNoLlN0YXRlEi4KCmV4cGlyZXNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEgwKBG1vZGUYByABKAkSGAoQcGFyZW50X2xhdW5jaF9pZBgIIAEoCRISCgpzZXNzaW9uX2lkGAkgASgJIn8KBVN0YXRlEhUKEVNUQVRFX1VOU1BFQ0lGSUVEEAASEgoOU1RBVEVfUFJFUEFSRUQQARIRCg1TVEFURV9SVU5OSU5HEAISEgoOU1RBVEVfRklOSVNIRUQQAxIRCg1TVEFURV9SRVZPS0VEEAQSEQoNU1RBVEVfRVhQSVJFRBAFIkMKFFJlc29sdmVUaHJlYWRSZXF1ZXN0EhgKEHBhcmVudF9sYXVuY2hfaWQYASABKAkSEQoJZGlyZWN0b3J5GAIgASgJIlUKFVJlc29sdmVUaHJlYWRSZXNwb25zZRIiCghzbmFwc2hvdBgBIAEoCzIQLmFneC52MS5TbmFwc2hvdBIYChBkaXNhYmxlZF9wbHVnaW5zGAIgAygJIoMCChpQcmVwYXJlVGhyZWFkTGF1bmNoUmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEhgKEHBhcmVudF9sYXVuY2hfaWQYAiABKAkSEwoLc25hcHNob3RfaWQYAyABKAkSEQoJZGlyZWN0b3J5GAQgASgJElUKEmVudmlyb25tZW50X2lucHV0cxgFIAMoCzI5LmFneC52MS5QcmVwYXJlVGhyZWFkTGF1bmNoUmVxdWVzdC5FbnZpcm9ubWVudElucHV0c0VudHJ5GjgKFkVudmlyb25tZW50SW5wdXRzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASJzChtQcmVwYXJlVGhyZWFkTGF1bmNoUmVzcG9uc2USHgoGbGF1bmNoGAEgASgLMg4uYWd4LnYxLkxhdW5jaBIiCgZ0aHJlYWQYAiABKAsyEi5hZ3gudjEuVGhyZWFkUGxhbhIQCgh3YXJuaW5ncxgDIAMoCSJRCgpUaHJlYWRQbGFuEhMKC2NvbmZpZ19qc29uGAEgASgJEhQKDGluc3RydWN0aW9ucxgCIAEoCRIYChBkaXNhYmxlZF9wbHVnaW5zGAMgAygJIlAKElJlbmV3TGF1bmNoUmVxdWVzdBIRCglsYXVuY2hfaWQYASABKAkSEwoLaGFybmVzc19waWQYAiABKAQSEgoKc2Vzc2lvbl9pZBgDIAEoCSJhChNSZW5ld0xhdW5jaFJlc3BvbnNlEi4KCmV4cGlyZXNfYXQYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhoKEnJlc3RvcmVfbGF1bmNoX2lkcxgCIAMoCSLnAQoUUmVzdG9yZUxhdW5jaFJlcXVlc3QSEQoJbGF1bmNoX2lkGAEgASgJEhcKD2xpZmVjeWNsZV90b2tlbhgCIAEoCRJPChJlbnZpcm9ubWVudF9pbnB1dHMYAyADKAsyMy5hZ3gudjEuUmVzdG9yZUxhdW5jaFJlcXVlc3QuRW52aXJvbm1lbnRJbnB1dHNFbnRyeRIYChBuYXRpdmVfYXJndW1lbnRzGAQgAygJGjgKFkVudmlyb25tZW50SW5wdXRzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASIXChVSZXN0b3JlTGF1bmNoUmVzcG9uc2UikQEKE0ZpbmlzaExhdW5jaFJlcXVlc3QSEQoJbGF1bmNoX2lkGAEgASgJEhMKCWV4aXRfY29kZRgCIAEoBUgAEhUKC3NpZ25hbF9uYW1lGAMgASgJSAASFwoNc3Bhd25fZmFpbHVyZRgEIAEoCUgAEhcKDXRocmVhZF9jbG9zZWQYBSABKAhIAEIJCgdvdXRjb21lIhYKFEZpbmlzaExhdW5jaFJlc3BvbnNlIigKE1Jldm9rZUxhdW5jaFJlcXVlc3QSEQoJbGF1bmNoX2lkGAEgASgJIhYKFFJldm9rZUxhdW5jaFJlc3BvbnNlIvABCgpNY3BSdW50aW1lEhEKCWxhdW5jaF9pZBgBIAEoCRIOCgZtY3BfaWQYAiABKAkSJwoFc3RhdGUYAyABKA4yGC5hZ3gudjEuTWNwUnVudGltZS5TdGF0ZRInCgtkaWFnbm9zdGljcxgEIAMoCzISLmFneC52MS5EaWFnbm9zdGljIm0KBVN0YXRlEhUKEVNUQVRFX1VOU1BFQ0lGSUVEEAASFAoQU1RBVEVfQ09OTkVDVElORxABEg8KC1NUQVRFX1JFQURZEAISFAoQU1RBVEVfTkVFRFNfQVVUSBADEhAKDFNUQVRFX0ZBSUxFRBAEIq4BCgtSdW50aW1lVmlldxIaChJkYWVtb25faW5zdGFuY2VfaWQYASABKAkSDwoHdmVyc2lvbhgCIAEoCRIgCghsYXVuY2hlcxgDIAMoCzIOLmFneC52MS5MYXVuY2gSJwoLbWNwX3NlcnZlcnMYBCADKAsyEi5hZ3gudjEuTWNwUnVudGltZRInCgtkaWFnbm9zdGljcxgFIAMoCzISLmFneC52MS5EaWFnbm9zdGljIhMKEUdldFJ1bnRpbWVSZXF1ZXN0IjoKEkdldFJ1bnRpbWVSZXNwb25zZRIkCgdydW50aW1lGAEgASgLMhMuYWd4LnYxLlJ1bnRpbWVWaWV3IhUKE1dhdGNoUnVudGltZVJlcXVlc3QiPAoUV2F0Y2hSdW50aW1lUmVzcG9uc2USJAoHcnVudGltZRgBIAEoCzITLmFneC52MS5SdW50aW1lVmlldyLEAQoUVGVzdE1jcFNlcnZlclJlcXVlc3QSDgoGbWNwX2lkGAEgASgJEhEKCWRpcmVjdG9yeRgCIAEoCRJPChJlbnZpcm9ubWVudF9pbnB1dHMYAyADKAsyMy5hZ3gudjEuVGVzdE1jcFNlcnZlclJlcXVlc3QuRW52aXJvbm1lbnRJbnB1dHNFbnRyeRo4ChZFbnZpcm9ubWVudElucHV0c0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiuAEKFVRlc3RNY3BTZXJ2ZXJSZXNwb25zZRITCgtzZXJ2ZXJfbmFtZRgBIAEoCRIWCg5zZXJ2ZXJfdmVyc2lvbhgCIAEoCRINCgV0b29scxgDIAMoCRI4Cgx0b29sX2RldGFpbHMYBCADKAsyIi5hZ3gudjEuVGVzdE1jcFNlcnZlclJlc3BvbnNlLlRvb2waKQoEVG9vbBIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJIiEKDExvZ2luUmVxdWVzdBIRCglzZWNyZXRfaWQYASABKAkibAoNTG9naW5SZXNwb25zZRInCgdzdGFydGVkGAEgASgLMhQuYWd4LnYxLkxvZ2luU3RhcnRlZEgAEikKCGZpbmlzaGVkGAIgASgLMhUuYWd4LnYxLkxvZ2luRmluaXNoZWRIAEIHCgVldmVudCJpCgxMb2dpblN0YXJ0ZWQSGQoRYXV0aG9yaXphdGlvbl91cmwYASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDgoGbWNwX2lkGAMgASgJIrQBCg1Mb2dpbkZpbmlzaGVkEi4KB291dGNvbWUYASABKA4yHS5hZ3gudjEuTG9naW5GaW5pc2hlZC5PdXRjb21lEg8KB21lc3NhZ2UYAiABKAkiYgoHT3V0Y29tZRIXChNPVVRDT01FX1VOU1BFQ0lGSUVEEAASFQoRT1VUQ09NRV9TVUNDRUVERUQQARISCg5PVVRDT01FX0ZBSUxFRBACEhMKD09VVENPTUVfRVhQSVJFRBADIjQKEFNldFNlY3JldFJlcXVlc3QSEQoJc2VjcmV0X2lkGAEgASgJEg0KBXZhbHVlGAIgASgMIhMKEVNldFNlY3JldFJlc3BvbnNlIisKFkdldFNlY3JldFN0YXR1c1JlcXVlc3QSEQoJc2VjcmV0X2lkGAEgASgJIkEKF0dldFNlY3JldFN0YXR1c1Jlc3BvbnNlEiYKCHN0YXR1c2VzGAEgAygLMhQuYWd4LnYxLlNlY3JldFN0YXR1cyLhAgoMU2VjcmV0U3RhdHVzEhEKCXNlY3JldF9pZBgBIAEoCRIpCgVzdGF0ZRgCIAEoDjIaLmFneC52MS5TZWNyZXRTdGF0dXMuU3RhdGUSLgoKZXhwaXJlc19hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJwoLZGlhZ25vc3RpY3MYBCADKAsyEi5hZ3gudjEuRGlhZ25vc3RpYxIMCgRraW5kGAUgASgJEg4KBm1jcF9pZBgGIAEoCRIRCglvbl9kZW1hbmQYByABKAgiiAEKBVN0YXRlEhUKEVNUQVRFX1VOU1BFQ0lGSUVEEAASFgoSU1RBVEVfVU5DT05GSUdVUkVEEAESEQoNU1RBVEVfUEVORElORxACEg8KC1NUQVRFX1JFQURZEAMSFQoRU1RBVEVfTkVFRFNfTE9HSU4QBBIVChFTVEFURV9VTkFWQUlMQUJMRRAFIiIKDUxvZ291dFJlcXVlc3QSEQoJc2VjcmV0X2lkGAEgASgJIhAKDkxvZ291dFJlc3BvbnNlMpEBChRDb25maWd1cmF0aW9uU2VydmljZRI9CghWYWxpZGF0ZRIXLmFneC52MS5WYWxpZGF0ZVJlcXVlc3QaGC5hZ3gudjEuVmFsaWRhdGVSZXNwb25zZRI6CgdSZXNvbHZlEhYuYWd4LnYxLlJlc29sdmVSZXF1ZXN0GhcuYWd4LnYxLlJlc29sdmVSZXNwb25zZTLYAQoOUGFja2FnZVNlcnZpY2USOgoHSW5zdGFsbBIWLmFneC52MS5JbnN0YWxsUmVxdWVzdBoXLmFneC52MS5JbnN0YWxsUmVzcG9uc2USNwoGVXBkYXRlEhUuYWd4LnYxLlVwZGF0ZVJlcXVlc3QaFi5hZ3gudjEuVXBkYXRlUmVzcG9uc2USUQoOV2F0Y2hPcGVyYXRpb24SHS5hZ3gudjEuV2F0Y2hPcGVyYXRpb25SZXF1ZXN0Gh4uYWd4LnYxLldhdGNoT3BlcmF0aW9uUmVzcG9uc2UwATK3BAoNTGF1bmNoU2VydmljZRJMCg1QcmVwYXJlTGF1bmNoEhwuYWd4LnYxLlByZXBhcmVMYXVuY2hSZXF1ZXN0Gh0uYWd4LnYxLlByZXBhcmVMYXVuY2hSZXNwb25zZRJGCgtSZW5ld0xhdW5jaBIaLmFneC52MS5SZW5ld0xhdW5jaFJlcXVlc3QaGy5hZ3gudjEuUmVuZXdMYXVuY2hSZXNwb25zZRJJCgxGaW5pc2hMYXVuY2gSGy5hZ3gudjEuRmluaXNoTGF1bmNoUmVxdWVzdBocLmFneC52MS5GaW5pc2hMYXVuY2hSZXNwb25zZRJJCgxSZXZva2VMYXVuY2gSGy5hZ3gudjEuUmV2b2tlTGF1bmNoUmVxdWVzdBocLmFneC52MS5SZXZva2VMYXVuY2hSZXNwb25zZRJMCg1SZXNvbHZlVGhyZWFkEhwuYWd4LnYxLlJlc29sdmVUaHJlYWRSZXF1ZXN0Gh0uYWd4LnYxLlJlc29sdmVUaHJlYWRSZXNwb25zZRJeChNQcmVwYXJlVGhyZWFkTGF1bmNoEiIuYWd4LnYxLlByZXBhcmVUaHJlYWRMYXVuY2hSZXF1ZXN0GiMuYWd4LnYxLlByZXBhcmVUaHJlYWRMYXVuY2hSZXNwb25zZRJMCg1SZXN0b3JlTGF1bmNoEhwuYWd4LnYxLlJlc3RvcmVMYXVuY2hSZXF1ZXN0Gh0uYWd4LnYxLlJlc3RvcmVMYXVuY2hSZXNwb25zZTLwAQoOUnVudGltZVNlcnZpY2USQwoKR2V0UnVudGltZRIZLmFneC52MS5HZXRSdW50aW1lUmVxdWVzdBoaLmFneC52MS5HZXRSdW50aW1lUmVzcG9uc2USSwoMV2F0Y2hSdW50aW1lEhsuYWd4LnYxLldhdGNoUnVudGltZVJlcXVlc3QaHC5hZ3gudjEuV2F0Y2hSdW50aW1lUmVzcG9uc2UwARJMCg1UZXN0TWNwU2VydmVyEhwuYWd4LnYxLlRlc3RNY3BTZXJ2ZXJSZXF1ZXN0Gh0uYWd4LnYxLlRlc3RNY3BTZXJ2ZXJSZXNwb25zZTKWAgoNU2VjcmV0U2VydmljZRI2CgVMb2dpbhIULmFneC52MS5Mb2dpblJlcXVlc3QaFS5hZ3gudjEuTG9naW5SZXNwb25zZTABEkAKCVNldFNlY3JldBIYLmFneC52MS5TZXRTZWNyZXRSZXF1ZXN0GhkuYWd4LnYxLlNldFNlY3JldFJlc3BvbnNlElIKD0dldFNlY3JldFN0YXR1cxIeLmFneC52MS5HZXRTZWNyZXRTdGF0dXNSZXF1ZXN0Gh8uYWd4LnYxLkdldFNlY3JldFN0YXR1c1Jlc3BvbnNlEjcKBkxvZ291dBIVLmFneC52MS5Mb2dvdXRSZXF1ZXN0GhYuYWd4LnYxLkxvZ291dFJlc3BvbnNlQi1aK2dpdGh1Yi5jb20vdGFyaWswMi1vcmcvYWd4L2dlbi9hZ3gvdjE7YWd4djFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message agx.v1.ResourceRef
@@ -135,6 +135,110 @@ export const Diagnostic_SeveritySchema: GenEnum<Diagnostic_Severity> = /*@__PURE
   enumDesc(file_agx_v1_agx, 2, 0);
 
 /**
+ * Detail every daemon error carries, so clients branch on a closed set of reasons instead of the
+ * Connect code or the message. A client treats a reason it does not know as unclassified.
+ *
+ * @generated from message agx.v1.ErrorDetail
+ */
+export type ErrorDetail = Message<"agx.v1.ErrorDetail"> & {
+  /**
+   * @generated from field: agx.v1.ErrorDetail.Reason reason = 1;
+   */
+  reason: ErrorDetail_Reason;
+};
+
+/**
+ * Describes the message agx.v1.ErrorDetail.
+ * Use `create(ErrorDetailSchema)` to create a new message.
+ */
+export const ErrorDetailSchema: GenMessage<ErrorDetail> = /*@__PURE__*/
+  messageDesc(file_agx_v1_agx, 3);
+
+/**
+ * @generated from enum agx.v1.ErrorDetail.Reason
+ */
+export enum ErrorDetail_Reason {
+  /**
+   * @generated from enum value: REASON_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The request is malformed or names something it may not.
+   *
+   * @generated from enum value: REASON_INVALID_REQUEST = 1;
+   */
+  INVALID_REQUEST = 1,
+
+  /**
+   * @generated from enum value: REASON_NOT_FOUND = 2;
+   */
+  NOT_FOUND = 2,
+
+  /**
+   * The target exists, changed, or is busy; retrying later or resolving again may succeed.
+   *
+   * @generated from enum value: REASON_CONFLICT = 3;
+   */
+  CONFLICT = 3,
+
+  /**
+   * The target does not support the operation in its current state.
+   *
+   * @generated from enum value: REASON_FAILED_PRECONDITION = 4;
+   */
+  FAILED_PRECONDITION = 4,
+
+  /**
+   * The operation needs an OAuth login first.
+   *
+   * @generated from enum value: REASON_NEEDS_LOGIN = 5;
+   */
+  NEEDS_LOGIN = 5,
+
+  /**
+   * The daemon's configuration does not load.
+   *
+   * @generated from enum value: REASON_CONFIG_INVALID = 6;
+   */
+  CONFIG_INVALID = 6,
+
+  /**
+   * The daemon is stopping or cannot serve the request yet.
+   *
+   * @generated from enum value: REASON_UNAVAILABLE = 7;
+   */
+  UNAVAILABLE = 7,
+
+  /**
+   * The caller lacks this daemon's credential, as when another daemon replaced the one it knew.
+   *
+   * @generated from enum value: REASON_UNAUTHENTICATED = 8;
+   */
+  UNAUTHENTICATED = 8,
+
+  /**
+   * The daemon or an upstream did not answer in time.
+   *
+   * @generated from enum value: REASON_TIMEOUT = 9;
+   */
+  TIMEOUT = 9,
+
+  /**
+   * A defect.
+   *
+   * @generated from enum value: REASON_INTERNAL = 10;
+   */
+  INTERNAL = 10,
+}
+
+/**
+ * Describes the enum agx.v1.ErrorDetail.Reason.
+ */
+export const ErrorDetail_ReasonSchema: GenEnum<ErrorDetail_Reason> = /*@__PURE__*/
+  enumDesc(file_agx_v1_agx, 3, 0);
+
+/**
  * @generated from message agx.v1.Snapshot
  */
 export type Snapshot = Message<"agx.v1.Snapshot"> & {
@@ -171,7 +275,7 @@ export type Snapshot = Message<"agx.v1.Snapshot"> & {
  * Use `create(SnapshotSchema)` to create a new message.
  */
 export const SnapshotSchema: GenMessage<Snapshot> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 3);
+  messageDesc(file_agx_v1_agx, 4);
 
 /**
  * @generated from message agx.v1.ResolutionStep
@@ -210,7 +314,7 @@ export type ResolutionStep = Message<"agx.v1.ResolutionStep"> & {
  * Use `create(ResolutionStepSchema)` to create a new message.
  */
 export const ResolutionStepSchema: GenMessage<ResolutionStep> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 4);
+  messageDesc(file_agx_v1_agx, 5);
 
 /**
  * @generated from enum agx.v1.ResolutionStep.Change
@@ -236,7 +340,7 @@ export enum ResolutionStep_Change {
  * Describes the enum agx.v1.ResolutionStep.Change.
  */
 export const ResolutionStep_ChangeSchema: GenEnum<ResolutionStep_Change> = /*@__PURE__*/
-  enumDesc(file_agx_v1_agx, 4, 0);
+  enumDesc(file_agx_v1_agx, 5, 0);
 
 /**
  * @generated from message agx.v1.ResourceTrace
@@ -258,7 +362,7 @@ export type ResourceTrace = Message<"agx.v1.ResourceTrace"> & {
  * Use `create(ResourceTraceSchema)` to create a new message.
  */
 export const ResourceTraceSchema: GenMessage<ResourceTrace> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 5);
+  messageDesc(file_agx_v1_agx, 6);
 
 /**
  * @generated from message agx.v1.ValidateRequest
@@ -271,7 +375,7 @@ export type ValidateRequest = Message<"agx.v1.ValidateRequest"> & {
  * Use `create(ValidateRequestSchema)` to create a new message.
  */
 export const ValidateRequestSchema: GenMessage<ValidateRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 6);
+  messageDesc(file_agx_v1_agx, 7);
 
 /**
  * @generated from message agx.v1.ValidateResponse
@@ -288,7 +392,7 @@ export type ValidateResponse = Message<"agx.v1.ValidateResponse"> & {
  * Use `create(ValidateResponseSchema)` to create a new message.
  */
 export const ValidateResponseSchema: GenMessage<ValidateResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 7);
+  messageDesc(file_agx_v1_agx, 8);
 
 /**
  * @generated from message agx.v1.ResolveRequest
@@ -312,7 +416,7 @@ export type ResolveRequest = Message<"agx.v1.ResolveRequest"> & {
  * Use `create(ResolveRequestSchema)` to create a new message.
  */
 export const ResolveRequestSchema: GenMessage<ResolveRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 8);
+  messageDesc(file_agx_v1_agx, 9);
 
 /**
  * @generated from message agx.v1.ResolveResponse
@@ -339,7 +443,7 @@ export type ResolveResponse = Message<"agx.v1.ResolveResponse"> & {
  * Use `create(ResolveResponseSchema)` to create a new message.
  */
 export const ResolveResponseSchema: GenMessage<ResolveResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 9);
+  messageDesc(file_agx_v1_agx, 10);
 
 /**
  * @generated from message agx.v1.InstallRequest
@@ -361,7 +465,7 @@ export type InstallRequest = Message<"agx.v1.InstallRequest"> & {
  * Use `create(InstallRequestSchema)` to create a new message.
  */
 export const InstallRequestSchema: GenMessage<InstallRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 10);
+  messageDesc(file_agx_v1_agx, 11);
 
 /**
  * @generated from message agx.v1.InstallResponse
@@ -378,7 +482,7 @@ export type InstallResponse = Message<"agx.v1.InstallResponse"> & {
  * Use `create(InstallResponseSchema)` to create a new message.
  */
 export const InstallResponseSchema: GenMessage<InstallResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 11);
+  messageDesc(file_agx_v1_agx, 12);
 
 /**
  * @generated from message agx.v1.UpdateRequest
@@ -400,7 +504,7 @@ export type UpdateRequest = Message<"agx.v1.UpdateRequest"> & {
  * Use `create(UpdateRequestSchema)` to create a new message.
  */
 export const UpdateRequestSchema: GenMessage<UpdateRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 12);
+  messageDesc(file_agx_v1_agx, 13);
 
 /**
  * @generated from message agx.v1.UpdateResponse
@@ -417,7 +521,7 @@ export type UpdateResponse = Message<"agx.v1.UpdateResponse"> & {
  * Use `create(UpdateResponseSchema)` to create a new message.
  */
 export const UpdateResponseSchema: GenMessage<UpdateResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 13);
+  messageDesc(file_agx_v1_agx, 14);
 
 /**
  * @generated from message agx.v1.WatchOperationRequest
@@ -434,7 +538,7 @@ export type WatchOperationRequest = Message<"agx.v1.WatchOperationRequest"> & {
  * Use `create(WatchOperationRequestSchema)` to create a new message.
  */
 export const WatchOperationRequestSchema: GenMessage<WatchOperationRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 14);
+  messageDesc(file_agx_v1_agx, 15);
 
 /**
  * @generated from message agx.v1.WatchOperationResponse
@@ -474,7 +578,7 @@ export type WatchOperationResponse = Message<"agx.v1.WatchOperationResponse"> & 
  * Use `create(WatchOperationResponseSchema)` to create a new message.
  */
 export const WatchOperationResponseSchema: GenMessage<WatchOperationResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 15);
+  messageDesc(file_agx_v1_agx, 16);
 
 /**
  * @generated from message agx.v1.PackageProgress
@@ -501,7 +605,7 @@ export type PackageProgress = Message<"agx.v1.PackageProgress"> & {
  * Use `create(PackageProgressSchema)` to create a new message.
  */
 export const PackageProgressSchema: GenMessage<PackageProgress> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 16);
+  messageDesc(file_agx_v1_agx, 17);
 
 /**
  * @generated from message agx.v1.PackageResult
@@ -523,7 +627,7 @@ export type PackageResult = Message<"agx.v1.PackageResult"> & {
  * Use `create(PackageResultSchema)` to create a new message.
  */
 export const PackageResultSchema: GenMessage<PackageResult> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 17);
+  messageDesc(file_agx_v1_agx, 18);
 
 /**
  * @generated from message agx.v1.PrepareLaunchRequest
@@ -572,7 +676,7 @@ export type PrepareLaunchRequest = Message<"agx.v1.PrepareLaunchRequest"> & {
  * Use `create(PrepareLaunchRequestSchema)` to create a new message.
  */
 export const PrepareLaunchRequestSchema: GenMessage<PrepareLaunchRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 18);
+  messageDesc(file_agx_v1_agx, 19);
 
 /**
  * @generated from message agx.v1.PrepareLaunchResponse
@@ -613,7 +717,7 @@ export type PrepareLaunchResponse = Message<"agx.v1.PrepareLaunchResponse"> & {
  * Use `create(PrepareLaunchResponseSchema)` to create a new message.
  */
 export const PrepareLaunchResponseSchema: GenMessage<PrepareLaunchResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 19);
+  messageDesc(file_agx_v1_agx, 20);
 
 /**
  * @generated from message agx.v1.SpawnPlan
@@ -660,7 +764,7 @@ export type SpawnPlan = Message<"agx.v1.SpawnPlan"> & {
  * Use `create(SpawnPlanSchema)` to create a new message.
  */
 export const SpawnPlanSchema: GenMessage<SpawnPlan> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 20);
+  messageDesc(file_agx_v1_agx, 21);
 
 /**
  * @generated from message agx.v1.Launch
@@ -723,7 +827,7 @@ export type Launch = Message<"agx.v1.Launch"> & {
  * Use `create(LaunchSchema)` to create a new message.
  */
 export const LaunchSchema: GenMessage<Launch> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 21);
+  messageDesc(file_agx_v1_agx, 22);
 
 /**
  * @generated from enum agx.v1.Launch.State
@@ -764,7 +868,7 @@ export enum Launch_State {
  * Describes the enum agx.v1.Launch.State.
  */
 export const Launch_StateSchema: GenEnum<Launch_State> = /*@__PURE__*/
-  enumDesc(file_agx_v1_agx, 21, 0);
+  enumDesc(file_agx_v1_agx, 22, 0);
 
 /**
  * @generated from message agx.v1.ResolveThreadRequest
@@ -786,7 +890,7 @@ export type ResolveThreadRequest = Message<"agx.v1.ResolveThreadRequest"> & {
  * Use `create(ResolveThreadRequestSchema)` to create a new message.
  */
 export const ResolveThreadRequestSchema: GenMessage<ResolveThreadRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 22);
+  messageDesc(file_agx_v1_agx, 23);
 
 /**
  * @generated from message agx.v1.ResolveThreadResponse
@@ -810,7 +914,7 @@ export type ResolveThreadResponse = Message<"agx.v1.ResolveThreadResponse"> & {
  * Use `create(ResolveThreadResponseSchema)` to create a new message.
  */
 export const ResolveThreadResponseSchema: GenMessage<ResolveThreadResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 23);
+  messageDesc(file_agx_v1_agx, 24);
 
 /**
  * @generated from message agx.v1.PrepareThreadLaunchRequest
@@ -849,7 +953,7 @@ export type PrepareThreadLaunchRequest = Message<"agx.v1.PrepareThreadLaunchRequ
  * Use `create(PrepareThreadLaunchRequestSchema)` to create a new message.
  */
 export const PrepareThreadLaunchRequestSchema: GenMessage<PrepareThreadLaunchRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 24);
+  messageDesc(file_agx_v1_agx, 25);
 
 /**
  * @generated from message agx.v1.PrepareThreadLaunchResponse
@@ -878,7 +982,7 @@ export type PrepareThreadLaunchResponse = Message<"agx.v1.PrepareThreadLaunchRes
  * Use `create(PrepareThreadLaunchResponseSchema)` to create a new message.
  */
 export const PrepareThreadLaunchResponseSchema: GenMessage<PrepareThreadLaunchResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 25);
+  messageDesc(file_agx_v1_agx, 26);
 
 /**
  * What the wrapper adds to a thread's native requests.
@@ -911,7 +1015,7 @@ export type ThreadPlan = Message<"agx.v1.ThreadPlan"> & {
  * Use `create(ThreadPlanSchema)` to create a new message.
  */
 export const ThreadPlanSchema: GenMessage<ThreadPlan> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 26);
+  messageDesc(file_agx_v1_agx, 27);
 
 /**
  * Renew/finish use lifecycle authorization metadata, not management/MCP grants.
@@ -943,7 +1047,7 @@ export type RenewLaunchRequest = Message<"agx.v1.RenewLaunchRequest"> & {
  * Use `create(RenewLaunchRequestSchema)` to create a new message.
  */
 export const RenewLaunchRequestSchema: GenMessage<RenewLaunchRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 27);
+  messageDesc(file_agx_v1_agx, 28);
 
 /**
  * @generated from message agx.v1.RenewLaunchResponse
@@ -968,7 +1072,7 @@ export type RenewLaunchResponse = Message<"agx.v1.RenewLaunchResponse"> & {
  * Use `create(RenewLaunchResponseSchema)` to create a new message.
  */
 export const RenewLaunchResponseSchema: GenMessage<RenewLaunchResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 28);
+  messageDesc(file_agx_v1_agx, 29);
 
 /**
  * Uses management authorization; the lifecycle token proves the caller is the launch's wrapper.
@@ -1008,7 +1112,7 @@ export type RestoreLaunchRequest = Message<"agx.v1.RestoreLaunchRequest"> & {
  * Use `create(RestoreLaunchRequestSchema)` to create a new message.
  */
 export const RestoreLaunchRequestSchema: GenMessage<RestoreLaunchRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 29);
+  messageDesc(file_agx_v1_agx, 30);
 
 /**
  * @generated from message agx.v1.RestoreLaunchResponse
@@ -1021,7 +1125,7 @@ export type RestoreLaunchResponse = Message<"agx.v1.RestoreLaunchResponse"> & {
  * Use `create(RestoreLaunchResponseSchema)` to create a new message.
  */
 export const RestoreLaunchResponseSchema: GenMessage<RestoreLaunchResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 30);
+  messageDesc(file_agx_v1_agx, 31);
 
 /**
  * @generated from message agx.v1.FinishLaunchRequest
@@ -1069,7 +1173,7 @@ export type FinishLaunchRequest = Message<"agx.v1.FinishLaunchRequest"> & {
  * Use `create(FinishLaunchRequestSchema)` to create a new message.
  */
 export const FinishLaunchRequestSchema: GenMessage<FinishLaunchRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 31);
+  messageDesc(file_agx_v1_agx, 32);
 
 /**
  * @generated from message agx.v1.FinishLaunchResponse
@@ -1082,7 +1186,7 @@ export type FinishLaunchResponse = Message<"agx.v1.FinishLaunchResponse"> & {
  * Use `create(FinishLaunchResponseSchema)` to create a new message.
  */
 export const FinishLaunchResponseSchema: GenMessage<FinishLaunchResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 32);
+  messageDesc(file_agx_v1_agx, 33);
 
 /**
  * @generated from message agx.v1.RevokeLaunchRequest
@@ -1099,7 +1203,7 @@ export type RevokeLaunchRequest = Message<"agx.v1.RevokeLaunchRequest"> & {
  * Use `create(RevokeLaunchRequestSchema)` to create a new message.
  */
 export const RevokeLaunchRequestSchema: GenMessage<RevokeLaunchRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 33);
+  messageDesc(file_agx_v1_agx, 34);
 
 /**
  * @generated from message agx.v1.RevokeLaunchResponse
@@ -1112,7 +1216,7 @@ export type RevokeLaunchResponse = Message<"agx.v1.RevokeLaunchResponse"> & {
  * Use `create(RevokeLaunchResponseSchema)` to create a new message.
  */
 export const RevokeLaunchResponseSchema: GenMessage<RevokeLaunchResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 34);
+  messageDesc(file_agx_v1_agx, 35);
 
 /**
  * @generated from message agx.v1.McpRuntime
@@ -1144,7 +1248,7 @@ export type McpRuntime = Message<"agx.v1.McpRuntime"> & {
  * Use `create(McpRuntimeSchema)` to create a new message.
  */
 export const McpRuntimeSchema: GenMessage<McpRuntime> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 35);
+  messageDesc(file_agx_v1_agx, 36);
 
 /**
  * @generated from enum agx.v1.McpRuntime.State
@@ -1180,7 +1284,7 @@ export enum McpRuntime_State {
  * Describes the enum agx.v1.McpRuntime.State.
  */
 export const McpRuntime_StateSchema: GenEnum<McpRuntime_State> = /*@__PURE__*/
-  enumDesc(file_agx_v1_agx, 35, 0);
+  enumDesc(file_agx_v1_agx, 36, 0);
 
 /**
  * @generated from message agx.v1.RuntimeView
@@ -1217,7 +1321,7 @@ export type RuntimeView = Message<"agx.v1.RuntimeView"> & {
  * Use `create(RuntimeViewSchema)` to create a new message.
  */
 export const RuntimeViewSchema: GenMessage<RuntimeView> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 36);
+  messageDesc(file_agx_v1_agx, 37);
 
 /**
  * @generated from message agx.v1.GetRuntimeRequest
@@ -1230,7 +1334,7 @@ export type GetRuntimeRequest = Message<"agx.v1.GetRuntimeRequest"> & {
  * Use `create(GetRuntimeRequestSchema)` to create a new message.
  */
 export const GetRuntimeRequestSchema: GenMessage<GetRuntimeRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 37);
+  messageDesc(file_agx_v1_agx, 38);
 
 /**
  * @generated from message agx.v1.GetRuntimeResponse
@@ -1247,7 +1351,7 @@ export type GetRuntimeResponse = Message<"agx.v1.GetRuntimeResponse"> & {
  * Use `create(GetRuntimeResponseSchema)` to create a new message.
  */
 export const GetRuntimeResponseSchema: GenMessage<GetRuntimeResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 38);
+  messageDesc(file_agx_v1_agx, 39);
 
 /**
  * @generated from message agx.v1.WatchRuntimeRequest
@@ -1260,7 +1364,7 @@ export type WatchRuntimeRequest = Message<"agx.v1.WatchRuntimeRequest"> & {
  * Use `create(WatchRuntimeRequestSchema)` to create a new message.
  */
 export const WatchRuntimeRequestSchema: GenMessage<WatchRuntimeRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 39);
+  messageDesc(file_agx_v1_agx, 40);
 
 /**
  * @generated from message agx.v1.WatchRuntimeResponse
@@ -1277,7 +1381,7 @@ export type WatchRuntimeResponse = Message<"agx.v1.WatchRuntimeResponse"> & {
  * Use `create(WatchRuntimeResponseSchema)` to create a new message.
  */
 export const WatchRuntimeResponseSchema: GenMessage<WatchRuntimeResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 40);
+  messageDesc(file_agx_v1_agx, 41);
 
 /**
  * @generated from message agx.v1.TestMcpServerRequest
@@ -1308,7 +1412,7 @@ export type TestMcpServerRequest = Message<"agx.v1.TestMcpServerRequest"> & {
  * Use `create(TestMcpServerRequestSchema)` to create a new message.
  */
 export const TestMcpServerRequestSchema: GenMessage<TestMcpServerRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 41);
+  messageDesc(file_agx_v1_agx, 42);
 
 /**
  * @generated from message agx.v1.TestMcpServerResponse
@@ -1344,7 +1448,7 @@ export type TestMcpServerResponse = Message<"agx.v1.TestMcpServerResponse"> & {
  * Use `create(TestMcpServerResponseSchema)` to create a new message.
  */
 export const TestMcpServerResponseSchema: GenMessage<TestMcpServerResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 42);
+  messageDesc(file_agx_v1_agx, 43);
 
 /**
  * @generated from message agx.v1.TestMcpServerResponse.Tool
@@ -1366,7 +1470,7 @@ export type TestMcpServerResponse_Tool = Message<"agx.v1.TestMcpServerResponse.T
  * Use `create(TestMcpServerResponse_ToolSchema)` to create a new message.
  */
 export const TestMcpServerResponse_ToolSchema: GenMessage<TestMcpServerResponse_Tool> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 42, 0);
+  messageDesc(file_agx_v1_agx, 43, 0);
 
 /**
  * @generated from message agx.v1.LoginRequest
@@ -1385,7 +1489,7 @@ export type LoginRequest = Message<"agx.v1.LoginRequest"> & {
  * Use `create(LoginRequestSchema)` to create a new message.
  */
 export const LoginRequestSchema: GenMessage<LoginRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 43);
+  messageDesc(file_agx_v1_agx, 44);
 
 /**
  * @generated from message agx.v1.LoginResponse
@@ -1414,7 +1518,7 @@ export type LoginResponse = Message<"agx.v1.LoginResponse"> & {
  * Use `create(LoginResponseSchema)` to create a new message.
  */
 export const LoginResponseSchema: GenMessage<LoginResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 44);
+  messageDesc(file_agx_v1_agx, 45);
 
 /**
  * The first event: open authorization_url in a browser on this machine before expires_at.
@@ -1445,7 +1549,7 @@ export type LoginStarted = Message<"agx.v1.LoginStarted"> & {
  * Use `create(LoginStartedSchema)` to create a new message.
  */
 export const LoginStartedSchema: GenMessage<LoginStarted> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 45);
+  messageDesc(file_agx_v1_agx, 46);
 
 /**
  * The last event; the stream then ends.
@@ -1471,7 +1575,7 @@ export type LoginFinished = Message<"agx.v1.LoginFinished"> & {
  * Use `create(LoginFinishedSchema)` to create a new message.
  */
 export const LoginFinishedSchema: GenMessage<LoginFinished> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 46);
+  messageDesc(file_agx_v1_agx, 47);
 
 /**
  * @generated from enum agx.v1.LoginFinished.Outcome
@@ -1502,7 +1606,7 @@ export enum LoginFinished_Outcome {
  * Describes the enum agx.v1.LoginFinished.Outcome.
  */
 export const LoginFinished_OutcomeSchema: GenEnum<LoginFinished_Outcome> = /*@__PURE__*/
-  enumDesc(file_agx_v1_agx, 46, 0);
+  enumDesc(file_agx_v1_agx, 47, 0);
 
 /**
  * @generated from message agx.v1.SetSecretRequest
@@ -1526,7 +1630,7 @@ export type SetSecretRequest = Message<"agx.v1.SetSecretRequest"> & {
  * Use `create(SetSecretRequestSchema)` to create a new message.
  */
 export const SetSecretRequestSchema: GenMessage<SetSecretRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 47);
+  messageDesc(file_agx_v1_agx, 48);
 
 /**
  * @generated from message agx.v1.SetSecretResponse
@@ -1539,7 +1643,7 @@ export type SetSecretResponse = Message<"agx.v1.SetSecretResponse"> & {
  * Use `create(SetSecretResponseSchema)` to create a new message.
  */
 export const SetSecretResponseSchema: GenMessage<SetSecretResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 48);
+  messageDesc(file_agx_v1_agx, 49);
 
 /**
  * @generated from message agx.v1.GetSecretStatusRequest
@@ -1558,7 +1662,7 @@ export type GetSecretStatusRequest = Message<"agx.v1.GetSecretStatusRequest"> & 
  * Use `create(GetSecretStatusRequestSchema)` to create a new message.
  */
 export const GetSecretStatusRequestSchema: GenMessage<GetSecretStatusRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 49);
+  messageDesc(file_agx_v1_agx, 50);
 
 /**
  * @generated from message agx.v1.GetSecretStatusResponse
@@ -1575,7 +1679,7 @@ export type GetSecretStatusResponse = Message<"agx.v1.GetSecretStatusResponse"> 
  * Use `create(GetSecretStatusResponseSchema)` to create a new message.
  */
 export const GetSecretStatusResponseSchema: GenMessage<GetSecretStatusResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 50);
+  messageDesc(file_agx_v1_agx, 51);
 
 /**
  * @generated from message agx.v1.SecretStatus
@@ -1628,7 +1732,7 @@ export type SecretStatus = Message<"agx.v1.SecretStatus"> & {
  * Use `create(SecretStatusSchema)` to create a new message.
  */
 export const SecretStatusSchema: GenMessage<SecretStatus> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 51);
+  messageDesc(file_agx_v1_agx, 52);
 
 /**
  * @generated from enum agx.v1.SecretStatus.State
@@ -1669,7 +1773,7 @@ export enum SecretStatus_State {
  * Describes the enum agx.v1.SecretStatus.State.
  */
 export const SecretStatus_StateSchema: GenEnum<SecretStatus_State> = /*@__PURE__*/
-  enumDesc(file_agx_v1_agx, 51, 0);
+  enumDesc(file_agx_v1_agx, 52, 0);
 
 /**
  * @generated from message agx.v1.LogoutRequest
@@ -1686,7 +1790,7 @@ export type LogoutRequest = Message<"agx.v1.LogoutRequest"> & {
  * Use `create(LogoutRequestSchema)` to create a new message.
  */
 export const LogoutRequestSchema: GenMessage<LogoutRequest> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 52);
+  messageDesc(file_agx_v1_agx, 53);
 
 /**
  * @generated from message agx.v1.LogoutResponse
@@ -1699,7 +1803,7 @@ export type LogoutResponse = Message<"agx.v1.LogoutResponse"> & {
  * Use `create(LogoutResponseSchema)` to create a new message.
  */
 export const LogoutResponseSchema: GenMessage<LogoutResponse> = /*@__PURE__*/
-  messageDesc(file_agx_v1_agx, 53);
+  messageDesc(file_agx_v1_agx, 54);
 
 /**
  * Control interface. Native MCP traffic uses separate HTTP endpoints.

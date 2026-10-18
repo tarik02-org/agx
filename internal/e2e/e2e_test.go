@@ -285,16 +285,14 @@ func (e *env) daemonVersion() string {
 	e.t.Helper()
 	var status struct {
 		Data struct {
-			Runtime struct {
-				Version string `json:"version"`
-			} `json:"runtime"`
+			Version string `json:"version"`
 		} `json:"data"`
 	}
 	r := e.ok("daemon", "status", "--json")
 	if err := json.Unmarshal([]byte(r.stdout), &status); err != nil {
 		e.t.Fatal(err)
 	}
-	return status.Data.Runtime.Version
+	return status.Data.Version
 }
 
 // envelope is one JSON document agx writes to stdout with --json.
@@ -422,7 +420,7 @@ func TestEndToEnd(t *testing.T) {
 
 	t.Run("sops secret status", func(t *testing.T) {
 		r := e.ok("secret", "status", "sealed", "--json")
-		if !strings.Contains(r.stdout, `"kind":"sops"`) || !strings.Contains(r.stdout, "STATE_READY") {
+		if !strings.Contains(r.stdout, `"kind":"sops"`) || !strings.Contains(r.stdout, `"state":"ready"`) {
 			t.Fatalf("status = %s", r.stdout)
 		}
 		if strings.Contains(r.stdout, sealed) {
@@ -448,7 +446,7 @@ func TestEndToEnd(t *testing.T) {
 		if err := json.Unmarshal([]byte(r.stdout), &view); err != nil {
 			t.Fatal(err)
 		}
-		if len(view.Data.Launches) != 1 || view.Data.Launches[0].State != "STATE_FINISHED" ||
+		if len(view.Data.Launches) != 1 || view.Data.Launches[0].State != "finished" ||
 			view.Data.Launches[0].Harness != "claude-e2e" || view.Data.Launches[0].Mode != "print" {
 			t.Fatalf("launches = %+v", view.Data.Launches)
 		}
@@ -511,12 +509,13 @@ func TestEndToEnd(t *testing.T) {
 		e.jsonFail("not_found", "mcp", "test", "missing")
 
 		var secrets struct {
-			Statuses []struct {
-				SecretID string `json:"secret_id"`
-			} `json:"statuses"`
+			Secrets []struct {
+				ID    string `json:"id"`
+				State string `json:"state"`
+			} `json:"secrets"`
 		}
 		e.jsonOK(&secrets, "secret", "status")
-		if len(secrets.Statuses) != 2 {
+		if len(secrets.Secrets) != 2 || secrets.Secrets[0].ID == "" || secrets.Secrets[0].State == "" {
 			t.Fatalf("secret status = %+v", secrets)
 		}
 		e.jsonFail("failed_precondition", "secret", "set", "sealed", "--stdin")

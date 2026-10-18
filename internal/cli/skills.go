@@ -276,7 +276,7 @@ func (s *session) addPackageSkills(
 			)
 		}
 		f.Define("packages", string(id), definition)
-		s.result.Defined = append(s.result.Defined, resourceRef{Kind: "packages", ID: string(id)})
+		s.result.Defined = append(s.result.Defined, definitionJSON{Kind: "packages", ID: string(id)})
 	} else if p := s.config.Packages[id]; p.Git != source.git || p.Ref != source.ref || p.Subdir != source.subdir {
 		return codedf(
 			codeConflict,
@@ -361,32 +361,35 @@ func (s *session) overlay() (config.Overlay, error) {
 	return overlay, nil
 }
 
-func skillRows(c *config.Config) ([]string, [][]string, []any) {
+func skillRows(c *config.Config) ([]string, [][]string, any) {
 	out := ui.Stdout
 	rows := [][]string{}
-	items := []any{}
+	items := []skillJSON{}
 	for _, id := range slices.Sorted(maps.Keys(c.Skills)) {
 		skill := c.Skills[id]
-		kind, from := "path", ui.ShortPath(skill.Path, "")
+		// JSON keeps the full path that the table shortens.
+		kind, from, fromJSON := "path", ui.ShortPath(skill.Path, ""), skill.Path
 		switch {
 		case skill.Generated():
-			kind, from = "generated", ""
+			kind, from, fromJSON = "generated", "", ""
 		case skill.Package != "":
 			kind, from = "git", c.Packages[skill.Package].Git
+			fromJSON = from
 		case !slices.Contains(c.Files, skill.Source.Path):
 			kind = "package"
 			from = string(id)[:strings.LastIndex(string(id), "/")]
+			fromJSON = from
 		}
 		rows = append(rows, []string{out.ID(string(id)), kind, from, out.Path(location(c, skill.Source))})
-		items = append(items, struct {
-			ID     config.ID     `json:"id"`
-			Kind   string        `json:"kind"`
-			From   string        `json:"from,omitempty"`
-			Inline bool          `json:"inline"`
-			Source config.Source `json:"source"`
-		}{id, kind, from, skill.Inline, skill.Source})
+		items = append(items, skillJSON{
+			ID:     string(id),
+			Kind:   kind,
+			From:   jsonString(fromJSON),
+			Inline: skill.Inline,
+			Source: configSource(skill.Source),
+		})
 	}
-	return []string{"ID", "KIND", "FROM", "SOURCE"}, rows, items
+	return []string{"ID", "KIND", "FROM", "SOURCE"}, rows, skillListJSON{Skills: items}
 }
 
 // textNode keeps multi-line text readable as a literal block.

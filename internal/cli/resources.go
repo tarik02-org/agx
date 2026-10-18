@@ -101,10 +101,10 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 	return command
 }
 
-func instructionsRows(c *config.Config) ([]string, [][]string, []any) {
+func instructionsRows(c *config.Config) ([]string, [][]string, any) {
 	out := ui.Stdout
 	rows := [][]string{}
-	items := []any{}
+	items := []instructionsJSON{}
 	for _, id := range slices.Sorted(maps.Keys(c.Instructions)) {
 		i := c.Instructions[id]
 		kind, from := "file", ui.ShortPath(i.Path, "")
@@ -121,16 +121,16 @@ func instructionsRows(c *config.Config) ([]string, [][]string, []any) {
 			order = strconv.Itoa(i.Order)
 		}
 		rows = append(rows, []string{out.ID(string(id)), kind, order, from, out.Path(location(c, i.Source))})
-		items = append(items, struct {
-			ID     config.ID     `json:"id"`
-			Kind   string        `json:"kind"`
-			Path   string        `json:"path,omitempty"`
-			Order  int           `json:"order,omitempty"`
-			Inline bool          `json:"inline"`
-			Source config.Source `json:"source"`
-		}{id, kind, i.Path, i.Order, i.Inline, i.Source})
+		items = append(items, instructionsJSON{
+			ID:     string(id),
+			Kind:   kind,
+			Path:   jsonString(i.Path),
+			Order:  jsonInt(i.Order),
+			Inline: i.Inline,
+			Source: configSource(i.Source),
+		})
 	}
-	return []string{"ID", "KIND", "ORDER", "FROM", "SOURCE"}, rows, items
+	return []string{"ID", "KIND", "ORDER", "FROM", "SOURCE"}, rows, instructionsListJSON{Instructions: items}
 }
 
 func excerpt(text string, limit int) string {
@@ -212,7 +212,7 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 				return err
 			}
 			f.Define("harnesses", name, definition)
-			s.result.Defined = append(s.result.Defined, resourceRef{Kind: "harnesses", ID: name})
+			s.result.Defined = append(s.result.Defined, definitionJSON{Kind: "harnesses", ID: name})
 			ok, err := s.commit()
 			if err != nil {
 				return err
@@ -235,10 +235,10 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 	return command
 }
 
-func harnessRows(c *config.Config) ([]string, [][]string, []any) {
+func harnessRows(c *config.Config) ([]string, [][]string, any) {
 	out := ui.Stdout
 	rows := [][]string{}
-	items := []any{}
+	items := []harnessJSON{}
 	for _, name := range c.HarnessNames() {
 		h, err := c.Harness(name)
 		if err != nil {
@@ -250,19 +250,22 @@ func harnessRows(c *config.Config) ([]string, [][]string, []any) {
 			base = "built-in"
 		}
 		source := ""
+		var sourceDocument *sourceJSON
 		if defined {
 			source = location(c, def.Source)
+			document := configSource(def.Source)
+			sourceDocument = &document
 		}
 		rows = append(rows, []string{out.ID(name), base, h.Builtin, ui.ShortPath(h.Executable, ""), out.Path(source)})
-		items = append(items, struct {
-			Name       string `json:"name"`
-			Base       string `json:"base,omitempty"`
-			Builtin    string `json:"builtin"`
-			Executable string `json:"executable,omitempty"`
-			Source     string `json:"source,omitempty"`
-		}{name, def.Base, h.Builtin, h.Executable, source})
+		items = append(items, harnessJSON{
+			Name:       name,
+			Base:       jsonString(def.Base),
+			Builtin:    h.Builtin,
+			Executable: jsonString(h.Executable),
+			Source:     sourceDocument,
+		})
 	}
-	return []string{"NAME", "BASE", "BUILT-IN", "EXECUTABLE", "SOURCE"}, rows, items
+	return []string{"NAME", "BASE", "BUILT-IN", "EXECUTABLE", "SOURCE"}, rows, harnessListJSON{Harnesses: items}
 }
 
 // removeHarness deletes every fragment's declaration of a harness. Definitions extending it must
@@ -303,7 +306,7 @@ func (s *session) removeHarness(name string, force bool) error {
 		}
 		return codedf(codeNotFound, "unknown harness %s", name)
 	}
-	s.result.Removed = append(s.result.Removed, resourceRef{Kind: "harnesses", ID: name})
+	s.result.Removed = append(s.result.Removed, definitionJSON{Kind: "harnesses", ID: name})
 	if len(filters) == 0 {
 		return nil
 	}

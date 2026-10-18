@@ -132,42 +132,11 @@ type session struct {
 	// written lists the files the commit wrote.
 	written []string
 	// result records what the command did, for its JSON document.
-	result editResult
+	result editJSON
 }
 
-// editResult is the JSON document of a command that edits configuration.
-type editResult struct {
-	Files    []fileChange  `json:"files"`
-	Defined  []resourceRef `json:"defined"`
-	Enabled  []resourceRef `json:"enabled"`
-	Disabled []resourceRef `json:"disabled"`
-	Removed  []resourceRef `json:"removed"`
-	// Scope is where resources were enabled or disabled; nil when the command changed no scope.
-	Scope *jsonScope `json:"scope"`
-	// NeedsLogin is set by mcp add: whether the new server asks for an OAuth login.
-	NeedsLogin *bool `json:"needs_login,omitempty"`
-}
-
-type fileChange struct {
-	Path    string `json:"path"`
-	Diff    string `json:"diff"`
-	Written bool   `json:"written"`
-}
-
-// resourceRef names a definition by its configuration section, such as mcp or harnesses.
-type resourceRef struct {
-	Kind string `json:"kind"`
-	ID   string `json:"id"`
-}
-
-type jsonScope struct {
-	// Directory is nil for everywhere.
-	Directory *string  `json:"directory"`
-	Harnesses []string `json:"harnesses"`
-}
-
-func (s scope) json() *jsonScope {
-	out := &jsonScope{Harnesses: slices.Clone(s.harnesses)}
+func (s scope) json() *scopeJSON {
+	out := &scopeJSON{Harnesses: slices.Clone(s.harnesses)}
 	if out.Harnesses == nil {
 		out.Harnesses = []string{}
 	}
@@ -199,12 +168,12 @@ func newSession(ctx context.Context, paths platform.Paths, builtins config.Built
 		locks:       map[string][]byte{},
 		yes:         yes || !tty,
 		interactive: tty,
-		result: editResult{
-			Files:    []fileChange{},
-			Defined:  []resourceRef{},
-			Enabled:  []resourceRef{},
-			Disabled: []resourceRef{},
-			Removed:  []resourceRef{},
+		result: editJSON{
+			Files:    []fileChangeJSON{},
+			Defined:  []definitionJSON{},
+			Enabled:  []definitionJSON{},
+			Disabled: []definitionJSON{},
+			Removed:  []definitionJSON{},
 		},
 	}, nil
 }
@@ -292,7 +261,7 @@ func (s *session) matchingRules(target scope, visit func(*edit.File, edit.Rule) 
 // enable selects id in the first rule matching target, or in a new rule in fallback, and drops it
 // from that rule's remove list. It returns whether anything changed.
 func (s *session) enable(kind, id string, target scope, fallback string) (bool, error) {
-	s.result.Enabled = append(s.result.Enabled, resourceRef{Kind: kind, ID: id})
+	s.result.Enabled = append(s.result.Enabled, definitionJSON{Kind: kind, ID: id})
 	s.result.Scope = target.json()
 	changed := false
 	found := false
@@ -381,7 +350,7 @@ func (s *session) selection(target scope) [][]config.Resource {
 // otherwise by appending it to the remove list of the first matching rule or a new rule in
 // fallback, since another rule selects it.
 func (s *session) disable(kind, id string, target scope, fallback string) (bool, error) {
-	s.result.Disabled = append(s.result.Disabled, resourceRef{Kind: kind, ID: id})
+	s.result.Disabled = append(s.result.Disabled, definitionJSON{Kind: kind, ID: id})
 	s.result.Scope = target.json()
 	changed := false
 	err := s.matchingRules(target, func(f *edit.File, r edit.Rule) (bool, error) {
@@ -548,7 +517,7 @@ func (s *session) commit() (bool, error) {
 		s.written = append(s.written, p.path)
 		s.result.Files = append(
 			s.result.Files,
-			fileChange{Path: p.path, Diff: edit.Diff(p.path, p.before, p.after), Written: true},
+			fileChangeJSON{Path: p.path, Diff: edit.Diff(p.path, p.before, p.after), Written: true},
 		)
 	}
 	for _, path := range slices.Sorted(maps.Keys(s.locks)) {
@@ -562,7 +531,7 @@ func (s *session) commit() (bool, error) {
 		s.written = append(s.written, path)
 		s.result.Files = append(
 			s.result.Files,
-			fileChange{Path: path, Diff: edit.Diff(path, current, s.locks[path]), Written: true},
+			fileChangeJSON{Path: path, Diff: edit.Diff(path, current, s.locks[path]), Written: true},
 		)
 	}
 	if !scripting.enabled {
@@ -697,7 +666,7 @@ func (s *session) define(kind, id, file string, value *yaml.Node) error {
 		return err
 	}
 	f.Define(kind, id, value)
-	s.result.Defined = append(s.result.Defined, resourceRef{Kind: kind, ID: id})
+	s.result.Defined = append(s.result.Defined, definitionJSON{Kind: kind, ID: id})
 	return nil
 }
 
@@ -750,7 +719,7 @@ func (s *session) removeDefinition(kind, id string, force bool) error {
 	} else if !f.Undefine(kind, id) {
 		return fmt.Errorf("cannot find the definition of %s in %s", id, source.Path)
 	}
-	s.result.Removed = append(s.result.Removed, resourceRef{Kind: kind, ID: id})
+	s.result.Removed = append(s.result.Removed, definitionJSON{Kind: kind, ID: id})
 	refs, err := s.references(kind, id)
 	if err != nil {
 		return err

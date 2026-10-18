@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -119,10 +120,10 @@ type editDocument struct {
 		Diff    string `json:"diff"`
 		Written bool   `json:"written"`
 	} `json:"files"`
-	Defined  []resourceRef `json:"defined"`
-	Enabled  []resourceRef `json:"enabled"`
-	Disabled []resourceRef `json:"disabled"`
-	Removed  []resourceRef `json:"removed"`
+	Defined  []definitionJSON `json:"defined"`
+	Enabled  []definitionJSON `json:"enabled"`
+	Disabled []definitionJSON `json:"disabled"`
+	Removed  []definitionJSON `json:"removed"`
 	Scope    *struct {
 		Directory *string  `json:"directory"`
 		Harnesses []string `json:"harnesses"`
@@ -141,7 +142,7 @@ func TestJSONEdits(t *testing.T) {
 		!strings.Contains(added.Files[0].Diff, "+  docs:") {
 		t.Fatalf("files = %+v", added.Files)
 	}
-	if len(added.Defined) != 1 || added.Defined[0] != (resourceRef{"mcp", "docs"}) ||
+	if len(added.Defined) != 1 || added.Defined[0] != (definitionJSON{"mcp", "docs"}) ||
 		len(added.Enabled) != 1 || added.Scope == nil || added.Scope.Directory != nil ||
 		added.NeedsLogin == nil || *added.NeedsLogin {
 		t.Fatalf("mcp add = %+v", added)
@@ -182,7 +183,7 @@ func TestJSONEdits(t *testing.T) {
 	}
 	var skill editDocument
 	okJSON(t, &skill, "skill", "add", "./skills/deploy")
-	if len(skill.Defined) != 1 || skill.Defined[0] != (resourceRef{"skills", "deploy"}) {
+	if len(skill.Defined) != 1 || skill.Defined[0] != (definitionJSON{"skills", "deploy"}) {
 		t.Fatalf("skill add = %+v", skill)
 	}
 	var instructions editDocument
@@ -192,7 +193,7 @@ func TestJSONEdits(t *testing.T) {
 	}
 	var harness editDocument
 	okJSON(t, &harness, "harness", "add", "claude-work", "--base", "claude", "--", "--verbose")
-	if len(harness.Defined) != 1 || harness.Defined[0] != (resourceRef{"harnesses", "claude-work"}) {
+	if len(harness.Defined) != 1 || harness.Defined[0] != (definitionJSON{"harnesses", "claude-work"}) {
 		t.Fatalf("harness add = %+v", harness)
 	}
 
@@ -259,7 +260,7 @@ func TestJSONValidate(t *testing.T) {
 		Diagnostics []struct {
 			Severity string     `json:"severity"`
 			Message  string     `json:"message"`
-			Source   jsonSource `json:"source"`
+			Source   sourceJSON `json:"source"`
 		} `json:"diagnostics"`
 	}
 	if code != 1 || len(docs) != 1 || docs[0].Data == nil {
@@ -269,7 +270,7 @@ func TestJSONValidate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if invalid.Valid || len(invalid.Diagnostics) != 1 || invalid.Diagnostics[0].Severity != "error" ||
-		invalid.Diagnostics[0].Source.Line != 2 || !strings.HasSuffix(invalid.Diagnostics[0].Source.Path, "agx.yaml") {
+		invalid.Diagnostics[0].Source.Line == nil || *invalid.Diagnostics[0].Source.Line != 2 || !strings.HasSuffix(invalid.Diagnostics[0].Source.Path, "agx.yaml") {
 		t.Fatalf("invalid validate = %+v", invalid)
 	}
 
@@ -400,10 +401,19 @@ func TestErrorCodes(t *testing.T) {
 		{coded(codeConflict, coded(codeNotFound, errors.New("x"))), codeConflict},
 		{daemon.ErrVersionMismatch, codeVersionMismatch},
 		{daemon.ErrUnavailable, codeDaemonUnavailable},
-		{connect.NewError(connect.CodeNotFound, errors.New("x")), codeNotFound},
-		{connect.NewError(connect.CodeFailedPrecondition, errors.New("needs-auth: x")), codeNeedsLogin},
-		{connect.NewError(connect.CodeFailedPrecondition, errors.New("daemon configuration invalid: x")), codeConfigInvalid},
+		{reasonError(t, connect.CodeNotFound, v1.ErrorDetail_REASON_NOT_FOUND), codeNotFound},
+		{reasonError(t, connect.CodeFailedPrecondition, v1.ErrorDetail_REASON_NEEDS_LOGIN), codeNeedsLogin},
+		{reasonError(t, connect.CodeFailedPrecondition, v1.ErrorDetail_REASON_CONFIG_INVALID), codeConfigInvalid},
+		{reasonError(t, connect.CodeUnavailable, v1.ErrorDetail_REASON_CONFIG_INVALID), codeConfigInvalid},
+		{reasonError(t, connect.CodeUnauthenticated, v1.ErrorDetail_REASON_UNAUTHENTICATED), codeDaemonUnavailable},
+		// The reason decides, never the message.
+		{connect.NewError(connect.CodeFailedPrecondition, errors.New("needs-auth: x")), codeInternal},
+		{reasonError(t, connect.CodeInternal, v1.ErrorDetail_Reason(999)), codeInternal},
+		{reasonError(t, connect.CodeNotFound, v1.ErrorDetail_REASON_UNSPECIFIED), codeInternal},
+		// Errors without a reason come from the transport.
 		{connect.NewError(connect.CodeUnavailable, errors.New("x")), codeDaemonUnavailable},
+		{connect.NewError(connect.CodeDeadlineExceeded, errors.New("x")), codeTimeout},
+		{connect.NewError(connect.CodeNotFound, errors.New("x")), codeInternal},
 		{os.ErrNotExist, codeNotFound},
 		{errors.New("unclassified"), codeInternal},
 	} {
@@ -416,18 +426,30 @@ func TestErrorCodes(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		path = `C:\agx\agx.yaml`
 	}
-	for message, want := range map[string]*jsonSource{
-		path + ":12: MCP server x: bad":                       {Path: path, Line: 12},
+	for message, want := range map[string]*sourceJSON{
+		path + ":12: MCP server x: bad":                       {Path: path, Line: jsonInt(12)},
 		"configuration is invalid; fix it: " + path + ": bad": {Path: path},
-		path + ": yaml: construct errors: line 4: field x":    {Path: path, Line: 4},
-		path + ": load error in parser at L5.C1: no content":  {Path: path, Line: 5},
+		path + ": yaml: construct errors: line 4: field x":    {Path: path, Line: jsonInt(4)},
+		path + ": load error in parser at L5.C1: no content":  {Path: path, Line: jsonInt(5)},
 		"package x is not installed; run agx install":         nil,
 	} {
 		got := errorSource(message)
-		if (got == nil) != (want == nil) || got != nil && *got != *want {
+		if !reflect.DeepEqual(got, want) {
 			t.Errorf("errorSource(%q) = %+v, want %+v", message, got, want)
 		}
 	}
+}
+
+// reasonError is an error as the daemon reports it, with its reason in the details.
+func reasonError(t *testing.T, code connect.Code, reason v1.ErrorDetail_Reason) error {
+	t.Helper()
+	err := connect.NewError(code, errors.New("x"))
+	detail, detailErr := connect.NewErrorDetail(&v1.ErrorDetail{Reason: reason})
+	if detailErr != nil {
+		t.Fatal(detailErr)
+	}
+	err.AddDetail(detail)
+	return err
 }
 
 func TestLoginEvents(t *testing.T) {
@@ -452,10 +474,10 @@ func TestLoginEvents(t *testing.T) {
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	want := []string{
-		`{"version":1,"event":"started","secret":"github","mcp_id":"github",` +
+		`{"version":1,"event":"started","secret_id":"github","mcp_id":"github",` +
 			`"url":"https://example.com/authorize","expires_at":"2026-01-02T03:04:05Z"}`,
-		`{"version":1,"event":"finished","secret":"github","outcome":"success","message":""}`,
-		`{"version":1,"event":"finished","secret":"github","outcome":"expired","message":""}`,
+		`{"version":1,"event":"finished","secret_id":"github","outcome":"success","message":null}`,
+		`{"version":1,"event":"finished","secret_id":"github","outcome":"expired","message":null}`,
 	}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("events:\n%s\nwant:\n%s", out.String(), strings.Join(want, "\n"))

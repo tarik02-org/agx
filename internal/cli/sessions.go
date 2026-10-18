@@ -54,14 +54,28 @@ func sessionsCommand(paths *platform.Paths, registry adapters.Registry, harnesse
 				if all {
 					scope = "all"
 				}
-				return printJSON(struct {
-					Scope     string            `json:"scope"`
-					Directory string            `json:"directory"`
-					Query     string            `json:"query,omitempty"`
-					Sessions  []sessions.Entry  `json:"sessions"`
-					Files     sessions.Stats    `json:"files"`
-					Errors    map[string]string `json:"errors,omitempty"`
-				}{scope, directory, query, entries, listing.Stats, errs})
+				items := []sessionJSON{}
+				for _, e := range entries {
+					items = append(items, sessionJSON{
+						ID:        e.ID,
+						Harness:   e.Harness,
+						Builtin:   e.Builtin,
+						Recorded:  e.Recorded,
+						Directory: e.Directory,
+						Title:     jsonString(e.Title),
+						Message:   jsonString(e.Message),
+						StartedAt: jsonTime(e.Started),
+						UpdatedAt: jsonTime(e.Updated),
+					})
+				}
+				return printJSON(sessionsJSON{
+					Scope:     scope,
+					Directory: directory,
+					Query:     jsonString(query),
+					Sessions:  items,
+					Files:     sessionFilesJSON(listing.Stats),
+					Errors:    errs,
+				})
 			}
 			reportListing(listing)
 			return printSessions(entries, directory, all, query != "")

@@ -93,12 +93,17 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 				return err
 			}
 			if scripting.enabled {
-				return printJSON(struct {
-					Directory string        `json:"directory"`
-					OnPath    bool          `json:"on_path"`
-					Target    string        `json:"target"`
-					Shims     []shims.Entry `json:"shims"`
-				}{dir, shims.OnPath(dir), target, entries})
+				items := []shimJSON{}
+				for _, e := range entries {
+					items = append(items, shimJSON{
+						Name:   e.Name,
+						File:   e.File,
+						Kind:   jsonString(string(e.Kind)),
+						Target: jsonString(e.Target),
+						State:  string(e.State),
+					})
+				}
+				return printJSON(shimListJSON{Directory: dir, OnPath: shims.OnPath(dir), Target: target, Shims: items})
 			}
 			if err := printShims(dir, entries); err != nil {
 				return err
@@ -138,15 +143,23 @@ func printShimChangesJSON(dir, target string, changes []shims.Change, err error)
 	if err != nil {
 		return err
 	}
-	if changes == nil {
-		changes = []shims.Change{}
+	items := []shimChangeJSON{}
+	for _, c := range changes {
+		items = append(items, shimChangeJSON{
+			Name:   c.Name,
+			File:   c.File,
+			Kind:   jsonString(string(c.Kind)),
+			Target: jsonString(c.Target),
+			Action: string(c.Action),
+			State:  jsonString(string(c.State)),
+		})
 	}
-	return printJSON(struct {
-		Directory string         `json:"directory"`
-		OnPath    bool           `json:"on_path"`
-		Target    string         `json:"target,omitempty"`
-		Changes   []shims.Change `json:"changes"`
-	}{dir, shims.OnPath(dir), target, changes})
+	return printJSON(shimChangesJSON{
+		Directory: dir,
+		OnPath:    shims.OnPath(dir),
+		Target:    jsonString(target),
+		Changes:   items,
+	})
 }
 
 func printShimChanges(dir string, changes []shims.Change) error {

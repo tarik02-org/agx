@@ -24,18 +24,6 @@ func progress(text string) {
 	}
 }
 
-// definitionCounts counts what a configuration defines; on-demand OAuth secrets are implied, not
-// defined.
-type definitionCounts struct {
-	Skills       int `json:"skills"`
-	Instructions int `json:"instructions"`
-	MCP          int `json:"mcp"`
-	Secrets      int `json:"secrets"`
-	Harnesses    int `json:"harnesses"`
-	Scopes       int `json:"scopes"`
-	Packages     int `json:"packages"`
-}
-
 func countDefinitions(c *config.Config) definitionCounts {
 	secrets := 0
 	for _, secret := range c.Secrets {
@@ -57,27 +45,18 @@ func countDefinitions(c *config.Config) definitionCounts {
 // printValidation writes config validate's document. An invalid configuration gets one too,
 // carrying the failure as a diagnostic, and exits 1.
 func printValidation(root string, c *config.Config, loadErr error) error {
-	type diagnostic struct {
-		Severity string      `json:"severity"`
-		Message  string      `json:"message"`
-		Source   *jsonSource `json:"source,omitempty"`
-	}
-	type validation struct {
-		Valid       bool              `json:"valid"`
-		Root        string            `json:"root"`
-		Files       []string          `json:"files"`
-		Counts      *definitionCounts `json:"counts"`
-		Diagnostics []diagnostic      `json:"diagnostics"`
-	}
 	if loadErr != nil {
 		if canonical, err := config.Canonical(root); err == nil {
 			root = canonical
 		}
 		message := loadErr.Error()
-		err := printJSON(validation{
-			Root:        root,
-			Files:       []string{},
-			Diagnostics: []diagnostic{{Severity: "error", Message: message, Source: errorSource(message)}},
+		code := codeConfigInvalid
+		err := printJSON(validationJSON{
+			Root:  root,
+			Files: []string{},
+			Diagnostics: []diagnosticJSON{
+				{Severity: "error", Code: &code, Message: message, Source: errorSource(message)},
+			},
 		})
 		if err != nil {
 			return err
@@ -85,12 +64,12 @@ func printValidation(root string, c *config.Config, loadErr error) error {
 		return &ExitError{Code: 1}
 	}
 	counts := countDefinitions(c)
-	return printJSON(validation{
+	return printJSON(validationJSON{
 		Valid:       true,
 		Root:        c.Root,
-		Files:       c.Files,
+		Files:       jsonList(c.Files),
 		Counts:      &counts,
-		Diagnostics: []diagnostic{},
+		Diagnostics: []diagnosticJSON{},
 	})
 }
 

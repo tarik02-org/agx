@@ -100,7 +100,7 @@ func doctorCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			}
 			report := runDoctor(cmd.Context(), *paths, registry, *builtins, directory, all)
 			if scripting.enabled {
-				err = printJSON(report)
+				err = printJSON(doctorDocument(report))
 			} else {
 				err = printDoctor(report)
 			}
@@ -579,7 +579,7 @@ func mcpCheck(id config.ID, server config.MCPServer, response *v1.TestMcpServerR
 	message := err.Error()
 	var rpc *connect.Error
 	if errors.As(err, &rpc) {
-		message = strings.TrimPrefix(rpc.Message(), "needs-auth: ")
+		message = rpc.Message()
 	}
 	switch errorCode(err) {
 	case codeNeedsLogin:

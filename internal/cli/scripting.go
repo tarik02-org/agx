@@ -15,9 +15,8 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/daemon"
@@ -70,14 +69,6 @@ func printJSON(value any) error {
 		Version int `json:"version"`
 		Data    any `json:"data"`
 	}{jsonVersion, value})
-}
-
-func printProto(value proto.Message) error {
-	b, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(value)
-	if err != nil {
-		return err
-	}
-	return printJSON(json.RawMessage(b))
 }
 
 // event leads each line of an event stream, such as a login's; the event's fields follow it.
@@ -181,24 +172,38 @@ func errorCode(err error) string {
 	return codeInternal
 }
 
-// connectCode maps the daemon's Connect codes; docs/api.md fixes their meaning.
+// reasonCodes maps the reasons daemon errors carry. A reason this build does not know is
+// unclassified, so it maps to codeInternal like any defect.
+var reasonCodes = map[v1.ErrorDetail_Reason]string{
+	v1.ErrorDetail_REASON_INVALID_REQUEST:     codeInvalidRequest,
+	v1.ErrorDetail_REASON_NOT_FOUND:           codeNotFound,
+	v1.ErrorDetail_REASON_CONFLICT:            codeConflict,
+	v1.ErrorDetail_REASON_FAILED_PRECONDITION: codeFailedPrecondition,
+	v1.ErrorDetail_REASON_NEEDS_LOGIN:         codeNeedsLogin,
+	v1.ErrorDetail_REASON_CONFIG_INVALID:      codeConfigInvalid,
+	v1.ErrorDetail_REASON_UNAVAILABLE:         codeDaemonUnavailable,
+	// The caller's credential belongs to a daemon that is no longer the one answering.
+	v1.ErrorDetail_REASON_UNAUTHENTICATED: codeDaemonUnavailable,
+	v1.ErrorDetail_REASON_TIMEOUT:         codeTimeout,
+	v1.ErrorDetail_REASON_INTERNAL:        codeInternal,
+}
+
+// connectCode classifies a Connect error by the reason the daemon attached. An error without one
+// arose in the transport, on this side of the connection.
 func connectCode(err *connect.Error) string {
-	switch err.Code() {
-	case connect.CodeNotFound:
-		return codeNotFound
-	case connect.CodeInvalidArgument:
-		return codeInvalidRequest
-	case connect.CodeFailedPrecondition:
-		switch {
-		case strings.HasPrefix(err.Message(), "daemon configuration invalid"):
-			return codeConfigInvalid
-		case strings.HasPrefix(err.Message(), "needs-auth"):
-			return codeNeedsLogin
+	for _, d := range err.Details() {
+		value, decodeErr := d.Value()
+		detail, ok := value.(*v1.ErrorDetail)
+		if decodeErr != nil || !ok {
+			continue
 		}
-		return codeFailedPrecondition
-	case connect.CodeAlreadyExists, connect.CodeAborted:
-		return codeConflict
-	case connect.CodeUnavailable, connect.CodeUnauthenticated:
+		if code, known := reasonCodes[detail.Reason]; known {
+			return code
+		}
+		return codeInternal
+	}
+	switch err.Code() {
+	case connect.CodeUnavailable:
 		return codeDaemonUnavailable
 	case connect.CodeDeadlineExceeded:
 		return codeTimeout
@@ -209,11 +214,6 @@ func connectCode(err *connect.Error) string {
 	}
 }
 
-type jsonSource struct {
-	Path string `json:"path"`
-	Line int    `json:"line,omitempty"`
-}
-
 // sourcePattern finds the configuration location an error message leads with, as configuration
 // errors do: "<path>:<line>: …" or "<path>: …", possibly after a prefix ending in ": ".
 var (
@@ -222,30 +222,27 @@ var (
 	yamlLine = regexp.MustCompile(`yaml: .*?\bline (\d+):|\bat L(\d+)\.C\d+`)
 )
 
-func errorSource(message string) *jsonSource {
+func errorSource(message string) *sourceJSON {
 	m := sourcePattern.FindStringSubmatch(message)
 	if m == nil || !filepath.IsAbs(m[1]) {
 		return nil
 	}
-	source := &jsonSource{Path: m[1]}
+	source := &sourceJSON{Path: m[1]}
 	line := m[2]
 	if line == "" {
 		if y := yamlLine.FindStringSubmatch(message); y != nil {
 			line = y[1] + y[2]
 		}
 	}
-	source.Line, _ = strconv.Atoi(line)
+	if n, err := strconv.Atoi(line); err == nil {
+		source.Line = jsonInt(n)
+	}
 	return source
 }
 
 // printError writes err as a JSON error document; configuration errors name their location.
 func printError(code string, err error) {
-	type body struct {
-		Code    string      `json:"code"`
-		Message string      `json:"message"`
-		Source  *jsonSource `json:"source,omitempty"`
-	}
-	b := body{Code: code, Message: err.Error()}
+	b := errorJSON{Code: code, Message: err.Error()}
 	// Connect prefixes its code, which the document already carries.
 	var rpc *connect.Error
 	if errors.As(err, &rpc) {
@@ -256,7 +253,7 @@ func printError(code string, err error) {
 	}
 	// A failed write leaves only the exit status to report the error.
 	_ = json.NewEncoder(scripting.stdout).Encode(struct {
-		Version int  `json:"version"`
-		Error   body `json:"error"`
+		Version int       `json:"version"`
+		Error   errorJSON `json:"error"`
 	}{jsonVersion, b})
 }

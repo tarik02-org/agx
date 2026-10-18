@@ -206,7 +206,7 @@ daemon: {renew_seconds: 1}
 			threads[l.SessionID] = l.State
 		}
 	}
-	if len(view.Launches) != 3 || threads[work.id] != "STATE_RUNNING" || threads[second.id] != "STATE_RUNNING" {
+	if len(view.Launches) != 3 || threads[work.id] != "running" || threads[second.id] != "running" {
 		t.Fatalf("launches = %+v", view.Launches)
 	}
 	if r := e.ok("launch", "list"); !strings.Contains(r.stdout, "thread") {
@@ -266,7 +266,7 @@ daemon: {renew_seconds: 1}
 	}
 	e.jsonOK(&view, "launch", "list")
 	for _, l := range view.Launches {
-		if l.State != "STATE_FINISHED" {
+		if l.State != "finished" {
 			t.Errorf("launch %s is %s after the process exited", l.ID, l.State)
 		}
 	}

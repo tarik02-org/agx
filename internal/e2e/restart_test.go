@@ -278,7 +278,7 @@ func TestDaemonRestart(t *testing.T) {
 
 		// Any command starts the next daemon, which restores the launch on the same port.
 		e.ok("secret", "status")
-		if got := e.launches()[id]; got != "STATE_RUNNING" {
+		if got := e.launches()[id]; got != "running" {
 			t.Fatalf("restored launch is %q", got)
 		}
 		awaitServing(t, h.endpoint(), h.grant())
@@ -289,7 +289,7 @@ func TestDaemonRestart(t *testing.T) {
 		}
 
 		h.exit()
-		if got := e.launches()[id]; got != "STATE_FINISHED" {
+		if got := e.launches()[id]; got != "finished" {
 			t.Errorf("launch after its harness exited is %q\n%s", got, h.stderr.String())
 		}
 		if saved := e.savedLaunches(); len(saved) != 0 {
@@ -361,7 +361,7 @@ func TestDaemonRestart(t *testing.T) {
 		// The launch keeps its lease and grant; only its harness's endpoint URL is wrong now.
 		moved := "http://" + next.Host + old.Path
 		awaitServing(t, moved, h.grant())
-		if got := e.launches()[id]; got != "STATE_RUNNING" {
+		if got := e.launches()[id]; got != "running" {
 			t.Fatalf("launch is %q", got)
 		}
 	})
@@ -373,15 +373,13 @@ func (e *env) daemonVersionOf(binary string) string {
 	r := e.run(binary, nil, "daemon", "status", "--json")
 	var status struct {
 		Data struct {
-			Runtime struct {
-				Version string `json:"version"`
-			} `json:"runtime"`
+			Version string `json:"version"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal([]byte(r.stdout), &status); err != nil {
 		e.t.Fatalf("daemon status printed %q: %s", r.stdout, r.stderr)
 	}
-	return status.Data.Runtime.Version
+	return status.Data.Version
 }
 
 // daemonURL is the address in the daemon's discovery file.

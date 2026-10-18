@@ -99,12 +99,12 @@ func loginOutcome(id string, finished *v1.LoginFinished) error {
 		if !ok {
 			return codedf(codeInternal, "login to %s ended with an unknown outcome", id)
 		}
-		err := printEvent(struct {
-			event
-			Secret  string `json:"secret"`
-			Outcome string `json:"outcome"`
-			Message string `json:"message"`
-		}{newEvent("finished"), id, outcome, finished.Message})
+		err := printEvent(loginFinishedJSON{
+			event:    newEvent("finished"),
+			SecretID: id,
+			Outcome:  outcome,
+			Message:  jsonString(finished.Message),
+		})
 		if err != nil {
 			return err
 		}
@@ -138,17 +138,13 @@ func printLoginStarted(id string, started *v1.LoginStarted) error {
 		ui.Note("Open this URL in a browser on this machine to log in to " + id + ":")
 	}
 	if scripting.enabled {
-		expires := ""
-		if started.ExpiresAt != nil {
-			expires = started.ExpiresAt.AsTime().UTC().Format(time.RFC3339)
-		}
-		return printEvent(struct {
-			event
-			Secret    string `json:"secret"`
-			MCP       string `json:"mcp_id,omitempty"`
-			URL       string `json:"url"`
-			ExpiresAt string `json:"expires_at"`
-		}{newEvent("started"), id, started.McpId, started.AuthorizationUrl, expires})
+		return printEvent(loginStartedJSON{
+			event:     newEvent("started"),
+			SecretID:  id,
+			MCPID:     jsonString(started.McpId),
+			URL:       started.AuthorizationUrl,
+			ExpiresAt: jsonTimestamp(started.ExpiresAt),
+		})
 	}
 	_, err := fmt.Fprintln(ui.Stdout, ui.Stdout.Link(started.AuthorizationUrl))
 	return err

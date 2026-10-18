@@ -329,22 +329,6 @@ func testMCP(ctx context.Context, paths platform.Paths, builtins config.Builtins
 // printMCPTest writes mcp test's document. A server that fails the test still gets one, with its
 // state and the endpoint's diagnosis, and exits 1; failures to reach the daemon are errors.
 func printMCPTest(id, transport string, response *connect.Response[v1.TestMcpServerResponse], err error) error {
-	type tool struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	}
-	type server struct {
-		Name    string `json:"name"`
-		Version string `json:"version"`
-	}
-	type result struct {
-		ID        string  `json:"id"`
-		Transport string  `json:"transport"`
-		Server    *server `json:"server"`
-		Tools     []tool  `json:"tools"`
-		State     string  `json:"state"`
-		Message   string  `json:"message,omitempty"`
-	}
 	if err != nil {
 		var state string
 		switch errorCode(err) {
@@ -360,32 +344,32 @@ func printMCPTest(id, transport string, response *connect.Response[v1.TestMcpSer
 		if errors.As(err, &rpc) {
 			message = rpc.Message()
 		}
-		if printErr := printJSON(result{
-			ID: id, Transport: transport, Tools: []tool{}, State: state, Message: message,
+		if printErr := printJSON(mcpTestJSON{
+			ID: id, Transport: transport, Tools: []mcpToolJSON{}, State: state, Message: &message,
 		}); printErr != nil {
 			return printErr
 		}
 		return &ExitError{Code: 1}
 	}
 	msg := response.Msg
-	tools := []tool{}
+	tools := []mcpToolJSON{}
 	for _, t := range msg.ToolDetails {
-		tools = append(tools, tool{Name: t.Name, Description: t.Description})
+		tools = append(tools, mcpToolJSON{Name: t.Name, Description: jsonString(t.Description)})
 	}
-	return printJSON(result{
+	return printJSON(mcpTestJSON{
 		ID:        id,
 		Transport: transport,
-		Server:    &server{Name: msg.ServerName, Version: msg.ServerVersion},
+		Server:    &mcpTestServerJSON{Name: jsonString(msg.ServerName), Version: jsonString(msg.ServerVersion)},
 		Tools:     tools,
 		State:     "ready",
 	})
 }
 
 // mcpRows describes MCP servers for list output; values are shown as configured, never resolved.
-func mcpRows(c *config.Config) ([]string, [][]string, []any) {
+func mcpRows(c *config.Config) ([]string, [][]string, any) {
 	out := ui.Stdout
 	rows := [][]string{}
-	items := []any{}
+	items := []mcpServerJSON{}
 	for _, id := range slices.Sorted(maps.Keys(c.MCP)) {
 		server := c.MCP[id]
 		target := server.URL
@@ -393,31 +377,36 @@ func mcpRows(c *config.Config) ([]string, [][]string, []any) {
 			target = strings.Join(server.Command, " ")
 		}
 		authText := ""
+		var auth *mcpAuthJSON
 		switch secret := c.Secrets[server.Auth.Secret]; {
 		case server.Auth.None:
 			authText = "none"
+			auth = &mcpAuthJSON{Kind: "none"}
 		case server.Transport == "stdio":
 		case secret.Owner == id && secret.Implicit:
 			authText = "oauth (on demand)"
+			auth = &mcpAuthJSON{Kind: secret.Kind, SecretID: jsonString(string(server.Auth.Secret)), OnDemand: true}
 		case secret.Owner == id:
 			authText = secret.Kind
+			auth = &mcpAuthJSON{Kind: secret.Kind, SecretID: jsonString(string(server.Auth.Secret))}
 		default:
 			authText = "!secret " + string(server.Auth.Secret)
+			auth = &mcpAuthJSON{Kind: secret.Kind, SecretID: jsonString(string(server.Auth.Secret))}
 		}
 		rows = append(rows, []string{
 			out.ID(string(id)), server.Transport, target, authText, out.Path(location(c, server.Source)),
 		})
-		items = append(items, struct {
-			ID        config.ID     `json:"id"`
-			Transport string        `json:"transport"`
-			URL       string        `json:"url,omitempty"`
-			Command   []string      `json:"command,omitempty"`
-			Auth      string        `json:"auth,omitempty"`
-			Inline    bool          `json:"inline"`
-			Source    config.Source `json:"source"`
-		}{id, server.Transport, server.URL, server.Command, authText, server.Inline, server.Source})
+		items = append(items, mcpServerJSON{
+			ID:        string(id),
+			Transport: server.Transport,
+			URL:       jsonString(server.URL),
+			Command:   server.Command,
+			Auth:      auth,
+			Inline:    server.Inline,
+			Source:    configSource(server.Source),
+		})
 	}
-	return []string{"ID", "TRANSPORT", "TARGET", "AUTH", "SOURCE"}, rows, items
+	return []string{"ID", "TRANSPORT", "TARGET", "AUTH", "SOURCE"}, rows, mcpListJSON{MCP: items}
 }
 
 func location(c *config.Config, source config.Source) string {
@@ -448,19 +437,19 @@ func listCommand(paths *platform.Paths, builtins *config.Builtins, kind string) 
 			}
 			var headers []string
 			var rows [][]string
-			var items []any
+			var document any
 			switch kind {
 			case edit.MCP:
-				headers, rows, items = mcpRows(c)
+				headers, rows, document = mcpRows(c)
 			case edit.Skills:
-				headers, rows, items = skillRows(c)
+				headers, rows, document = skillRows(c)
 			case edit.Instructions:
-				headers, rows, items = instructionsRows(c)
+				headers, rows, document = instructionsRows(c)
 			default:
-				headers, rows, items = harnessRows(c)
+				headers, rows, document = harnessRows(c)
 			}
 			if scripting.enabled {
-				return printJSON(items)
+				return printJSON(document)
 			}
 			if len(rows) == 0 {
 				_, err := fmt.Fprintln(ui.Stdout, ui.Stdout.Muted("None defined."))

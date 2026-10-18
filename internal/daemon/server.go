@@ -603,10 +603,6 @@ func equalBearer(header, token string) bool {
 	return subtle.ConstantTimeCompare([]byte(header), []byte("Bearer "+token)) == 1
 }
 
-func rpcError(code connect.Code, message string) error {
-	return connect.NewError(code, fmt.Errorf("%s", message))
-}
-
 func diagnostic(code, summary string) *v1.Diagnostic {
 	return &v1.Diagnostic{Severity: v1.Diagnostic_SEVERITY_ERROR, Code: code, Summary: summary}
 }
@@ -897,5 +893,9 @@ var Build = sync.OnceValue(func() string {
 // configError reports why the daemon's configuration failed to load. Validation messages name
 // files, lines, and IDs, never resolved values.
 func configError(err error) error {
-	return rpcError(connect.CodeFailedPrecondition, "daemon configuration invalid: "+err.Error())
+	return reasonError(
+		connect.CodeFailedPrecondition,
+		v1.ErrorDetail_REASON_CONFIG_INVALID,
+		"daemon configuration invalid: "+err.Error(),
+	)
 }
