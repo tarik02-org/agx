@@ -29,7 +29,9 @@ Upstream credentials and tool execution remain inside the daemon.
 
 Resolve the working directory locally or through the daemon. `PrepareLaunch`
 supplies the expected snapshot, harness name, original native arguments, and only
-declared environment inputs. The daemon looks up the harness definition, classifies
+declared environment inputs, plus the variables the harness's adapter forwards
+(Codex: `CODEX_HOME`, empty when unset), which locate the harness's own
+configuration. The daemon looks up the harness definition, classifies
 the mode, rejects passthrough invocations, and resolves injected values; a missing
 input fails preparation with its configuration location. It returns a complete executable/argv/cwd plan,
 environment changes containing the harness grant, a separate lifecycle token,

@@ -454,7 +454,7 @@ func installPackages(
 	}
 	if !frozen {
 		progress("Installing native harness plugins")
-		warnings, err := registry.Install(ctx, c, paths.Cache)
+		warnings, err := registry.Install(ctx, c, paths.Cache, os.LookupEnv)
 		for _, warning := range warnings {
 			ui.Diagnose(ui.Warn, "%s", warning)
 		}

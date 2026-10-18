@@ -103,4 +103,9 @@ func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
 }
 
 // Install does nothing: the session plugin directory needs no registration.
-func (Adapter) Install(context.Context, *config.Config, string) error { return nil }
+func (Adapter) Install(context.Context, *config.Config, string, []adapters.Target) error {
+	return nil
+}
+
+// Forwarded is empty: installation reads none of the harness's own configuration.
+func (Adapter) Forwarded() []string { return nil }

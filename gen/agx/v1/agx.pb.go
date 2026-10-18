@@ -1431,7 +1431,8 @@ type PrepareLaunchRequest struct {
 	Harness string `protobuf:"bytes,4,opt,name=harness,proto3" json:"harness,omitempty"`
 	// Sensitive: native arguments may contain prompt bodies or credentials.
 	NativeArguments []string `protobuf:"bytes,5,rep,name=native_arguments,json=nativeArguments,proto3" json:"native_arguments,omitempty"`
-	// Sensitive: only names declared by the expected snapshot are accepted.
+	// Sensitive: only names declared by the expected snapshot are accepted, and the variables
+	// the harness's adapter forwards, such as CODEX_HOME; an empty value means unset.
 	EnvironmentInputs map[string]string `protobuf:"bytes,6,rep,name=environment_inputs,json=environmentInputs,proto3" json:"environment_inputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache

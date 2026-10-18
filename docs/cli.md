@@ -183,11 +183,30 @@ lock/cache; it never silently updates dependencies.
 
 `install` also registers native harness plugins: Codex loads skills only as
 plugins of a registered marketplace, so each configured skill becomes a plugin
-of agx's local marketplace. A Codex launch whose skill plugin is missing runs
-that step itself, once, under the same lock. When Codex's `config.toml` (in
-`CODEX_HOME`, default `~/.codex`) sets `features.plugins = false`, agx leaves the
-setting alone: `install` warns and skips Codex, and Codex launches warn and start
-without skills; MCP servers and instructions still apply.
+of agx's local marketplace, installed into the `CODEX_HOME` of every Codex-based
+harness definition. A Codex launch whose skill plugin is missing from its
+`CODEX_HOME` runs that step itself, once, under the same lock.
+
+A launch's `CODEX_HOME` is the one its Codex process gets: the definition's `env`,
+else the caller's environment (the wrapper forwards `CODEX_HOME` to the daemon,
+set or not), else `~/.codex`. `install` and `doctor` use the definition's `env`,
+else their own environment. Plugin commands agx runs (`codex plugin marketplace
+add`, `codex plugin add`) run with that `CODEX_HOME` and the definition's `env`.
+
+agx never changes `features.plugins`; it reads its effective value the way Codex
+layers configuration: `config.toml` in `CODEX_HOME`, then the selected profile
+(`--profile`/`-p`, or a legacy `profile =`: its `[profiles.<name>.features]`
+table, then `<name>.config.toml`), then each `-c`/`--config` override in order,
+then `--enable`/`--disable plugins`, where `--disable` wins. Arguments count from
+the definition's `args` and, for a launch, the caller's native arguments. When
+plugins are enabled, plugin commands get `--enable plugins`, since they take no
+`--profile`. When they are disabled, `install` warns and skips that home, and
+Codex launches warn and start without skills; MCP servers and instructions still
+apply. A definition with its own `executable` may enable plugins in ways agx
+cannot see, so for it agx treats the result as a hint: it runs the installation
+anyway and reports plugins disabled only when Codex refuses it. Codex's managed
+configuration is not read; an installation it refuses is reported the same way.
+
 
 ## Editing configuration
 
@@ -329,7 +348,9 @@ check fails. It checks that the configuration loads (and from which files),
 that packages are installed with current lockfiles, each built-in harness's
 executable and version against the [minimum](#harness-versions), Codex's
 plugins feature, agx's marketplace and installed skill plugins (when skills are
-configured and Codex is found), and the daemon: running, of this build, and
+configured and Codex is found) for each Codex-based harness definition, with the
+`CODEX_HOME` and arguments its launches from this shell would use (rows of a
+definition other than `codex` lead with its name), and the daemon: running, of this build, and
 serving this root. It starts the daemon as other commands do. Through the
 daemon it tests the MCP servers selected for the directory (default: the
 current one), or every server with `--all`, in parallel with a 20-second limit

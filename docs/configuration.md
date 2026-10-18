@@ -281,6 +281,13 @@ per key. `executable` must be absolute once `~` is expanded. Untagged `env` and
 harness receives them unchanged, so write an absolute path or build one from a
 tag (`!env HOME` for the home directory itself).
 
+A Codex definition may set `CODEX_HOME` in `env` to give its launches their own
+Codex configuration and plugins; agx installs skill plugins there, and reads
+`features.plugins` there and from the definition's `args`, so
+`args: [-c, features.plugins=true]` enables skills for a definition whose
+`config.toml` disables plugins
+([Codex plugins](cli.md#configuration-and-packages)).
+
 Selection gains a harness dimension: after directory scopes, each harness in the
 base chain applies its `add` and then `remove`, built-in first, so a harness's
 selection holds in every directory. Across fragments, `base`, `executable`, and

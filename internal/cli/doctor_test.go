@@ -2,13 +2,16 @@ package cli
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/adapters/codex"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/shims"
@@ -79,6 +82,60 @@ func TestCodexChecks(t *testing.T) {
 	rows = codexChecks(codex.PluginState{Missing: []string{"review"}}, nil)
 	if rows[1].Status != checkWarn || rows[2].Status != checkWarn || rows[2].Detail != "not installed: review" {
 		t.Errorf("missing = %+v", rows)
+	}
+}
+
+// Each Codex-based definition is checked with its own CODEX_HOME and arguments.
+func TestCodexDefinitionChecks(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "work-codex")
+	for path, content := range map[string]string{
+		filepath.Join(home, "config.toml"):                 "[features]\nplugins = false\n",
+		filepath.Join(dir, "skills", "review", "SKILL.md"): "---\nname: review\ndescription: r\n---\nR.\n",
+		filepath.Join(dir, "codex"):                        "not run",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	executable := "'" + filepath.ToSlash(filepath.Join(dir, "codex")) + "'"
+	workHome := "'" + filepath.ToSlash(home) + "'"
+	if err := os.WriteFile(filepath.Join(dir, "agx.yaml"), []byte(`skills:
+  review: {path: ./skills/review}
+harnesses:
+  codex: {executable: `+executable+`}
+  codex-work:
+    base: codex
+    env: {CODEX_HOME: `+workHome+`}
+  codex-on:
+    base: codex-work
+    args: [-c, features.plugins=true]
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry := builtin.Registry()
+	c, err := config.Load(filepath.Join(dir, "agx.yaml"), filepath.Join(dir, "cache"), registry.Builtins(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_HOME", filepath.Join(dir, "caller-codex"))
+	statuses := map[string]checkStatus{}
+	details := map[string]string{}
+	for _, row := range codexDefinitionChecks(t.Context(), c, registry, filepath.Join(dir, "cache")) {
+		statuses[row.Name], details[row.Name] = row.Status, row.Detail
+	}
+	if statuses["plugins feature"] != checkPass || !strings.Contains(details["plugins feature"], "caller-codex") {
+		t.Errorf("codex = %v %v", statuses, details)
+	}
+	if statuses["codex-work plugins feature"] != checkWarn ||
+		!strings.Contains(details["codex-work plugins feature"], filepath.Join(home, "config.toml")) {
+		t.Errorf("codex-work = %v %v", statuses, details)
+	}
+	if statuses["codex-on plugins feature"] != checkPass || statuses["codex-on skill plugins"] != checkWarn {
+		t.Errorf("codex-on = %v %v", statuses, details)
 	}
 }
 

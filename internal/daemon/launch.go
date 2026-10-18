@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -75,13 +76,20 @@ func (s *Server) PrepareLaunch(
 	if snapshot.ID != msg.SnapshotId {
 		return nil, rpcError(connect.CodeAborted, "snapshot changed; resolve again before forwarding credentials")
 	}
-	inputs, err := launchInputs(snapshot, msg.EnvironmentInputs)
+	inputs, err := launchInputs(snapshot, msg.EnvironmentInputs, adapter.Forwarded())
 	if err != nil {
 		return nil, err
 	}
 	env := func(name string) (string, bool) {
 		value, ok := inputs[name]
 		return value, ok
+	}
+	// A forwarded variable the caller has not set stays unset for the harness: an empty value.
+	lookup := func(name string) (string, bool) {
+		if value, ok := inputs[name]; ok {
+			return value, value != ""
+		}
+		return os.LookupEnv(name)
 	}
 	harnessArgs, harnessEnv, err := harness.Resolve(mode, env, func(id config.ID) (string, error) {
 		return s.manager.Value(ctx, id, snapshot.Config.Secrets[id], snapshot.Config.Secrets, inputs, "")
@@ -112,7 +120,13 @@ func (s *Server) PrepareLaunch(
 	plan, err := adapters.Build(
 		ctx,
 		adapter,
-		adapters.Launch{Snapshot: snapshot, Cache: s.paths.Cache, ID: id, Endpoints: nativeEndpoints},
+		adapters.Launch{
+			Snapshot:  snapshot,
+			Cache:     s.paths.Cache,
+			ID:        id,
+			Endpoints: nativeEndpoints,
+			Target:    adapters.Target{Lookup: lookup},
+		},
 		harness,
 		harnessArgs,
 		harnessEnv,
@@ -140,6 +154,7 @@ func (s *Server) PrepareLaunch(
 		cancel:    cancel,
 		endpoints: endpoints,
 		snapshot:  snapshot,
+		target:    adapters.NewTarget(harness, harnessArgs, harnessEnv, msg.NativeArguments, lookup),
 	}
 	response := &v1.PrepareLaunchResponse{
 		Launch: proto.Clone(view).(*v1.Launch),
@@ -188,11 +203,15 @@ func (s *Server) PrepareLaunch(
 	return connect.NewResponse(response), nil
 }
 
-// launchInputs checks that a launch's environment inputs are the snapshot's to receive, and that
-// its MCP servers' values find theirs, since the caller's environment is only available now.
-func launchInputs(snapshot *config.Snapshot, given map[string]string) (map[string]string, error) {
+// launchInputs checks that a launch's environment inputs are the snapshot's to receive or the
+// adapter's forwarded variables, and that its MCP servers' values find theirs, since the
+// caller's environment is only available now.
+func launchInputs(snapshot *config.Snapshot, given map[string]string, forwarded []string) (map[string]string, error) {
 	allowed := map[string]bool{}
 	for _, name := range snapshot.RequiredEnvironment {
+		allowed[name] = true
+	}
+	for _, name := range forwarded {
 		allowed[name] = true
 	}
 	inputs := map[string]string{}

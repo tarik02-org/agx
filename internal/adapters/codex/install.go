@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -13,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/gofrs/flock"
-	"github.com/pelletier/go-toml/v2"
 
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/config"
@@ -22,10 +22,12 @@ import (
 
 const marketplaceName = "agx-managed"
 
-// catalog lists the skill plugins installed into the marketplace; launches disable the ones
-// their snapshot does not select.
+// catalog lists the skill plugins published in the marketplace, and those installed in each
+// CODEX_HOME; launches disable the installed ones their snapshot does not select.
 type catalog struct {
 	Names []string `json:"names"`
+	// Installed maps a CODEX_HOME to the plugins installed there.
+	Installed map[string][]string `json:"installed,omitempty"`
 }
 
 // pluginName leads with the skill's native name, which Codex shows as the skill's namespace, and
@@ -39,55 +41,10 @@ func pluginName(skill config.Skill) (string, error) {
 	return name + "-" + hash[:12], nil
 }
 
-// PluginsDisabled explains how Codex's configuration disables plugins, which agx skills need, or
-// returns "" when it does not. It reads config.toml in CODEX_HOME, as Codex does; a missing
-// file leaves plugins at their default, enabled.
-func PluginsDisabled() (string, error) {
-	path, err := configFile()
-	if err != nil {
-		return "", err
-	}
-	b, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	var document struct {
-		Features struct {
-			Plugins *bool `toml:"plugins"`
-		} `toml:"features"`
-	}
-	if err := toml.Unmarshal(b, &document); err != nil {
-		return "", fmt.Errorf("reading Codex configuration %s: %w", path, err)
-	}
-	if document.Features.Plugins != nil && !*document.Features.Plugins {
-		return disabledMessage("features.plugins = false in " + path), nil
-	}
-	return "", nil
-}
-
-func disabledMessage(cause string) string {
-	return "Codex plugins are disabled (" + cause + "); agx skills for Codex need them: set features.plugins = true"
-}
-
-func configFile() (string, error) {
-	home := os.Getenv("CODEX_HOME")
-	if home == "" {
-		user, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		home = filepath.Join(user, ".codex")
-	}
-	return filepath.Join(home, "config.toml"), nil
-}
-
 // effectivelyDisabled asks Codex whether plugins are off through configuration agx does not
-// read, such as managed or profile settings.
-func effectivelyDisabled(ctx context.Context, executable string) bool {
-	out, err := exec.CommandContext(ctx, executable, "features", "list").Output()
+// read, such as managed settings, or flags a configured executable adds.
+func effectivelyDisabled(ctx context.Context, codex codexCommand) bool {
+	out, err := codex.command(ctx, "features", "list").Output()
 	if err != nil {
 		return false
 	}
@@ -100,8 +57,10 @@ func effectivelyDisabled(ctx context.Context, executable string) bool {
 	return false
 }
 
-// PluginState describes agx's Codex skill plugins for diagnostics.
+// PluginState describes agx's Codex skill plugins for one harness definition, for diagnostics.
 type PluginState struct {
+	// Harness names the definition, and Home the CODEX_HOME its processes use.
+	Harness, Home string
 	// Disabled explains how Codex's configuration disables plugins; "" when it does not.
 	Disabled string
 	// Marketplace is the local marketplace directory, and Registered whether Codex lists it.
@@ -111,14 +70,23 @@ type PluginState struct {
 	Installed, Missing []string
 }
 
-// Plugins reports the state of the skill plugins of c without changing anything.
-func Plugins(ctx context.Context, executable string, c *config.Config, cache string) (PluginState, error) {
-	disabled, err := PluginsDisabled()
-	if err != nil {
-		return PluginState{}, err
+// Plugins reports the state of the skill plugins of c for target without changing anything.
+func Plugins(
+	ctx context.Context,
+	executable string,
+	c *config.Config,
+	cache string,
+	target adapters.Target,
+) (PluginState, error) {
+	state := PluginState{Harness: target.Harness, Marketplace: filepath.Join(cache, "native", "marketplace")}
+	var err error
+	if state.Home, err = home(target); err != nil {
+		return state, err
 	}
-	state := PluginState{Disabled: disabled, Marketplace: filepath.Join(cache, "native", "marketplace")}
-	if disabled != "" {
+	if state.Disabled, err = pluginsDisabled(state.Home, target.Arguments); err != nil {
+		return state, err
+	}
+	if state.Disabled != "" {
 		return state, nil
 	}
 	registry, err := readCatalog(cache)
@@ -130,19 +98,40 @@ func Plugins(ctx context.Context, executable string, c *config.Config, cache str
 		if err != nil {
 			return state, err
 		}
-		if slices.Contains(registry.Names, name) {
+		if slices.Contains(registry.Installed[state.Home], name) {
 			state.Installed = append(state.Installed, string(id))
 		} else {
 			state.Missing = append(state.Missing, string(id))
 		}
 	}
-	state.Registered = registered(ctx, executable, state.Marketplace)
+	state.Registered = registered(
+		ctx,
+		codexCommand{executable: executable, environ: target.Environ(homeVariable), enable: true},
+		state.Marketplace,
+	)
 	return state, nil
 }
 
+// codexCommand runs Codex as a harness process would: in its environment, with plugins enabled
+// when its configuration enables them, since plugin commands take no --profile.
+type codexCommand struct {
+	executable string
+	environ    []string
+	enable     bool
+}
+
+func (c codexCommand) command(ctx context.Context, args ...string) *exec.Cmd {
+	if c.enable {
+		args = append([]string{"--enable", "plugins"}, args...)
+	}
+	cmd := exec.CommandContext(ctx, c.executable, args...)
+	cmd.Env = c.environ
+	return cmd
+}
+
 // registered reports whether Codex lists the marketplace directory, by its path or real path.
-func registered(ctx context.Context, executable, marketplace string) bool {
-	listed, err := exec.CommandContext(ctx, executable, "plugin", "marketplace", "list").Output()
+func registered(ctx context.Context, codex codexCommand, marketplace string) bool {
+	listed, err := codex.command(ctx, "plugin", "marketplace", "list").Output()
 	if err != nil {
 		return false
 	}
@@ -164,25 +153,58 @@ func readCatalog(cache string) (catalog, error) {
 }
 
 // Install publishes every configured skill as a plugin of a local marketplace and installs
-// them, since Codex loads plugins only from registered marketplaces.
-func (a Adapter) Install(ctx context.Context, c *config.Config, cache string) error {
+// them in the CODEX_HOME of each target, since Codex loads plugins only from registered
+// marketplaces. A target whose configuration disables plugins is skipped, unless its definition
+// configures an executable, which may enable them itself: Codex then decides.
+func (a Adapter) Install(ctx context.Context, c *config.Config, cache string, targets []adapters.Target) error {
 	if len(c.Skills) == 0 {
 		return nil
 	}
-	configured := c.Harnesses[a.Name()].Executable
-	executable, err := a.Executable(configured)
-	if err != nil {
-		if configured != "" {
+	type install struct {
+		codex    codexCommand
+		disabled string
+	}
+	installs := map[string]install{}
+	homes := []string{}
+	skipped := []string{}
+	for _, t := range targets {
+		home, err := home(t)
+		if err != nil {
 			return err
 		}
+		disabled, err := pluginsDisabled(home, t.Arguments)
+		if err != nil {
+			return err
+		}
+		if disabled != "" && t.Executable == "" {
+			if !slices.Contains(skipped, disabled) {
+				skipped = append(skipped, disabled)
+			}
+			continue
+		}
+		executable, err := a.Executable(t.Executable)
+		if err != nil {
+			if t.Executable != "" {
+				return err
+			}
+			continue
+		}
+		// Definitions sharing a home share its installation; one that enables plugins decides.
+		if previous, ok := installs[home]; ok && (previous.disabled == "" || disabled != "") {
+			continue
+		} else if !ok {
+			homes = append(homes, home)
+		}
+		installs[home] = install{
+			codex:    codexCommand{executable: executable, environ: t.Environ(homeVariable), enable: disabled == ""},
+			disabled: disabled,
+		}
+	}
+	if len(installs) == 0 {
+		if len(skipped) > 0 {
+			return adapters.Skipped{Reason: strings.Join(skipped, "; ")}
+		}
 		return nil
-	}
-	disabled, err := PluginsDisabled()
-	if err != nil {
-		return err
-	}
-	if disabled != "" {
-		return adapters.Skipped{Reason: disabled}
 	}
 	parent := filepath.Join(cache, "native")
 	if err := securefs.EnsureDir(parent); err != nil {
@@ -197,24 +219,89 @@ func (a Adapter) Install(ctx context.Context, c *config.Config, cache string) er
 		return fmt.Errorf("native installation is busy")
 	}
 	defer func() { _ = lock.Unlock() }()
-	registry, err := readCatalog(cache)
+	registry, err := publish(c, cache)
 	if err != nil {
 		return err
 	}
-	known := map[string]bool{}
-	for _, name := range registry.Names {
-		known[name] = true
+	marketplace := filepath.Join(parent, "marketplace")
+	var failed error
+	for _, home := range homes {
+		in := installs[home]
+		invoke := func(args ...string) error {
+			cmd := in.codex.command(ctx, args...)
+			cmd.Stdout = os.Stderr
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				// Codex lists no marketplace and finds no plugin while plugins are off.
+				if in.disabled != "" {
+					return adapters.Skipped{Reason: in.disabled}
+				}
+				if effectivelyDisabled(ctx, in.codex) {
+					cause := "in Codex configuration " + filepath.Join(home, "config.toml")
+					return adapters.Skipped{Reason: disabledMessage(cause)}
+				}
+				return fmt.Errorf("native plugin installation failed: %w", err)
+			}
+			return nil
+		}
+		err := invoke("plugin", "marketplace", "add", marketplace)
+		// A marketplace registered by an earlier installation is fine; anything else is not.
+		if err != nil && registered(ctx, in.codex, marketplace) {
+			err = nil
+		}
+		for _, name := range registry.Names {
+			if err != nil {
+				break
+			}
+			err = invoke("plugin", "add", name+"@"+marketplaceName)
+		}
+		var skip adapters.Skipped
+		switch {
+		case errors.As(err, &skip):
+			skipped = append(skipped, skip.Reason)
+		case err != nil:
+			failed = err
+		default:
+			registry.Installed[home] = slices.Clone(registry.Names)
+		}
+		if failed != nil {
+			break
+		}
+	}
+	// Homes installed before a failure stay recorded.
+	if err := securefs.WriteJSON(filepath.Join(parent, "catalog.json"), registry); err != nil {
+		return err
+	}
+	if failed != nil {
+		return failed
+	}
+	if len(skipped) > 0 {
+		return adapters.Skipped{Reason: strings.Join(skipped, "; ")}
+	}
+	return nil
+}
+
+// publish writes every configured skill as a plugin of the marketplace, and returns the catalog
+// with them.
+func publish(c *config.Config, cache string) (catalog, error) {
+	parent := filepath.Join(cache, "native")
+	registry, err := readCatalog(cache)
+	if err != nil {
+		return registry, err
+	}
+	if registry.Installed == nil {
+		registry.Installed = map[string][]string{}
 	}
 	for _, r := range c.Skills {
 		name, err := pluginName(r)
 		if err != nil {
-			return err
+			return registry, err
 		}
 		dest := filepath.Join(parent, "marketplace", "plugins", name)
 		if _, err := os.Stat(dest); os.IsNotExist(err) {
 			tmp, err := os.MkdirTemp(parent, ".plugin-*")
 			if err != nil {
-				return err
+				return registry, err
 			}
 			err = r.Materialize(filepath.Join(tmp, "skills", r.NativeName()))
 			if err == nil {
@@ -236,12 +323,11 @@ func (a Adapter) Install(ctx context.Context, c *config.Config, cache string) er
 			}
 			_ = os.RemoveAll(tmp)
 			if err != nil {
-				return err
+				return registry, err
 			}
 		}
-		if !known[name] {
+		if !slices.Contains(registry.Names, name) {
 			registry.Names = append(registry.Names, name)
-			known[name] = true
 		}
 	}
 	sort.Strings(registry.Names)
@@ -257,35 +343,8 @@ func (a Adapter) Install(ctx context.Context, c *config.Config, cache string) er
 			},
 		)
 	}
-	marketplace := filepath.Join(parent, "marketplace")
-	if err := securefs.WriteJSON(
-		filepath.Join(marketplace, ".agents", "plugins", "marketplace.json"),
+	return registry, securefs.WriteJSON(
+		filepath.Join(parent, "marketplace", ".agents", "plugins", "marketplace.json"),
 		map[string]any{"name": marketplaceName, "plugins": entries},
-	); err != nil {
-		return err
-	}
-	invoke := func(args ...string) error {
-		cmd := exec.CommandContext(ctx, executable, args...)
-		cmd.Stdout = os.Stderr
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			if effectivelyDisabled(ctx, executable) {
-				return adapters.Skipped{Reason: disabledMessage("in Codex configuration")}
-			}
-			return fmt.Errorf("native plugin installation failed: %w", err)
-		}
-		return nil
-	}
-	if err := invoke("plugin", "marketplace", "add", marketplace); err != nil {
-		// A marketplace registered by an earlier installation is fine; anything else is not.
-		if !registered(ctx, executable, marketplace) {
-			return err
-		}
-	}
-	for _, name := range registry.Names {
-		if err := invoke("plugin", "add", name+"@"+marketplaceName); err != nil {
-			return err
-		}
-	}
-	return securefs.WriteJSON(filepath.Join(parent, "catalog.json"), registry)
+	)
 }

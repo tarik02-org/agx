@@ -73,7 +73,9 @@ type launch struct {
 	cancel    context.CancelFunc
 	endpoints map[config.ID]*mcpruntime.Endpoint
 	snapshot  *config.Snapshot
-	ended     time.Time
+	// target is the harness process a launch started; its thread launches share it.
+	target adapters.Target
+	ended  time.Time
 }
 
 type prepareRecord struct {

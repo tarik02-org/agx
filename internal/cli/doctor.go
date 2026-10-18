@@ -160,9 +160,8 @@ func runDoctor(
 	wg.Wait()
 	add(harnessRows...)
 
-	if executable, ok := executables["codex"]; ok && loaded && len(c.Skills) > 0 {
-		state, err := codex.Plugins(ctx, executable, c, paths.Cache)
-		add(codexChecks(state, err)...)
+	if loaded && len(c.Skills) > 0 {
+		add(codexDefinitionChecks(ctx, c, registry, paths.Cache)...)
 	}
 
 	client, daemonRow := connectDaemon(ctx, paths, c)
@@ -302,6 +301,39 @@ func compareVersions(a, b string) int {
 	return 0
 }
 
+// codexDefinitionChecks checks the skill plugins of every Codex-based harness definition, each
+// with the CODEX_HOME and arguments its launches from this environment use.
+func codexDefinitionChecks(ctx context.Context, c *config.Config, registry adapters.Registry, cache string) []check {
+	names := registry.Names()
+	for name := range c.Harnesses {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	adapter, _ := registry.Adapter("codex")
+	rows := []check{}
+	for _, name := range names {
+		h, err := c.Harness(name)
+		if err != nil || h.Builtin != "codex" {
+			continue
+		}
+		// The harness checks report an executable that is missing.
+		executable, err := adapter.Executable(h.Executable)
+		if err != nil {
+			continue
+		}
+		state, err := codex.Plugins(ctx, executable, c, cache, adapters.InstallTarget(h, os.LookupEnv))
+		for _, row := range codexChecks(state, err) {
+			if name != "codex" {
+				row.Name = name + " " + row.Name
+			}
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}
+
 func codexChecks(state codex.PluginState, err error) []check {
 	if err != nil {
 		return []check{{Group: "codex", Name: "plugins", Status: checkFail, Detail: err.Error()}}
@@ -315,7 +347,7 @@ func codexChecks(state codex.PluginState, err error) []check {
 			Hint:   "Codex launches run without skills until plugins are enabled",
 		}}
 	}
-	rows := []check{{Group: "codex", Name: "plugins feature", Status: checkPass, Detail: "enabled"}}
+	rows := []check{{Group: "codex", Name: "plugins feature", Status: checkPass, Detail: "enabled in " + state.Home}}
 	marketplace := check{
 		Group:  "codex",
 		Name:   "marketplace",

@@ -33,6 +33,10 @@ func (a Adapter) Executable(configured string) (string, error) {
 	return adapters.FindExecutable(a.Name(), configured)
 }
 
+// Forwarded carries the caller's CODEX_HOME, which holds the configuration and plugins of the
+// Codex it starts.
+func (Adapter) Forwarded() []string { return []string{homeVariable} }
+
 // valueFlags are global options taking a separate value, skipped to find the subcommand.
 var valueFlags = []string{
 	"-c", "--config", "--enable", "--disable", "--remote", "--remote-auth-token-env", "-i", "--image",
@@ -220,29 +224,34 @@ func resources(l adapters.Launch) (overrides, error) {
 			selected[name] = true
 		}
 	}
-	disabled, err := PluginsDisabled()
+	home, err := home(l.Target)
 	if err != nil {
 		return o, err
 	}
+	disabled, err := pluginsDisabled(home, l.Target.Arguments)
+	if err != nil {
+		return o, err
+	}
+	registry, err := readCatalog(l.Cache)
+	if err != nil {
+		return o, err
+	}
+	installed := registry.Installed[home]
 	switch {
-	case disabled != "" && len(selected) > 0:
-		// MCP servers and instructions do not depend on plugins, so the launch goes on.
-		l.Warn(disabled + "; launching without skills")
-	case disabled == "" && !l.Uninstalled:
-		registry, err := readCatalog(l.Cache)
-		if err != nil {
-			return o, err
+	case l.Uninstalled:
+		// The skipped installation said why; MCP servers and instructions go on without skills.
+	case disabled != "" && l.Target.Executable == "":
+		if len(selected) > 0 {
+			l.Warn(disabled + "; launching without skills")
 		}
-		known := map[string]bool{}
-		for _, name := range registry.Names {
-			known[name] = true
-		}
+	default:
+		// A configured executable may enable plugins itself, so its installation lets Codex decide.
 		for name := range selected {
-			if !known[name] {
+			if !slices.Contains(installed, name) {
 				return o, fmt.Errorf("selected skill plugin %s: %w", name, adapters.ErrNotInstalled)
 			}
 		}
-		for _, name := range registry.Names {
+		for _, name := range installed {
 			o.plugins = append(o.plugins, plugin{id: name + "@" + marketplaceName, enabled: selected[name]})
 		}
 	}

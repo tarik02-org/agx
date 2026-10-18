@@ -20,6 +20,7 @@ import (
 // of its threads needs.
 type threadParent struct {
 	launch  *launch
+	target  adapters.Target
 	config  *config.Config
 	adapter adapters.Adapter
 	threads adapters.Threads
@@ -38,6 +39,7 @@ func (s *Server) threadParent(id string) (threadParent, error) {
 	}
 	s.mu.Lock()
 	running := active(l.view.State) && l.view.ParentLaunchId == ""
+	target := l.target
 	s.mu.Unlock()
 	if !running {
 		return threadParent{}, rpcError(connect.CodeFailedPrecondition, "launch has ended or is a thread launch")
@@ -54,7 +56,7 @@ func (s *Server) threadParent(id string) (threadParent, error) {
 	if !ok {
 		return threadParent{}, rpcError(connect.CodeFailedPrecondition, harness.Builtin+" serves no threads")
 	}
-	return threadParent{launch: l, config: c, adapter: adapter, threads: threads}, nil
+	return threadParent{launch: l, target: target, config: c, adapter: adapter, threads: threads}, nil
 }
 
 func (s *Server) ResolveThread(
@@ -77,7 +79,7 @@ func (s *Server) ResolveThread(
 		ctx,
 		p.adapter,
 		p.threads,
-		adapters.Launch{Snapshot: snapshot, Cache: s.paths.Cache},
+		adapters.Launch{Snapshot: snapshot, Cache: s.paths.Cache, Target: p.target},
 		"",
 	)
 	if err != nil {
@@ -112,7 +114,7 @@ func (s *Server) PrepareThreadLaunch(
 	if snapshot.ID != msg.SnapshotId {
 		return nil, rpcError(connect.CodeAborted, "snapshot changed; resolve again before forwarding credentials")
 	}
-	inputs, err := launchInputs(snapshot, msg.EnvironmentInputs)
+	inputs, err := launchInputs(snapshot, msg.EnvironmentInputs, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +132,13 @@ func (s *Server) PrepareThreadLaunch(
 		ctx,
 		p.adapter,
 		p.threads,
-		adapters.Launch{Snapshot: snapshot, Cache: s.paths.Cache, ID: id, Endpoints: nativeEndpoints},
+		adapters.Launch{
+			Snapshot:  snapshot,
+			Cache:     s.paths.Cache,
+			ID:        id,
+			Endpoints: nativeEndpoints,
+			Target:    p.target,
+		},
 		grant,
 	)
 	if err != nil {
@@ -193,6 +201,7 @@ func (s *Server) PrepareThreadLaunch(
 		cancel:    cancel,
 		endpoints: endpoints,
 		snapshot:  snapshot,
+		target:    p.target,
 	}
 	s.preparations[msg.RequestId] = prepareRecord{fingerprint: fingerprint, response: sealed, launchID: id}
 	return connect.NewResponse(response), nil

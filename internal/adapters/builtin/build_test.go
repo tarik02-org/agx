@@ -240,7 +240,8 @@ func TestBuildCodex(t *testing.T) {
 	}
 	selected := "review-" + hash[:12]
 
-	t.Setenv("CODEX_HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
 	// The fake executable cannot run, so the installation the launch starts fails.
 	_, _, err = f.build(t, "codex")
 	if err == nil ||
@@ -249,10 +250,7 @@ func TestBuildCodex(t *testing.T) {
 	}
 
 	other := "agx-" + strings.Repeat("0", 24)
-	catalog := map[string][]string{"names": {other, selected}}
-	if err := securefs.WriteJSON(filepath.Join(f.cache, "native", "catalog.json"), catalog); err != nil {
-		t.Fatal(err)
-	}
+	writeCatalog(t, f, home, other, selected)
 	plan, s, err := f.build(t, "codex", "exec", "hi")
 	if err != nil {
 		t.Fatal(err)
@@ -283,11 +281,9 @@ func TestBuildCodexAppServer(t *testing.T) {
 	}
 	selected := "review-" + hash[:12] + "@agx-managed"
 	other := "agx-" + strings.Repeat("0", 24)
-	t.Setenv("CODEX_HOME", t.TempDir())
-	catalog := map[string][]string{"names": {other, "review-" + hash[:12]}}
-	if err := securefs.WriteJSON(filepath.Join(f.cache, "native", "catalog.json"), catalog); err != nil {
-		t.Fatal(err)
-	}
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	writeCatalog(t, f, home, other, "review-"+hash[:12])
 	// The process carries no snapshot resources; its threads get theirs.
 	plan, s, err := f.build(t, "codex", "app-server")
 	if err != nil {
@@ -365,16 +361,28 @@ func TestBuildCodexPluginsDisabled(t *testing.T) {
 		"exec",
 		"hi",
 	})
+	// The configured executable cannot run, so the installation it is given fails and the
+	// launch reports why plugins are off.
 	want := "Codex plugins are disabled (features.plugins = false in " + filepath.Join(home, "config.toml") +
-		"); agx skills for Codex need them: set features.plugins = true; launching without skills"
+		"); agx skills for Codex need them: set features.plugins = true, or pass -c features.plugins=true " +
+		"in the harness definition's args; launching without skills"
 	if !slices.Equal(plan.Warnings, []string{want}) {
 		t.Errorf("warnings = %q, want %q", plan.Warnings, want)
 	}
 
-	// Installation reports the same reason instead of running Codex.
-	warnings, err := builtin.Registry().Install(t.Context(), f.config, f.cache)
+	// Installation reports the same reason.
+	warnings, err := builtin.Registry().Install(t.Context(), f.config, f.cache, nil)
 	if err != nil || len(warnings) != 1 || !strings.HasPrefix(warnings[0], "Codex plugins are disabled") {
 		t.Errorf("install = %q, %v", warnings, err)
+	}
+}
+
+// writeCatalog records plugins as published and installed in home.
+func writeCatalog(t *testing.T, f fixture, home string, names ...string) {
+	t.Helper()
+	catalog := map[string]any{"names": names, "installed": map[string][]string{home: names}}
+	if err := securefs.WriteJSON(filepath.Join(f.cache, "native", "catalog.json"), catalog); err != nil {
+		t.Fatal(err)
 	}
 }
 

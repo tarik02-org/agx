@@ -9,7 +9,9 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strings"
 
 	"github.com/tarik02-org/agx/internal/config"
 )
@@ -32,10 +34,14 @@ type Adapter interface {
 	// Arguments returns the native arguments that bring a launch's skills, instructions, and
 	// MCP servers to the harness. They precede the definition's groups and the caller's arguments.
 	Arguments(launch Launch) ([]string, error)
-	// Install registers what the harness cannot load per launch. It runs from explicit
-	// installation, and from a launch whose Arguments report ErrNotInstalled. It returns a
-	// Skipped error when the harness cannot take the installation and works without it.
-	Install(ctx context.Context, c *config.Config, cache string) error
+	// Install registers what the harness cannot load per launch, for each of targets. It runs
+	// from explicit installation, with a target per harness definition, and from a launch whose
+	// Arguments report ErrNotInstalled, with the launch's target. It returns a Skipped error
+	// when the harness cannot take the installation and works without it.
+	Install(ctx context.Context, c *config.Config, cache string, targets []Target) error
+	// Forwarded names the caller's environment variables that locate the harness's own
+	// configuration, such as its home directory. Wrappers send them to the daemon, set or not.
+	Forwarded() []string
 	// Sessions lists the sessions in the harness's own store, honouring its home override, and
 	// parses files through files. A missing store holds no sessions; the store is never written.
 	Sessions(ctx context.Context, files SessionFiles) ([]Session, error)
@@ -60,7 +66,118 @@ type Launch struct {
 	// Native holds the caller's native arguments, which follow the returned ones; Arguments reads
 	// them to adapt to the invocation and never repeats them.
 	Native []string
+	// Target is the harness process the launch starts. Build fills it in from the definition
+	// and native arguments, keeping the caller's Lookup; a thread launch takes its process's.
+	Target Target
 	plan   *Plan
+}
+
+// Target is a harness process as native installation sees it: a harness definition, with the
+// environment and arguments its process runs with.
+type Target struct {
+	// Harness names the definition.
+	Harness string
+	// Executable is the definition's configured executable; "" searches PATH.
+	Executable string
+	// Env holds the definition's resolved env, which overrides the rest of the environment.
+	Env map[string]string
+	// Lookup finds the rest of the environment: the caller's, as far as it is forwarded, then
+	// this process's. Nil uses this process's environment.
+	Lookup func(name string) (string, bool)
+	// Arguments are the definition's resolved arguments followed by the caller's native ones.
+	Arguments []string
+}
+
+// Getenv looks name up in the harness process's environment.
+func (t Target) Getenv(name string) (string, bool) {
+	if value, ok := t.Env[name]; ok {
+		return value, true
+	}
+	if t.Lookup != nil {
+		return t.Lookup(name)
+	}
+	return os.LookupEnv(name)
+}
+
+// Environ is this process's environment with the harness process's values of names, unset
+// where it has none, and the definition's env, for native commands agx runs on its behalf.
+func (t Target) Environ(names ...string) []string {
+	key := func(name string) string {
+		if runtime.GOOS == "windows" {
+			return strings.ToUpper(name)
+		}
+		return name
+	}
+	set := map[string]string{}
+	replaced := map[string]bool{}
+	for _, name := range names {
+		replaced[key(name)] = true
+		if value, ok := t.Getenv(name); ok {
+			set[name] = value
+		}
+	}
+	for name, value := range t.Env {
+		replaced[key(name)] = true
+		set[name] = value
+	}
+	out := []string{}
+	for _, pair := range os.Environ() {
+		if name, _, _ := strings.Cut(pair, "="); name == "" || !replaced[key(name)] {
+			out = append(out, pair)
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(set)) {
+		out = append(out, name+"="+set[name])
+	}
+	return out
+}
+
+// NewTarget describes a launch's process: definition h with its resolved arguments and env,
+// the caller's native arguments, and lookup for the rest of its environment.
+func NewTarget(
+	h config.ResolvedHarness,
+	harnessArgs []string,
+	harnessEnv map[string]string,
+	native []string,
+	lookup func(string) (string, bool),
+) Target {
+	return Target{
+		Harness:    h.Name,
+		Executable: h.Executable,
+		Env:        harnessEnv,
+		Lookup:     lookup,
+		Arguments:  append(slices.Clone(harnessArgs), native...),
+	}
+}
+
+// InstallTarget describes the processes of harness definition h for explicit installation,
+// which knows no caller arguments: its arguments are those every launch receives. Installation
+// resolves no secrets, so a value needing one is left empty.
+func InstallTarget(h config.ResolvedHarness, lookup func(string) (string, bool)) Target {
+	t := Target{
+		Harness:    h.Name,
+		Executable: h.Executable,
+		Env:        map[string]string{},
+		Lookup:     lookup,
+		Arguments:  []string{},
+	}
+	env := func(name string) (string, bool) {
+		if lookup == nil {
+			return os.LookupEnv(name)
+		}
+		return lookup(name)
+	}
+	noSecrets := func(config.ID) (string, error) { return "", errors.New("secrets are not resolved for installation") }
+	for _, v := range h.Arguments("") {
+		value, _ := v.Resolve("harness "+h.Name+" args", env, noSecrets)
+		t.Arguments = append(t.Arguments, value)
+	}
+	for name, v := range h.Env {
+		if value, err := v.Resolve("harness "+h.Name+" env "+name, env, noSecrets); err == nil {
+			t.Env[name] = value
+		}
+	}
+	return t
 }
 
 // Warn reports a problem the launch proceeds despite; the caller shows it before the harness starts.
@@ -155,12 +272,33 @@ func (r Registry) Builtins(commands []string) config.Builtins {
 	return config.Builtins{Harnesses: harnesses, Commands: commands}
 }
 
-// Install runs every adapter's native installation, in name order, and returns the reasons of
-// skipped ones as warnings.
-func (r Registry) Install(ctx context.Context, c *config.Config, cache string) ([]string, error) {
+// Install runs every adapter's native installation, in name order, for every harness
+// definition based on it, and returns the reasons of skipped ones as warnings. lookup finds the
+// environment the definitions' processes would inherit.
+func (r Registry) Install(
+	ctx context.Context,
+	c *config.Config,
+	cache string,
+	lookup func(string) (string, bool),
+) ([]string, error) {
+	targets := map[string][]Target{}
+	names := r.Names()
+	for name := range c.Harnesses {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		h, err := c.Harness(name)
+		if err != nil {
+			return nil, err
+		}
+		targets[h.Builtin] = append(targets[h.Builtin], InstallTarget(h, lookup))
+	}
 	warnings := []string{}
 	for _, name := range r.Names() {
-		err := r.adapters[name].Install(ctx, c, cache)
+		err := r.adapters[name].Install(ctx, c, cache, targets[name])
 		var skipped Skipped
 		switch {
 		case errors.As(err, &skipped):
@@ -200,6 +338,7 @@ func Build(
 	}
 	plan.Environment[GrantEnvironment] = grant
 	l.Native = args
+	l.Target = NewTarget(h, harnessArgs, harnessEnv, args, l.Target.Lookup)
 	l.plan = &plan
 	var prefix []string
 	if err := withArtifacts(ctx, a, l, func(l Launch) (err error) {
@@ -233,7 +372,7 @@ func withArtifacts(ctx context.Context, a Adapter, l Launch, call func(Launch) e
 		return err
 	}
 	var skipped Skipped
-	switch err := a.Install(ctx, l.Snapshot.Config, l.Cache); {
+	switch err := a.Install(ctx, l.Snapshot.Config, l.Cache, []Target{l.Target}); {
 	case errors.As(err, &skipped):
 		l.Warn(skipped.Reason + "; launching without skills")
 		l.Uninstalled = true

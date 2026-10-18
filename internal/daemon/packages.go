@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"connectrpc.com/connect"
@@ -85,7 +86,7 @@ func (s *Server) packageOperation(
 			c, err = config.Load(s.paths.Config, s.paths.Cache, s.builtins)
 			if err == nil {
 				// Skipped installations need no action from the requester; launches warn about them.
-				_, err = s.adapters.Install(s.ctx, c, s.paths.Cache)
+				_, err = s.adapters.Install(s.ctx, c, s.paths.Cache, os.LookupEnv)
 			}
 		}
 		s.mu.Lock()

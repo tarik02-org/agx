@@ -1,5 +1,5 @@
 // Command fakeharness stands in for Claude Code and Codex in end-to-end tests. As Codex, it
-// accepts plugin installation and serves a minimal app server (see appServer). Otherwise it
+// installs plugins (see plugins) and serves a minimal app server (see appServer). Otherwise it
 // records its arguments,
 // selected environment variables, and launch artifacts as JSON in $FAKE_DUMP, and calls the echo
 // tool on every MCP server passed with --mcp-config. --exit=N sets its exit status. With
@@ -33,7 +33,8 @@ type record struct {
 
 func main() {
 	args := os.Args[1:]
-	if len(args) > 0 && args[0] == "plugin" {
+	if command := subcommand(args); command == "plugin" || command == "features" {
+		plugins(args)
 		return
 	}
 	if slices.Contains(args, "app-server") {
@@ -111,6 +112,73 @@ func main() {
 		}
 	}
 	os.Exit(exit)
+}
+
+// subcommand is the first argument after the global options.
+func subcommand(args []string) string {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-c", "--enable", "--disable":
+			i++
+		default:
+			return args[i]
+		}
+	}
+	return ""
+}
+
+// plugins answers Codex's plugin and features commands, keeping marketplaces and plugins as
+// lines of files in $CODEX_HOME. Like Codex, it lists no marketplace and finds no plugin while
+// plugins are off: when $CODEX_HOME/config.toml sets plugins = false, unless --enable plugins
+// or -c features.plugins=true says otherwise. It appends the arguments of each invocation as a
+// JSON line to $CODEX_HOME/fake-plugin-log.jsonl.
+func plugins(args []string) {
+	home := os.Getenv("CODEX_HOME")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		fail(err)
+	}
+	add := func(file, line string) {
+		f, err := os.OpenFile(filepath.Join(home, file), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			fail(err)
+		}
+		_, _ = fmt.Fprintln(f, line)
+		_ = f.Close()
+	}
+	line, _ := json.Marshal(args)
+	add("fake-plugin-log.jsonl", string(line))
+	config, _ := os.ReadFile(filepath.Join(home, "config.toml"))
+	enabled := !strings.Contains(string(config), "plugins = false")
+	rest := args
+	for len(rest) > 1 && strings.HasPrefix(rest[0], "-") {
+		switch {
+		case rest[0] == "--enable" && rest[1] == "plugins", rest[0] == "-c" && rest[1] == "features.plugins=true":
+			enabled = true
+		}
+		rest = rest[2:]
+	}
+	switch strings.Join(rest[:min(len(rest), 3)], " ") {
+	case "features list":
+		fmt.Printf("plugins  stable  %t\n", enabled)
+	case "plugin marketplace add":
+		add("fake-marketplaces", rest[3])
+	case "plugin marketplace list":
+		if b, err := os.ReadFile(filepath.Join(home, "fake-marketplaces")); err == nil && enabled {
+			fmt.Print(string(b))
+		} else {
+			fmt.Println("No plugin marketplaces in scope.")
+		}
+	default:
+		if len(rest) == 3 && rest[0] == "plugin" && rest[1] == "add" {
+			if !enabled {
+				fmt.Fprintf(os.Stderr, "Error: plugin `%s` was not found in marketplace\n", rest[2])
+				os.Exit(1)
+			}
+			add("fake-plugins", rest[2])
+			return
+		}
+		fail(fmt.Errorf("unexpected plugin command %q", args))
+	}
 }
 
 func fail(err error) {

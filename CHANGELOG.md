@@ -38,6 +38,17 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   wrapper now prepends the instructions to it. Such launches are `print` mode.
 - With Codex plugins disabled (`features.plugins = false`), `install` and Codex
   launches say so and name the file; launches go on without skills.
+- Codex skill plugins follow the `CODEX_HOME` each launch runs Codex with: the
+  definition's `env`, else the caller's (now forwarded to the daemon), instead of
+  the daemon's. `install`, launch auto-installation, `doctor` (per harness
+  definition), and the plugin commands agx runs all use it, and installed
+  plugins are recorded per home.
+- The `features.plugins = false` check follows Codex's layering: the selected
+  profile, `-c features.plugins=…` and `--enable`/`--disable plugins` in the
+  definition's or caller's arguments override `config.toml`. Launches whose
+  arguments enable plugins install and enable their skills again. Definitions
+  with their own `executable` try the installation and report plugins disabled
+  only when Codex refuses it.
 - `agx daemon stop` (with or without `--force`) exits 0 with "Daemon is not
   running." (JSON `{"running": false}`) when no daemon runs; the stop document of a
   running daemon adds `running: true`.

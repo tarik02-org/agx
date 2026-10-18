@@ -162,7 +162,8 @@ message PrepareLaunchRequest {
   string harness = 4;
   // Sensitive: native arguments may contain prompt bodies or credentials.
   repeated string native_arguments = 5;
-  // Sensitive: only names declared by the expected snapshot are accepted.
+  // Sensitive: only names declared by the expected snapshot are accepted, and the variables
+  // the harness's adapter forwards, such as CODEX_HOME; an empty value means unset.
   map<string, string> environment_inputs = 6;
 }
 message PrepareLaunchResponse {

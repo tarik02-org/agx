@@ -137,6 +137,11 @@ func runHarness(
 			inputs[name] = value
 		}
 	}
+	// The harness inherits this environment, so the daemon reads its configuration from here;
+	// an empty value tells the daemon the variable is unset.
+	for _, name := range adapter.Forwarded() {
+		inputs[name] = os.Getenv(name)
+	}
 	prepare := request(
 		&v1.PrepareLaunchRequest{
 			RequestId:         securefs.Token(),

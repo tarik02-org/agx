@@ -559,7 +559,8 @@ export type PrepareLaunchRequest = Message<"agx.v1.PrepareLaunchRequest"> & {
   nativeArguments: string[];
 
   /**
-   * Sensitive: only names declared by the expected snapshot are accepted.
+   * Sensitive: only names declared by the expected snapshot are accepted, and the variables
+   * the harness's adapter forwards, such as CODEX_HOME; an empty value means unset.
    *
    * @generated from field: map<string, string> environment_inputs = 6;
    */
