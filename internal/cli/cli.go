@@ -288,7 +288,9 @@ func Main() int {
 		)
 	}
 	root.SetArgs(args)
-	if _, _, err := root.Find(args); err != nil {
+	// Cobra adds its completion commands only during Execute, so Find cannot know them yet.
+	completing := len(args) > 0 && (args[0] == cobra.ShellCompRequestCmd || args[0] == cobra.ShellCompNoDescRequestCmd)
+	if _, _, err := root.Find(args); err != nil && !completing {
 		if harnesses.err != nil {
 			err = fmt.Errorf("%w (harness definitions unavailable: %w)", err, harnesses.err)
 		}
