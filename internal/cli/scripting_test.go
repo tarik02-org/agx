@@ -452,3 +452,16 @@ func TestLoginEvents(t *testing.T) {
 		t.Fatalf("events:\n%s\nwant:\n%s", out.String(), strings.Join(want, "\n"))
 	}
 }
+
+func TestDefinitionLinkWithBrokenConfiguration(t *testing.T) {
+	isolate(t, "harnesses: [broken\n")
+	var out bytes.Buffer
+	// Falling through to the CLI would print agx's version for the harness's --version.
+	if code := run([]string{filepath.Join("bin", "codex-work"), "--version"}, &out); code != 1 || out.Len() != 0 {
+		t.Fatalf("definition link exited %d with %q", code, out.String())
+	}
+	if code := run([]string{filepath.Join("bin", "agx-dev"), "--version"}, &out); code != 0 ||
+		!strings.Contains(out.String(), "agx") {
+		t.Fatalf("renamed agx exited %d with %q", code, out.String())
+	}
+}

@@ -30,6 +30,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   error reply instead of waiting forever.
 - `daemon stop` with active launches reports error code `conflict`, and its
   message, like the other-build hint, names `agx daemon stop --force`.
+- A shim or link named after a definition no longer runs the agx CLI when the
+  configuration fails to load; it reports the load error and exits 1.
 - `--json` before the command (`agx --json config validate`) works as after it.
 - Skills appear under their native names (`agx-managed:review` instead of
   `agx-managed:resource-…`; Codex plugins are `review-<hash>`).

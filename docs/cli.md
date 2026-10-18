@@ -42,7 +42,10 @@ without a managed launch, receiving only the definition's `passthrough` groups a
 `env`, whose [injected values](configuration.md#injected-values) the wrapper
 resolves itself.
 
-Support invocation through a harness-named wrapper or symlink. Resolve a configured
+Support invocation through a harness-named wrapper or symlink. When agx runs under
+another name and the configuration fails to load, it reports `agx: <name>:
+configuration failed to load: <error>` and exits 1 instead of running its own
+CLI; names starting with `agx` (a renamed agx binary) still run the CLI. Resolve a configured
 absolute native executable first; otherwise search PATH while excluding agx
 itself, so a `codex` symlink cannot recurse. Handle Windows executable/script
 launching explicitly rather than constructing a POSIX shell command.

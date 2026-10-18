@@ -261,6 +261,12 @@ func run(osArgs []string, stdout io.Writer) int {
 		if slices.Contains(harnesses.config.HarnessNames(), name) {
 			return exitCode(runHarness(context.Background(), paths, registry, harnesses, name, osArgs[1:], ""))
 		}
+		// A link named after a definition must not run the agx CLI with the harness's arguments
+		// just because the definition did not load. Renamed agx binaries keep the agx prefix.
+		if harnesses.err != nil && !strings.HasPrefix(name, root.Name()) {
+			ui.Diagnose(ui.Error, "%s: configuration failed to load: %v", name, harnesses.err)
+			return 1
+		}
 	}
 	args := osArgs[1:]
 	completing := len(args) > 0 && (args[0] == cobra.ShellCompRequestCmd || args[0] == cobra.ShellCompNoDescRequestCmd)
