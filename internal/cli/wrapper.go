@@ -124,7 +124,9 @@ func runHarness(
 			return auth.LocalValue(ctx, id, secret, harnesses.config.Secrets, os.LookupEnv)
 		})
 		if err != nil {
-			return err
+			// Native commands agx does not manage, such as --help or login, still run as the
+			// definition says, so its environment must resolve for them too.
+			return fmt.Errorf("%w (%s applies its environment to every native command, --help included)", err, name)
 		}
 		cmd := exec.CommandContext(ctx, executable, append(harnessArgs, args...)...)
 		cmd.Env = os.Environ()
