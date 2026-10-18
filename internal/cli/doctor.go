@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -496,7 +497,7 @@ func daemonCheck(f daemonFacts) check {
 	if f.config != f.wantConfig {
 		row.Status = checkFail
 		row.Detail = "serves configuration " + f.config
-		row.Hint = fmt.Sprintf("run agx daemon stop, then agx --config %s daemon start", f.wantConfig)
+		row.Hint = "run agx daemon stop, then agx --config " + shellQuote(f.wantConfig) + " daemon start"
 		return row
 	}
 	switch {
@@ -584,11 +585,8 @@ func mcpCheck(id config.ID, server config.MCPServer, response *v1.TestMcpServerR
 	switch errorCode(err) {
 	case codeNeedsLogin:
 		row.Status, row.Detail = checkWarn, "needs authorization: "+message
-		if secret := server.Auth.Secret; secret != "" {
-			row.Hint = "run agx secret login " + string(secret)
-		} else {
-			row.Hint = "run agx mcp login " + string(id)
-		}
+		secret := cmp.Or(server.Auth.Secret, id)
+		row.Hint = "run agx secret login " + string(secret)
 	case codeTimeout:
 		row.Status, row.Detail = checkFail, fmt.Sprintf("no answer within %s", doctorMCPTimeout)
 		row.Hint = "run agx mcp test " + string(id) + " for details"
@@ -604,7 +602,7 @@ func secretChecks(ctx context.Context, c *client, cfg *config.Config) []check {
 	defer cancel()
 	response, err := c.secrets.GetSecretStatus(call, request(&v1.GetSecretStatusRequest{}, c.discovery.Token))
 	if err != nil {
-		return []check{{Group: "secret", Name: "secrets", Status: checkFail, Detail: err.Error()}}
+		return []check{{Group: "secret", Name: "secrets", Status: checkFail, Detail: explainSecretTimeout(err).Error()}}
 	}
 	statuses := response.Msg.Statuses
 	slices.SortFunc(statuses, func(a, b *v1.SecretStatus) int { return strings.Compare(a.SecretId, b.SecretId) })

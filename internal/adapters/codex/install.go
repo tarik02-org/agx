@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,7 +32,9 @@ const supersededGrace = 7 * 24 * time.Hour
 // catalog lists the skill plugins published in the marketplace. Which of them a CODEX_HOME has
 // installed is read from that home (see installedPlugins), since users may remove them.
 type catalog struct {
-	Names []string `json:"names"`
+	// Version is the format version; agx rejects catalogs of other versions.
+	Version int      `json:"version"`
+	Names   []string `json:"names"`
 	// Superseded records when each published plugin was first found missing from the
 	// configuration being installed; installing a configuration that has it clears the mark.
 	Superseded map[string]time.Time `json:"superseded,omitempty"`
@@ -150,7 +151,7 @@ func Plugins(
 	if err != nil {
 		return state, err
 	}
-	for _, id := range slices.Sorted(maps.Keys(c.Skills)) {
+	for _, id := range c.SelectableSkills() {
 		name, err := pluginName(c.Skills[id])
 		if err != nil {
 			return state, err
@@ -196,25 +197,38 @@ func registered(ctx context.Context, codex codexCommand, marketplace string) boo
 	return strings.Contains(string(listed), marketplace) || realErr == nil && strings.Contains(string(listed), real)
 }
 
+// catalogVersion is the format version of the catalog file.
+const catalogVersion = 1
+
 func readCatalog(cache string) (catalog, error) {
-	var c catalog
-	b, err := os.ReadFile(filepath.Join(cache, "native", "catalog.json"))
+	c := catalog{Version: catalogVersion}
+	path := filepath.Join(cache, "native", "catalog.json")
+	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return c, nil
 	}
 	if err != nil {
 		return c, err
 	}
-	err = json.Unmarshal(b, &c)
-	return c, err
+	if err := securefs.CheckFormat(path, b, catalogVersion); err != nil {
+		return c, err
+	}
+	if err := json.Unmarshal(b, &c); err != nil {
+		return c, fmt.Errorf("%s: %w", path, err)
+	}
+	if c.Version != catalogVersion {
+		return c, fmt.Errorf("%s: unsupported format; delete it and run agx install", path)
+	}
+	return c, nil
 }
 
-// Install publishes every configured skill as a plugin of a local marketplace and installs
+// Install publishes every skill a rule selects as a plugin of a local marketplace and installs
 // them in the CODEX_HOME of each target, since Codex loads plugins only from registered
-// marketplaces. A target whose configuration disables plugins is skipped, unless its definition
+// marketplaces. Codex enables installed plugins outside agx launches too, so skills no rule
+// selects, such as a package's skills that were not chosen, are not installed. A target whose configuration disables plugins is skipped, unless its definition
 // configures an executable, which may enable them itself: Codex then decides.
 func (a Adapter) Install(ctx context.Context, c *config.Config, cache string, targets []adapters.Target) error {
-	if len(c.Skills) == 0 {
+	if len(c.SelectableSkills()) == 0 {
 		return nil
 	}
 	type install struct {
@@ -352,7 +366,7 @@ func (a Adapter) Install(ctx context.Context, c *config.Config, cache string, ta
 	return nil
 }
 
-// publish writes every configured skill as a plugin of the marketplace, and returns the catalog
+// publish writes every selectable skill as a plugin of the marketplace, and returns the catalog
 // with them and their plugin names. Published plugins c does not configure are marked superseded
 // at now.
 func publish(c *config.Config, cache string, now time.Time) (catalog, []string, error) {
@@ -365,7 +379,8 @@ func publish(c *config.Config, cache string, now time.Time) (catalog, []string, 
 		registry.Superseded = map[string]time.Time{}
 	}
 	current := []string{}
-	for _, r := range c.Skills {
+	for _, id := range c.SelectableSkills() {
+		r := c.Skills[id]
 		name, err := pluginName(r)
 		if err != nil {
 			return registry, nil, err

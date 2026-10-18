@@ -330,7 +330,7 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 	case opts.Stage:
 		result.Locks = map[string][]byte{}
 		for path, l := range locks {
-			b, err := encodeLock(l)
+			b, err := EncodeLock(l)
 			if err != nil {
 				return result, err
 			}
@@ -356,7 +356,7 @@ func writeLocks(locks map[string]config.Lock) error {
 		}
 	}()
 	for path, l := range locks {
-		b, err := encodeLock(l)
+		b, err := EncodeLock(l)
 		if err != nil {
 			return err
 		}
@@ -394,7 +394,8 @@ func writeLocks(locks map[string]config.Lock) error {
 	return nil
 }
 
-func encodeLock(l config.Lock) ([]byte, error) {
+// EncodeLock renders a lockfile as Install writes it.
+func EncodeLock(l config.Lock) ([]byte, error) {
 	b, err := json.MarshalIndent(l, "", "  ")
 	return append(b, '\n'), err
 }

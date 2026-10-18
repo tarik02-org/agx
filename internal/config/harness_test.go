@@ -23,7 +23,7 @@ func TestHarnessMerge(t *testing.T) {
   codex-cpa:
     args:
       - [--from-more]
-    env:
+    environment:
       MORE: "yes"
 `)
 	root := write(t, filepath.Join(dir, "agx.yaml"), `imports: [{path: more.yaml}]
@@ -38,7 +38,7 @@ harnesses:
         modes: [interactive, exec, resume]
       - values: [--pt-flag]
         modes: [passthrough]
-    env:
+    environment:
       CPA_KEY: literal
   pi-flat:
     base: pi
@@ -67,8 +67,8 @@ harnesses:
 			t.Errorf("Arguments(%s) = %q, want %q", tt.mode, got, tt.want)
 		}
 	}
-	if h.Env["MORE"].Literal != "yes" || h.Env["CPA_KEY"].Literal != "literal" {
-		t.Errorf("env = %v", h.Env)
+	if h.Environment["MORE"].Literal != "yes" || h.Environment["CPA_KEY"].Literal != "literal" {
+		t.Errorf("env = %v", h.Environment)
 	}
 
 	flat, err := c.Harness("pi-flat")
@@ -95,11 +95,11 @@ func TestHarnessBaseChain(t *testing.T) {
     base: claude
     executable: '`+filepath.ToSlash(c2)+`'
     args: [--two]
-    env: {A: two, B: two}
+    environment: {A: two, B: two}
   c3:
     base: c2
     args: [--three]
-    env: {B: three}
+    environment: {B: three}
 `)
 	h, err := read(t, root).Harness("c3")
 	if err != nil {
@@ -114,8 +114,8 @@ func TestHarnessBaseChain(t *testing.T) {
 	if got := literals(h.Arguments("interactive")); !slices.Equal(got, []string{"--two", "--three"}) {
 		t.Errorf("args = %q, want base groups first", got)
 	}
-	if h.Env["A"].Literal != "two" || h.Env["B"].Literal != "three" {
-		t.Errorf("env = %v, want extensions to replace per key", h.Env)
+	if h.Environment["A"].Literal != "two" || h.Environment["B"].Literal != "three" {
+		t.Errorf("env = %v, want extensions to replace per key", h.Environment)
 	}
 }
 
@@ -156,16 +156,16 @@ func TestHarnessErrors(t *testing.T) {
 			want: []string{"agx.yaml:4", "harness codex: executable already set at", "one.yaml:3"},
 		},
 		{
-			name: "env key set in two fragments",
+			name: "environment key set in two fragments",
 			files: map[string]string{
-				"one.yaml": "harnesses:\n  codex:\n    env: {A: '1'}\n",
-				"agx.yaml": "imports: [{path: one.yaml}]\nharnesses:\n  codex:\n    env: {A: '2'}\n",
+				"one.yaml": "harnesses:\n  codex:\n    environment: {A: '1'}\n",
+				"agx.yaml": "imports: [{path: one.yaml}]\nharnesses:\n  codex:\n    environment: {A: '2'}\n",
 			},
-			want: []string{"env.A already set at", "one.yaml"},
+			want: []string{"environment.A already set at", "one.yaml"},
 		},
 		{"base cycle", map[string]string{"agx.yaml": "harnesses:\n  a: {base: b}\n  b: {base: a}\n"}, []string{"harness base cycle: a -> b -> a"}},
 		{"unknown base", map[string]string{"agx.yaml": "harnesses:\n  a: {base: nope}\n"}, []string{`harness a: unknown base "nope"`}},
-		{"missing base", map[string]string{"agx.yaml": "harnesses:\n  a: {env: {X: '1'}}\n"}, []string{"harness a needs a base"}},
+		{"missing base", map[string]string{"agx.yaml": "harnesses:\n  a: {environment: {X: '1'}}\n"}, []string{"harness a needs a base"}},
 		{"shadowed command", map[string]string{"agx.yaml": "harnesses:\n  install: {base: codex}\n"}, []string{"harness install would shadow the agx install command"}},
 		{"built-in with a base", map[string]string{"agx.yaml": "harnesses:\n  claude: {base: codex}\n"}, []string{"built-in harness claude cannot set base"}},
 		{
@@ -176,8 +176,8 @@ func TestHarnessErrors(t *testing.T) {
 		{"empty modes", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    args: [{values: [-x], modes: []}]\n"}, []string{"modes must not be empty"}},
 		{"mixed args", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    args: [--a, [--b]]\n"}, []string{"args mixes strings with argument groups"}},
 		{"relative executable", map[string]string{"agx.yaml": "harnesses:\n  codex: {executable: bin/codex}\n"}, []string{"executable must be absolute"}},
-		{"reserved environment", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    env: {AGX_MCP_GRANT: x}\n"}, []string{`invalid environment name "AGX_MCP_GRANT"`}},
-		{"non-string env value", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    env: {X: 1}\n"}, []string{"value must be a string"}},
+		{"reserved environment", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    environment: {AGX_MCP_GRANT: x}\n"}, []string{`invalid environment name "AGX_MCP_GRANT"`}},
+		{"non-string environment value", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    environment: {X: 1}\n"}, []string{"value must be a string"}},
 		{"unknown scope filter", map[string]string{"agx.yaml": "scopes:\n  - harnesses: [nope]\n"}, []string{`scope: unknown harness "nope"`}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

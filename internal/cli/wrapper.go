@@ -117,8 +117,8 @@ func runHarness(
 			"daemon uses configuration %s, not %s; rerun with --config %s, or run agx daemon stop and then agx --config %s daemon start",
 			c.discovery.Config,
 			paths.Config,
-			c.discovery.Config,
-			paths.Config,
+			shellQuote(c.discovery.Config),
+			shellQuote(paths.Config),
 		)
 	}
 	resolveCtx, cancel := context.WithTimeout(ctx, callTimeout)

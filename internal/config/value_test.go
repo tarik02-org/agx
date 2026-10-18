@@ -29,9 +29,9 @@ func tagFixture(t *testing.T) (*config.Config, string) {
     base: codex
     args:
       - [--prompt, !file prompt.txt]
-      - values: [--key, !secret key]
+      - values: [--system, !file prompt.txt]
         modes: [exec]
-    env:
+    environment:
       TOKEN: !env WORK_TOKEN
       KEY: !secret key
       PLAIN: plain
@@ -75,20 +75,19 @@ func TestTagsResolveAtLaunchOnly(t *testing.T) {
 		injections[i.Target] = i.Text
 	}
 	for target, text := range map[string]string{
-		"harness codex-t env KEY":      "!secret key",
-		"harness codex-t env TOKEN":    "!env WORK_TOKEN",
-		"mcp up environment UP_SECRET": "!secret key",
-		"mcp remote header X-Key":      "!secret key",
-		"harness codex-t args":         "!secret key",
-		"mcp remote auth":              "oauth (on demand)",
-		"mcp up environment UP_ENV":    "!env MCP_ONLY",
+		"harness codex-t environment KEY":   "!secret key",
+		"harness codex-t environment TOKEN": "!env WORK_TOKEN",
+		"mcp up environment UP_SECRET":      "!secret key",
+		"mcp remote header X-Key":           "!secret key",
+		"mcp remote auth":                   "oauth (on demand)",
+		"mcp up environment UP_ENV":         "!env MCP_ONLY",
 	} {
 		if injections[target] != text {
 			t.Errorf("injection %q = %q, want %q", target, injections[target], text)
 		}
 	}
 
-	if _, ok := injections["harness codex-t env PLAIN"]; ok {
+	if _, ok := injections["harness codex-t environment PLAIN"]; ok {
 		t.Error("a literal value is listed as an injection")
 	}
 
@@ -118,7 +117,7 @@ func TestTagsResolveAtLaunchOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"--prompt", fileValue, "--key", secretValue}; !slices.Equal(args, want) {
+	if want := []string{"--prompt", fileValue, "--system", fileValue}; !slices.Equal(args, want) {
 		t.Errorf("exec args = %q, want %q (trailing newlines dropped)", args, want)
 	}
 	if env["TOKEN"] != envValue || env["KEY"] != secretValue || env["PLAIN"] != "plain" {
@@ -142,11 +141,11 @@ func TestTagResolutionErrors(t *testing.T) {
 	noSecret := func(config.ID) (string, error) { return secretValue, nil }
 	unset := func(string) (string, bool) { return "", false }
 	_, _, err = h.Resolve("interactive", unset, noSecret)
-	wantError(t, err, "harness.yaml:", "harness codex-t env TOKEN: environment variable WORK_TOKEN is not set")
+	wantError(t, err, "harness.yaml:", "harness codex-t environment TOKEN: environment variable WORK_TOKEN is not set")
 
 	failing := func(config.ID) (string, error) { return "", fmt.Errorf("helper failed") }
 	_, _, err = h.Resolve("interactive", os.LookupEnv, failing)
-	wantError(t, err, "harness codex-t env KEY: helper failed")
+	wantError(t, err, "harness codex-t environment KEY: helper failed")
 	if strings.Contains(err.Error(), envValue) {
 		t.Errorf("error %q contains a resolved value", err)
 	}
@@ -154,14 +153,16 @@ func TestTagResolutionErrors(t *testing.T) {
 
 func TestTagPlacement(t *testing.T) {
 	for _, tt := range []struct{ name, content, want string }{
-		{"unknown tag", "harnesses:\n  codex:\n    env:\n      A: !foo x\n", "agx.yaml:4: unknown tag !foo; use !env, !file, or !secret"},
+		{"unknown tag", "harnesses:\n  codex:\n    environment:\n      A: !foo x\n", "agx.yaml:4: unknown tag !foo; use !env, !file, or !secret"},
+		{"secret in harness args", "harnesses:\n  codex:\n    args: [--key, !secret k]\n", "agx.yaml:3: !secret cannot be used in harness args, which other processes can read (ps); set it in the harness environment instead"},
+		{"env in an argument group", "harnesses:\n  codex:\n    args:\n      - values: [!env TOKEN]\n", "agx.yaml:4: !env cannot be used in harness args"},
 		{"tag in an MCP command", "mcp:\n  c:\n    command: [!env X]\n", "agx.yaml:3: !env is allowed only in"},
 		{"tag in an executable", "harnesses:\n  codex:\n    executable: !file x\n", "agx.yaml:3: !file is allowed only in"},
 		{"tag in a secret definition", "secrets:\n  s:\n    kind: environment\n    variable: !env X\n", "!env is allowed only in"},
-		{"tagged key", "harnesses:\n  codex:\n    env:\n      !env A: b\n", "!env is allowed only in"},
-		{"tagged mapping", "harnesses:\n  codex:\n    env:\n      A: !secret {x: y}\n", "!secret needs a scalar argument"},
-		{"reserved variable", "harnesses:\n  codex:\n    env:\n      A: !env AGX_X\n", "AGX_ variables are reserved"},
-		{"invalid variable", "harnesses:\n  codex:\n    env:\n      A: !env 1X\n", "!env needs a variable name"},
+		{"tagged key", "harnesses:\n  codex:\n    environment:\n      !env A: b\n", "!env is allowed only in"},
+		{"tagged mapping", "harnesses:\n  codex:\n    environment:\n      A: !secret {x: y}\n", "!secret needs a scalar argument"},
+		{"reserved variable", "harnesses:\n  codex:\n    environment:\n      A: !env AGX_X\n", "AGX_ variables are reserved"},
+		{"invalid variable", "harnesses:\n  codex:\n    environment:\n      A: !env 1X\n", "!env needs a variable name"},
 		{"non-secret tag in auth", "mcp:\n  c:\n    url: 'https://example.com/mcp'\n    auth: !env TOKEN\n", "auth must be a secret kind"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -172,7 +173,7 @@ func TestTagPlacement(t *testing.T) {
 	}
 
 	for _, tt := range []struct{ name, content, want string }{
-		{"unknown secret", "harnesses:\n  codex:\n    env:\n      A: !secret nope\n", "harness codex env A: unknown secret nope"},
+		{"unknown secret", "harnesses:\n  codex:\n    environment:\n      A: !secret nope\n", "harness codex environment A: unknown secret nope"},
 		{
 			name:    "OAuth secret injected",
 			content: "secrets:\n  o: {kind: oauth}\nmcp:\n  c:\n    command: [x]\n    environment:\n      A: !secret o\n",

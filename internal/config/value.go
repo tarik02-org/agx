@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.yaml.in/yaml/v4"
+	"github.com/tarik02-org/agx/internal/yaml"
 )
 
 // maxValueSize bounds values read from files, matching the limit on stored secrets.
@@ -257,8 +257,8 @@ func (c MCPServer) Secrets() []ID {
 // Injections lists the harness environment and every argument group, whatever its modes.
 func (h ResolvedHarness) Injections() []Injection {
 	out := []Injection{}
-	for _, key := range sortedKeys(h.Env) {
-		out = append(out, injection(fmt.Sprintf("harness %s env %s", h.Name, key), h.Env[key]))
+	for _, key := range sortedKeys(h.Environment) {
+		out = append(out, injection(fmt.Sprintf("harness %s environment %s", h.Name, key), h.Environment[key]))
 	}
 	for _, g := range h.Args {
 		for _, v := range g.Values {
@@ -283,8 +283,8 @@ func (h ResolvedHarness) Resolve(
 		args = append(args, value)
 	}
 	environment := map[string]string{}
-	for _, key := range sortedKeys(h.Env) {
-		value, err := h.Env[key].Resolve(fmt.Sprintf("harness %s env %s", h.Name, key), env, secret)
+	for _, key := range sortedKeys(h.Environment) {
+		value, err := h.Environment[key].Resolve(fmt.Sprintf("harness %s environment %s", h.Name, key), env, secret)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -325,7 +325,7 @@ func Variable(secrets map[ID]Secret, v Value) string {
 // taggedFields are the paths where tags may appear; "*" matches a key and "#" a list item.
 var taggedFields = func() [][]string {
 	out := [][]string{
-		{"harnesses", "*", "env", "*"},
+		{"harnesses", "*", "environment", "*"},
 		{"harnesses", "*", "args", "#"},
 		{"harnesses", "*", "args", "#", "#"},
 		{"harnesses", "*", "args", "#", "values", "#"},
@@ -366,7 +366,7 @@ func checkTags(file string, node *yaml.Node, path []string) error {
 		}
 		if !slices.ContainsFunc(taggedFields, func(pattern []string) bool { return matchPath(pattern, path) }) {
 			return fmt.Errorf(
-				"%s:%d: %s is allowed only in harness env and args, mcp environment, headers, and auth, and sops age_key",
+				"%s:%d: %s is allowed only in harness environment and args, mcp environment, headers, and auth, and sops age_key",
 				file,
 				node.Line,
 				tag,
@@ -374,6 +374,19 @@ func checkTags(file string, node *yaml.Node, path []string) error {
 		}
 		if node.Kind != yaml.ScalarNode {
 			return fmt.Errorf("%s:%d: %s needs a scalar argument", file, node.Line, tag)
+		}
+		// Process arguments are visible to every local user (ps, /proc), so credentials must not
+		// reach them; !file stays allowed for non-secret content such as prompts.
+		if tag != "!file" && len(path) >= 3 && path[0] == "harnesses" && path[2] == "args" {
+			return fmt.Errorf(
+				"%s:%d: %s cannot be used in harness args, which other processes can read (ps); "+
+					"set it in the harness environment instead, such as environment: {NAME: %s %s}",
+				file,
+				node.Line,
+				tag,
+				tag,
+				node.Value,
+			)
 		}
 	}
 	switch node.Kind {

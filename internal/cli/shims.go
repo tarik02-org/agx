@@ -24,7 +24,7 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 	}
 	dir := ""
 	command.PersistentFlags().
-		StringVar(&dir, "dir", "", `shim directory (default ~/.local/bin, or %LOCALAPPDATA%\agx\bin on Windows)`)
+		StringVar(&dir, "dir", "", `shim directory (default ~/.local/share/agx/shims, under $XDG_DATA_HOME when set; %LOCALAPPDATA%\agx\shims on Windows)`)
 	shimDir := func() (string, error) {
 		if dir != "" {
 			return filepath.Abs(dir)

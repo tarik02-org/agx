@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.yaml.in/yaml/v4"
+	"github.com/tarik02-org/agx/internal/yaml"
 
 	"github.com/tarik02-org/agx/internal/config"
 )

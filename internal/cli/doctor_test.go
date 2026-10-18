@@ -117,11 +117,13 @@ func TestCodexDefinitionChecks(t *testing.T) {
 	workHome := "'" + filepath.ToSlash(home) + "'"
 	if err := os.WriteFile(filepath.Join(dir, "agx.yaml"), []byte(`skills:
   review: {path: ./skills/review}
+scopes:
+  - add: {skills: [review]}
 harnesses:
   codex: {executable: `+executable+`}
   codex-work:
     base: codex
-    env: {CODEX_HOME: `+workHome+`}
+    environment: {CODEX_HOME: `+workHome+`}
   codex-on:
     base: codex-work
     args: [-c, features.plugins=true]
@@ -148,6 +150,19 @@ harnesses:
 	}
 	if statuses["codex-on plugins feature"] != checkPass || statuses["codex-on skill plugins"] != checkWarn {
 		t.Errorf("codex-on = %v %v", statuses, details)
+	}
+}
+
+func TestConfigHintIsQuoted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX quoting")
+	}
+	row := daemonCheck(daemonFacts{config: "/c", wantConfig: "/home/me/my config/it's.yaml"})
+	if want := `agx --config '/home/me/my config/it'\''s.yaml' daemon start`; !strings.Contains(row.Hint, want) {
+		t.Errorf("hint = %s, want %s", row.Hint, want)
+	}
+	if got := shellQuote("/plain/agx.yaml"); got != "/plain/agx.yaml" {
+		t.Errorf("plain path quoted as %s", got)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -563,6 +564,28 @@ func (c *Config) expand(s Selection, chain []ID, visit func(Resource, []ID)) err
 		}
 	}
 	return nil
+}
+
+// SelectableSkills lists, sorted, the skills some scope or harness rule adds, directly or through
+// bundles: those a launch can select. Skills a package defines but no rule adds are left out, so
+// installing native plugins does not enable them.
+func (c *Config) SelectableSkills() []ID {
+	selected := map[ID]bool{}
+	visit := func(r Resource, _ []ID) {
+		if r.Kind == "skill" {
+			selected[r.ID] = true
+		}
+	}
+	// Validation already checked every selection, so expansion cannot fail here.
+	for _, scope := range c.Scopes {
+		_ = c.expand(scope.Add, nil, visit)
+	}
+	for _, h := range c.Harnesses {
+		for _, s := range h.Selections {
+			_ = c.expand(s.Add, nil, visit)
+		}
+	}
+	return slices.Sorted(maps.Keys(selected))
 }
 
 // Source lines change with comment edits; they belong to explanations, not snapshot identity.

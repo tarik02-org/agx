@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.yaml.in/yaml/v4"
+	"github.com/tarik02-org/agx/internal/yaml"
 )
 
 // ModePassthrough is the mode of invocations that run without a managed launch, such as
@@ -99,24 +99,24 @@ func (a *Args) UnmarshalYAML(node *yaml.Node) error {
 
 // Harness is one fragment's declaration of a harness.
 type Harness struct {
-	Base       string           `yaml:"base"       jsonschema_description:"Harness this definition extends."`
-	Executable string           `yaml:"executable" jsonschema_description:"Absolute path of the native executable; may start with ~/."`
-	Args       Args             `yaml:"args"       jsonschema_description:"Native arguments inserted before the caller's: a list of strings for every session mode, or a list of groups."`
-	Env        map[string]Value `yaml:"env"        jsonschema_description:"Environment variables for the harness."`
-	Add        SelectionSpec    `yaml:"add"        jsonschema_description:"Resources selected for this harness."`
-	Remove     SelectionSpec    `yaml:"remove"     jsonschema_description:"Resources deselected for this harness."`
-	Override   bool             `yaml:"override"   jsonschema_description:"Replace the definition from earlier fragments."`
+	Base        string           `yaml:"base"        jsonschema_description:"Harness this definition extends."`
+	Executable  string           `yaml:"executable"  jsonschema_description:"Absolute path of the native executable; may start with ~/."`
+	Args        Args             `yaml:"args"        jsonschema_description:"Native arguments inserted before the caller's: a list of strings for every session mode, or a list of groups."`
+	Environment map[string]Value `yaml:"environment" jsonschema_description:"Environment variables for the harness."`
+	Add         SelectionSpec    `yaml:"add"         jsonschema_description:"Resources selected for this harness."`
+	Remove      SelectionSpec    `yaml:"remove"      jsonschema_description:"Resources deselected for this harness."`
+	Override    bool             `yaml:"override"    jsonschema_description:"Replace the definition from earlier fragments."`
 }
 
 // HarnessDefinition merges every fragment declaring one harness name.
 type HarnessDefinition struct {
-	Base       string             `json:"base,omitempty"`
-	Executable string             `json:"executable,omitempty"`
-	Args       []ArgGroup         `json:"args,omitempty"`
-	Env        map[string]Value   `json:"env,omitempty"`
-	Selections []HarnessSelection `json:"selections,omitempty"`
-	Source     Source             `json:"source"`
-	// sources locates set-once fields (base, executable, env.<name>) for conflict errors.
+	Base        string             `json:"base,omitempty"`
+	Executable  string             `json:"executable,omitempty"`
+	Args        []ArgGroup         `json:"args,omitempty"`
+	Environment map[string]Value   `json:"environment,omitempty"`
+	Selections  []HarnessSelection `json:"selections,omitempty"`
+	Source      Source             `json:"source"`
+	// sources locates set-once fields (base, executable, environment.<name>) for conflict errors.
 	sources map[string]Source
 }
 
@@ -132,10 +132,10 @@ type ResolvedHarness struct {
 	Name    string
 	Builtin string
 	// Chain lists the built-in first and Name last.
-	Chain      []string
-	Executable string
-	Args       []ArgGroup
-	Env        map[string]Value
+	Chain       []string
+	Executable  string
+	Args        []ArgGroup
+	Environment map[string]Value
 }
 
 // Arguments returns the argument groups that apply to mode, in order.
@@ -176,15 +176,15 @@ func (c *Config) Harness(name string) (ResolvedHarness, error) {
 		current = def.Base
 	}
 	slices.Reverse(chain)
-	h := ResolvedHarness{Name: name, Builtin: chain[0], Chain: chain, Env: map[string]Value{}}
+	h := ResolvedHarness{Name: name, Builtin: chain[0], Chain: chain, Environment: map[string]Value{}}
 	for _, n := range chain {
 		def := c.Harnesses[n]
 		if def.Executable != "" {
 			h.Executable = def.Executable
 		}
 		h.Args = append(h.Args, def.Args...)
-		for key, value := range def.Env {
-			h.Env[key] = value
+		for key, value := range def.Environment {
+			h.Environment[key] = value
 		}
 	}
 	return h, nil
@@ -232,7 +232,7 @@ func (m *merger) harnesses(d Document) error {
 		}
 		def, exists := c.Harnesses[name]
 		if h.Override || !exists {
-			def = HarnessDefinition{Source: at(), Env: map[string]Value{}, sources: map[string]Source{}}
+			def = HarnessDefinition{Source: at(), Environment: map[string]Value{}, sources: map[string]Source{}}
 		}
 		set := func(field string, at Source, apply func()) error {
 			if previous, ok := def.sources[field]; ok {
@@ -258,12 +258,16 @@ func (m *merger) harnesses(d Document) error {
 				return err
 			}
 		}
-		for _, key := range sortedKeys(h.Env) {
-			value, err := m.place(h.Env[key])
+		for _, key := range sortedKeys(h.Environment) {
+			value, err := m.place(h.Environment[key])
 			if err != nil {
 				return err
 			}
-			if err := set("env."+key, at("env", key), func() { def.Env[key] = value }); err != nil {
+			if err := set(
+				"environment."+key,
+				at("environment", key),
+				func() { def.Environment[key] = value },
+			); err != nil {
 				return err
 			}
 		}
@@ -331,12 +335,12 @@ func (c *Config) validateHarnesses() error {
 				}
 			}
 		}
-		for key := range def.Env {
+		for key := range def.Environment {
 			// AGX_ variables carry launch grants and management credentials.
 			if !validEnvironment.MatchString(key) || strings.HasPrefix(strings.ToUpper(key), "AGX_") {
 				return fmt.Errorf(
 					"%s: harness %s: invalid environment name %q",
-					locate(def.sources["env."+key]),
+					locate(def.sources["environment."+key]),
 					name,
 					key,
 				)

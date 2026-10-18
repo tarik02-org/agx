@@ -148,7 +148,7 @@ harnesses:
   claude-e2e:
     base: claude
     args: [--from-definition]
-    env: {DEFINED: "yes"}
+    environment: {DEFINED: "yes"}
 `)
 	return e
 }

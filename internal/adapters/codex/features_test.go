@@ -167,7 +167,13 @@ func TestPluginsForTarget(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "codex", "config.toml"), "[features]\nplugins = false\n")
 	writeFile(t, filepath.Join(dir, "skills", "review", "SKILL.md"), "---\nname: review\ndescription: r\n---\nR.\n")
-	c := &config.Config{Skills: map[config.ID]config.Skill{"review": {Path: filepath.Join(dir, "skills", "review")}}}
+	c := &config.Config{
+		Skills: map[config.ID]config.Skill{
+			"review": {Path: filepath.Join(dir, "skills", "review")},
+			"unused": {Path: filepath.Join(dir, "skills", "review")},
+		},
+		Scopes: []config.Scope{{Add: config.Selection{Skills: []config.ID{"review"}}}},
+	}
 	t.Setenv("CODEX_HOME", t.TempDir())
 	target := adapters.Target{Harness: "codex-work", Env: map[string]string{"CODEX_HOME": filepath.Join(dir, "codex")}}
 	missing := filepath.Join(dir, "missing-codex")

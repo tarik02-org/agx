@@ -19,7 +19,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.yaml.in/yaml/v4"
+	"github.com/tarik02-org/agx/internal/yaml"
 
 	"github.com/tarik02-org/agx/internal/securefs"
 )
@@ -130,9 +130,16 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 		if err != nil {
 			return err
 		}
-		for _, imp := range d.Imports {
+		for i, imp := range d.Imports {
+			at := path
+			if imports := position(node, path, "imports"); len(node.Content) > 0 {
+				if list := mappingValue(node.Content[0], "imports"); list != nil && i < len(list.Content) {
+					imports.Line = list.Content[i].Line
+				}
+				at = locate(imports)
+			}
 			if (imp.Path == "") == (imp.Glob == "") {
-				return fmt.Errorf("%s: import needs exactly one of path or glob", path)
+				return fmt.Errorf("%s: import needs exactly one of path or glob", at)
 			}
 			if imp.Glob != "" {
 				if imp.Optional {
@@ -144,12 +151,12 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 				}
 				glob, err := ExpandHome(imp.Glob)
 				if err != nil {
-					return fmt.Errorf("%s: import %w", path, err)
+					return fmt.Errorf("%s: import %w", at, err)
 				}
 				pattern := relative(filepath.Dir(path), glob)
 				files, err := overlay.glob(pattern)
 				if err != nil {
-					return fmt.Errorf("%s: import %s: %w", path, imp.Glob, err)
+					return fmt.Errorf("%s: import %s: %w", at, imp.Glob, err)
 				}
 				inputs.glob(pattern, files)
 				for _, match := range files {
@@ -161,16 +168,18 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 			}
 			p, err := ExpandHome(imp.Path)
 			if err != nil {
-				return fmt.Errorf("%s: import %w", path, err)
+				return fmt.Errorf("%s: import %w", at, err)
 			}
 			p = relative(filepath.Dir(path), p)
 			if imp.Optional {
 				inputs.file(p)
 				if found, err := overlay.exists(p); err != nil {
-					return fmt.Errorf("%s: import %s: %w", path, imp.Path, err)
+					return fmt.Errorf("%s: import %s: %w", at, imp.Path, err)
 				} else if !found {
 					continue
 				}
+			} else if found, err := overlay.exists(p); err == nil && !found {
+				return fmt.Errorf("%s: import %s: %s does not exist; create it, or set optional: true", at, imp.Path, p)
 			}
 			if err := load(p); err != nil {
 				return err
@@ -243,7 +252,10 @@ func loadConfig(root, cache string, builtins Builtins, inputs *Inputs, overlay O
 		case !p.Pinned():
 			inputs.file(p.Lockfile)
 			lock, err := ReadLock(p.Lockfile, overlay)
-			if err != nil {
+			var newer *securefs.NewerFormatError
+			if errors.As(err, &newer) {
+				return err
+			} else if err != nil {
 				return fmt.Errorf("%s: %w; run agx install", p.Lockfile, err)
 			}
 			var ok bool
@@ -422,8 +434,12 @@ func PinPath(cache string, p Package) string {
 	return filepath.Join(cache, "packages", "pins", key+".json")
 }
 
+// pinVersion is the format version of pin records; agx rejects records of other versions.
+const pinVersion = 1
+
 type pin struct {
-	Hash string `json:"hash"`
+	Version int    `json:"version"`
+	Hash    string `json:"hash"`
 }
 
 func ReadPin(path string) (string, error) {
@@ -432,14 +448,20 @@ func ReadPin(path string) (string, error) {
 		return "", err
 	}
 	var p pin
-	if err := json.Unmarshal(b, &p); err != nil || !ValidHash(p.Hash) {
+	if err := securefs.CheckFormat(path, b, pinVersion); err != nil {
+		return "", err
+	}
+	if err := json.Unmarshal(b, &p); err != nil {
+		return "", fmt.Errorf("invalid pin record %s; run agx install", path)
+	}
+	if p.Version != pinVersion || !ValidHash(p.Hash) {
 		return "", fmt.Errorf("invalid pin record %s; run agx install", path)
 	}
 	return p.Hash, nil
 }
 
 func WritePin(path, hash string) error {
-	return securefs.WriteJSON(path, pin{Hash: hash})
+	return securefs.WriteJSON(path, pin{Version: pinVersion, Hash: hash})
 }
 
 func decode(path string, overlay Overlay) (Document, *yaml.Node, error) {
@@ -454,7 +476,7 @@ func decodeBytes(path string, b []byte) (Document, *yaml.Node, error) {
 	var d Document
 	var n yaml.Node
 	if err := yaml.Unmarshal(b, &n); err != nil {
-		return d, nil, fmt.Errorf("%s: %w", path, err)
+		return d, nil, yamlError(path, b, nil, err)
 	}
 	// Decoding ignores tags on plain strings, so they are checked first.
 	if err := checkTags(path, &n, nil); err != nil {
@@ -465,7 +487,7 @@ func decodeBytes(path string, b []byte) (Document, *yaml.Node, error) {
 	if err := dec.Decode(&d); errors.Is(err, io.EOF) {
 		return d, nil, fmt.Errorf("%s: file is empty; write {} for a fragment that declares nothing", path)
 	} else if err != nil {
-		return d, nil, fmt.Errorf("%s: %w", path, err)
+		return d, nil, yamlError(path, b, &n, err)
 	}
 	var extra any
 	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
@@ -670,6 +692,19 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 		}
 		c.Daemon.Autostart = d.Daemon.Autostart
 		c.daemonSet["autostart"] = true
+	}
+	return nil
+}
+
+// mappingValue returns the value of key in mapping n, or nil.
+func mappingValue(n *yaml.Node, key string) *yaml.Node {
+	if n.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		if n.Content[i].Value == key {
+			return n.Content[i+1]
+		}
 	}
 	return nil
 }
@@ -1412,6 +1447,9 @@ func ReadLock(path string, overlay Overlay) (Lock, error) {
 	var lock Lock
 	b, err := overlay.readFile(path)
 	if err != nil {
+		return lock, err
+	}
+	if err := securefs.CheckFormat(path, b, 1); err != nil {
 		return lock, err
 	}
 	dec := json.NewDecoder(bytes.NewReader(b))

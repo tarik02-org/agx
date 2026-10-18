@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -66,6 +67,9 @@ func run(osArgs []string, stdout io.Writer) int {
 		}
 		paths.Cache, err = filepath.Abs(paths.Cache)
 		if err != nil {
+			return err
+		}
+		if err := checkExplicitConfig(root, cmd, paths.Config); err != nil {
 			return err
 		}
 		return paths.Derive()
@@ -153,7 +157,7 @@ func run(osArgs []string, stdout io.Writer) int {
 					return codedf(codeNotFound, "unknown harness %s", harness)
 				}
 				if info, err := os.Stat(directory); err != nil {
-					return err
+					return statError("directory", directory, err)
 				} else if !info.IsDir() {
 					return codedf(codeInvalidRequest, "not a directory: %s", directory)
 				}
@@ -415,6 +419,49 @@ func exitCode(err error) int {
 		ui.Note("Run 'agx --help' for usage.")
 	}
 	return status
+}
+
+// createsConfig annotates commands that create a missing root configuration, so an explicit
+// --config may name a file that does not exist yet.
+const createsConfig = "agx-creates-config"
+
+// checkExplicitConfig rejects a --config file that does not exist: only the default location
+// falls back to the default configuration, so a mistyped path is not silently empty.
+func checkExplicitConfig(root, cmd *cobra.Command, path string) error {
+	if !root.PersistentFlags().Changed("config") ||
+		cmd.Name() == cobra.ShellCompRequestCmd ||
+		cmd.Name() == cobra.ShellCompNoDescRequestCmd {
+		return nil
+	}
+	for c := cmd; c != nil; c = c.Parent() {
+		if _, ok := c.Annotations[createsConfig]; ok {
+			return nil
+		}
+	}
+	_, err := os.Stat(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return codedf(
+			codeConfigInvalid,
+			"configuration file %s does not exist; create it, or omit --config to use the default location",
+			path,
+		)
+	case err != nil:
+		return codedf(codeConfigInvalid, "cannot read configuration file %s: %v", path, err)
+	}
+	return nil
+}
+
+// statError describes a failure to stat a path the user named, without Go's "stat" framing.
+func statError(what, path string, err error) error {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		err = pathErr.Err
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return codedf(codeNotFound, "%s %s does not exist", what, path)
+	}
+	return fmt.Errorf("cannot read %s %s: %w", what, path, err)
 }
 
 func installPackages(
@@ -709,6 +756,20 @@ func launchCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 	return command
 }
 
+// explainSecretTimeout names the likely cause of a secret call that times out: the daemon blocks
+// on the OS keychain while it is locked or shows an access prompt.
+func explainSecretTimeout(err error) error {
+	if err == nil || errorCode(err) != codeTimeout {
+		return err
+	}
+	return fmt.Errorf(
+		"the daemon did not answer within %s, most likely while waiting for the OS keychain; "+
+			"unlock it or answer its access prompt, then retry: %w",
+		callTimeout,
+		err,
+	)
+}
+
 func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
 	command := &cobra.Command{Use: "secret", Short: "Manage configured secrets and OAuth logins", GroupID: "runtime"}
 	status := &cobra.Command{
@@ -731,7 +792,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 				request(&v1.GetSecretStatusRequest{SecretId: id}, c.discovery.Token),
 			)
 			if err != nil {
-				return err
+				return explainSecretTimeout(err)
 			}
 			if scripting.enabled {
 				return printJSON(secretStatusDocument(response.Msg.Statuses))
@@ -768,7 +829,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 				request(&v1.SetSecretRequest{SecretId: args[0], Value: data}, c.discovery.Token),
 			)
 			if err != nil || !scripting.enabled {
-				return err
+				return explainSecretTimeout(err)
 			}
 			return printJSON(secretSetJSON{SecretID: args[0], Stored: true})
 		},
@@ -789,7 +850,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			defer cancel()
 			_, err = c.secrets.Logout(ctx, request(&v1.LogoutRequest{SecretId: args[0]}, c.discovery.Token))
 			if err != nil || !scripting.enabled {
-				return err
+				return explainSecretTimeout(err)
 			}
 			return printJSON(secretLogoutJSON{SecretID: args[0], LoggedOut: true})
 		},

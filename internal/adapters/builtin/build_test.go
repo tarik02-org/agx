@@ -389,7 +389,7 @@ func writeCatalog(t *testing.T, f fixture, home string, names ...string) {
 	t.Helper()
 	if err := securefs.WriteJSON(
 		filepath.Join(f.cache, "native", "catalog.json"),
-		map[string]any{"names": names},
+		map[string]any{"version": 1, "names": names},
 	); err != nil {
 		t.Fatal(err)
 	}

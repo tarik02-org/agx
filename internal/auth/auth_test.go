@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -240,8 +241,13 @@ func TestKeychainWithoutFallback(t *testing.T) {
 	}
 	keyring.MockInitWithError(errors.New("storage unavailable"))
 	t.Cleanup(keyring.MockInit)
-	if err := manager.Set("other", secret, []byte("value")); err == nil {
+	err := manager.Set("other", secret, []byte("value"))
+	if err == nil {
 		t.Fatal("storage failure was not reported; there is no plaintext fallback")
+	}
+	if !strings.Contains(err.Error(), "storage unavailable") ||
+		!strings.Contains(err.Error(), "unlock the OS keychain") {
+		t.Fatalf("storage failure without its cause or advice: %v", err)
 	}
 }
 
@@ -410,6 +416,29 @@ func TestNeedsLogin(t *testing.T) {
 		got, err := auth.NeedsLogin(context.Background(), server.URL+path)
 		if err != nil || got != want {
 			t.Errorf("NeedsLogin(%s) = %v, %v; want %v", path, got, err, want)
+		}
+	}
+}
+
+func TestLoginWithoutClientRegistration(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	manager, callback := newManager(t)
+	secret := config.Secret{
+		Kind: "oauth", Issuer: p.URL, Owner: "github", Implicit: true,
+		Source: config.Source{Path: "/conf/agx.yaml", Line: 7},
+	}
+	_, err := manager.Begin(context.Background(), "github", secret, p.URL+"/mcp")
+	if err == nil {
+		t.Fatal("login without a client ID or registration endpoint started")
+	}
+	for _, want := range []string{
+		"does not register clients automatically",
+		"redirect URI " + callback,
+		"MCP server github: auth: {kind: oauth, client_id: <client-id>} (defined at /conf/agx.yaml:7)",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
 		}
 	}
 }

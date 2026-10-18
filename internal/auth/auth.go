@@ -152,9 +152,11 @@ func LocalValue(
 			return LocalValue(ctx, ref, secrets[ref], secrets, env)
 		})
 	case "keychain":
-		value, err := keyring.Get("agx", key(id, s))
-		if err != nil {
-			return "", fmt.Errorf("keychain secret %s is unavailable; store it with agx secret set %s --stdin", id, id)
+		value, err := keychainGet(key(id, s))
+		if errors.Is(err, keyring.ErrNotFound) {
+			return "", fmt.Errorf("keychain secret %s is not stored; store it with agx secret set %s --stdin", id, id)
+		} else if err != nil {
+			return "", fmt.Errorf("keychain secret %s: %w", id, err)
 		}
 		return value, nil
 	case "daemon_environment":
@@ -288,12 +290,12 @@ func (m *Manager) oauthValue(ctx context.Context, id config.ID, a config.Secret,
 	saved, cached := m.unpersisted[k]
 	m.mu.Unlock()
 	if !cached {
-		data, err := keyring.Get("agx", k)
+		data, err := keychainGet(k)
 		if errors.Is(err, keyring.ErrNotFound) {
 			return "", fmt.Errorf("secret %s needs login; run agx secret login %s: %w", id, id, ErrNoCredential)
 		}
 		if err != nil {
-			return "", fmt.Errorf("secret %s: OS keychain is unavailable", id)
+			return "", fmt.Errorf("secret %s: %w", id, err)
 		}
 		if err := json.Unmarshal([]byte(data), &saved); err != nil || saved.Token == nil {
 			return "", fmt.Errorf("invalid stored OAuth credential for %s", id)
@@ -317,7 +319,7 @@ func (m *Manager) oauthValue(ctx context.Context, id config.ID, a config.Secret,
 	if err != nil {
 		return "", err
 	}
-	if err := keyring.Set("agx", k, string(data)); err != nil {
+	if err := keychainSet(k, string(data)); err != nil {
 		// The refresh token may have rotated; dropping it would force a new login.
 		m.mu.Lock()
 		m.unpersisted[k] = saved
@@ -409,8 +411,8 @@ func (m *Manager) Set(id config.ID, a config.Secret, secret []byte) error {
 	lock := m.credentialLock(k)
 	lock.Lock()
 	defer lock.Unlock()
-	if err := keyring.Set("agx", k, value); err != nil {
-		return fmt.Errorf("OS keychain is unavailable: %w", err)
+	if err := keychainSet(k, value); err != nil {
+		return fmt.Errorf("secret %s was not stored: %w", id, err)
 	}
 	return nil
 }
@@ -432,8 +434,8 @@ func (m *Manager) Logout(id config.ID, a config.Secret) error {
 		}
 	}
 	m.mu.Unlock()
-	if err := keyring.Delete("agx", k); err != nil && !errors.Is(err, keyring.ErrNotFound) {
-		return fmt.Errorf("OS keychain is unavailable: %w", err)
+	if err := keychainDelete(k); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+		return fmt.Errorf("secret %s was not removed: %w", id, err)
 	}
 	return nil
 }
@@ -492,7 +494,7 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 			s.Expires = memory.Token.Expiry
 			break
 		}
-		data, err := keyring.Get("agx", k)
+		data, err := keychainGet(k)
 		switch {
 		case errors.Is(err, keyring.ErrNotFound) && a.Implicit && !required:
 			// On-demand OAuth needs no login until its server asks for one.
@@ -500,6 +502,7 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 			s.State = "needs_login"
 		case err != nil:
 			s.State = "unavailable"
+			s.Problem = err.Error()
 		default:
 			s.State = "ready"
 			if a.Kind == "oauth" {
@@ -571,3 +574,54 @@ func SystemEnvironment() []string {
 
 func Verifier(value string) [32]byte         { return sha256.Sum256([]byte(value)) }
 func Match(hash [32]byte, value string) bool { return hash == Verifier(value) }
+
+// keychainTimeout bounds an OS keychain call, which blocks while the keychain is locked or shows
+// an access prompt, so callers get an explanation before their own deadline instead of a timeout.
+var keychainTimeout = 10 * time.Second
+
+// keychainAdvice tells how to proceed after an OS keychain failure.
+const keychainAdvice = "unlock the OS keychain (or start its secret service) and retry, " +
+	"or use a secret of kind command or sops instead"
+
+func keychainGet(k string) (string, error) {
+	return keychainCall(func() (string, error) { return keyring.Get("agx", k) })
+}
+
+func keychainSet(k, value string) error {
+	_, err := keychainCall(func() (struct{}, error) { return struct{}{}, keyring.Set("agx", k, value) })
+	return err
+}
+
+func keychainDelete(k string) error {
+	_, err := keychainCall(func() (struct{}, error) { return struct{}{}, keyring.Delete("agx", k) })
+	return err
+}
+
+// keychainCall runs op with keychainTimeout. A call that times out keeps running in the
+// background, as keychain APIs cannot be cancelled; its result is discarded.
+func keychainCall[T any](op func() (T, error)) (T, error) {
+	type result struct {
+		value T
+		err   error
+	}
+	done := make(chan result, 1)
+	go func() {
+		value, err := op()
+		done <- result{value, err}
+	}()
+	timer := time.NewTimer(keychainTimeout)
+	defer timer.Stop()
+	select {
+	case r := <-done:
+		if r.err != nil && !errors.Is(r.err, keyring.ErrNotFound) {
+			return r.value, fmt.Errorf("cannot use the OS keychain: %w; %s", r.err, keychainAdvice)
+		}
+		return r.value, r.err
+	case <-timer.C:
+		var zero T
+		return zero, fmt.Errorf(
+			"the OS keychain did not answer within %s; it may be locked or waiting for an access prompt: %s",
+			keychainTimeout, keychainAdvice,
+		)
+	}
+}

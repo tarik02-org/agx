@@ -172,8 +172,8 @@ func InstallTarget(h config.ResolvedHarness, lookup func(string) (string, bool))
 		value, _ := v.Resolve("harness "+h.Name+" args", env, noSecrets)
 		t.Arguments = append(t.Arguments, value)
 	}
-	for name, v := range h.Env {
-		if value, err := v.Resolve("harness "+h.Name+" env "+name, env, noSecrets); err == nil {
+	for name, v := range h.Environment {
+		if value, err := v.Resolve("harness "+h.Name+" environment "+name, env, noSecrets); err == nil {
 			t.Env[name] = value
 		}
 	}

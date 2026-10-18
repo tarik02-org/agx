@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zalando/go-keyring"
 	"golang.org/x/oauth2"
 
 	"github.com/tarik02-org/agx/internal/config"
@@ -407,7 +406,7 @@ func (m *Manager) begin(
 	clientID := a.ClientID
 	if clientID == "" {
 		if err := secureURL(metadata.Registration); err != nil {
-			return nil, fmt.Errorf("OAuth server requires a configured public client_id")
+			return nil, clientIDRequired(id, a, issuer, m.callback)
 		}
 		body := map[string]any{
 			"client_name":                "agx",
@@ -470,6 +469,30 @@ func (m *Manager) begin(
 	}
 	p.URL = cfg.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oauth2.SetAuthURLParam("resource", resource))
 	return p, nil
+}
+
+// clientIDRequired explains how to configure a client ID for an authorization server that does
+// not support dynamic client registration. Providers that also require a client secret, such as
+// GitHub, cannot work with a public client, so a stored token is the alternative.
+func clientIDRequired(id config.ID, a config.Secret, issuer, callback string) error {
+	where := "secret " + string(id) + ": {kind: oauth, client_id: <client-id>}"
+	if a.Owner != "" {
+		where = "the auth of MCP server " + string(a.Owner) + ": auth: {kind: oauth, client_id: <client-id>}"
+	}
+	if a.Source.Path != "" {
+		where += fmt.Sprintf(" (defined at %s:%d)", a.Source.Path, a.Source.Line)
+	}
+	keychain := "auth: keychain"
+	if a.Owner == "" {
+		keychain = "kind: keychain"
+	}
+	return fmt.Errorf(
+		"OAuth server %s does not register clients automatically, so %s needs a client ID: "+
+			"create an OAuth app with the provider, allowing the redirect URI %s, and set its public client ID in %s. "+
+			"agx logs in as a public client without a client secret; for a provider that requires one, such as GitHub, "+
+			"use a personal access token instead: set %s and store it with agx secret set %s --stdin",
+		issuer, id, callback, where, keychain, id,
+	)
 }
 
 func normalizeResource(value string) (string, error) {
@@ -577,8 +600,8 @@ func (m *Manager) Callback(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusConflict, errors.New("logged out while authorizing; run the login again"))
 		return
 	}
-	if err := keyring.Set("agx", k, string(data)); err != nil {
-		fail(http.StatusServiceUnavailable, errors.New("OS keychain is unavailable; the credential was not stored"))
+	if err := keychainSet(k, string(data)); err != nil {
+		fail(http.StatusServiceUnavailable, fmt.Errorf("the credential was not stored: %w", err))
 		return
 	}
 	m.mu.Lock()

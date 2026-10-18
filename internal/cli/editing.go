@@ -15,7 +15,8 @@ import (
 
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v4"
+
+	"github.com/tarik02-org/agx/internal/yaml"
 
 	"github.com/tarik02-org/agx/internal/cli/prompt"
 	"github.com/tarik02-org/agx/internal/cli/ui"
@@ -691,6 +692,17 @@ func (s *session) removeDefinition(kind, id string, force bool) error {
 		return codedf(codeNotFound, "unknown %s %s", kindLabel(kind), id)
 	}
 	if !slices.Contains(s.config.Files, source.Path) {
+		for prefix := config.ID(id); strings.Contains(string(prefix), "/"); {
+			prefix = prefix[:strings.LastIndex(string(prefix), "/")]
+			if kind == edit.Skills && s.skillPackage(prefix) {
+				return codedf(
+					codeReadOnly,
+					"skill %s comes from package %s; remove the package with agx skill remove %s, "+
+						"or disable the skill with agx unuse %s",
+					id, prefix, prefix, id,
+				)
+			}
+		}
 		return codedf(
 			codeReadOnly,
 			"%s %s is defined by a package (%s); remove that package instead, or disable it with agx unuse %s",

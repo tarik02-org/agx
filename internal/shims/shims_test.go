@@ -182,7 +182,7 @@ func TestStaleTarget(t *testing.T) {
 
 func TestManifestCannotEscape(t *testing.T) {
 	dir := t.TempDir()
-	manifest := `{"shims":[{"name":"x","file":"../victim","kind":"symlink","target":"/agx"}]}`
+	manifest := `{"version":1,"shims":[{"name":"x","file":"../victim","kind":"symlink","target":"/agx"}]}`
 	if err := os.WriteFile(filepath.Join(dir, manifestName), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -262,5 +262,20 @@ func TestDefaultDir(t *testing.T) {
 	t.Setenv("HOME", home)
 	if dir, err := DefaultDir(); err != nil || dir != filepath.Join(home, ".local", "share", "agx", "shims") {
 		t.Fatalf("DefaultDir = %q, %v", dir, err)
+	}
+}
+
+func TestManifestFromNewerAgx(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(dir, manifestName),
+		[]byte(`{"version":2,"shims":[],"extra":1}`),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Remove(dir)
+	if err == nil || !strings.Contains(err.Error(), "uses format version 2, but this agx reads only version 1") {
+		t.Fatalf("Remove = %v, want the newer manifest rejected", err)
 	}
 }

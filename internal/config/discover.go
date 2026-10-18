@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.yaml.in/yaml/v4"
+	"github.com/tarik02-org/agx/internal/yaml"
 )
 
 // FoundSkill is a directory holding SKILL.md, found below a package or source root.

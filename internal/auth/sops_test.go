@@ -349,7 +349,7 @@ func TestSopsAgeKey(t *testing.T) {
 		manager := auth.New("http://127.0.0.1:1/callback")
 
 		status := manager.Status("token", secret, secrets)
-		if status.State != "unavailable" || !strings.Contains(status.Problem, "keychain secret age is unavailable") {
+		if status.State != "unavailable" || !strings.Contains(status.Problem, "keychain secret age is not stored") {
 			t.Fatalf("status without the age key = %+v", status)
 		}
 		if err := manager.Set("age", age, []byte("AGE-SECRET-KEY-KEYCHAIN\n")); err != nil {

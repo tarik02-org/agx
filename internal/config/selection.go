@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.yaml.in/yaml/v4"
+	"github.com/tarik02-org/agx/internal/yaml"
 )
 
 // item holds what a selection entry was written as: a scalar reference or path, or an inline

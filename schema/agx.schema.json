@@ -141,7 +141,7 @@
           "$ref": "#/$defs/Args",
           "description": "Native arguments inserted before the caller's: a list of strings for every session mode, or a list of groups."
         },
-        "env": {
+        "environment": {
           "additionalProperties": {
             "$ref": "#/$defs/Value"
           },

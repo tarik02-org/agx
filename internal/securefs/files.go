@@ -179,3 +179,29 @@ func createPrivate(path string) error {
 	}
 	return nil
 }
+
+// NewerFormatError reports a file agx owns that a newer agx wrote in a format this one cannot
+// read; rewriting it would lose what the newer version recorded.
+type NewerFormatError struct {
+	Path               string
+	Version, Supported int
+}
+
+func (e *NewerFormatError) Error() string {
+	return fmt.Sprintf(
+		"%s uses format version %d, but this agx reads only version %d; upgrade agx to use it",
+		e.Path, e.Version, e.Supported,
+	)
+}
+
+// CheckFormat rejects data of an agx-owned JSON file written in a newer format version than
+// supported, before stricter decoding fails on fields this version does not know.
+func CheckFormat(path string, data []byte, supported int) error {
+	var header struct {
+		Version int `json:"version"`
+	}
+	if json.Unmarshal(data, &header) == nil && header.Version > supported {
+		return &NewerFormatError{Path: path, Version: header.Version, Supported: supported}
+	}
+	return nil
+}

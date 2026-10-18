@@ -170,7 +170,7 @@ scopes:
   - add: {instructions: [notes]}
 harnesses:
   codex:
-    env:
+    environment:
       PROMPT: !file ./prompt.txt
 `)
 	id := func() string {

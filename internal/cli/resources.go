@@ -10,7 +10,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v4"
+
+	"github.com/tarik02-org/agx/internal/yaml"
 
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
@@ -23,8 +24,9 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 	var flags editFlags
 	id, text := "", ""
 	add := &cobra.Command{
-		Use:   "add <path> | add --id <id> --text <text>",
-		Short: "Define instructions from a file or text and enable them",
+		Use:         "add <path> | add --id <id> --text <text>",
+		Annotations: map[string]string{createsConfig: ""},
+		Short:       "Define instructions from a file or text and enable them",
 		Example: "  agx instructions add ./AGENTS.md\n" +
 			"  agx instructions add --id pnpm --text 'Use pnpm, not npm.'",
 		Args: cobra.MaximumNArgs(1),
@@ -67,7 +69,7 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 					return err
 				}
 				if info, err := os.Stat(abs); err != nil {
-					return err
+					return statError("instructions file", path, err)
 				} else if info.IsDir() {
 					return codedf(codeInvalidRequest, "%s is a directory; instructions are a file", path)
 				}
@@ -147,9 +149,10 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 	var env []string
 	base, executable := "", ""
 	add := &cobra.Command{
-		Use:     "add <name> --base <harness> [-- args...]",
-		Short:   "Define a harness that extends another with arguments and environment",
-		Example: "  agx harness add codex-cpa --base codex -- -c 'model_provider=\"cpa\"'",
+		Use:         "add <name> --base <harness> [-- args...]",
+		Annotations: map[string]string{createsConfig: ""},
+		Short:       "Define a harness that extends another with arguments and environment",
+		Example:     "  agx harness add codex-cpa --base codex -- -c 'model_provider=\"cpa\"'",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if dash := cmd.ArgsLenAtDash(); dash >= 0 && dash > 1 {
 				return fmt.Errorf("expected <name> -- [args...]")
@@ -201,7 +204,7 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 				if err != nil {
 					return err
 				}
-				edit.Set(definition, "env", values)
+				edit.Set(definition, "environment", values)
 			}
 			file, err := s.definitionFile(flags.file)
 			if err != nil {

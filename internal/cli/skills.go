@@ -2,7 +2,9 @@ package cli
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -11,7 +13,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v4"
+
+	"github.com/tarik02-org/agx/internal/yaml"
 
 	"github.com/tarik02-org/agx/internal/cli/prompt"
 	"github.com/tarik02-org/agx/internal/cli/ui"
@@ -23,12 +26,112 @@ import (
 
 func skillCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
 	command := &cobra.Command{Use: "skill", Short: "Add, list, and remove skills", GroupID: "config"}
+	remove := removeCommand(paths, builtins, edit.Skills)
+	remove.Use = "remove <id | package-id>"
+	remove.Short = "Remove a skill definition, or a package that skill add declared with its skills"
+	remove.Example = "  agx skill remove deploy\n" +
+		"  agx skill remove skills          # the package agx skill add anthropics/skills declared"
 	command.AddCommand(
 		skillAddCommand(paths, builtins),
 		listCommand(paths, builtins, edit.Skills),
-		removeCommand(paths, builtins, edit.Skills),
+		remove,
 	)
 	return command
+}
+
+// skillPackage reports whether id is a package declared in a configuration fragment that
+// provides skills, as agx skill add declares Git sources.
+func (s *session) skillPackage(id config.ID) bool {
+	p, ok := s.config.Packages[id]
+	if !ok || p.Anonymous || !slices.Contains(s.config.Files, p.Source.Path) {
+		return false
+	}
+	for skill := range s.config.Skills {
+		if strings.HasPrefix(string(skill), string(id)+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// removePackage deletes a package definition and its lock entries. References to the resources
+// it provides block the removal unless force removes them too.
+func (s *session) removePackage(id config.ID, force bool) error {
+	p := s.config.Packages[id]
+	f, err := s.file(p.Source.Path)
+	if err != nil {
+		return err
+	}
+	if !f.Undefine("packages", string(id)) {
+		return fmt.Errorf("cannot find the definition of package %s in %s", id, p.Source.Path)
+	}
+	s.result.Removed = append(s.result.Removed, definitionJSON{Kind: "packages", ID: string(id)})
+	within := func(name config.ID) bool {
+		return name == id || strings.HasPrefix(string(name), string(id)+"/")
+	}
+	type provided struct {
+		kind string
+		id   config.ID
+	}
+	resources := []provided{}
+	for _, name := range slices.Sorted(maps.Keys(s.config.Skills)) {
+		if within(name) {
+			resources = append(resources, provided{edit.Skills, name})
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(s.config.Instructions)) {
+		if within(name) {
+			resources = append(resources, provided{edit.Instructions, name})
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(s.config.MCP)) {
+		if within(name) {
+			resources = append(resources, provided{edit.MCP, name})
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(s.config.Bundles)) {
+		if within(name) {
+			resources = append(resources, provided{edit.Bundles, name})
+		}
+	}
+	refs := []string{}
+	for _, r := range resources {
+		found, err := s.references(r.kind, string(r.id))
+		if err != nil {
+			return err
+		}
+		refs = append(refs, found...)
+	}
+	if len(refs) > 0 && !force {
+		return codedf(codeConflict, "package %s provides resources that are still referenced; "+
+			"pass --force to remove the references too:\n  %s", id, strings.Join(refs, "\n  "))
+	}
+	for _, r := range resources {
+		if err := s.removeReferences(r.kind, string(r.id)); err != nil {
+			return err
+		}
+	}
+	if p.Pinned() {
+		return nil
+	}
+	lock, err := config.ReadLock(p.Lockfile, nil)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("%s: %w", p.Lockfile, err)
+	}
+	for name := range lock.Packages {
+		parent := s.config.Packages[name].Parent
+		if within(name) || parent != "" && within(parent) {
+			delete(lock.Packages, name)
+		}
+	}
+	b, err := packages.EncodeLock(lock)
+	if err != nil {
+		return err
+	}
+	s.locks[p.Lockfile] = b
+	return nil
 }
 
 // skillSource is what skill add fetches: a local directory, or a Git repository.
@@ -79,7 +182,7 @@ func localSource(arg string) (skillSource, error) {
 		return skillSource{}, err
 	}
 	if info, err := os.Stat(abs); err != nil {
-		return skillSource{}, err
+		return skillSource{}, statError("skill directory", arg, err)
 	} else if !info.IsDir() {
 		return skillSource{}, codedf(codeInvalidRequest, "%s is not a directory", arg)
 	}
@@ -155,8 +258,9 @@ func skillAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 	var choice skillChoice
 	var ref, subdir, packageID, githubBase string
 	cmd := &cobra.Command{
-		Use:   "add <source>",
-		Short: "Add skills from a directory, a Git URL, or GitHub owner/repo[@ref][/path]",
+		Use:         "add <source>",
+		Annotations: map[string]string{createsConfig: ""},
+		Short:       "Add skills from a directory, a Git URL, or GitHub owner/repo[@ref][/path]",
 		Example: "  agx skill add ./skills/deploy\n" +
 			"  agx skill add anthropics/skills                  # pick interactively\n" +
 			"  agx skill add anthropics/skills --skill pdf --skill docx",
@@ -201,8 +305,8 @@ func skillAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 	cmd.Flags().StringVar(&ref, "ref", "", "Git branch, tag, or commit to lock")
 	cmd.Flags().StringVar(&subdir, "path", "", "directory within the repository to search")
 	cmd.Flags().StringVar(&packageID, "package", "", "package ID (default: the repository name)")
-	cmd.Flags().StringVar(&githubBase, "github-base", "https://github.com", "base URL for owner/repo sources")
-	_ = cmd.Flags().MarkHidden("github-base")
+	githubBase = "https://github.com"
+	addGitHubBaseFlag(cmd, &githubBase)
 	return cmd
 }
 

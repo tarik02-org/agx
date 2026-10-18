@@ -31,14 +31,14 @@ harnesses:
     executable: `+quoted(binaries.harness)+`
   codex-defined:
     base: codex
-    env: {CODEX_HOME: `+quoted(home("defined-codex"))+`}
+    environment: {CODEX_HOME: `+quoted(home("defined-codex"))+`}
   codex-override:
     base: codex
-    env: {CODEX_HOME: `+quoted(home("override-codex"))+`}
+    environment: {CODEX_HOME: `+quoted(home("override-codex"))+`}
     args: [-c, features.plugins=true]
   codex-disabled:
     base: codex
-    env: {CODEX_HOME: `+quoted(home("disabled-codex"))+`}
+    environment: {CODEX_HOME: `+quoted(home("disabled-codex"))+`}
 `)
 	// The daemon keeps the CODEX_HOME of the environment that starts it.
 	e.ok("daemon", "start")

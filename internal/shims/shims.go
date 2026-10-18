@@ -81,8 +81,12 @@ type Change struct {
 	State State `json:"state,omitempty"`
 }
 
+// manifestVersion is the format version of the shim manifest; agx rejects manifests of others.
+const manifestVersion = 1
+
 type manifest struct {
-	Shims []Shim `json:"shims"`
+	Version int    `json:"version"`
+	Shims   []Shim `json:"shims"`
 }
 
 // DefaultDir is a directory of agx's own, $XDG_DATA_HOME/agx/shims (~/.local/share/agx/shims), or
@@ -164,8 +168,14 @@ func readManifest(dir string) (manifest, error) {
 	if err != nil {
 		return m, err
 	}
+	if err := securefs.CheckFormat(path, b, manifestVersion); err != nil {
+		return m, err
+	}
 	if err := json.Unmarshal(b, &m); err != nil {
 		return m, fmt.Errorf("%s: %w", path, err)
+	}
+	if m.Version != manifestVersion {
+		return m, fmt.Errorf("%s: unsupported format; remove the manifest to forget agx's shims", path)
 	}
 	for _, s := range m.Shims {
 		// A file name that leaves the directory would let the manifest delete arbitrary files.
@@ -187,7 +197,7 @@ func writeManifest(dir string, shims []Shim) error {
 		return nil
 	}
 	sort.Slice(shims, func(i, j int) bool { return shims[i].Name < shims[j].Name })
-	b, err := json.MarshalIndent(manifest{Shims: shims}, "", "  ")
+	b, err := json.MarshalIndent(manifest{Version: manifestVersion, Shims: shims}, "", "  ")
 	if err != nil {
 		return err
 	}

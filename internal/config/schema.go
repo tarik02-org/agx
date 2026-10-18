@@ -161,7 +161,7 @@ func argGroupSchema(builtins Builtins) *jsonschema.Schema {
 func (Harness) JSONSchemaExtend(s *jsonschema.Schema) {
 	base, _ := s.Properties.Get("base")
 	base.Pattern = validIDSegment.String()
-	env, _ := s.Properties.Get("env")
+	env, _ := s.Properties.Get("environment")
 	env.PropertyNames = &jsonschema.Schema{Pattern: environmentPattern}
 }
 

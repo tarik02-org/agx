@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -148,6 +150,14 @@ func TestJSONEdits(t *testing.T) {
 		t.Fatalf("mcp add = %+v", added)
 	}
 
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	t.Cleanup(server.Close)
+	var registered editDocument
+	okJSON(t, &registered, "mcp", "add", "gh", server.URL+"/mcp", "--client-id", "fixture-client", "--define-only")
+	if len(registered.Files) != 1 || !strings.Contains(registered.Files[0].Diff, "+      client_id: fixture-client") {
+		t.Fatalf("mcp add --client-id = %+v", registered.Files)
+	}
+
 	var stdio editDocument
 	okJSON(t, &stdio, "mcp", "add", "local", "--define-only", "--", "server", "--flag")
 	if len(stdio.Enabled) != 0 || stdio.Scope != nil || len(stdio.Defined) != 1 {
@@ -285,6 +295,26 @@ func TestJSONValidate(t *testing.T) {
 		t.Fatalf("config error without its source: %+v", d.Error)
 	}
 	failJSON(t, 1, codeConfigInvalid, "mcp", "add", "x", "--json", "--", "y")
+}
+
+func TestMissingPaths(t *testing.T) {
+	isolate(t, scriptingConfig)
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "missing.yaml")
+	d := failJSON(t, 1, codeConfigInvalid, "--config", missing, "config", "validate", "--json")
+	if !strings.Contains(d.Error.Message, missing+" does not exist") {
+		t.Fatalf("missing --config: %s", d.Error.Message)
+	}
+	// Adding a definition creates the named file.
+	created := filepath.Join(dir, "created.yaml")
+	okJSON(t, nil, "--config", created, "instructions", "add", "--id", "x", "--text", "hi")
+	if _, err := os.Stat(created); err != nil {
+		t.Fatal(err)
+	}
+	d = failJSON(t, 1, codeNotFound, "resolve", filepath.Join(dir, "nope"), "--json")
+	if !strings.Contains(d.Error.Message, "does not exist") {
+		t.Fatalf("missing directory: %s", d.Error.Message)
+	}
 }
 
 func TestJSONCommands(t *testing.T) {

@@ -68,7 +68,7 @@ func TestImportErrors(t *testing.T) {
 				"agx.yaml":   "imports: [{path: local.yaml, optional: true}]\n",
 				"local.yaml": "bogus: true\n",
 			},
-			want: []string{"local.yaml", "field bogus not found"},
+			want: []string{"local.yaml", "local.yaml:1: unknown key bogus"},
 		},
 		{
 			name:  "optional glob",
@@ -88,7 +88,7 @@ func TestImportErrors(t *testing.T) {
 		{
 			name:  "unknown field",
 			files: map[string]string{"agx.yaml": "version: 1\n"},
-			want:  []string{"field version not found"},
+			want:  []string{"agx.yaml:1: unknown key version"},
 		},
 		{
 			name:  "duplicate key",
@@ -482,7 +482,7 @@ scopes:
 harnesses:
   codex:
     executable: ~/bin/codex
-    env:
+    environment:
       PROMPT: !file ~/prompt.txt
 `)
 	c := read(t, root)
@@ -494,7 +494,7 @@ harnesses:
 		{"mcp command", c.MCP["up"].Command[0], in("bin", "up")},
 		{"mcp cwd", c.MCP["up"].Cwd, in("srv")},
 		{"harness executable", c.Harnesses["codex"].Executable, in("bin", "codex")},
-		{"!file", c.Harnesses["codex"].Env["PROMPT"].File, in("prompt.txt")},
+		{"!file", c.Harnesses["codex"].Environment["PROMPT"].File, in("prompt.txt")},
 		{"scope directory", c.Scopes[0].Directory, canonical(t, in("work"))},
 	} {
 		if tt.got != tt.want {
@@ -537,4 +537,27 @@ func TestDaemonAutostart(t *testing.T) {
 		!strings.Contains(err.Error(), "conflicting daemon.autostart") {
 		t.Fatalf("conflicting autostart: %v", err)
 	}
+}
+
+func TestFormatVersions(t *testing.T) {
+	dir := t.TempDir()
+	pin := filepath.Join(dir, "pin.json")
+	hash := strings.Repeat("a", 64)
+	if err := config.WritePin(pin, hash); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := config.ReadPin(pin); err != nil || got != hash {
+		t.Fatalf("ReadPin = %q, %v", got, err)
+	}
+	for _, tt := range []struct{ content, want string }{
+		{`{"version":2,"hash":"` + hash + `"}`, "uses format version 2, but this agx reads only version 1; upgrade agx"},
+		{`{"hash":"` + hash + `"}`, "invalid pin record"},
+	} {
+		write(t, pin, tt.content)
+		_, err := config.ReadPin(pin)
+		wantError(t, err, tt.want)
+	}
+	lock := write(t, filepath.Join(dir, "agx.lock.json"), `{"version":2,"packages":{},"sources":{}}`)
+	_, err := config.ReadLock(lock, nil)
+	wantError(t, err, "uses format version 2, but this agx reads only version 1")
 }

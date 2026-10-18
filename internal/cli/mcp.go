@@ -53,7 +53,7 @@ func mcpLoginCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 	noBrowser := false
 	cmd := &cobra.Command{
 		Use:   "login <id>",
-		Short: "Log in to an MCP server's OAuth secret and wait for the outcome",
+		Short: "Log in to an MCP server's OAuth secret, as agx secret login does for that secret",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := config.Load(paths.Config, paths.Cache, *builtins)
@@ -104,14 +104,16 @@ func loginSecret(c *config.Config, id string) (string, error) {
 func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
 	var flags editFlags
 	var headers, env []string
-	authValue := ""
+	authValue, clientID := "", ""
 	noBrowser := false
 	cmd := &cobra.Command{
-		Use:   "add <id> <url> | add <id> -- <command> [args...]",
-		Short: "Define an MCP server and enable it",
+		Use:         "add <id> <url> | add <id> -- <command> [args...]",
+		Annotations: map[string]string{createsConfig: ""},
+		Short:       "Define an MCP server and enable it",
 		Example: "  agx mcp add github https://api.githubcopilot.com/mcp\n" +
 			"  agx mcp add fs -- npx -y @modelcontextprotocol/server-filesystem .\n" +
-			"  agx mcp add docs https://docs.example/mcp --header 'X-Key=!secret docs' --auth none",
+			"  agx mcp add docs https://docs.example/mcp --header 'X-Key=!secret docs' --auth none\n" +
+			"  agx mcp add internal https://mcp.internal.example/mcp --client-id agx-cli",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if dash := cmd.ArgsLenAtDash(); dash >= 0 {
 				if dash > 1 {
@@ -162,8 +164,10 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 					items = append(items, arg)
 				}
 				edit.Set(definition, "command", edit.Sequence(true, items...))
-				if len(headers) > 0 || authValue != "" {
-					return &usageError{fmt.Errorf("--header and --auth apply to HTTP servers; use --env for stdio")}
+				if len(headers) > 0 || authValue != "" || clientID != "" {
+					return &usageError{
+						fmt.Errorf("--header, --auth, and --client-id apply to HTTP servers; use --env for stdio"),
+					}
 				}
 				if len(env) > 0 {
 					environment, err := pairs("env", env)
@@ -185,6 +189,11 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 					edit.Set(definition, "headers", values)
 				}
 				switch {
+				case clientID != "":
+					if authValue != "" && authValue != "oauth" {
+						return &usageError{fmt.Errorf("--client-id applies only to OAuth; drop --auth %s", authValue)}
+					}
+					edit.Set(definition, "auth", edit.Mapping("kind", "oauth", "client_id", clientID))
 				case authValue == "":
 				case authValue == "none" || authValue == "oauth" || authValue == "keychain":
 					edit.Set(definition, "auth", edit.Scalar(authValue))
@@ -226,6 +235,8 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 	cmd.Flags().StringArrayVar(&env, "env", nil, "stdio environment KEY=VALUE; VALUE may be a tag as for --header")
 	cmd.Flags().
 		StringVar(&authValue, "auth", "", "HTTP auth: none, oauth, keychain, or '!secret id' (default: OAuth on demand)")
+	cmd.Flags().StringVar(&clientID, "client-id", "",
+		"OAuth public client ID, for servers that do not register clients automatically")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the login URL without opening a browser")
 	return cmd
 }
@@ -244,7 +255,7 @@ func offerLogin(ctx context.Context, s *session, id, url string, browser bool) (
 	if !needed {
 		return false, nil
 	}
-	later := "agx mcp login " + id
+	later := "agx secret login " + id
 	if !s.interactive {
 		hint(id + " asks for an OAuth login; run " + later + " to log in.")
 		return true, nil
@@ -485,9 +496,13 @@ func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind string
 					return err
 				}
 			}
-			if kind == "harnesses" {
+			_, isSkill := s.config.Skills[config.ID(id)]
+			switch {
+			case kind == "harnesses":
 				err = s.removeHarness(id, force)
-			} else {
+			case kind == edit.Skills && !isSkill && s.skillPackage(config.ID(id)):
+				err = s.removePackage(config.ID(id), force)
+			default:
 				err = s.removeDefinition(kind, id, force)
 			}
 			if err != nil {

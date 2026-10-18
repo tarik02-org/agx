@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -101,6 +102,22 @@ func printValid(c *config.Config) error {
 		),
 	)
 	return err
+}
+
+// shellQuote quotes a word for a command a person copies into a shell: POSIX single quotes, or
+// double quotes on Windows, whose paths cannot contain one.
+func shellQuote(word string) string {
+	safe := func(r rune) bool {
+		return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' ||
+			strings.ContainsRune("_-./:@%+,=", r) || runtime.GOOS == "windows" && r == '\\'
+	}
+	if word != "" && !strings.ContainsFunc(word, func(r rune) bool { return !safe(r) }) {
+		return word
+	}
+	if runtime.GOOS == "windows" {
+		return `"` + word + `"`
+	}
+	return "'" + strings.ReplaceAll(word, "'", `'\''`) + "'"
 }
 
 func plural(n int, noun string) string {

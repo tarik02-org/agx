@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -58,5 +59,13 @@ func TestStale(t *testing.T) {
 	got := stale([]string{"current", "old", "recent", "unknown"}, []string{"current"}, superseded, now)
 	if !slices.Equal(got, []string{"old"}) {
 		t.Errorf("stale = %q", got)
+	}
+}
+
+func TestCatalogFromNewerAgx(t *testing.T) {
+	cache := t.TempDir()
+	writeFile(t, filepath.Join(cache, "native", "catalog.json"), `{"version":2,"names":[]}`)
+	if _, err := readCatalog(cache); err == nil || !strings.Contains(err.Error(), "uses format version 2") {
+		t.Fatalf("readCatalog = %v, want the newer catalog rejected", err)
 	}
 }
