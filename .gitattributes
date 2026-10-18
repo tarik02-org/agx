@@ -1,0 +1,2 @@
+# Session fixtures and Go sources must keep LF endings on Windows checkouts.
+* text=auto eol=lf

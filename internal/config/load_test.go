@@ -1,0 +1,520 @@
+package config_test
+
+import (
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/securefs"
+)
+
+func TestImportsLoadInOrder(t *testing.T) {
+	dir := t.TempDir()
+	root := write(t, filepath.Join(dir, "agx.yaml"), `imports:
+  - path: first.yaml
+  - path: missing.yaml
+    optional: true
+  - glob: agx.d/*.yaml
+instructions:
+  root: {text: root}
+`)
+	first := write(t, filepath.Join(dir, "first.yaml"), "instructions:\n  first: {text: first}\n")
+	b := write(t, filepath.Join(dir, "agx.d", "20-b.yaml"), "instructions:\n  b: {text: b}\n")
+	a := write(t, filepath.Join(dir, "agx.d", "10-a.yaml"), "instructions:\n  a: {text: a}\n")
+	write(t, filepath.Join(dir, "agx.d", "notes.txt"), "not a fragment")
+	mkdir(t, filepath.Join(dir, "agx.d", "30-dir.yaml"))
+
+	c := read(t, root)
+	want := []string{canonical(t, first), canonical(t, a), canonical(t, b), canonical(t, root)}
+	if !slices.Equal(c.Files, want) {
+		t.Fatalf("files = %q, want %q", c.Files, want)
+	}
+}
+
+func TestMissingRootImportsDropIns(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "agx.d", "10.yaml"), "instructions:\n  dropin: {text: hi}\n")
+	c := read(t, filepath.Join(dir, "agx.yaml"))
+	if _, ok := c.Instructions["dropin"]; !ok {
+		t.Fatalf("drop-in fragment not loaded: %v", c.Files)
+	}
+}
+
+func TestImportErrors(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+		want  []string
+	}{
+		{
+			name: "cycle",
+			files: map[string]string{
+				"agx.yaml": "imports: [{path: b.yaml}]\n",
+				"b.yaml":   "imports: [{path: agx.yaml}]\n",
+			},
+			want: []string{"import cycle"},
+		},
+		{
+			name:  "missing import",
+			files: map[string]string{"agx.yaml": "imports: [{path: nope.yaml}]\n"},
+			want:  []string{"nope.yaml"},
+		},
+		{
+			name: "error inside an optional import",
+			files: map[string]string{
+				"agx.yaml":   "imports: [{path: local.yaml, optional: true}]\n",
+				"local.yaml": "bogus: true\n",
+			},
+			want: []string{"local.yaml", "field bogus not found"},
+		},
+		{
+			name:  "optional glob",
+			files: map[string]string{"agx.yaml": "imports: [{glob: '*.yaml', optional: true}]\n"},
+			want:  []string{"optional applies only to path imports"},
+		},
+		{
+			name:  "path and glob",
+			files: map[string]string{"agx.yaml": "imports: [{path: a.yaml, glob: '*.yaml'}]\n"},
+			want:  []string{"import needs exactly one of path or glob"},
+		},
+		{
+			name:  "empty file",
+			files: map[string]string{"agx.yaml": ""},
+			want:  []string{"file is empty; write {}"},
+		},
+		{
+			name:  "unknown field",
+			files: map[string]string{"agx.yaml": "version: 1\n"},
+			want:  []string{"field version not found"},
+		},
+		{
+			name:  "duplicate key",
+			files: map[string]string{"agx.yaml": "skills: {}\nskills: {}\n"},
+			want:  []string{"skills"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for name, content := range tt.files {
+				write(t, filepath.Join(dir, name), content)
+			}
+			_, err := config.Read(filepath.Join(dir, "agx.yaml"), builtins)
+			wantError(t, err, tt.want...)
+		})
+	}
+}
+
+func TestDefinitionPrecedence(t *testing.T) {
+	t.Run("conflict without override names both locations", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, filepath.Join(dir, "first.yaml"), "instructions:\n  x: {text: first}\n")
+		root := write(
+			t,
+			filepath.Join(dir, "agx.yaml"),
+			"imports: [{path: first.yaml}]\ninstructions:\n  x: {text: root}\n",
+		)
+		_, err := config.Read(root, builtins)
+		wantError(
+			t,
+			err,
+			"agx.yaml:3",
+			"conflicting definition of instructions x",
+			"first.yaml:2",
+			"set override: true",
+		)
+	})
+	t.Run("override in a later fragment replaces", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, filepath.Join(dir, "first.yaml"), "instructions:\n  x: {text: first}\n")
+		root := write(t, filepath.Join(dir, "agx.yaml"), `imports: [{path: first.yaml}]
+instructions:
+  x: {text: root, override: true}
+`)
+		if got := read(t, root).Instructions["x"].Text; got != "root" {
+			t.Fatalf("text = %q, want root", got)
+		}
+	})
+	t.Run("override in an earlier fragment does not win", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, filepath.Join(dir, "first.yaml"), "instructions:\n  x: {text: first, override: true}\n")
+		root := write(
+			t,
+			filepath.Join(dir, "agx.yaml"),
+			"imports: [{path: first.yaml}]\ninstructions:\n  x: {text: root}\n",
+		)
+		_, err := config.Read(root, builtins)
+		wantError(t, err, "conflicting definition of instructions x")
+	})
+
+	pkg := func(t *testing.T) string {
+		dir := mkdir(t, filepath.Join(t.TempDir(), "pkg"))
+		write(t, filepath.Join(dir, "agx.package.yaml"), "instructions:\n  note: {text: from package}\n")
+		return dir
+	}
+	t.Run("package cannot replace a configuration definition", func(t *testing.T) {
+		root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), "instructions:\n  team/note: {text: from root}\n")
+		c := read(t, root)
+		_, err := c.AddPackage("team", pkg(t))
+		wantError(t, err, "package definition team/note conflicts with configuration")
+	})
+	t.Run("configuration override wins over a package", func(t *testing.T) {
+		root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), `instructions:
+  team/note: {text: from root, override: true}
+`)
+		c := read(t, root)
+		if _, err := c.AddPackage("team", pkg(t)); err != nil {
+			t.Fatal(err)
+		}
+		if got := c.Instructions["team/note"].Text; got != "from root" {
+			t.Fatalf("text = %q, want the root definition", got)
+		}
+	})
+}
+
+func TestPackageManifests(t *testing.T) {
+	root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), "{}\n")
+
+	t.Run("inline definitions are qualified by namespace", func(t *testing.T) {
+		dir := mkdir(t, filepath.Join(t.TempDir(), "pkg"))
+		write(t, filepath.Join(dir, "note.md"), "N")
+		write(t, filepath.Join(dir, "agx.package.yaml"), `bundles:
+  b:
+    instructions: [./note.md, {id: inline, text: hi}]
+`)
+		c := read(t, root)
+		if _, err := c.AddPackage("team", dir); err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range []config.ID{"team/note", "team/inline"} {
+			if _, ok := c.Instructions[id]; !ok {
+				t.Errorf("missing %s in %v", id, c.Instructions)
+			}
+		}
+		if got := c.Bundles["team/b"].Instructions; !slices.Equal(got, []config.ID{"team/note", "team/inline"}) {
+			t.Errorf("bundle selects %v", got)
+		}
+	})
+	t.Run("a package without a manifest declares its skills", func(t *testing.T) {
+		dir := mkdir(t, filepath.Join(t.TempDir(), "pkg"))
+		skill(t, filepath.Join(dir, "skills", "pdf"), "pdf")
+		skill(t, filepath.Join(dir, ".hidden", "secret"), "secret")
+		skill(t, filepath.Join(dir, "node_modules", "dep"), "dep")
+		c := read(t, root)
+		if _, err := c.AddPackage("repo", dir); err != nil {
+			t.Fatal(err)
+		}
+		got := []string{}
+		for id := range c.Skills {
+			got = append(got, string(id))
+		}
+		if !slices.Equal(got, []string{"repo/pdf"}) {
+			t.Fatalf("skills = %v, want [repo/pdf]", got)
+		}
+	})
+	for _, tt := range []struct{ name, manifest, want string }{
+		{"no scopes", "scopes: [{add: {}}]\n", "package manifests may only declare"},
+		{"no home paths", "instructions:\n  x: {path: ~/x.md}\n", "package manifests cannot use home-relative paths"},
+		{"https or ssh Git", "packages:\n  dep: {git: /srv/repo.git}\n", "must use an https, ssh, or scp-style Git source"},
+		{"paths stay inside", "instructions:\n  x: {path: ../x.md}\n", "path escapes package"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := mkdir(t, filepath.Join(t.TempDir(), "pkg"))
+			write(t, filepath.Join(dir, "agx.package.yaml"), tt.manifest)
+			_, err := read(t, root).AddPackage("team", dir)
+			wantError(t, err, tt.want)
+		})
+	}
+}
+
+func TestInlineDefinitions(t *testing.T) {
+	setup := func(t *testing.T, content string) string {
+		dir := t.TempDir()
+		skill(t, filepath.Join(dir, "skills", "foo"), "foo")
+		skill(t, filepath.Join(dir, "skills", "My Skill"), "my-skill")
+		write(t, filepath.Join(dir, "AGENTS.md"), "agents")
+		mkdir(t, filepath.Join(dir, "work", "sub"))
+		return write(t, filepath.Join(dir, "agx.yaml"), content)
+	}
+
+	t.Run("inline definitions are referenced by ID elsewhere", func(t *testing.T) {
+		root := setup(t, `bundles:
+  b:
+    skills: [./skills/foo]
+    instructions: [{id: t, text: hi}]
+scopes:
+  - directory: work
+    add:
+      skills: [foo]
+      instructions: [t, ./AGENTS.md]
+      mcp: [{id: docs, url: 'https://docs.example/mcp', auth: none}]
+      bundles: [b]
+  - directory: work/sub
+    remove: {skills: [foo]}
+harnesses:
+  codex:
+    remove: {instructions: [t]}
+`)
+		c := load(t, root)
+		for _, kind := range []struct {
+			ok   bool
+			name string
+		}{
+			{c.Skills["foo"].Inline, "skill foo"},
+			{c.Instructions["t"].Inline, "instructions t"},
+			{c.Instructions["AGENTS"].Inline, "instructions AGENTS"},
+			{c.MCP["docs"].Inline, "mcp docs"},
+		} {
+			if !kind.ok {
+				t.Errorf("%s is not an inline definition", kind.name)
+			}
+		}
+		s, err := c.Resolve(filepath.Join(filepath.Dir(root), "work", "sub"), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := ids(s.Resources, "skill"); len(got) != 0 {
+			t.Errorf("skills %v selected after the deeper removal", got)
+		}
+	})
+
+	for _, tt := range []struct {
+		name, content string
+		want          []string
+	}{
+		{
+			name: "same inline path twice names both locations",
+			content: `scopes:
+  - directory: work
+    add: {skills: [./skills/foo]}
+  - directory: work/sub
+    add:
+      skills: [./skills/foo]
+`,
+			want: []string{
+				"agx.yaml:6", "skill foo is also defined at", "agx.yaml:3",
+				"define it once, under top-level skills:, and reference its ID elsewhere",
+			},
+		},
+		{
+			name: "inline ID colliding with a top-level definition",
+			content: `skills:
+  foo: {path: ./skills/foo}
+scopes:
+  - directory: work
+    add: {skills: [./skills/foo]}
+`,
+			want: []string{"skill foo is also defined at", "agx.yaml:2"},
+		},
+		{
+			name: "override cannot replace an inline definition",
+			content: `scopes:
+  - directory: work
+    add: {skills: [./skills/foo]}
+skills:
+  foo: {path: ./skills/foo, override: true}
+`,
+			want: []string{"skill foo is also defined at"},
+		},
+		{
+			name: "inline MCP servers collide across bundles and scopes",
+			content: `bundles:
+  b:
+    mcp: [{id: m, url: 'https://a.example/mcp'}]
+scopes:
+  - directory: work
+    add:
+      mcp: [{id: m, url: 'https://b.example/mcp'}]
+`,
+			want: []string{"MCP server m is also defined at"},
+		},
+		{
+			name:    "underivable path ID",
+			content: "scopes:\n  - add: {skills: ['./skills/My Skill']}\n",
+			want:    []string{`cannot derive an ID from "My Skill"; use a mapping with an id`},
+		},
+		{
+			name:    "content skill needs an id",
+			content: "scopes:\n  - add: {skills: [{description: d, content: c}]}\n",
+			want:    []string{"an inline skill with content needs an id"},
+		},
+		{
+			name:    "inline MCP needs an id",
+			content: "scopes:\n  - add: {mcp: [{url: 'https://a.example/mcp'}]}\n",
+			want:    []string{"an inline MCP server needs an id"},
+		},
+		{
+			name:    "MCP servers have no path form",
+			content: "scopes:\n  - add: {mcp: [./server]}\n",
+			want:    []string{"MCP servers are referenced by ID or defined inline"},
+		},
+		{
+			name:    "inline definitions cannot override",
+			content: "scopes:\n  - add: {instructions: [{id: t, text: hi, override: true}]}\n",
+			want:    []string{"inline definitions cannot set override"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := config.Read(setup(t, tt.content), builtins)
+			wantError(t, err, tt.want...)
+		})
+	}
+}
+
+func TestGeneratedSkillValidation(t *testing.T) {
+	for _, tt := range []struct{ name, skill, want string }{
+		{"needs a description", "{content: body}", "with content needs a description"},
+		{"invalid name", "{name: Deploy_X, description: d, content: body}", `name "Deploy_X" must be lowercase`},
+		{"name from an invalid ID", "{description: d, content: body}", "must be lowercase letters"},
+		{"frontmatter cannot set name", "{description: d, content: body, frontmatter: {name: x}}", "frontmatter cannot set name"},
+		{"files escape", "{description: d, content: body, files: {../x: y}}", "must be a relative path inside the skill"},
+		{"files name SKILL.md", "{description: d, content: body, files: {skill.md: y}}", "files cannot name SKILL.md"},
+		{"files contain .git", "{description: d, content: body, files: {.git/config: y}}", "cannot contain .git"},
+		{"files overlap", "{description: d, content: body, files: {a: x, a/b: y}}", "files a and a/b overlap"},
+		{"name on a path skill", "{path: ./s, name: foo}", "name applies only to skills with content"},
+		{"short rev", "{git: 'https://example.com/r.git', rev: abc123}", "rev must be a full 40-character"},
+		{"Git path escapes", "{git: 'https://example.com/r.git', path: ../x}", "must stay inside the Git checkout"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			id := "d"
+			if tt.name == "name from an invalid ID" {
+				id = "My.Skill"
+			}
+			root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), "skills:\n  "+id+": "+tt.skill+"\n")
+			_, err := config.Read(root, builtins)
+			wantError(t, err, tt.want)
+		})
+	}
+}
+
+func TestPinnedSources(t *testing.T) {
+	rev := strings.Repeat("a", 40)
+	hash := strings.Repeat("b", 64)
+	for _, tt := range []struct {
+		name string
+		p    config.Package
+		want bool
+	}{
+		{"git with ref", config.Package{Git: "https://example.com/r.git", Ref: "main"}, false},
+		{"git with rev", config.Package{Git: "https://example.com/r.git", Rev: rev}, true},
+		{"local path", config.Package{Path: "/srv/pkg"}, false},
+		{"local path with hash", config.Package{Path: "/srv/pkg", Hash: hash}, true},
+		{"nix store path", config.Package{Path: "/nix/store/abc-pkg"}, runtime.GOOS != "windows"},
+		{"nix store lookalike", config.Package{Path: "/nix/storefront/pkg"}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.p.Pinned(); got != tt.want {
+				t.Fatalf("Pinned() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+	for _, tt := range []struct{ name, pkg, want string }{
+		{"ref and rev", "{git: 'https://example.com/r.git', ref: main, rev: " + rev + "}", "set ref or rev, not both"},
+		{"rev on a path", "{path: ./x, rev: " + rev + "}", "rev applies only to git sources"},
+		{"malformed hash", "{path: ./x, hash: abc}", "hash must be a 64-character content hash"},
+		{"path and git", "{path: ./x, git: 'https://example.com/r.git'}", "needs exactly one of path or git"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), "packages:\n  p: "+tt.pkg+"\n")
+			_, err := config.Read(root, builtins)
+			wantError(t, err, tt.want)
+		})
+	}
+
+	t.Run("a hash-pinned package loads from the cache without a lockfile", func(t *testing.T) {
+		dir := t.TempDir()
+		src := mkdir(t, filepath.Join(dir, "src"))
+		write(t, filepath.Join(src, "agx.package.yaml"), "instructions:\n  note: {path: note.md}\n")
+		write(t, filepath.Join(src, "note.md"), "pinned note")
+		hash, err := config.TreeHash(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		root := write(t, filepath.Join(dir, "agx.yaml"), "packages:\n  p: {path: ./src, hash: "+hash+"}\n")
+		cache := filepath.Join(dir, "cache")
+
+		_, err = config.Load(root, cache, builtins)
+		wantError(t, err, "package p is not installed; run agx install")
+
+		if err := securefs.CopyTree(src, filepath.Join(cache, "packages", hash)); err != nil {
+			t.Fatal(err)
+		}
+		c, err := config.Load(root, cache, builtins)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b, err := c.Instructions["p/note"].Read(); err != nil || string(b) != "pinned note" {
+			t.Fatalf("p/note = %q, %v", b, err)
+		}
+	})
+
+	t.Run("an unpinned package needs a lock", func(t *testing.T) {
+		dir := t.TempDir()
+		mkdir(t, filepath.Join(dir, "src"))
+		root := write(t, filepath.Join(dir, "agx.yaml"), "packages:\n  p: {path: ./src}\n")
+		_, err := config.Load(root, filepath.Join(dir, "cache"), builtins)
+		wantError(t, err, "agx.lock.json", "run agx install")
+	})
+}
+
+func TestHomeExpansion(t *testing.T) {
+	home := isolateHome(t)
+	skill(t, filepath.Join(home, "skills", "s"), "s")
+	write(t, filepath.Join(home, "frag.yaml"), "instructions:\n  frag: {text: frag}\n")
+	mkdir(t, filepath.Join(home, "work"))
+	root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), `imports: [{path: ~/frag.yaml}]
+lockfile: ~/locks/agx.lock.json
+packages:
+  p: {path: ~/pkg}
+skills:
+  s: {path: ~/skills/s}
+mcp:
+  up:
+    command: [~/bin/up, --stdio]
+    cwd: ~/srv
+scopes:
+  - directory: ~/work
+    add: {skills: [s]}
+harnesses:
+  codex:
+    executable: ~/bin/codex
+    env:
+      PROMPT: !file ~/prompt.txt
+`)
+	c := read(t, root)
+	in := func(parts ...string) string { return filepath.Join(append([]string{home}, parts...)...) }
+	for _, tt := range []struct{ name, got, want string }{
+		{"skill path", c.Skills["s"].Path, in("skills", "s")},
+		{"package path", c.Packages["p"].Path, in("pkg")},
+		{"lockfile", c.Packages["p"].Lockfile, in("locks", "agx.lock.json")},
+		{"mcp command", c.MCP["up"].Command[0], in("bin", "up")},
+		{"mcp cwd", c.MCP["up"].Cwd, in("srv")},
+		{"harness executable", c.Harnesses["codex"].Executable, in("bin", "codex")},
+		{"!file", c.Harnesses["codex"].Env["PROMPT"].File, in("prompt.txt")},
+		{"scope directory", c.Scopes[0].Directory, canonical(t, in("work"))},
+	} {
+		if tt.got != tt.want {
+			t.Errorf("%s = %q, want %q", tt.name, tt.got, tt.want)
+		}
+	}
+	if _, ok := c.Instructions["frag"]; !ok {
+		t.Error("~ import not loaded")
+	}
+	if got := c.MCP["up"].Command[1]; got != "--stdio" {
+		t.Errorf("arguments after the executable changed: %q", got)
+	}
+
+	for _, content := range []string{
+		"scopes:\n  - directory: ~root/work\n",
+		"imports: [{path: ~other/x.yaml}]\n",
+		"harnesses:\n  codex: {executable: ~bin/codex}\n",
+	} {
+		root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), content)
+		_, err := config.Read(root, builtins)
+		wantError(t, err, "~user paths are not supported")
+	}
+}

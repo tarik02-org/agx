@@ -1,0 +1,5 @@
+{"type":"mode","mode":"default","sessionId":"22222222-0000-4000-8000-000000000006"}
+{"type":"user","uuid":"u0","isSidechain":false,"isMeta":true,"cwd":"/work/project","sessionId":"22222222-0000-4000-8000-000000000006","timestamp":"2026-10-04T11:00:00.000Z","message":{"role":"user","content":"<local-command-caveat>Caveat</local-command-caveat>"}}
+{"type":"user","uuid":"u1","isSidechain":false,"cwd":"/work/project","sessionId":"22222222-0000-4000-8000-000000000006","timestamp":"2026-10-04T11:00:00.000Z","message":{"role":"user","content":"<command-name>/clear</command-name>"}}
+{"type":"user","uuid":"u2","isSidechain":false,"cwd":"/work/project","sessionId":"22222222-0000-4000-8000-000000000006","timestamp":"2026-10-04T11:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"nested subagent"}]}}
+{"type":"assistant","uuid":"a1","cwd":"/work/project","sessionId":"22222222-0000-4000-8000-000000000006","timestamp":"2026-10-04T11:00:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Sure."}]}}

@@ -2,3 +2,4 @@
 .audit/
 decisions.tsv
 result
+dist/

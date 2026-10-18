@@ -1,0 +1,3 @@
+// Package e2e runs the agx binary against a fake harness and a fake MCP server. Its tests need
+// the e2e build tag: go test -tags e2e ./internal/e2e/...
+package e2e

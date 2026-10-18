@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Test
+        run: go test ./...
+      - name: Test with the race detector
+        if: runner.os == 'Linux'
+        run: go test -race ./...
+      - name: End-to-end test
+        run: go test -tags e2e ./internal/e2e/...
+      - name: Build
+        run: go build ./cmd/agx
+
+  lint:
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v9
+        env:
+          GOOS: ${{ matrix.goos }}
+        with:
+          # Matches nixpkgs, which the development shell provides.
+          version: v2.12.2
+
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+      - name: Lint Protobuf
+        run: buf lint
+      - name: Regenerate
+        run: |
+          buf generate
+          go generate ./...
+      - name: Check for drift
+        run: |
+          git add --intent-to-add .
+          git diff --exit-code
+
+  nix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - run: nix build .#agx
+      - run: nix flake check
+
+  # Every push to master that passes CI replaces the rolling nightly prerelease.
+  nightly:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [test, lint, generate, nix]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: nightly
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Compute the version
+        run: |
+          tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude '*-*' 2>/dev/null || true)
+          if [ -n "$tag" ]; then
+            base=${tag#v}
+            count=$(git rev-list --count "$tag..HEAD")
+          else
+            base=0.0.0
+            count=$(git rev-list --count HEAD)
+          fi
+          echo "NIGHTLY_VERSION=$base+nightly.$count.$(git rev-parse --short HEAD)" >>"$GITHUB_ENV"
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean
+      - name: Publish
+        run: |
+          # A newer push may have finished first; never move nightly backwards.
+          git fetch --quiet origin master
+          if [ "$(git rev-parse origin/master)" != "$GITHUB_SHA" ] &&
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
+            echo "master moved on; its own run publishes the nightly"
+            exit 0
+          fi
+          git tag --force nightly "$GITHUB_SHA"
+          git push --force origin refs/tags/nightly
+          notes="Built from $GITHUB_SHA on master. Version $NIGHTLY_VERSION; not a stable release."
+          if gh release view nightly >/dev/null 2>&1; then
+            gh release edit nightly --prerelease --title "Nightly $NIGHTLY_VERSION" --notes "$notes"
+          else
+            gh release create nightly --prerelease --verify-tag --title "Nightly $NIGHTLY_VERSION" --notes "$notes"
+          fi
+          assets=(dist/*.tar.gz dist/*.zip dist/checksums.txt)
+          gh release upload nightly "${assets[@]}" --clobber
+          # Drop assets this build no longer produces.
+          for name in $(gh release view nightly --json assets --jq '.assets[].name'); do
+            if [ ! -e "dist/$name" ]; then
+              gh release delete-asset nightly "$name" --yes
+            fi
+          done

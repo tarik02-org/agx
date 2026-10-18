@@ -1,0 +1,365 @@
+//go:build e2e
+
+package e2e
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+)
+
+const (
+	version = "0.0.0-e2e"
+	token   = "e2e-secret-token"
+)
+
+// binaries holds the executables TestMain builds.
+var binaries struct{ agx, harness, mcp string }
+
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "agx-e2e-bin-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	exe := func(name string) string {
+		if runtime.GOOS == "windows" {
+			name += ".exe"
+		}
+		return filepath.Join(dir, name)
+	}
+	binaries.agx, binaries.harness, binaries.mcp = exe("agx"), exe("fakeharness"), exe("fakemcp")
+	for _, b := range [][]string{
+		{binaries.agx, "-ldflags=-X github.com/tarik02-org/agx/internal/daemon.Version=" + version, "github.com/tarik02-org/agx/cmd/agx"},
+		{binaries.harness, "./testdata/fakeharness"},
+		{binaries.mcp, "./testdata/fakemcp"},
+	} {
+		cmd := exec.CommandContext(context.Background(), "go", append([]string{"build", "-o", b[0]}, b[1:]...)...)
+		cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintln(os.Stderr, "building", b[0], err)
+			os.Exit(1)
+		}
+	}
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+// env is an isolated environment: agx paths, home, and the harnesses' stores all live in dir.
+type env struct {
+	t    *testing.T
+	dir  string
+	work string
+	vars []string
+}
+
+func newEnv(t *testing.T) *env {
+	t.Helper()
+	dir := t.TempDir()
+	e := &env{t: t, dir: dir, work: filepath.Join(dir, "work")}
+	home := filepath.Join(dir, "home")
+	overrides := map[string]string{
+		"AGX_CONFIG":          filepath.Join(dir, "config", "agx.yaml"),
+		"AGX_CACHE":           filepath.Join(dir, "cache"),
+		"AGX_STATE":           filepath.Join(dir, "state"),
+		"HOME":                home,
+		"USERPROFILE":         home,
+		"XDG_CONFIG_HOME":     filepath.Join(home, "config"),
+		"XDG_CACHE_HOME":      filepath.Join(home, "cache"),
+		"XDG_STATE_HOME":      filepath.Join(home, "state"),
+		"XDG_DATA_HOME":       filepath.Join(home, "data"),
+		"CODEX_HOME":          filepath.Join(home, "codex"),
+		"CLAUDE_CONFIG_DIR":   filepath.Join(home, "claude"),
+		"PI_CODING_AGENT_DIR": filepath.Join(home, "pi"),
+		"E2E_TOKEN":           token,
+		"FAKE_ENV":            "AGX_MCP_GRANT,DEFINED,E2E_TOKEN",
+		"NO_COLOR":            "1",
+	}
+	for _, pair := range os.Environ() {
+		name, _, _ := strings.Cut(pair, "=")
+		if _, replaced := overrides[strings.ToUpper(name)]; replaced ||
+			strings.HasPrefix(strings.ToUpper(name), "AGX_") {
+			continue
+		}
+		e.vars = append(e.vars, pair)
+	}
+	for name, value := range overrides {
+		e.vars = append(e.vars, name+"="+value)
+	}
+	for _, d := range []string{home, filepath.Join(e.work, "sub")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e.write(
+		"config/skills/review/SKILL.md",
+		"---\nname: review\ndescription: Review changes.\n---\nReview carefully.\n",
+	)
+	e.write("config/agx.yaml", `skills:
+  review: {path: ./skills/review}
+instructions:
+  rules: {text: E2E instructions.}
+secrets:
+  token: {kind: environment, variable: E2E_TOKEN}
+mcp:
+  echo:
+    command: ['`+filepath.ToSlash(binaries.mcp)+`']
+    environment:
+      ECHO_TOKEN: !secret token
+scopes:
+  - directory: ../work
+    add:
+      skills: [review]
+      instructions: [rules]
+      mcp: [echo]
+harnesses:
+  claude:
+    executable: '`+filepath.ToSlash(binaries.harness)+`'
+  claude-e2e:
+    base: claude
+    args: [--from-definition]
+    env: {DEFINED: "yes"}
+`)
+	return e
+}
+
+func (e *env) write(rel, content string) {
+	e.t.Helper()
+	path := filepath.Join(e.dir, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		e.t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+type result struct {
+	code           int
+	stdout, stderr string
+}
+
+// agx runs the binary in the work directory with extra environment variables.
+func (e *env) agx(extra []string, args ...string) result {
+	e.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binaries.agx, args...)
+	cmd.Dir = e.work
+	cmd.Env = append(slices.Clone(e.vars), extra...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	r := result{stdout: stdout.String(), stderr: stderr.String()}
+	var exit *exec.ExitError
+	switch {
+	case errors.As(err, &exit):
+		r.code = exit.ExitCode()
+	case err != nil:
+		e.t.Fatalf("agx %q: %v", args, err)
+	}
+	return r
+}
+
+// ok runs agx and fails the test unless it exits 0.
+func (e *env) ok(args ...string) result {
+	e.t.Helper()
+	r := e.agx(nil, args...)
+	if r.code != 0 {
+		e.t.Fatalf("agx %q exited %d\nstdout: %s\nstderr: %s", args, r.code, r.stdout, r.stderr)
+	}
+	return r
+}
+
+type dump struct {
+	Args         []string          `json:"args"`
+	Directory    string            `json:"directory"`
+	Env          map[string]string `json:"env"`
+	Skills       map[string]string `json:"skills"`
+	Instructions string            `json:"instructions"`
+	Endpoints    map[string]string `json:"endpoints"`
+	Tools        map[string]string `json:"tools"`
+}
+
+// harness runs a harness command through agx and returns what the fake harness recorded.
+func (e *env) harness(name string, args ...string) (dump, result) {
+	e.t.Helper()
+	path := filepath.Join(e.dir, "dump.json")
+	_ = os.Remove(path)
+	r := e.agx([]string{"FAKE_DUMP=" + path}, append([]string{name}, args...)...)
+	var d dump
+	b, err := os.ReadFile(path)
+	if err != nil {
+		e.t.Fatalf("agx %s %q did not run the harness (exit %d): %s", name, args, r.code, r.stderr)
+	}
+	if err := json.Unmarshal(b, &d); err != nil {
+		e.t.Fatal(err)
+	}
+	return d, r
+}
+
+// stopDaemon stops the daemon and waits until its process released the runtime directory.
+func (e *env) stopDaemon(force bool) {
+	e.t.Helper()
+	args := []string{"daemon", "stop"}
+	if force {
+		args = append(args, "--force")
+	}
+	if r := e.agx(nil, args...); r.code != 0 {
+		if force {
+			return
+		}
+		e.t.Fatalf("daemon stop exited %d: %s", r.code, r.stderr)
+	}
+	runtimeDir := filepath.Join(e.dir, "cache", "runtime")
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		_, err := os.Stat(filepath.Join(runtimeDir, "daemon.json"))
+		// Windows refuses to remove the lock file while the daemon holds it.
+		if errors.Is(err, fs.ErrNotExist) {
+			lock := filepath.Join(runtimeDir, "daemon.lock")
+			if err := os.Remove(lock); err == nil || errors.Is(err, fs.ErrNotExist) {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	e.t.Fatal("daemon did not exit")
+}
+
+func TestEndToEnd(t *testing.T) {
+	e := newEnv(t)
+
+	if r := e.ok("--version"); !strings.Contains(r.stdout, version) {
+		t.Fatalf("--version printed %q", r.stdout)
+	}
+	e.ok("config", "validate")
+
+	t.Run("passthrough without a daemon", func(t *testing.T) {
+		d, r := e.harness("claude-e2e", "--version")
+		if r.code != 0 || !strings.Contains(r.stdout, "fakeharness 1") {
+			t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
+		}
+		if !slices.Equal(d.Args, []string{"--version"}) {
+			t.Errorf("args = %q; definition groups do not apply to passthrough", d.Args)
+		}
+		if d.Env["DEFINED"] != "yes" {
+			t.Errorf("definition env missing: %v", d.Env)
+		}
+		if _, ok := d.Env["AGX_MCP_GRANT"]; ok {
+			t.Error("passthrough received a grant")
+		}
+	})
+
+	if r := e.agx(nil, "claude", "-p", "hi"); r.code != 1 || !strings.Contains(r.stderr, "agx daemon start") {
+		t.Fatalf("a managed launch without a daemon: exit %d, %q", r.code, r.stderr)
+	}
+
+	e.ok("daemon", "start")
+	t.Cleanup(func() { e.stopDaemon(true) })
+	if r := e.ok("daemon", "status", "--json"); !strings.Contains(r.stdout, version) {
+		t.Fatalf("daemon status = %s", r.stdout)
+	}
+
+	var launched dump
+	t.Run("managed launch", func(t *testing.T) {
+		d, r := e.harness("claude-e2e", "-p", "hello")
+		if r.code != 0 {
+			t.Fatalf("exit %d: %s", r.code, r.stderr)
+		}
+		launched = d
+		if n := len(d.Args); n < 3 || !slices.Equal(d.Args[n-3:], []string{"--from-definition", "-p", "hello"}) {
+			t.Errorf("args = %q, want the definition's group before the native arguments", d.Args)
+		}
+		work, err := filepath.EvalSymlinks(e.work)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := filepath.EvalSymlinks(d.Directory); !strings.EqualFold(got, work) {
+			t.Errorf("directory = %q, want %q", d.Directory, work)
+		}
+		if d.Env["DEFINED"] != "yes" || d.Env["AGX_MCP_GRANT"] == "" {
+			t.Errorf("env = %v", d.Env)
+		}
+		if _, ok := d.Env["E2E_TOKEN"]; ok {
+			t.Error("a variable only the MCP server needs reached the harness")
+		}
+		if len(d.Skills) != 1 {
+			t.Errorf("skills = %v", d.Skills)
+		}
+		for _, s := range d.Skills {
+			if !strings.Contains(s, "Review carefully.") {
+				t.Errorf("skill = %q", s)
+			}
+		}
+		if !strings.Contains(d.Instructions, "E2E instructions.") {
+			t.Errorf("instructions = %q", d.Instructions)
+		}
+		if got := d.Tools["agx-echo"]; got != "echo:hello:"+token {
+			t.Errorf("echo tool through the daemon = %q", got)
+		}
+	})
+
+	t.Run("finished launch", func(t *testing.T) {
+		var view struct {
+			Data struct {
+				Launches []struct {
+					Harness string `json:"harness"`
+					Mode    string `json:"mode"`
+					State   string `json:"state"`
+				} `json:"launches"`
+			} `json:"data"`
+		}
+		r := e.ok("launch", "list", "--json")
+		if err := json.Unmarshal([]byte(r.stdout), &view); err != nil {
+			t.Fatal(err)
+		}
+		if len(view.Data.Launches) != 1 || view.Data.Launches[0].State != "STATE_FINISHED" ||
+			view.Data.Launches[0].Harness != "claude-e2e" || view.Data.Launches[0].Mode != "print" {
+			t.Fatalf("launches = %+v", view.Data.Launches)
+		}
+		if strings.Contains(r.stdout, launched.Env["AGX_MCP_GRANT"]) || strings.Contains(r.stdout, token) {
+			t.Fatal("launch list reveals a credential")
+		}
+		endpoint := launched.Endpoints["agx-echo"]
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, endpoint, strings.NewReader("{}"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+launched.Env["AGX_MCP_GRANT"])
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("grant of a finished launch: HTTP %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("native exit status", func(t *testing.T) {
+		if _, r := e.harness("claude", "--exit=7"); r.code != 7 {
+			t.Fatalf("exit %d: %s", r.code, r.stderr)
+		}
+	})
+
+	t.Run("daemon stop", func(t *testing.T) {
+		e.stopDaemon(false)
+		if r := e.agx(nil, "daemon", "status"); r.code != 1 {
+			t.Fatalf("status after stop: exit %d", r.code)
+		}
+	})
+}

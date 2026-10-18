@@ -1,31 +1,41 @@
 # agx
 
+[![CI](https://github.com/tarik02-org/agx/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/tarik02-org/agx/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/tarik02-org/agx?sort=semver)](https://github.com/tarik02-org/agx/releases/latest)
+
 Directory-scoped skills, MCP servers, and instructions for Codex, Claude Code,
 and Pi. A Go daemon owns MCP upstreams and credentials; wrappers resolve the
 working directory, apply native configuration, and supervise each harness.
 
-## Build and try
+## Install
 
-Requires Go 1.26 or newer. Git is required for Git package sources. Install the
-native harnesses separately; agx does not download or update them.
+Release archives for Linux, macOS, and Windows on amd64 and arm64 are on the
+[releases page](https://github.com/tarik02-org/agx/releases/latest); unpack
+`agx` (`agx.exe` on Windows) onto PATH and check `checksums.txt`. The rolling
+[nightly prerelease](https://github.com/tarik02-org/agx/releases/tag/nightly) is
+rebuilt from every `master` commit that passes CI, with versions such as
+`0.1.0+nightly.12.abc1234`; its archive names stay the same between builds.
+
+With Nix, run `nix run github:tarik02-org/agx`, or add the flake's
+`packages.<system>.agx` to a profile or system configuration.
+
+From source, with Go 1.26 or newer: `go install github.com/tarik02-org/agx/cmd/agx@latest`.
+Release builds set the version reported by `agx --version`, which wrappers and
+the daemon compare: `-ldflags "-X github.com/tarik02-org/agx/internal/daemon.Version=0.1.0"`.
+
+Git is required for Git package sources. Install the native harnesses
+separately; agx does not download or update them.
+
+## Try it
 
 ```sh
-go build -o agx ./cmd/agx
-./agx --config examples/agx.yaml config validate
-./agx --config examples/agx.yaml explain .
-./agx --config examples/agx.yaml install
-./agx --config examples/agx.yaml daemon start
-./agx --config examples/agx.yaml codex
-./agx daemon stop
+agx --config examples/agx.yaml config validate
+agx --config examples/agx.yaml explain .
+agx --config examples/agx.yaml install
+agx --config examples/agx.yaml daemon start
+agx --config examples/agx.yaml codex
+agx daemon stop
 ```
-
-With Nix, `nix build` produces `result/bin/agx` and `nix develop` provides Go,
-Buf, golangci-lint, and gopls. Lint with `golangci-lint run`.
-
-Release builds set the version reported to wrappers, which must match the
-daemon: `go build -ldflags "-X github.com/tarik02-org/agx/internal/daemon.Version=0.1.0" ./cmd/agx`.
-
-Licensed under the [MIT License](LICENSE).
 
 The example adds always-on instructions for this checkout. Start from
 [examples/agx.yaml](examples/agx.yaml), then add your packages, skills, and MCP
@@ -97,11 +107,32 @@ and stored secrets use the OS keychain, with explicit errors when unavailable.
 
 ## Verification and support
 
-[Verification notes](docs/verification.md) distinguish exercised behavior from
-platform and protocol limits. The native launch path was exercised on macOS with
-Codex 0.162.1, Claude Code 2.1.300, and Pi 1.2.0. Linux and Windows binaries
-cross-compile but have not been run natively; native Windows launches require
-`.exe` binaries. Managed endpoints support the stateful MCP handshake through 2025-11-25. OAuth currently supports public clients.
+CI runs the unit and end-to-end tests on Linux, macOS, and Windows; the
+[verification notes](docs/verification.md) say what they cover and what remains
+unverified. The real native harnesses were exercised on macOS with Codex
+0.162.1, Claude Code 2.1.300, and Pi 1.2.0. Native Windows launches require
+`.exe` binaries. Managed endpoints support the stateful MCP handshake through
+2025-11-25. OAuth currently supports public clients. Changes are listed in the
+[changelog](CHANGELOG.md).
+
+## Development
+
+`nix develop` provides Go, Buf, golangci-lint, and gopls; otherwise install Go
+1.26 and golangci-lint 2.12.
+
+```sh
+go test ./...                              # unit tests
+go test -tags e2e ./internal/e2e/...       # builds agx and runs it end to end
+golangci-lint fmt ./... && golangci-lint run ./...
+GOOS=windows golangci-lint run ./...
+buf lint && buf generate && go generate ./...   # Protobuf bindings and JSON Schemas
+nix build .#agx
+```
+
+Tests isolate `HOME`, the `AGX_*` paths, and the harness stores, and need no
+network. CI also checks that generated code is current. Pushing a `v*` tag
+publishes a release with GoReleaser (`.goreleaser.yaml`); `goreleaser build
+--snapshot --clean` builds every target locally.
 
 ## Design and API
 
@@ -129,3 +160,5 @@ messages and service descriptors live in `gen/typescript`. Regenerate with
 `buf generate`; TypeScript consumers need `@bufbuild/protobuf` and can construct
 Connect clients with `@connectrpc/connect`. Generation versions are pinned in
 [buf.gen.yaml](buf.gen.yaml), and Go dependency versions in [go.mod](go.mod).
+
+Licensed under the [MIT License](LICENSE).

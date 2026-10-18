@@ -1,0 +1,5 @@
+{"type":"session","version":3,"id":"33333333-0000-7000-8000-000000000001","timestamp":"2026-10-05T07:00:00.000Z","cwd":"/work/project"}
+{"type":"model_change","id":"m1","parentId":null,"timestamp":"2026-10-05T07:00:00.000Z","provider":"p","modelId":"m"}
+{"type":"message","id":"s1","parentId":"m1","timestamp":"2026-10-05T07:00:00.000Z","message":{"role":"system","content":""}}
+{"type":"message","id":"u1","parentId":"s1","timestamp":"2026-10-05T07:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"Profile the build"}]}}
+{"type":"session_info","id":"i1","parentId":"u1","timestamp":"2026-10-05T07:00:02.000Z","name":"Build profiling"}
