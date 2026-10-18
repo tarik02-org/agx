@@ -90,14 +90,15 @@ func doctorCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			if len(args) > 0 {
 				directory = args[0]
 			}
-			directory, err := filepath.Abs(directory)
-			if err != nil {
-				return err
-			}
 			if info, err := os.Stat(directory); err != nil {
-				return err
+				return statError("directory", directory, err)
 			} else if !info.IsDir() {
 				return codedf(codeInvalidRequest, "not a directory: %s", directory)
+			}
+			// The report spells every path as configuration and launches do, symbolic links resolved.
+			directory, err := config.Canonical(directory)
+			if err != nil {
+				return err
 			}
 			report := runDoctor(cmd.Context(), *paths, registry, *builtins, directory, all)
 			if scripting.enabled {
@@ -164,7 +165,11 @@ func runDoctor(
 			if findErr == nil {
 				output, runErr = harnessVersion(ctx, executable)
 			}
-			harnessRows[i] = harnessCheck(name, configured, defined, executable, findErr, output, runErr)
+			shown := executable
+			if findErr == nil {
+				shown = shownPath(executable)
+			}
+			harnessRows[i] = harnessCheck(name, configured, defined, shown, findErr, output, runErr)
 		})
 	}
 	wg.Wait()
@@ -175,7 +180,7 @@ func runDoctor(
 	}
 
 	client, daemonRow := connectDaemon(ctx, paths, c)
-	add(daemonRow, stateCheck(daemon.StatePath(paths)))
+	add(daemonRow, stateCheck(shownPath(daemon.StatePath(paths))))
 	if client != nil && loaded {
 		add(mcpChecks(ctx, client, c, directory, all)...)
 	}
@@ -447,7 +452,7 @@ func connectDaemon(ctx context.Context, paths platform.Paths, c *config.Config) 
 		case errors.Is(err, daemon.ErrVersionMismatch):
 			row.Hint = "run agx daemon stop, then agx doctor again"
 		default:
-			row.Hint = "inspect " + filepath.Join(paths.Runtime, "daemon.log")
+			row.Hint = "inspect " + shownPath(filepath.Join(paths.Runtime, "daemon.log"))
 		}
 		return nil, row
 	}
@@ -468,7 +473,7 @@ func daemonClientCheck(
 	cancel()
 	if err != nil {
 		row.Status, row.Detail = checkFail, "not answering: "+errorMessage(err)
-		row.Hint = "inspect " + filepath.Join(paths.Runtime, "daemon.log")
+		row.Hint = "inspect " + shownPath(filepath.Join(paths.Runtime, "daemon.log"))
 		return nil, row
 	}
 	return c, daemonCheck(daemonFacts{
@@ -842,4 +847,13 @@ func printDoctor(report doctorReport) error {
 	b.WriteString("\n" + out.Status(level, text) + "\n")
 	_, err := io.WriteString(out, b.String())
 	return err
+}
+
+// shownPath spells path in a report as configuration and launches do, symbolic links resolved;
+// the files themselves are still reached by the path given.
+func shownPath(path string) string {
+	if canonical, err := config.Canonical(path); err == nil {
+		return canonical
+	}
+	return path
 }
