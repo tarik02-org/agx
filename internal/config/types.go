@@ -111,7 +111,7 @@ type MCPServer struct {
 	// Transport follows from url (http) or command (stdio) once merged.
 	Transport   string           `yaml:"transport"   json:"transport"             jsonschema:"enum=stdio,enum=http" jsonschema_description:"How to reach the server; inferred from url (http) or command (stdio)."`
 	Command     []string         `yaml:"command"     json:"command,omitempty"                                       jsonschema_description:"stdio: server command and arguments."`
-	URL         string           `yaml:"url"         json:"url,omitempty"                                           jsonschema_description:"http: server URL; HTTPS, or HTTP for loopback."`
+	URL         string           `yaml:"url"         json:"url,omitempty"                                           jsonschema_description:"http: server URL; http or https."`
 	Cwd         string           `yaml:"cwd"         json:"cwd,omitempty"                                           jsonschema_description:"stdio: working directory; defaults to the launch directory."`
 	Environment map[string]Value `yaml:"environment" json:"environment,omitempty"                                   jsonschema_description:"stdio: environment variables for the server."`
 	Headers     map[string]Value `yaml:"headers"     json:"headers,omitempty"                                       jsonschema_description:"http: extra request headers."`

@@ -335,7 +335,7 @@
             },
             "url": {
               "type": "string",
-              "description": "http: server URL; HTTPS, or HTTP for loopback."
+              "description": "http: server URL; http or https."
             },
             "cwd": {
               "type": "string",
@@ -438,7 +438,7 @@
         },
         "url": {
           "type": "string",
-          "description": "http: server URL; HTTPS, or HTTP for loopback."
+          "description": "http: server URL; http or https."
         },
         "cwd": {
           "type": "string",

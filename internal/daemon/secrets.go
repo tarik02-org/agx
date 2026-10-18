@@ -150,7 +150,7 @@ func (s *Server) Login(
 	}
 	c, err := s.reload()
 	if err != nil {
-		return rpcError(connect.CodeFailedPrecondition, "configuration invalid; run agx config validate")
+		return configError(err)
 	}
 	secret, err := lookupSecret(c, req.Msg.SecretId)
 	if err != nil {

@@ -28,7 +28,7 @@ func (s *Server) TestMcpServer(
 ) (*connect.Response[v1.TestMcpServerResponse], error) {
 	c, err := s.reload()
 	if err != nil {
-		return nil, rpcError(connect.CodeFailedPrecondition, "configuration invalid; run agx config validate")
+		return nil, configError(err)
 	}
 	id := config.ID(req.Msg.McpId)
 	definition, ok := c.MCP[id]

@@ -462,13 +462,10 @@ func secureURL(value string) error {
 	if err != nil || u.Host == "" || u.User != nil {
 		return fmt.Errorf("invalid OAuth URL")
 	}
-	if u.Scheme == "https" {
-		return nil
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return fmt.Errorf("OAuth endpoints must use http or https")
 	}
-	if u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1") {
-		return nil
-	}
-	return fmt.Errorf("OAuth endpoints must use HTTPS or loopback HTTP")
+	return nil
 }
 
 func SystemEnvironment() []string {

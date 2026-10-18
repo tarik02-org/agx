@@ -1256,13 +1256,10 @@ func validateURL(value string) error {
 	if err != nil || u.Host == "" || u.User != nil || u.Fragment != "" {
 		return fmt.Errorf("invalid HTTP URL")
 	}
-	if u.Scheme == "https" {
-		return nil
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return fmt.Errorf("URL must use http or https")
 	}
-	if u.Scheme == "http" && (u.Hostname() == "127.0.0.1" || u.Hostname() == "localhost" || u.Hostname() == "::1") {
-		return nil
-	}
-	return fmt.Errorf("URL must use HTTPS (HTTP permitted only for loopback)")
+	return nil
 }
 
 func validID(id ID) bool {

@@ -2,10 +2,13 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -44,6 +47,7 @@ const historyRetention = time.Hour
 
 type Discovery struct {
 	Version    string `json:"version"`
+	Build      string `json:"build"`
 	InstanceID string `json:"instance_id"`
 	URL        string `json:"url"`
 	Token      string `json:"token"`
@@ -127,6 +131,7 @@ func Serve(ctx context.Context, paths platform.Paths, registry adapters.Registry
 	defer cancel()
 	discovery := Discovery{
 		Version:    Version,
+		Build:      Build(),
 		InstanceID: securefs.Token(),
 		URL:        "http://" + listener.Addr().String(),
 		Token:      securefs.Token(),
@@ -455,7 +460,7 @@ func (s *Server) Resolve(
 ) (*connect.Response[v1.ResolveResponse], error) {
 	c, err := s.reload()
 	if err != nil {
-		return nil, rpcError(connect.CodeFailedPrecondition, "configuration invalid; run agx config validate")
+		return nil, configError(err)
 	}
 	if req.Msg.Directory == "" || !filepath.IsAbs(req.Msg.Directory) {
 		return nil, rpcError(connect.CodeInvalidArgument, "directory must be absolute")
@@ -589,8 +594,36 @@ func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 		return d, fmt.Errorf("invalid daemon port")
 	}
 
-	if d.Version != Version {
-		return d, fmt.Errorf("%w; restart the daemon", ErrVersionMismatch)
+	if d.Version != Version || d.Build != Build() {
+		return d, fmt.Errorf(
+			"%w: it runs a different agx build; run agx daemon stop, then agx daemon start",
+			ErrVersionMismatch,
+		)
 	}
 	return d, nil
+}
+
+// Build identifies the running executable by content, so a rebuilt binary with an unchanged
+// version string still notices a daemon started from the old one.
+var Build = sync.OnceValue(func() string {
+	path, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
+})
+
+// configError reports why the daemon's configuration failed to load. Validation messages name
+// files, lines, and IDs, never resolved values.
+func configError(err error) error {
+	return rpcError(connect.CodeFailedPrecondition, "daemon configuration invalid: "+err.Error())
 }

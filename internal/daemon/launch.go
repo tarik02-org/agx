@@ -50,7 +50,7 @@ func (s *Server) PrepareLaunch(
 	}
 	c, err := s.reload()
 	if err != nil {
-		return nil, rpcError(connect.CodeFailedPrecondition, "configuration invalid; run agx config validate")
+		return nil, configError(err)
 	}
 	// Definitions come from the daemon's snapshot; clients send only a name and native arguments.
 	harness, err := c.Harness(msg.Harness)

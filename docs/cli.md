@@ -310,5 +310,5 @@ Harness entry points style only their own stderr diagnostics.
 JSON and inspection never reveal grants, credential values, or prompt bodies.
 Usage errors exit 2, operational failures exit 1, success exits 0. Harness entry
 points preserve native exit behavior. Before spawning, wrappers require the daemon to run the
-same agx version and fail with actionable instructions instead of printing into a
+same agx build (version and executable contents) and fail with actionable instructions instead of printing into a
 harness protocol stream.
