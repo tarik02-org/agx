@@ -44,6 +44,32 @@ absolute native executable first; otherwise search PATH while excluding agx
 itself, so a `codex` symlink cannot recurse. Handle Windows executable/script
 launching explicitly rather than constructing a POSIX shell command.
 
+## Shims
+
+```text
+agx shims install [--dir <directory>]
+agx shims list [--dir <directory>] [--json]
+agx shims remove [--dir <directory>]
+```
+
+Shims put harness definitions on PATH: after `install`, `codex-cpa` runs `agx
+codex-cpa`. Each is agx under the definition's name: a symlink on Unix, a hard
+link or copy named `<name>.exe` on Windows, and a script running `agx <name>`
+only where linking fails. Built-ins get no shim. The directory defaults to
+`~/.local/bin` (`%LOCALAPPDATA%\agx\bin` on Windows). Shims target the path agx
+was invoked through when it is a stable link to the running binary, such as
+`~/.nix-profile/bin/agx`, and otherwise the resolved binary, with a warning when
+that lies in `/nix/store`.
+
+`install` synchronizes the directory with the definitions: it creates missing
+shims, updates those whose target changed, and removes those of deleted
+definitions. `remove` deletes every shim. Both touch only files recorded in the
+directory's `.agx-shims.json` and unchanged since; others are reported and left
+in place. `list` shows each shim's name, kind (`symlink`, `hardlink`, `copy`, or
+`script`), state (`current`, `stale`, `missing`, `modified`, or `conflict`), and
+target. `install` and `list` warn when the directory is not on PATH and when
+another executable on PATH has a shim's name.
+
 ## Configuration and packages
 
 ```text

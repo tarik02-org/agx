@@ -38,18 +38,25 @@ type harnessConfig struct {
 	err    error
 }
 
-func loadHarnesses(path string) harnessConfig {
+func loadHarnesses(path string, builtins config.Builtins) harnessConfig {
 	// Harnesses come only from configuration fragments, so packages need not be installed.
-	c, err := config.Read(path)
+	c, err := config.Read(path, builtins)
 	if err != nil {
-		return harnessConfig{config: &config.Config{}, err: err}
+		return harnessConfig{config: config.Bare(builtins), err: err}
 	}
 	return harnessConfig{config: c}
 }
 
-func runHarness(ctx context.Context, paths platform.Paths, harnesses harnessConfig, name string, args []string) error {
+func runHarness(
+	ctx context.Context,
+	paths platform.Paths,
+	registry adapters.Registry,
+	harnesses harnessConfig,
+	name string,
+	args []string,
+) error {
 	if harnesses.err != nil {
-		if _, builtin := config.Builtins[name]; !builtin {
+		if _, builtin := registry.Adapter(name); !builtin {
 			return fmt.Errorf("unknown harness %s (harness definitions unavailable: %w)", name, harnesses.err)
 		}
 		ui.Diagnose(ui.Warn, "using built-in %s settings; configuration did not load: %v", name, harnesses.err)
@@ -58,13 +65,17 @@ func runHarness(ctx context.Context, paths platform.Paths, harnesses harnessConf
 	if err != nil {
 		return err
 	}
+	adapter, ok := registry.Adapter(h.Builtin)
+	if !ok {
+		return fmt.Errorf("no adapter for harness %s", h.Builtin)
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	mode := adapters.Mode(h.Builtin, args)
+	mode := adapter.Classify(args)
 	if mode == config.ModePassthrough {
-		executable, err := adapters.FindExecutable(h.Builtin, h.Executable)
+		executable, err := adapter.Executable(h.Executable)
 		if err != nil {
 			return err
 		}
@@ -87,7 +98,7 @@ func runHarness(ctx context.Context, paths platform.Paths, harnesses harnessConf
 		}
 		return supervise(cmd, nil)
 	}
-	directory, nativeArgs, err := adapters.Directory(h.Builtin, args, cwd)
+	directory, nativeArgs, err := adapter.Directory(args, cwd)
 	if err != nil {
 		return err
 	}

@@ -7,7 +7,6 @@ import (
 	"connectrpc.com/connect"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
-	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/packages"
 	"github.com/tarik02-org/agx/internal/securefs"
@@ -74,12 +73,12 @@ func (s *Server) packageOperation(
 	s.operationRequests[requestID] = op
 	s.operations[id] = op
 	go func() {
-		result, err := packages.Install(s.ctx, s.paths.Config, s.paths.Cache, frozen, ids, all)
+		result, err := packages.Install(s.ctx, s.paths.Config, s.paths.Cache, s.builtins, frozen, ids, all)
 		if err == nil && !frozen {
 			var c *config.Config
-			c, err = config.Load(s.paths.Config, s.paths.Cache)
+			c, err = config.Load(s.paths.Config, s.paths.Cache, s.builtins)
 			if err == nil {
-				err = adapters.InstallNative(s.ctx, c, s.paths.Cache)
+				err = s.adapters.Install(s.ctx, c, s.paths.Cache)
 			}
 		}
 		s.mu.Lock()

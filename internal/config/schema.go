@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -23,14 +24,22 @@ var (
 var manifestExcluded = []string{"imports", "lockfile", "scopes", "harnesses", "daemon"}
 
 // Schema renders the JSON Schema of configuration fragments, or of package manifests.
-func Schema(manifest bool) ([]byte, error) {
+func Schema(manifest bool, builtins Builtins) ([]byte, error) {
 	r := &jsonschema.Reflector{
 		FieldNameTag:               "yaml",
 		RequiredFromJSONSchemaTags: true,
 		ExpandedStruct:             true,
 		Anonymous:                  true,
+		// Argument modes come from the adapters, which a JSONSchema method cannot see.
+		Mapper: func(t reflect.Type) *jsonschema.Schema {
+			if t == reflect.TypeFor[Args]() {
+				return &jsonschema.Schema{Ref: "#/$defs/Args"}
+			}
+			return nil
+		},
 	}
 	s := r.Reflect(Document{})
+	s.Definitions["Args"] = argsSchema(builtins)
 	s.ID = schemaBase + "agx.schema.json"
 	s.Title = "agx configuration fragment"
 	if manifest {
@@ -105,21 +114,21 @@ func (ID) JSONSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{Type: "string", Pattern: idPattern}
 }
 
-// JSONSchema accepts a flat list of values, or a list of groups; an empty list is both.
-func (Args) JSONSchema() *jsonschema.Schema {
+// argsSchema accepts a flat list of values, or a list of groups; an empty list is both.
+func argsSchema(builtins Builtins) *jsonschema.Schema {
 	return &jsonschema.Schema{
 		AnyOf: []*jsonschema.Schema{
 			{Type: "array", Items: &jsonschema.Schema{Ref: "#/$defs/Value"}},
-			{Type: "array", Items: ArgGroup{}.JSONSchema()},
+			{Type: "array", Items: argGroupSchema(builtins)},
 		},
 	}
 }
 
-func (ArgGroup) JSONSchema() *jsonschema.Schema {
+func argGroupSchema(builtins Builtins) *jsonschema.Schema {
 	one := uint64(1)
 	values := &jsonschema.Schema{Type: "array", Items: &jsonschema.Schema{Ref: "#/$defs/Value"}, MinItems: &one}
 	modes := []any{}
-	for _, builtin := range Builtins {
+	for _, builtin := range builtins.Harnesses {
 		for _, mode := range builtin {
 			if !slices.Contains(modes, any(mode)) {
 				modes = append(modes, mode)

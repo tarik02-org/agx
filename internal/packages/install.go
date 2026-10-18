@@ -26,6 +26,7 @@ type Result struct {
 func Install(
 	ctx context.Context,
 	root, cache string,
+	builtins config.Builtins,
 	frozen bool,
 	updates []config.ID,
 	updateAll bool,
@@ -43,7 +44,7 @@ func Install(
 		return result, fmt.Errorf("package installer is busy")
 	}
 	defer func() { _ = lock.Unlock() }()
-	c, err := config.Read(root)
+	c, err := config.Read(root, builtins)
 	if err != nil {
 		return result, err
 	}

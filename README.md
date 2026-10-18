@@ -57,6 +57,8 @@ agx daemon status --json
 Native arguments, standard streams, exit codes, and interrupts pass through.
 Help/version and administrative native commands work without a managed launch.
 A harness-named symlink can point to agx; executable lookup excludes agx itself.
+`agx shims install` creates such links in `~/.local/bin` for every harness
+definition, so `codex-cpa` works from any shell.
 Use a configured absolute native executable when another wrapper shadows PATH.
 
 Scopes compose additions and removals with provenance. Packages use JSON locks,
@@ -94,8 +96,9 @@ Architecture records: [directory scopes](docs/adr/0001-additive-directory-config
 [Go and Connect](docs/adr/0006-go-and-connect-management-interface.md),
 [harness definitions](docs/adr/0007-harness-definitions-and-modes.md),
 [injected values and secrets](docs/adr/0008-injected-values-and-secrets.md),
-[inline MCP auth and interactive login](docs/adr/0009-inline-mcp-auth-and-interactive-login.md), and
-[straightforward configuration](docs/adr/0011-straightforward-configuration.md).
+[inline MCP auth and interactive login](docs/adr/0009-inline-mcp-auth-and-interactive-login.md),
+[straightforward configuration](docs/adr/0011-straightforward-configuration.md), and
+[harness adapters and shims](docs/adr/0012-harness-adapters-and-shims.md).
 
 Go messages and Connect handlers live in `gen/agx/v1`; TypeScript Protobuf
 messages and service descriptors live in `gen/typescript`. Regenerate with

@@ -226,8 +226,8 @@ paths, and conflicts across fragments.
 
 `codex`, `claude`, and `pi` are built in; configuring one customizes it. Other
 names define a harness that extends a `base`, a built-in or another definition,
-and become `agx <name>` commands. Names cannot shadow agx commands, and base
-chains cannot form cycles.
+and become `agx <name>` commands; [shims](cli.md#shims) also put them on PATH.
+Names cannot shadow agx commands, and base chains cannot form cycles.
 
 ```yaml
 harnesses:

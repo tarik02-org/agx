@@ -11,33 +11,21 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
-// Invocation modes that adapters classify native arguments into.
-const (
-	ModeInteractive = "interactive"
-	ModeExec        = "exec"
-	ModeResume      = "resume"
-	ModeAppServer   = "app-server"
-	ModePrint       = "print"
-	ModeRPC         = "rpc"
-	ModePassthrough = "passthrough"
-)
+// ModePassthrough is the mode of invocations that run without a managed launch, such as
+// help/version probes and native management commands; argument groups skip it unless named.
+const ModePassthrough = "passthrough"
 
-// Builtins maps each built-in harness to the modes its adapter recognizes.
-var Builtins = map[string][]string{
-	"codex":  {ModeInteractive, ModeExec, ModeResume, ModeAppServer, ModePassthrough},
-	"claude": {ModeInteractive, ModePrint, ModeResume, ModePassthrough},
-	"pi":     {ModeInteractive, ModePrint, ModeRPC, ModePassthrough},
+// Builtins describes what agx provides that configuration resolves against but cannot import:
+// the built-in harnesses with the modes their adapters classify invocations into, and the
+// command names harness definitions must not shadow.
+type Builtins struct {
+	Harnesses map[string][]string
+	Commands  []string
 }
 
-// reservedHarnessNames holds command names a definition must not shadow. The CLI derives them
-// from its command tree, which this package cannot import.
-var reservedHarnessNames = map[string]bool{}
-
-// ReserveHarnessNames records command names that harness definitions cannot use.
-func ReserveHarnessNames(names ...string) {
-	for _, name := range names {
-		reservedHarnessNames[name] = true
-	}
+// Bare returns a configuration without fragments, in which only the built-in harnesses resolve.
+func Bare(builtins Builtins) *Config {
+	return &Config{Harnesses: map[string]HarnessDefinition{}, builtins: builtins}
 }
 
 // ArgGroup is a list of native arguments scoped to modes; no modes means every session mode.
@@ -173,7 +161,7 @@ func (c *Config) Harness(name string) (ResolvedHarness, error) {
 			)
 		}
 		chain = append(chain, current)
-		if _, builtin := Builtins[current]; builtin {
+		if _, builtin := c.builtins.Harnesses[current]; builtin {
 			break
 		}
 		def, defined := c.Harnesses[current]
@@ -205,11 +193,11 @@ func (c *Config) Harness(name string) (ResolvedHarness, error) {
 // HarnessNames lists built-in and defined harnesses in lexical order.
 func (c *Config) HarnessNames() []string {
 	names := []string{}
-	for name := range Builtins {
+	for name := range c.builtins.Harnesses {
 		names = append(names, name)
 	}
 	for name := range c.Harnesses {
-		if _, builtin := Builtins[name]; !builtin {
+		if _, builtin := c.builtins.Harnesses[name]; !builtin {
 			names = append(names, name)
 		}
 	}
@@ -314,18 +302,18 @@ func (c *Config) validateHarnesses() error {
 	sort.Strings(names)
 	for _, name := range names {
 		def := c.Harnesses[name]
-		_, builtin := Builtins[name]
+		_, builtin := c.builtins.Harnesses[name]
 		if builtin && def.Base != "" {
 			return fmt.Errorf("%s: built-in harness %s cannot set base", locate(def.sources["base"]), name)
 		}
-		if !builtin && reservedHarnessNames[name] {
+		if !builtin && slices.Contains(c.builtins.Commands, name) {
 			return fmt.Errorf("%s: harness %s would shadow the agx %s command", locate(def.Source), name, name)
 		}
 		h, err := c.Harness(name)
 		if err != nil {
 			return fmt.Errorf("%s: %w", locate(def.Source), err)
 		}
-		modes := Builtins[h.Builtin]
+		modes := c.builtins.Harnesses[h.Builtin]
 		for _, g := range def.Args {
 			if len(g.Values) == 0 {
 				return fmt.Errorf("%s: harness %s: argument group needs values", locate(def.Source), name)

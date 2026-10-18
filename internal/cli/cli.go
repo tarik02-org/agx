@@ -21,6 +21,7 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
+	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/daemon"
@@ -62,6 +63,9 @@ func Main() int {
 		paths.State = filepath.Join(paths.Cache, "runtime")
 		return err
 	}
+	registry := builtin.Registry()
+	// builtins is complete once the command tree is, as definitions cannot shadow its commands.
+	var builtins config.Builtins
 	var harnesses harnessConfig
 	root.AddCommand(
 		&cobra.Command{
@@ -78,7 +82,7 @@ func Main() int {
 				if len(args) > 0 && args[0] == "--" {
 					args = args[1:]
 				}
-				return runHarness(cmd.Context(), paths, harnesses, name, args)
+				return runHarness(cmd.Context(), paths, registry, harnesses, name, args)
 			},
 		},
 	)
@@ -89,7 +93,7 @@ func Main() int {
 			Short: "Load and validate the configuration",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
-				c, err := config.Load(paths.Config, paths.Cache)
+				c, err := config.Load(paths.Config, paths.Cache, builtins)
 				if err != nil {
 					return err
 				}
@@ -103,7 +107,7 @@ func Main() int {
 		Short: "Print the JSON Schema of configuration fragments",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			b, err := config.Schema(schemaManifest)
+			b, err := config.Schema(schemaManifest, builtins)
 			if err != nil {
 				return err
 			}
@@ -132,7 +136,7 @@ func Main() int {
 				if len(args) > 0 {
 					directory = args[0]
 				}
-				c, err := config.Load(paths.Config, paths.Cache)
+				c, err := config.Load(paths.Config, paths.Cache, builtins)
 				if err != nil {
 					return err
 				}
@@ -173,7 +177,7 @@ func Main() int {
 	frozen := false
 	install.Flags().BoolVar(&frozen, "frozen", false, "require unchanged lockfiles and content")
 	install.RunE = func(cmd *cobra.Command, args []string) error {
-		return installPackages(cmd.Context(), paths, frozen, nil, false)
+		return installPackages(cmd.Context(), paths, registry, builtins, frozen, nil, false)
 	}
 	root.AddCommand(install)
 	root.AddCommand(
@@ -186,11 +190,16 @@ func Main() int {
 				for _, id := range args {
 					ids = append(ids, config.ID(id))
 				}
-				return installPackages(cmd.Context(), paths, false, ids, len(ids) == 0)
+				return installPackages(cmd.Context(), paths, registry, builtins, false, ids, len(ids) == 0)
 			},
 		},
 	)
-	root.AddCommand(daemonCommand(&paths), launchCommand(&paths), secretCommand(&paths))
+	root.AddCommand(
+		daemonCommand(&paths, registry, &builtins),
+		launchCommand(&paths),
+		secretCommand(&paths),
+		shimsCommand(&paths, registry, &builtins),
+	)
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error { return &usageError{err} })
 	var wrapArgs func(*cobra.Command)
 	wrapArgs = func(cmd *cobra.Command) {
@@ -214,11 +223,11 @@ func Main() int {
 		reserved = append(reserved, cmd.Name())
 		reserved = append(reserved, cmd.Aliases...)
 	}
-	config.ReserveHarnessNames(reserved...)
-	if name := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe"); name != root.Name() {
-		harnesses = loadHarnesses(paths.Config)
-		if _, builtin := config.Builtins[name]; builtin || slices.Contains(harnesses.config.HarnessNames(), name) {
-			return exitCode(runHarness(context.Background(), paths, harnesses, name, os.Args[1:]))
+	builtins = registry.Builtins(reserved)
+	if name := invokedName(os.Args[0]); name != root.Name() {
+		harnesses = loadHarnesses(paths.Config, builtins)
+		if slices.Contains(harnesses.config.HarnessNames(), name) {
+			return exitCode(runHarness(context.Background(), paths, registry, harnesses, name, os.Args[1:]))
 		}
 	}
 	// Harness commands disable flag parsing, so leading root flags would otherwise leak into native arguments.
@@ -244,10 +253,10 @@ func Main() int {
 	if err != nil {
 		return exitCode(err)
 	}
-	harnesses = loadHarnesses(configPath)
+	harnesses = loadHarnesses(configPath, builtins)
 	for _, name := range harnesses.config.HarnessNames() {
 		short := "Launch " + name + " with directory-scoped resources"
-		if _, builtin := config.Builtins[name]; !builtin {
+		if _, builtin := registry.Adapter(name); !builtin {
 			h, _ := harnesses.config.Harness(name)
 			short = "Launch " + name + " (" + h.Builtin + ")"
 		}
@@ -258,7 +267,7 @@ func Main() int {
 				GroupID:            "harness",
 				DisableFlagParsing: true,
 				RunE: func(cmd *cobra.Command, args []string) error {
-					return runHarness(cmd.Context(), paths, harnesses, name, args)
+					return runHarness(cmd.Context(), paths, registry, harnesses, name, args)
 				},
 			},
 		)
@@ -271,6 +280,16 @@ func Main() int {
 		return exitCode(&usageError{err})
 	}
 	return exitCode(root.Execute())
+}
+
+// invokedName is the command name agx runs as, which names a harness when agx is invoked
+// through a link or shim.
+func invokedName(arg0 string) string {
+	name := filepath.Base(arg0)
+	if ext := filepath.Ext(name); strings.EqualFold(ext, ".exe") {
+		name = strings.TrimSuffix(name, ext)
+	}
+	return name
 }
 
 type usageError struct{ error }
@@ -307,31 +326,39 @@ func printProto(value proto.Message) error {
 	return printJSON(json.RawMessage(b))
 }
 
-func installPackages(ctx context.Context, paths platform.Paths, frozen bool, ids []config.ID, all bool) error {
+func installPackages(
+	ctx context.Context,
+	paths platform.Paths,
+	registry adapters.Registry,
+	builtins config.Builtins,
+	frozen bool,
+	ids []config.ID,
+	all bool,
+) error {
 	update := len(ids) > 0 || all
 	if update {
 		progress("Updating packages")
 	} else {
 		progress("Installing packages")
 	}
-	result, err := packages.Install(ctx, paths.Config, paths.Cache, frozen, ids, all)
+	result, err := packages.Install(ctx, paths.Config, paths.Cache, builtins, frozen, ids, all)
 	if err != nil {
 		return err
 	}
-	c, err := config.Load(paths.Config, paths.Cache)
+	c, err := config.Load(paths.Config, paths.Cache, builtins)
 	if err != nil {
 		return err
 	}
 	if !frozen {
 		progress("Installing native harness plugins")
-		if err := adapters.InstallNative(ctx, c, paths.Cache); err != nil {
+		if err := registry.Install(ctx, c, paths.Cache); err != nil {
 			return err
 		}
 	}
 	return printInstalled(result, update)
 }
 
-func daemonCommand(paths *platform.Paths) *cobra.Command {
+func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *config.Builtins) *cobra.Command {
 	command := &cobra.Command{Use: "daemon", Short: "Manage the background daemon", GroupID: "runtime"}
 	foreground := false
 	start := &cobra.Command{
@@ -342,7 +369,7 @@ func daemonCommand(paths *platform.Paths) *cobra.Command {
 			if foreground {
 				ctx, cancel := signal.NotifyContext(cmd.Context(), platform.Interrupts()...)
 				defer cancel()
-				return daemon.Serve(ctx, *paths)
+				return daemon.Serve(ctx, *paths, registry, *builtins)
 			}
 			if c, err := newAnyVersionClient(*paths); err == nil {
 				ctx, cancel := boundedContext()

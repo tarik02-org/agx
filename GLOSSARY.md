@@ -65,5 +65,12 @@ needs a login only once the server answers with an authorization challenge.
 native adapters; a harness definition extends one with arguments, environment,
 and resource selection.
 
+**Adapter**: The package that integrates one built-in harness: it classifies
+invocations into modes and turns a snapshot into that harness's native
+arguments, files, and plugins.
+
+**Shim**: An executable named after a harness definition that runs agx as that
+definition, so the definition works from any shell or tool.
+
 **Mode**: The kind of invocation an adapter recognizes, such as interactive,
 non-interactive, or a protocol server; argument groups apply per mode.

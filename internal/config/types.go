@@ -230,6 +230,7 @@ type Config struct {
 	// so package manifests merged later cannot replace them.
 	rootDefinitions map[string]bool
 	daemonSet       map[string]bool
+	builtins        Builtins
 }
 
 type Resource struct {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/config"
 )
 
@@ -16,7 +17,7 @@ func main() {
 		log.Fatal("usage: schemagen <directory>")
 	}
 	for name, manifest := range map[string]bool{"agx.schema.json": false, "agx.package.schema.json": true} {
-		b, err := config.Schema(manifest)
+		b, err := config.Schema(manifest, builtin.Registry().Builtins(nil))
 		if err != nil {
 			log.Fatal(err)
 		}

@@ -23,6 +23,7 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/gen/agx/v1/agxv1connect"
+	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/mcpruntime"
@@ -77,6 +78,8 @@ type Server struct {
 	mu           sync.Mutex
 	reloadMu     sync.Mutex
 	paths        platform.Paths
+	adapters     adapters.Registry
+	builtins     config.Builtins
 	config       *config.Config
 	configErr    error
 	inputs       *config.Inputs
@@ -92,7 +95,8 @@ type Server struct {
 	stop              chan struct{}
 }
 
-func Serve(ctx context.Context, paths platform.Paths) error {
+// Serve runs the daemon until ctx ends; builtins must describe the adapters in registry.
+func Serve(ctx context.Context, paths platform.Paths, registry adapters.Registry, builtins config.Builtins) error {
 	if err := securefs.EnsureDir(paths.State); err != nil {
 		return err
 	}
@@ -110,7 +114,7 @@ func Serve(ctx context.Context, paths platform.Paths) error {
 	if err := os.Remove(discoveryPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	c, inputs, err := config.LoadTracked(paths.Config, paths.Cache)
+	c, inputs, err := config.LoadTracked(paths.Config, paths.Cache, builtins)
 	if err != nil {
 		return err
 	}
@@ -130,6 +134,8 @@ func Serve(ctx context.Context, paths platform.Paths) error {
 	}
 	s := &Server{
 		paths:             paths,
+		adapters:          registry,
+		builtins:          builtins,
 		config:            c,
 		inputs:            inputs,
 		discovery:         discovery,
@@ -267,7 +273,7 @@ func (s *Server) reload() (*config.Config, error) {
 		}
 		return current, nil
 	}
-	c, inputs, err := config.LoadTracked(s.paths.Config, s.paths.Cache)
+	c, inputs, err := config.LoadTracked(s.paths.Config, s.paths.Cache, s.builtins)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.configErr = err

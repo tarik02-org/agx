@@ -43,11 +43,11 @@ type Lock struct {
 // DefaultConfig is used when the root configuration file does not exist.
 const DefaultConfig = "imports:\n  - glob: agx.d/*.yaml\n"
 
-func Read(root string) (*Config, error) {
-	return read(root, &Inputs{})
+func Read(root string, builtins Builtins) (*Config, error) {
+	return read(root, builtins, &Inputs{})
 }
 
-func read(root string, inputs *Inputs) (*Config, error) {
+func read(root string, builtins Builtins, inputs *Inputs) (*Config, error) {
 	root, err := Canonical(root)
 	if err != nil {
 		return nil, err
@@ -63,6 +63,7 @@ func read(root string, inputs *Inputs) (*Config, error) {
 		Harnesses:     map[string]HarnessDefinition{},
 		PackageHashes: map[ID]string{},
 		Daemon:        Daemon{LeaseSeconds: 60, RenewSeconds: 20},
+		builtins:      builtins,
 	}
 	active, seen := map[string]bool{}, map[string]bool{}
 	var load func(string) error
@@ -149,21 +150,21 @@ func read(root string, inputs *Inputs) (*Config, error) {
 	return c, nil
 }
 
-func Load(root, cache string) (*Config, error) {
-	c, _, err := LoadTracked(root, cache)
+func Load(root, cache string, builtins Builtins) (*Config, error) {
+	c, _, err := LoadTracked(root, cache, builtins)
 	return c, err
 }
 
 // LoadTracked also returns the files it read, including after a failure, so callers can skip
 // reloading until one of them changes.
-func LoadTracked(root, cache string) (*Config, *Inputs, error) {
+func LoadTracked(root, cache string, builtins Builtins) (*Config, *Inputs, error) {
 	inputs := &Inputs{}
-	c, err := loadConfig(root, cache, inputs)
+	c, err := loadConfig(root, cache, builtins, inputs)
 	return c, inputs, err
 }
 
-func loadConfig(root, cache string, inputs *Inputs) (*Config, error) {
-	c, err := read(root, inputs)
+func loadConfig(root, cache string, builtins Builtins, inputs *Inputs) (*Config, error) {
+	c, err := read(root, builtins, inputs)
 	if err != nil {
 		return nil, err
 	}

@@ -57,7 +57,11 @@ func (s *Server) PrepareLaunch(
 	if err != nil {
 		return nil, rpcError(connect.CodeInvalidArgument, err.Error())
 	}
-	mode := adapters.Mode(harness.Builtin, msg.NativeArguments)
+	adapter, ok := s.adapters.Adapter(harness.Builtin)
+	if !ok {
+		return nil, rpcError(connect.CodeInternal, "no adapter for harness "+harness.Builtin)
+	}
+	mode := adapter.Classify(msg.NativeArguments)
 	if mode == config.ModePassthrough {
 		return nil, rpcError(
 			connect.CodeInvalidArgument,
@@ -144,14 +148,12 @@ func (s *Server) PrepareLaunch(
 		s.release(id, endpoints)
 	}
 	plan, err := adapters.Build(
-		snapshot,
+		adapter,
+		adapters.Launch{Snapshot: snapshot, Cache: s.paths.Cache, ID: id, Endpoints: nativeEndpoints},
 		harness,
 		harnessArgs,
 		harnessEnv,
-		s.paths.Cache,
-		id,
 		grant,
-		nativeEndpoints,
 		msg.NativeArguments,
 	)
 	if err != nil {
