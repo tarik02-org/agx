@@ -99,9 +99,9 @@ Use a configured absolute native executable when another wrapper shadows PATH.
 
 Scopes compose additions and removals with provenance. Packages use JSON locks,
 or pins by commit or content hash, and immutable content-addressed installations. Launching never
-fetches packages or modifies native account configuration. Explicit `install`
-registers managed skill plugins when Codex is installed; each launch selects its
-plugins independently. With Codex plugins disabled
+fetches packages. `install` registers managed skill plugins when Codex is
+installed, and a Codex launch that finds its plugin missing registers it first;
+each launch selects its plugins independently. With Codex plugins disabled
 (`features.plugins = false`), Codex launches warn and run without skills. Unmanaged native global skills remain outside removals.
 
 MCP servers retain their own HTTP endpoints and native tool schemas/results,

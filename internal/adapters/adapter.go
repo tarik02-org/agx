@@ -5,6 +5,7 @@ package adapters
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -31,9 +32,9 @@ type Adapter interface {
 	// Arguments returns the native arguments that bring a launch's skills, instructions, and
 	// MCP servers to the harness. They precede the definition's groups and the caller's arguments.
 	Arguments(launch Launch) ([]string, error)
-	// Install registers what the harness cannot load per launch. It runs only from explicit
-	// installation, never from a launch. It returns a Skipped error when the harness cannot
-	// take the installation and works without it.
+	// Install registers what the harness cannot load per launch. It runs from explicit
+	// installation, and from a launch whose Arguments report ErrNotInstalled. It returns a
+	// Skipped error when the harness cannot take the installation and works without it.
 	Install(ctx context.Context, c *config.Config, cache string) error
 	// Sessions lists the sessions in the harness's own store, honouring its home override, and
 	// parses files through files. A missing store holds no sessions; the store is never written.
@@ -53,7 +54,10 @@ type Launch struct {
 	Artifacts string
 	// Instructions is the content of the instructions file, empty when none are selected.
 	Instructions []byte
-	warnings     *[]string
+	// Uninstalled marks a launch whose native installation was skipped; Arguments must leave out
+	// what needs it.
+	Uninstalled bool
+	warnings    *[]string
 }
 
 // Warn reports a problem the launch proceeds despite; the caller shows it before the harness starts.
@@ -62,6 +66,10 @@ func (l Launch) Warn(message string) {
 		*l.warnings = append(*l.warnings, message)
 	}
 }
+
+// ErrNotInstalled is returned by Arguments when the launch needs a native installation that is
+// missing; Build installs once and asks again.
+var ErrNotInstalled = errors.New("native installation is missing")
 
 // Skipped is returned by Install when the harness cannot take the installation; installation
 // carries on and reports Reason as a warning.
@@ -150,8 +158,10 @@ func (r Registry) Install(ctx context.Context, c *config.Config, cache string) (
 }
 
 // Build composes argv as the adapter's managed arguments, the definition's resolved groups, then
-// native args. It fills in the launch's artifacts.
+// native args. It fills in the launch's artifacts, and runs the adapter's installation when the
+// launch finds it missing.
 func Build(
+	ctx context.Context,
 	a Adapter,
 	l Launch,
 	h config.ResolvedHarness,
@@ -184,6 +194,20 @@ func Build(
 	}
 	l.warnings = &plan.Warnings
 	prefix, err := a.Arguments(l)
+	if errors.Is(err, ErrNotInstalled) {
+		var skipped Skipped
+		switch err := a.Install(ctx, l.Snapshot.Config, l.Cache); {
+		case errors.As(err, &skipped):
+			l.Warn(skipped.Reason + "; launching without skills")
+			l.Uninstalled = true
+		case err != nil:
+			return Plan{}, fmt.Errorf("installing native %s plugins: %w", a.Name(), err)
+		}
+		prefix, err = a.Arguments(l)
+		if errors.Is(err, ErrNotInstalled) {
+			err = fmt.Errorf("%w after installing native %s plugins; see agx doctor", err, a.Name())
+		}
+	}
 	if err != nil {
 		return Plan{}, err
 	}

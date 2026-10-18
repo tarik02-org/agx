@@ -148,6 +148,7 @@ func (s *Server) PrepareLaunch(
 		s.release(id, endpoints)
 	}
 	plan, err := adapters.Build(
+		ctx,
 		adapter,
 		adapters.Launch{Snapshot: snapshot, Cache: s.paths.Cache, ID: id, Endpoints: nativeEndpoints},
 		harness,

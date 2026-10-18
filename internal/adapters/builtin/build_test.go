@@ -102,6 +102,7 @@ func (f fixture) build(t *testing.T, harness string, native ...string) (adapters
 	}
 	a, _ := builtin.Registry().Adapter(h.Builtin)
 	plan, err := adapters.Build(
+		t.Context(),
 		a,
 		adapters.Launch{Snapshot: s, Cache: f.cache, ID: "L", Endpoints: f.endpoints},
 		h,
@@ -217,8 +218,10 @@ func TestBuildCodex(t *testing.T) {
 	selected := "review-" + hash[:12]
 
 	t.Setenv("CODEX_HOME", t.TempDir())
+	// The fake executable cannot run, so the installation the launch starts fails.
 	_, _, err = f.build(t, "codex")
-	if err == nil || !strings.Contains(err.Error(), "selected skill plugin is not installed; run agx install") {
+	if err == nil ||
+		!strings.Contains(err.Error(), "installing native codex plugins: native plugin installation failed") {
 		t.Fatalf("without installed plugins: %v", err)
 	}
 

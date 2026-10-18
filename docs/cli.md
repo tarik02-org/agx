@@ -159,7 +159,8 @@ lock/cache; it never silently updates dependencies.
 
 `install` also registers native harness plugins: Codex loads skills only as
 plugins of a registered marketplace, so each configured skill becomes a plugin
-of agx's local marketplace. When Codex's `config.toml` (in
+of agx's local marketplace. A Codex launch whose skill plugin is missing runs
+that step itself, once, under the same lock. When Codex's `config.toml` (in
 `CODEX_HOME`, default `~/.codex`) sets `features.plugins = false`, agx leaves the
 setting alone: `install` warns and skips Codex, and Codex launches warn and start
 without skills; MCP servers and instructions still apply.

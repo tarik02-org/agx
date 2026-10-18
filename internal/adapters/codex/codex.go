@@ -131,7 +131,7 @@ func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
 	case disabled != "" && len(selected) > 0:
 		// MCP servers and instructions do not depend on plugins, so the launch goes on.
 		l.Warn(disabled + "; launching without skills")
-	case disabled == "":
+	case disabled == "" && !l.Uninstalled:
 		registry, err := readCatalog(l.Cache)
 		if err != nil {
 			return nil, err
@@ -142,7 +142,7 @@ func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
 		}
 		for name := range selected {
 			if !known[name] {
-				return nil, fmt.Errorf("selected skill plugin is not installed; run agx install")
+				return nil, fmt.Errorf("selected skill plugin %s: %w", name, adapters.ErrNotInstalled)
 			}
 		}
 		for _, name := range registry.Names {

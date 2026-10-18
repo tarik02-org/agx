@@ -15,6 +15,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - `sops` secrets take an optional `age_key` (`!secret`, `!env`, or `!file`) passed
   to sops as `SOPS_AGE_KEY`, so the age identity can live in the OS keychain.
 
+### Changed
+
+- Codex launches install a missing skill plugin themselves instead of failing
+  with "run agx install".
+
 ### Fixed
 
 - With Codex plugins disabled (`features.plugins = false`), `install` and Codex
