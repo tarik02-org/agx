@@ -275,6 +275,75 @@ func TestBuildCodex(t *testing.T) {
 	})
 }
 
+func TestBuildCodexAppServer(t *testing.T) {
+	f := newFixture(t)
+	hash, err := f.config.Skills["review"].TreeHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected := "review-" + hash[:12] + "@agx-managed"
+	other := "agx-" + strings.Repeat("0", 24)
+	t.Setenv("CODEX_HOME", t.TempDir())
+	catalog := map[string][]string{"names": {other, "review-" + hash[:12]}}
+	if err := securefs.WriteJSON(filepath.Join(f.cache, "native", "catalog.json"), catalog); err != nil {
+		t.Fatal(err)
+	}
+	// The process carries no snapshot resources; its threads get theirs.
+	plan, s, err := f.build(t, "codex", "app-server")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkPlan(t, f, plan, s, []string{"--definition", "app-server"})
+	// Other transports keep the per-process resources.
+	if plan, _, err := f.build(t, "codex", "app-server", "--listen", "ws://127.0.0.1:1"); err != nil ||
+		!slices.Contains(plan.Arguments, `developer_instructions="first\n\nsecond\n\n"`) {
+		t.Errorf("websocket app-server arguments = %q, %v", plan.Arguments, err)
+	}
+
+	a, _ := builtin.Registry().Adapter("codex")
+	threads := a.(adapters.Threads)
+	for _, tt := range []struct {
+		args []string
+		want bool
+	}{
+		{[]string{"app-server"}, true},
+		{[]string{"-c", "x=1", "app-server", "--stdio"}, true},
+		{[]string{"app-server", "--listen", "stdio://"}, true},
+		{[]string{"app-server", "--listen=ws://127.0.0.1:1"}, false},
+		{[]string{"app-server", "--listen", "unix://"}, false},
+		{[]string{"app-server", "generate-ts"}, false},
+		{[]string{"exec", "hi"}, false},
+	} {
+		if got := threads.ThreadServer(tt.args); got != tt.want {
+			t.Errorf("ThreadServer(%q) = %v", tt.args, got)
+		}
+	}
+	thread, err := adapters.BuildThread(
+		t.Context(),
+		a,
+		threads,
+		adapters.Launch{Snapshot: s, Cache: f.cache, ID: "T", Endpoints: f.endpoints[:1]},
+		"thread-grant",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := json.Marshal(thread.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"mcp_servers":{"agx-up":{"http_headers":{"Authorization":"Bearer thread-grant"},` +
+		`"url":"http://127.0.0.1:9/launch/L/mcp/up"}},"plugins":{"` + other + `@agx-managed":{"enabled":false},"` +
+		selected + `":{"enabled":true}}}`
+	if string(config) != want {
+		t.Errorf("thread config:\n got %s\nwant %s", config, want)
+	}
+	if thread.Instructions != "first\n\nsecond\n\n" ||
+		!slices.Equal(thread.DisabledPlugins, []string{other + "@agx-managed"}) {
+		t.Errorf("thread plan = %+v", thread)
+	}
+}
+
 func TestBuildCodexPluginsDisabled(t *testing.T) {
 	f := newFixture(t)
 	home := t.TempDir()

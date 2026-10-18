@@ -107,4 +107,6 @@ Installation may register native plugin marketplace entries. Launch selection
 uses per-launch flags/configuration, never global enable/disable races. Keep
 artifacts alive while any launch references them. Explicitly verify Codex plugin
 discovery and activation for app-server usage; CLI plugin documentation alone is
-not proof of that path. Existing unmanaged global skills remain outside exclusions.
+not proof of that path. A host serving many threads from one process gets one
+launch per thread, with resources resolved for the thread's directory and an MCP
+grant that ends with the thread. Existing unmanaged global skills remain outside exclusions.

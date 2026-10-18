@@ -440,14 +440,36 @@ func printLaunches(launches []*v1.Launch) error {
 		return err
 	}
 	rows := [][]string{}
+	children := map[string][]*v1.Launch{}
 	for _, l := range launches {
-		rows = append(rows, []string{
-			out.ID(l.Id),
-			out.ID(l.Harness),
-			l.Mode,
-			launchState(out, l.State),
-			out.Path(l.Directory),
-		})
+		if l.ParentLaunchId != "" {
+			children[l.ParentLaunchId] = append(children[l.ParentLaunchId], l)
+		}
+	}
+	listed := map[string]bool{}
+	var add func(l *v1.Launch, depth int)
+	add = func(l *v1.Launch, depth int) {
+		listed[l.Id] = true
+		id, mode := out.ID(l.Id), l.Mode
+		if l.ParentLaunchId != "" {
+			// Thread launches follow the process launch that serves them.
+			id, mode = strings.Repeat("  ", depth)+id, "thread"
+		}
+		rows = append(rows, []string{id, out.ID(l.Harness), mode, launchState(out, l.State), out.Path(l.Directory)})
+		for _, child := range children[l.Id] {
+			add(child, depth+1)
+		}
+	}
+	for _, l := range launches {
+		if l.ParentLaunchId == "" {
+			add(l, 0)
+		}
+	}
+	// A thread launch whose parent was pruned stands alone.
+	for _, l := range launches {
+		if !listed[l.Id] {
+			add(l, 0)
+		}
 	}
 	_, err := io.WriteString(out, out.Table([]string{"LAUNCH", "HARNESS", "MODE", "STATE", "DIRECTORY"}, rows, 4))
 	return err
@@ -464,6 +486,8 @@ func printLaunch(l *v1.Launch, servers []*v1.McpRuntime) error {
 		[2]string{"directory", out.Path(l.Directory)},
 		[2]string{"snapshot", out.ID(l.SnapshotId)},
 		[2]string{"expires", timestamp(l.ExpiresAt)},
+		[2]string{"parent", optional(out.ID, l.ParentLaunchId)},
+		[2]string{"session", optional(out.ID, l.SessionId)},
 	))
 	rows := [][]string{}
 	diagnostics := []*v1.Diagnostic{}
@@ -489,6 +513,14 @@ func printLaunch(l *v1.Launch, servers []*v1.McpRuntime) error {
 	b.WriteString(diagnosticLines(out, diagnostics))
 	_, err := io.WriteString(out, b.String())
 	return err
+}
+
+// optional styles value, leaving an empty one empty so Fields omits it.
+func optional(style func(string) string, value string) string {
+	if value == "" {
+		return ""
+	}
+	return style(value)
 }
 
 func diagnosticLines(out *ui.Printer, diagnostics []*v1.Diagnostic) string {

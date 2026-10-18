@@ -23,6 +23,11 @@ service LaunchService {
   rpc RenewLaunch(RenewLaunchRequest) returns (RenewLaunchResponse);
   rpc FinishLaunch(FinishLaunchRequest) returns (FinishLaunchResponse);
   rpc RevokeLaunch(RevokeLaunchRequest) returns (RevokeLaunchResponse);
+  // Resolves a directory for one thread of a launch whose harness process serves many threads.
+  rpc ResolveThread(ResolveThreadRequest) returns (ResolveThreadResponse);
+  // Prepares the resources of one such thread as a launch under the process's launch. It shares
+  // the parent's lease and lifecycle token and ends with it.
+  rpc PrepareThreadLaunch(PrepareThreadLaunchRequest) returns (PrepareThreadLaunchResponse);
 }
 
 service RuntimeService {
@@ -198,12 +203,52 @@ message Launch {
   google.protobuf.Timestamp expires_at = 6;
   // Invocation mode classified from the native arguments, such as interactive or exec.
   string mode = 7;
+  // Set for a thread launch: the launch of the harness process serving the thread.
+  string parent_launch_id = 8;
+  // Native session the launch serves, once the wrapper reports it; a thread launch's thread.
+  string session_id = 9;
+}
+
+message ResolveThreadRequest {
+  string parent_launch_id = 1;
+  string directory = 2;
+}
+message ResolveThreadResponse {
+  Snapshot snapshot = 1;
+  // Native plugin IDs a thread in the directory keeps disabled.
+  repeated string disabled_plugins = 2;
+}
+
+message PrepareThreadLaunchRequest {
+  string request_id = 1;
+  string parent_launch_id = 2;
+  string snapshot_id = 3;
+  string directory = 4;
+  // Sensitive: only names declared by the expected snapshot are accepted.
+  map<string, string> environment_inputs = 5;
+}
+message PrepareThreadLaunchResponse {
+  Launch launch = 1;
+  ThreadPlan thread = 2;
+  // Problems the thread proceeds despite, such as skills the harness cannot load.
+  repeated string warnings = 3;
+}
+// What the wrapper adds to a thread's native requests.
+message ThreadPlan {
+  // Sensitive: native configuration overrides as a JSON object, including the thread's MCP grant.
+  string config_json = 1;
+  string instructions = 2;
+  // Native plugin IDs the thread keeps disabled.
+  repeated string disabled_plugins = 3;
 }
 
 // Renew/finish use lifecycle authorization metadata, not management/MCP grants.
 message RenewLaunchRequest {
   string launch_id = 1;
   uint64 harness_pid = 2;
+  // Native session the launch serves, once known; renewing a thread launch with it marks the
+  // thread running. Thread launches otherwise follow their parent's lease.
+  string session_id = 3;
 }
 message RenewLaunchResponse {
   google.protobuf.Timestamp expires_at = 1;
@@ -215,6 +260,8 @@ message FinishLaunchRequest {
     int32 exit_code = 2;
     string signal_name = 3;
     string spawn_failure = 4;
+    // The harness closed the thread a thread launch served.
+    bool thread_closed = 5;
   }
 }
 message FinishLaunchResponse {}

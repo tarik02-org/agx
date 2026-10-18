@@ -25,6 +25,13 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Fixed
 
+- `agx codex app-server` gives each thread the resources of its own directory.
+  Hosts such as T3 Code start one app server and create every thread through
+  it; agx now relays its JSON-RPC and prepares a thread launch per started,
+  forked, or resumed thread, with its own MCP servers and grant, instructions,
+  and skill plugins, ended when the thread closes. `launch list` shows thread
+  launches under their process, and `sessions` resumes their threads. Other
+  app-server transports keep one launch per process.
 - Claude Code driven by the Agent SDK (`--input-format stream-json`, as T3 Code
   does) keeps agx instructions: the SDK's `initialize` request carries its own
   `appendSystemPrompt`, which replaced `--append-system-prompt-file`, so the

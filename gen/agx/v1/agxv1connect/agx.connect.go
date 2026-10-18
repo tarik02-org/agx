@@ -66,6 +66,12 @@ const (
 	// LaunchServiceRevokeLaunchProcedure is the fully-qualified name of the LaunchService's
 	// RevokeLaunch RPC.
 	LaunchServiceRevokeLaunchProcedure = "/agx.v1.LaunchService/RevokeLaunch"
+	// LaunchServiceResolveThreadProcedure is the fully-qualified name of the LaunchService's
+	// ResolveThread RPC.
+	LaunchServiceResolveThreadProcedure = "/agx.v1.LaunchService/ResolveThread"
+	// LaunchServicePrepareThreadLaunchProcedure is the fully-qualified name of the LaunchService's
+	// PrepareThreadLaunch RPC.
+	LaunchServicePrepareThreadLaunchProcedure = "/agx.v1.LaunchService/PrepareThreadLaunch"
 	// RuntimeServiceGetRuntimeProcedure is the fully-qualified name of the RuntimeService's GetRuntime
 	// RPC.
 	RuntimeServiceGetRuntimeProcedure = "/agx.v1.RuntimeService/GetRuntime"
@@ -310,6 +316,11 @@ type LaunchServiceClient interface {
 	RenewLaunch(context.Context, *connect.Request[v1.RenewLaunchRequest]) (*connect.Response[v1.RenewLaunchResponse], error)
 	FinishLaunch(context.Context, *connect.Request[v1.FinishLaunchRequest]) (*connect.Response[v1.FinishLaunchResponse], error)
 	RevokeLaunch(context.Context, *connect.Request[v1.RevokeLaunchRequest]) (*connect.Response[v1.RevokeLaunchResponse], error)
+	// Resolves a directory for one thread of a launch whose harness process serves many threads.
+	ResolveThread(context.Context, *connect.Request[v1.ResolveThreadRequest]) (*connect.Response[v1.ResolveThreadResponse], error)
+	// Prepares the resources of one such thread as a launch under the process's launch. It shares
+	// the parent's lease and lifecycle token and ends with it.
+	PrepareThreadLaunch(context.Context, *connect.Request[v1.PrepareThreadLaunchRequest]) (*connect.Response[v1.PrepareThreadLaunchResponse], error)
 }
 
 // NewLaunchServiceClient constructs a client for the agx.v1.LaunchService service. By default, it
@@ -347,15 +358,29 @@ func NewLaunchServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(launchServiceMethods.ByName("RevokeLaunch")),
 			connect.WithClientOptions(opts...),
 		),
+		resolveThread: connect.NewClient[v1.ResolveThreadRequest, v1.ResolveThreadResponse](
+			httpClient,
+			baseURL+LaunchServiceResolveThreadProcedure,
+			connect.WithSchema(launchServiceMethods.ByName("ResolveThread")),
+			connect.WithClientOptions(opts...),
+		),
+		prepareThreadLaunch: connect.NewClient[v1.PrepareThreadLaunchRequest, v1.PrepareThreadLaunchResponse](
+			httpClient,
+			baseURL+LaunchServicePrepareThreadLaunchProcedure,
+			connect.WithSchema(launchServiceMethods.ByName("PrepareThreadLaunch")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // launchServiceClient implements LaunchServiceClient.
 type launchServiceClient struct {
-	prepareLaunch *connect.Client[v1.PrepareLaunchRequest, v1.PrepareLaunchResponse]
-	renewLaunch   *connect.Client[v1.RenewLaunchRequest, v1.RenewLaunchResponse]
-	finishLaunch  *connect.Client[v1.FinishLaunchRequest, v1.FinishLaunchResponse]
-	revokeLaunch  *connect.Client[v1.RevokeLaunchRequest, v1.RevokeLaunchResponse]
+	prepareLaunch       *connect.Client[v1.PrepareLaunchRequest, v1.PrepareLaunchResponse]
+	renewLaunch         *connect.Client[v1.RenewLaunchRequest, v1.RenewLaunchResponse]
+	finishLaunch        *connect.Client[v1.FinishLaunchRequest, v1.FinishLaunchResponse]
+	revokeLaunch        *connect.Client[v1.RevokeLaunchRequest, v1.RevokeLaunchResponse]
+	resolveThread       *connect.Client[v1.ResolveThreadRequest, v1.ResolveThreadResponse]
+	prepareThreadLaunch *connect.Client[v1.PrepareThreadLaunchRequest, v1.PrepareThreadLaunchResponse]
 }
 
 // PrepareLaunch calls agx.v1.LaunchService.PrepareLaunch.
@@ -378,12 +403,27 @@ func (c *launchServiceClient) RevokeLaunch(ctx context.Context, req *connect.Req
 	return c.revokeLaunch.CallUnary(ctx, req)
 }
 
+// ResolveThread calls agx.v1.LaunchService.ResolveThread.
+func (c *launchServiceClient) ResolveThread(ctx context.Context, req *connect.Request[v1.ResolveThreadRequest]) (*connect.Response[v1.ResolveThreadResponse], error) {
+	return c.resolveThread.CallUnary(ctx, req)
+}
+
+// PrepareThreadLaunch calls agx.v1.LaunchService.PrepareThreadLaunch.
+func (c *launchServiceClient) PrepareThreadLaunch(ctx context.Context, req *connect.Request[v1.PrepareThreadLaunchRequest]) (*connect.Response[v1.PrepareThreadLaunchResponse], error) {
+	return c.prepareThreadLaunch.CallUnary(ctx, req)
+}
+
 // LaunchServiceHandler is an implementation of the agx.v1.LaunchService service.
 type LaunchServiceHandler interface {
 	PrepareLaunch(context.Context, *connect.Request[v1.PrepareLaunchRequest]) (*connect.Response[v1.PrepareLaunchResponse], error)
 	RenewLaunch(context.Context, *connect.Request[v1.RenewLaunchRequest]) (*connect.Response[v1.RenewLaunchResponse], error)
 	FinishLaunch(context.Context, *connect.Request[v1.FinishLaunchRequest]) (*connect.Response[v1.FinishLaunchResponse], error)
 	RevokeLaunch(context.Context, *connect.Request[v1.RevokeLaunchRequest]) (*connect.Response[v1.RevokeLaunchResponse], error)
+	// Resolves a directory for one thread of a launch whose harness process serves many threads.
+	ResolveThread(context.Context, *connect.Request[v1.ResolveThreadRequest]) (*connect.Response[v1.ResolveThreadResponse], error)
+	// Prepares the resources of one such thread as a launch under the process's launch. It shares
+	// the parent's lease and lifecycle token and ends with it.
+	PrepareThreadLaunch(context.Context, *connect.Request[v1.PrepareThreadLaunchRequest]) (*connect.Response[v1.PrepareThreadLaunchResponse], error)
 }
 
 // NewLaunchServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -417,6 +457,18 @@ func NewLaunchServiceHandler(svc LaunchServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(launchServiceMethods.ByName("RevokeLaunch")),
 		connect.WithHandlerOptions(opts...),
 	)
+	launchServiceResolveThreadHandler := connect.NewUnaryHandler(
+		LaunchServiceResolveThreadProcedure,
+		svc.ResolveThread,
+		connect.WithSchema(launchServiceMethods.ByName("ResolveThread")),
+		connect.WithHandlerOptions(opts...),
+	)
+	launchServicePrepareThreadLaunchHandler := connect.NewUnaryHandler(
+		LaunchServicePrepareThreadLaunchProcedure,
+		svc.PrepareThreadLaunch,
+		connect.WithSchema(launchServiceMethods.ByName("PrepareThreadLaunch")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.LaunchService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case LaunchServicePrepareLaunchProcedure:
@@ -427,6 +479,10 @@ func NewLaunchServiceHandler(svc LaunchServiceHandler, opts ...connect.HandlerOp
 			launchServiceFinishLaunchHandler.ServeHTTP(w, r)
 		case LaunchServiceRevokeLaunchProcedure:
 			launchServiceRevokeLaunchHandler.ServeHTTP(w, r)
+		case LaunchServiceResolveThreadProcedure:
+			launchServiceResolveThreadHandler.ServeHTTP(w, r)
+		case LaunchServicePrepareThreadLaunchProcedure:
+			launchServicePrepareThreadLaunchHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -450,6 +506,14 @@ func (UnimplementedLaunchServiceHandler) FinishLaunch(context.Context, *connect.
 
 func (UnimplementedLaunchServiceHandler) RevokeLaunch(context.Context, *connect.Request[v1.RevokeLaunchRequest]) (*connect.Response[v1.RevokeLaunchResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.RevokeLaunch is not implemented"))
+}
+
+func (UnimplementedLaunchServiceHandler) ResolveThread(context.Context, *connect.Request[v1.ResolveThreadRequest]) (*connect.Response[v1.ResolveThreadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.ResolveThread is not implemented"))
+}
+
+func (UnimplementedLaunchServiceHandler) PrepareThreadLaunch(context.Context, *connect.Request[v1.PrepareThreadLaunchRequest]) (*connect.Response[v1.PrepareThreadLaunchResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.PrepareThreadLaunch is not implemented"))
 }
 
 // RuntimeServiceClient is a client for the agx.v1.RuntimeService service.

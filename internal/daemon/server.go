@@ -304,7 +304,8 @@ func active(state v1.Launch_State) bool {
 	return state == v1.Launch_STATE_PREPARED || state == v1.Launch_STATE_RUNNING
 }
 
-// end must be called with s.mu held; endpoint and cache cleanup run outside it.
+// end must be called with s.mu held; endpoint and cache cleanup run outside it. A launch's
+// thread launches end with it.
 func (s *Server) end(l *launch, state v1.Launch_State) {
 	if !active(l.view.State) {
 		return
@@ -313,6 +314,20 @@ func (s *Server) end(l *launch, state v1.Launch_State) {
 	l.ended = time.Now()
 	l.cancel()
 	go s.release(l.view.Id, l.endpoints)
+	for _, child := range s.children(l) {
+		s.end(child, state)
+	}
+}
+
+// children lists a launch's thread launches; s.mu must be held.
+func (s *Server) children(l *launch) []*launch {
+	children := []*launch{}
+	for _, child := range s.launches {
+		if child.view.ParentLaunchId == l.view.Id {
+			children = append(children, child)
+		}
+	}
+	return children
 }
 
 func (s *Server) release(id string, endpoints map[config.ID]*mcpruntime.Endpoint) {

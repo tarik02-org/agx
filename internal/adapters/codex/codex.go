@@ -3,12 +3,14 @@
 package codex
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/tarik02-org/agx/internal/adapters"
+	"github.com/tarik02-org/agx/internal/adapters/codex/appserver"
 	"github.com/tarik02-org/agx/internal/config"
 )
 
@@ -102,30 +104,125 @@ func (Adapter) Directory(args []string, cwd string) (string, []string, error) {
 	return adapters.ResolveDirectory(args, cwd, dir, flags)
 }
 
-func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
+// ThreadServer reports whether args start an app server on standard input and output, the
+// transport agx relays; the last --listen or --stdio wins.
+func (a Adapter) ThreadServer(args []string) bool {
+	if a.Classify(args) != modeAppServer {
+		return false
+	}
+	stdio := true
+	for i := 0; i < len(args) && args[i] != "--"; i++ {
+		switch {
+		case args[i] == "--stdio":
+			stdio = true
+		case args[i] == "--listen" && i+1 < len(args):
+			i++
+			stdio = args[i] == "stdio://"
+		case strings.HasPrefix(args[i], "--listen="):
+			stdio = strings.TrimPrefix(args[i], "--listen=") == "stdio://"
+		}
+	}
+	return stdio
+}
+
+func (a Adapter) Arguments(l adapters.Launch) ([]string, error) {
+	if a.ThreadServer(l.Native) {
+		// Threads take their resources per request. Disabling agx skill plugins here would also
+		// hide them from skills/list, where the relay marks each directory's selection instead.
+		return []string{}, nil
+	}
+	o, err := resources(l)
+	if err != nil {
+		return nil, err
+	}
 	prefix := []string{}
 	// Codex has no file-based developer instructions (model_instructions_file replaces the
 	// base prompt instead), so they travel in argv and replace a configured value.
-	if len(l.Instructions) > 0 {
-		assignment, err := adapters.TOMLAssignment("developer_instructions", string(l.Instructions))
+	if o.instructions != "" {
+		assignment, err := adapters.TOMLAssignment("developer_instructions", o.instructions)
 		if err != nil {
 			return nil, err
 		}
 		prefix = append(prefix, "-c", assignment)
 	}
+	for _, p := range o.plugins {
+		prefix = append(prefix, "-c", "plugins."+p.id+".enabled="+strconv.FormatBool(p.enabled))
+	}
+	for _, s := range o.servers {
+		assignment, err := adapters.TOMLAssignment(
+			"mcp_servers."+s.name,
+			map[string]any{"url": s.url, "bearer_token_env_var": adapters.GrantEnvironment},
+		)
+		if err != nil {
+			return nil, err
+		}
+		prefix = append(prefix, "-c", assignment)
+	}
+	return prefix, nil
+}
+
+// ThreadPlan carries the launch's resources as thread/start configuration overrides; the grant
+// travels in each server's headers.
+func (Adapter) ThreadPlan(l adapters.Launch, grant string) (adapters.ThreadPlan, error) {
+	o, err := resources(l)
+	if err != nil {
+		return adapters.ThreadPlan{}, err
+	}
+	plan := adapters.ThreadPlan{Config: map[string]any{}, Instructions: o.instructions}
+	if len(o.plugins) > 0 {
+		plugins := map[string]any{}
+		for _, p := range o.plugins {
+			plugins[p.id] = map[string]any{"enabled": p.enabled}
+			if !p.enabled {
+				plan.DisabledPlugins = append(plan.DisabledPlugins, p.id)
+			}
+		}
+		plan.Config["plugins"] = plugins
+	}
+	if len(o.servers) > 0 {
+		servers := map[string]any{}
+		for _, s := range o.servers {
+			servers[s.name] = map[string]any{
+				"url":          s.url,
+				"http_headers": map[string]string{"Authorization": "Bearer " + grant},
+			}
+		}
+		plan.Config["mcp_servers"] = servers
+	}
+	return plan, nil
+}
+
+type plugin struct {
+	// id is the plugin's ID in the marketplace, name@marketplace.
+	id      string
+	enabled bool
+}
+
+type server struct{ name, url string }
+
+// overrides brings a launch's resources to Codex.
+type overrides struct {
+	instructions string
+	// plugins lists every installed agx skill plugin, enabled when the snapshot selects it.
+	plugins []plugin
+	servers []server
+}
+
+func resources(l adapters.Launch) (overrides, error) {
+	o := overrides{instructions: string(l.Instructions)}
 	selected := map[string]bool{}
 	for _, r := range l.Snapshot.Resources {
 		if r.Kind == "skill" {
 			name, err := pluginName(l.Snapshot.Config.Skills[r.ID])
 			if err != nil {
-				return nil, err
+				return o, err
 			}
 			selected[name] = true
 		}
 	}
 	disabled, err := PluginsDisabled()
 	if err != nil {
-		return nil, err
+		return o, err
 	}
 	switch {
 	case disabled != "" && len(selected) > 0:
@@ -134,7 +231,7 @@ func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
 	case disabled == "" && !l.Uninstalled:
 		registry, err := readCatalog(l.Cache)
 		if err != nil {
-			return nil, err
+			return o, err
 		}
 		known := map[string]bool{}
 		for _, name := range registry.Names {
@@ -142,27 +239,26 @@ func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
 		}
 		for name := range selected {
 			if !known[name] {
-				return nil, fmt.Errorf("selected skill plugin %s: %w", name, adapters.ErrNotInstalled)
+				return o, fmt.Errorf("selected skill plugin %s: %w", name, adapters.ErrNotInstalled)
 			}
 		}
 		for _, name := range registry.Names {
-			prefix = append(
-				prefix,
-				"-c",
-				`plugins.`+name+"@"+marketplaceName+`.enabled=`+strconv.FormatBool(selected[name]),
-			)
+			o.plugins = append(o.plugins, plugin{id: name + "@" + marketplaceName, enabled: selected[name]})
 		}
 	}
 	names := adapters.ServerNames(l.Endpoints)
 	for _, endpoint := range l.Endpoints {
-		assignment, err := adapters.TOMLAssignment(
-			"mcp_servers."+names[endpoint.ID],
-			map[string]any{"url": endpoint.URL, "bearer_token_env_var": adapters.GrantEnvironment},
-		)
-		if err != nil {
-			return nil, err
-		}
-		prefix = append(prefix, "-c", assignment)
+		o.servers = append(o.servers, server{name: names[endpoint.ID], url: endpoint.URL})
 	}
-	return prefix, nil
+	return o, nil
+}
+
+// Relay runs the app-server relay that hands each thread its own resources.
+func (Adapter) Relay(
+	ctx context.Context,
+	host adapters.ThreadHost,
+	directory string,
+	client, server adapters.Stream,
+) error {
+	return appserver.Relay(ctx, host, directory, client, server)
 }

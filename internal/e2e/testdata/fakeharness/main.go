@@ -1,4 +1,6 @@
-// Command fakeharness stands in for Claude Code in end-to-end tests. It records its arguments,
+// Command fakeharness stands in for Claude Code and Codex in end-to-end tests. As Codex, it
+// accepts plugin installation and serves a minimal app server (see appServer). Otherwise it
+// records its arguments,
 // selected environment variables, and launch artifacts as JSON in $FAKE_DUMP, and calls the echo
 // tool on every MCP server passed with --mcp-config. --exit=N sets its exit status. With
 // $FAKE_STDIN set, it copies its standard input there until EOF.
@@ -13,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +33,13 @@ type record struct {
 
 func main() {
 	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "plugin" {
+		return
+	}
+	if slices.Contains(args, "app-server") {
+		appServer(args)
+		return
+	}
 	r := record{Args: args, Env: map[string]string{}, Skills: map[string]string{}, Endpoints: map[string]string{},
 		Tools: map[string]string{}}
 	r.Directory, _ = os.Getwd()
@@ -194,4 +204,57 @@ func decode(resp *http.Response) (map[string]any, error) {
 		}
 	}
 	return nil, fmt.Errorf("event stream ended without a response: %v", scanner.Err())
+}
+
+// appServer answers newline-delimited JSON-RPC like codex app-server. Every result echoes the
+// request's params as "received"; initialize adds the process arguments, and thread/start a
+// new thread in the requested cwd plus the echo tool's reply from every MCP server in its
+// config. test/close closes a thread with a thread/closed notification.
+func appServer(args []string) {
+	reader := bufio.NewReader(os.Stdin)
+	out := json.NewEncoder(os.Stdout)
+	threads := 0
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			return
+		}
+		var request struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+			Params map[string]any  `json:"params"`
+		}
+		if json.Unmarshal(line, &request) != nil || request.ID == nil {
+			continue
+		}
+		result := map[string]any{"received": request.Params}
+		switch request.Method {
+		case "initialize":
+			result["argv"] = args
+		case "thread/start":
+			threads++
+			id := fmt.Sprintf("thread-%d", threads)
+			result["thread"] = map[string]any{"id": id, "cwd": request.Params["cwd"]}
+			tools := map[string]string{}
+			config, _ := request.Params["config"].(map[string]any)
+			servers, _ := config["mcp_servers"].(map[string]any)
+			for name, s := range servers {
+				server, _ := s.(map[string]any)
+				url, _ := server["url"].(string)
+				headers, _ := server["http_headers"].(map[string]any)
+				authorization, _ := headers["Authorization"].(string)
+				text, err := callEcho(url, authorization)
+				if err != nil {
+					text = "error: " + err.Error()
+				}
+				tools[name] = text
+			}
+			result["tools"] = tools
+		case "test/close":
+			_ = out.Encode(map[string]any{"id": request.ID, "result": result})
+			_ = out.Encode(map[string]any{"method": "thread/closed", "params": map[string]any{"threadId": request.Params["threadId"]}})
+			continue
+		}
+		_ = out.Encode(map[string]any{"id": request.ID, "result": result})
+	}
 }

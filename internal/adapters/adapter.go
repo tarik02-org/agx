@@ -199,32 +199,13 @@ func Build(
 		plan.Environment[name] = value
 	}
 	plan.Environment[GrantEnvironment] = grant
-	l.Artifacts, err = artifacts(l.Snapshot, l.Cache)
-	if err != nil {
-		return Plan{}, err
-	}
-	l.Instructions, err = os.ReadFile(l.InstructionsFile())
-	if err != nil {
-		return Plan{}, err
-	}
 	l.Native = args
 	l.plan = &plan
-	prefix, err := a.Arguments(l)
-	if errors.Is(err, ErrNotInstalled) {
-		var skipped Skipped
-		switch err := a.Install(ctx, l.Snapshot.Config, l.Cache); {
-		case errors.As(err, &skipped):
-			l.Warn(skipped.Reason + "; launching without skills")
-			l.Uninstalled = true
-		case err != nil:
-			return Plan{}, fmt.Errorf("installing native %s plugins: %w", a.Name(), err)
-		}
+	var prefix []string
+	if err := withArtifacts(ctx, a, l, func(l Launch) (err error) {
 		prefix, err = a.Arguments(l)
-		if errors.Is(err, ErrNotInstalled) {
-			err = fmt.Errorf("%w after installing native %s plugins; see agx doctor", err, a.Name())
-		}
-	}
-	if err != nil {
+		return err
+	}); err != nil {
 		return Plan{}, err
 	}
 	prefix = append(prefix, harnessArgs...)
@@ -233,4 +214,35 @@ func Build(
 	// Shell-provided upstream secrets have reached the daemon; don't leak them into the harness.
 	plan.Unset = append(plan.Unset, l.Snapshot.MCPEnvironment()...)
 	return plan, nil
+}
+
+// withArtifacts fills in the launch's artifacts and runs call, installing the adapter's native
+// plugins once when call reports ErrNotInstalled.
+func withArtifacts(ctx context.Context, a Adapter, l Launch, call func(Launch) error) error {
+	var err error
+	l.Artifacts, err = artifacts(l.Snapshot, l.Cache)
+	if err != nil {
+		return err
+	}
+	l.Instructions, err = os.ReadFile(l.InstructionsFile())
+	if err != nil {
+		return err
+	}
+	err = call(l)
+	if !errors.Is(err, ErrNotInstalled) {
+		return err
+	}
+	var skipped Skipped
+	switch err := a.Install(ctx, l.Snapshot.Config, l.Cache); {
+	case errors.As(err, &skipped):
+		l.Warn(skipped.Reason + "; launching without skills")
+		l.Uninstalled = true
+	case err != nil:
+		return fmt.Errorf("installing native %s plugins: %w", a.Name(), err)
+	}
+	err = call(l)
+	if errors.Is(err, ErrNotInstalled) {
+		err = fmt.Errorf("%w after installing native %s plugins; see agx doctor", err, a.Name())
+	}
+	return err
 }

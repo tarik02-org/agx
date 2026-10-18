@@ -42,6 +42,16 @@ without a managed launch, receiving only the definition's `passthrough` groups a
 `env`, whose [injected values](configuration.md#injected-values) the wrapper
 resolves itself.
 
+`codex app-server` on standard input and output (no `--listen`, `--stdio`, or
+`--listen stdio://`) serves many threads, each in its own directory. The wrapper
+relays its JSON-RPC and gives every thread started, forked, or resumed a thread
+launch for that directory: its MCP servers, instructions, and skills
+([ADR 0015](adr/0015-per-thread-resources-for-multi-session-hosts.md)). A
+resumed thread keeps the instructions it started with; a turn in another
+directory switches skills at once and MCP servers on the next resume. Claude
+Code reading `--input-format stream-json` (the Agent SDK) gets agx instructions
+prepended to the system prompt append of its `initialize` request.
+
 Support invocation through a harness-named wrapper or symlink. When agx runs under
 another name and the configuration fails to load, it reports `agx: <name>:
 configuration failed to load: <error>` and exits 1 instead of running its own
@@ -299,7 +309,10 @@ forced: `daemon stop` then fails with error code `conflict` and points to
 `daemon stop --force`, as does a command that finds a busy daemon of another
 build. Revocation closes MCP access and upstream sessions; it does not kill the
 harness. Launch inspection excludes secrets. A graceful wrapper exit releases
-its launch; abrupt exits are recovered through lease expiry.
+its launch; abrupt exits are recovered through lease expiry. `launch list` shows
+the thread launches of a `codex app-server` process (mode `thread`) indented
+under its launch; `launch show` names a thread launch's parent and thread
+(`session`), and the JSON carries `parent_launch_id` and `session_id`.
 
 ## Doctor
 

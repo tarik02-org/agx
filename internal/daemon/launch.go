@@ -75,37 +75,13 @@ func (s *Server) PrepareLaunch(
 	if snapshot.ID != msg.SnapshotId {
 		return nil, rpcError(connect.CodeAborted, "snapshot changed; resolve again before forwarding credentials")
 	}
-	allowed := map[string]bool{}
-	for _, name := range snapshot.RequiredEnvironment {
-		allowed[name] = true
-	}
-	for name := range msg.EnvironmentInputs {
-		if !allowed[name] {
-			return nil, rpcError(connect.CodeInvalidArgument, "undeclared environment input "+name)
-		}
-	}
-	inputs := map[string]string{}
-	for name, value := range msg.EnvironmentInputs {
-		inputs[name] = value
+	inputs, err := launchInputs(snapshot, msg.EnvironmentInputs)
+	if err != nil {
+		return nil, err
 	}
 	env := func(name string) (string, bool) {
 		value, ok := inputs[name]
 		return value, ok
-	}
-	// MCP servers resolve their values when sessions start, but the caller's environment is
-	// only available now, so missing variables fail the launch instead of a later session.
-	for _, i := range snapshot.MCPInjections() {
-		name := snapshot.Config.Variable(i.Value)
-		if name == "" || inputs[name] != "" {
-			continue
-		}
-		if i.Value.Secret != "" {
-			name += " for secret " + string(i.Value.Secret)
-		}
-		return nil, rpcError(
-			connect.CodeFailedPrecondition,
-			fmt.Sprintf("%s:%d: %s: environment variable %s is not set", i.Source.Path, i.Source.Line, i.Target, name),
-		)
 	}
 	harnessArgs, harnessEnv, err := harness.Resolve(mode, env, func(id config.ID) (string, error) {
 		return s.manager.Value(ctx, id, snapshot.Config.Secrets[id], snapshot.Config.Secrets, inputs, "")
@@ -124,24 +100,10 @@ func (s *Server) PrepareLaunch(
 	}
 	id, grant, lifecycle := securefs.Token(), securefs.Token(), securefs.Token()
 	launchCtx, cancel := context.WithCancel(s.ctx)
-	endpoints := map[config.ID]*mcpruntime.Endpoint{}
-	nativeEndpoints := []adapters.Endpoint{}
-	for _, r := range snapshot.Resources {
-		if r.Kind != "mcp" {
-			continue
-		}
-		definition := snapshot.Config.MCP[r.ID]
-		if definition.Cwd == "" {
-			definition.Cwd = snapshot.Directory
-		}
-		endpoints[r.ID] = mcpruntime.New(launchCtx, r.ID, definition, snapshot.Config.Secrets, inputs, s.manager)
-		nativeEndpoints = append(
-			nativeEndpoints,
-			adapters.Endpoint{
-				ID:  r.ID,
-				URL: s.discovery.URL + "/launch/" + id + "/mcp/" + url.PathEscape(string(r.ID)),
-			},
-		)
+	endpoints, nativeEndpoints := map[config.ID]*mcpruntime.Endpoint{}, []adapters.Endpoint{}
+	// A process serving many threads gets its MCP servers per thread launch.
+	if threads, ok := adapter.(adapters.Threads); !ok || !threads.ThreadServer(msg.NativeArguments) {
+		endpoints, nativeEndpoints = s.endpoints(launchCtx, id, snapshot, inputs)
 	}
 	discard := func() {
 		cancel()
@@ -226,6 +188,65 @@ func (s *Server) PrepareLaunch(
 	return connect.NewResponse(response), nil
 }
 
+// launchInputs checks that a launch's environment inputs are the snapshot's to receive, and that
+// its MCP servers' values find theirs, since the caller's environment is only available now.
+func launchInputs(snapshot *config.Snapshot, given map[string]string) (map[string]string, error) {
+	allowed := map[string]bool{}
+	for _, name := range snapshot.RequiredEnvironment {
+		allowed[name] = true
+	}
+	inputs := map[string]string{}
+	for name, value := range given {
+		if !allowed[name] {
+			return nil, rpcError(connect.CodeInvalidArgument, "undeclared environment input "+name)
+		}
+		inputs[name] = value
+	}
+	for _, i := range snapshot.MCPInjections() {
+		name := snapshot.Config.Variable(i.Value)
+		if name == "" || inputs[name] != "" {
+			continue
+		}
+		if i.Value.Secret != "" {
+			name += " for secret " + string(i.Value.Secret)
+		}
+		return nil, rpcError(
+			connect.CodeFailedPrecondition,
+			fmt.Sprintf("%s:%d: %s: environment variable %s is not set", i.Source.Path, i.Source.Line, i.Target, name),
+		)
+	}
+	return inputs, nil
+}
+
+// endpoints starts the endpoints of the snapshot's MCP servers for launch id.
+func (s *Server) endpoints(
+	ctx context.Context,
+	id string,
+	snapshot *config.Snapshot,
+	inputs map[string]string,
+) (map[config.ID]*mcpruntime.Endpoint, []adapters.Endpoint) {
+	endpoints := map[config.ID]*mcpruntime.Endpoint{}
+	native := []adapters.Endpoint{}
+	for _, r := range snapshot.Resources {
+		if r.Kind != "mcp" {
+			continue
+		}
+		definition := snapshot.Config.MCP[r.ID]
+		if definition.Cwd == "" {
+			definition.Cwd = snapshot.Directory
+		}
+		endpoints[r.ID] = mcpruntime.New(ctx, r.ID, definition, snapshot.Config.Secrets, inputs, s.manager)
+		native = append(
+			native,
+			adapters.Endpoint{
+				ID:  r.ID,
+				URL: s.discovery.URL + "/launch/" + id + "/mcp/" + url.PathEscape(string(r.ID)),
+			},
+		)
+	}
+	return endpoints, native
+}
+
 func (s *Server) lifecycleLaunch(id, header string) (*launch, error) {
 	l := s.launches[id]
 	if l == nil {
@@ -251,12 +272,29 @@ func (s *Server) RenewLaunch(
 		s.end(l, v1.Launch_STATE_EXPIRED)
 		return nil, rpcError(connect.CodeUnauthenticated, "launch has ended or expired")
 	}
+	if parent := s.launches[l.view.ParentLaunchId]; parent != nil {
+		// A thread launch follows its parent's lease; renewing it reports its thread.
+		if req.Msg.SessionId != "" {
+			l.view.SessionId = req.Msg.SessionId
+			l.view.State = v1.Launch_STATE_RUNNING
+		}
+		l.view.ExpiresAt = proto.Clone(parent.view.ExpiresAt).(*timestamppb.Timestamp)
+		return connect.NewResponse(
+			&v1.RenewLaunchResponse{ExpiresAt: proto.Clone(l.view.ExpiresAt).(*timestamppb.Timestamp)},
+		), nil
+	}
 	if req.Msg.HarnessPid != 0 {
 		l.view.State = v1.Launch_STATE_RUNNING
+	}
+	if req.Msg.SessionId != "" {
+		l.view.SessionId = req.Msg.SessionId
 	}
 	l.view.ExpiresAt = timestamppb.New(
 		time.Now().Add(time.Duration(l.snapshot.Config.Daemon.LeaseSeconds) * time.Second),
 	)
+	for _, child := range s.children(l) {
+		child.view.ExpiresAt = proto.Clone(l.view.ExpiresAt).(*timestamppb.Timestamp)
+	}
 	return connect.NewResponse(
 		&v1.RenewLaunchResponse{ExpiresAt: proto.Clone(l.view.ExpiresAt).(*timestamppb.Timestamp)},
 	), nil
@@ -267,7 +305,8 @@ func (s *Server) FinishLaunch(
 	req *connect.Request[v1.FinishLaunchRequest],
 ) (*connect.Response[v1.FinishLaunchResponse], error) {
 	switch req.Msg.Outcome.(type) {
-	case *v1.FinishLaunchRequest_ExitCode, *v1.FinishLaunchRequest_SignalName, *v1.FinishLaunchRequest_SpawnFailure:
+	case *v1.FinishLaunchRequest_ExitCode, *v1.FinishLaunchRequest_SignalName, *v1.FinishLaunchRequest_SpawnFailure,
+		*v1.FinishLaunchRequest_ThreadClosed:
 	default:
 		return nil, rpcError(connect.CodeInvalidArgument, "finish outcome is required")
 	}
@@ -304,7 +343,7 @@ func (s *Server) responseCipher() (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
-func (s *Server) sealResponse(response *v1.PrepareLaunchResponse) ([]byte, error) {
+func (s *Server) sealResponse(response proto.Message) ([]byte, error) {
 	aead, err := s.responseCipher()
 	if err != nil {
 		return nil, err
@@ -321,20 +360,21 @@ func (s *Server) sealResponse(response *v1.PrepareLaunchResponse) ([]byte, error
 }
 
 func (s *Server) openResponse(data []byte) (*v1.PrepareLaunchResponse, error) {
+	response := &v1.PrepareLaunchResponse{}
+	return response, s.openInto(data, response)
+}
+
+func (s *Server) openInto(data []byte, response proto.Message) error {
 	aead, err := s.responseCipher()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if len(data) < aead.NonceSize() {
-		return nil, fmt.Errorf("invalid response cache")
+		return fmt.Errorf("invalid response cache")
 	}
 	plain, err := aead.Open(nil, data[:aead.NonceSize()], data[aead.NonceSize():], nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	response := &v1.PrepareLaunchResponse{}
-	if err := proto.Unmarshal(plain, response); err != nil {
-		return nil, err
-	}
-	return response, nil
+	return proto.Unmarshal(plain, response)
 }

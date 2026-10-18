@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"os/exec"
@@ -275,7 +276,50 @@ func runHarness(
 			}, nil
 		}
 	}
+	threads, isThreads := adapter.(adapters.Threads)
+	relayed := make(chan error, 1)
+	var serverOutput *io.PipeWriter
+	if isThreads && threads.ThreadServer(nativeArgs) {
+		host := &threadHost{
+			client:    c,
+			parent:    p.Launch.Id,
+			lifecycle: p.LifecycleToken,
+			harness:   name,
+			builtin:   h.Builtin,
+			records:   records,
+		}
+		connect = func(cmd *exec.Cmd) (func(), error) {
+			input, err := cmd.StdinPipe()
+			if err != nil {
+				return nil, err
+			}
+			output, writer := io.Pipe()
+			serverOutput = writer
+			cmd.Stdout = writer
+			// Output still held by the server's own children must not keep the wrapper waiting.
+			cmd.WaitDelay = 5 * time.Second
+			return func() {
+				go func() {
+					relayed <- threads.Relay(
+						ctx,
+						host,
+						p.Spawn.Directory,
+						adapters.Stream{In: os.Stdin, Out: os.Stdout},
+						adapters.Stream{In: output, Out: input},
+					)
+				}()
+			}, nil
+		}
+	}
 	runErr := supervise(cmd, start, connect)
+	if serverOutput != nil {
+		_ = serverOutput.Close()
+		if cmd.Process != nil {
+			if err := <-relayed; err != nil {
+				ui.Diagnose(ui.Warn, "relaying the harness protocol: %v", err)
+			}
+		}
+	}
 	close(finished)
 	wg.Wait()
 	finish := &v1.FinishLaunchRequest{LaunchId: p.Launch.Id, Outcome: &v1.FinishLaunchRequest_ExitCode{ExitCode: 0}}

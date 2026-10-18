@@ -51,9 +51,10 @@ and native account state; it does not own a harness home or hide existing global
 skills. Native plugins are an output format, not agx's package model: artifacts
 are generated per snapshot, so removing one resource does not require removing a
 plugin. Instructions are injected explicitly, because a guidance file inside a
-plugin is not guaranteed to load. Per-launch artifacts suit hosts such as T3
-Code, which start one harness process per thread. macOS, Linux, and Windows are
-all targets.
+plugin is not guaranteed to load. Hosts that serve many threads from one
+process, such as T3 Code with `codex app-server`, get per-thread launches
+([ADR 0015](0015-per-thread-resources-for-multi-session-hosts.md)). macOS,
+Linux, and Windows are all targets.
 
 Rejected: manager-owned harness homes, which split the user's native state.
 [ADR 0007](0007-harness-definitions-and-modes.md) adds harness definitions and

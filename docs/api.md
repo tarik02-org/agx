@@ -13,7 +13,8 @@ The Go module path is `github.com/tarik02-org/agx`.
   environment names.
 - `PackageService`: start install/update operations and watch their progress.
   The CLI installs in-process instead; both paths share the installer lock.
-- `LaunchService`: prepare, renew, finish, and administratively revoke a launch.
+- `LaunchService`: prepare, renew, finish, and administratively revoke a launch;
+  resolve and prepare thread launches of a process serving many threads.
 - `RuntimeService`: inspect/watch redacted daemon, launch, and MCP server state,
   and `TestMcpServer`, which connects to one MCP server outside any launch and
   lists its tools with their descriptions (`agx mcp test`). It accepts only the environment variables the
@@ -43,6 +44,18 @@ executable and immediately renews with the harness PID, transitioning it to
 running. PIDs are diagnostic only. Renew/finish authenticate using the lifecycle
 token in request metadata. Prepared launches also expire, covering a wrapper that
 dies before spawning. Spawn failure is an explicit finish outcome.
+
+A harness process serving many threads (stdio `codex app-server`) has a launch
+without snapshot resources. For each thread, the wrapper calls `ResolveThread`
+with the parent launch and directory, which returns the snapshot, its required
+environment names, and the native plugins the thread keeps disabled, then
+`PrepareThreadLaunch` with the snapshot ID and declared inputs. That returns a
+thread launch with its own MCP endpoints and grant, and a `ThreadPlan`: native
+configuration overrides as JSON (sensitive, since the grant travels in MCP
+headers), instructions, and disabled plugins. A thread launch shares its
+parent's lease and lifecycle token. Renewing it with `session_id` reports its
+thread and marks it running; it finishes with outcome `thread_closed`, and ends
+with its parent however the parent ends.
 
 Use management authorization for other RPCs. Preparation and package mutations
 require an idempotency key: retries within the same daemon instance return the
