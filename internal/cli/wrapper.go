@@ -90,7 +90,7 @@ func runHarness(
 			if !ok {
 				return "", fmt.Errorf("unknown secret %s; passthrough commands read only configuration fragments", id)
 			}
-			return auth.LocalValue(ctx, id, secret, os.LookupEnv)
+			return auth.LocalValue(ctx, id, secret, harnesses.config.Secrets, os.LookupEnv)
 		})
 		if err != nil {
 			return err

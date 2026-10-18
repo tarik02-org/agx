@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zalando/go-keyring"
+
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/config"
 )
@@ -68,7 +70,7 @@ func TestSopsExtract(t *testing.T) {
 		{config.SecretKey{"a.b", "c"}, "dotted", `["a.b"]["c"]`},
 	} {
 		secret := config.Secret{Kind: "sops", File: file, Key: tc.key}
-		got, err := auth.LocalValue(t.Context(), "gh", secret, noEnv)
+		got, err := auth.LocalValue(t.Context(), "gh", secret, nil, noEnv)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -87,7 +89,7 @@ func TestSopsWholeFile(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "app.env")
 	writeFile(t, file, "A=1\nB=2\n\n")
 
-	got, err := auth.LocalValue(t.Context(), "env", config.Secret{Kind: "sops", File: file}, noEnv)
+	got, err := auth.LocalValue(t.Context(), "env", config.Secret{Kind: "sops", File: file}, nil, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +106,7 @@ func TestSopsCache(t *testing.T) {
 	manager := auth.New("http://127.0.0.1:1/callback")
 	value := func() string {
 		t.Helper()
-		got, err := manager.Value(t.Context(), "token", secret, nil, "")
+		got, err := manager.Value(t.Context(), "token", secret, nil, nil, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -147,7 +149,7 @@ func TestSopsEnvironment(t *testing.T) {
 	t.Setenv("SOPS_FAKE_FORBIDDEN", "UNRELATED_TOKEN")
 
 	secret := config.Secret{Kind: "sops", File: file, Key: config.SecretKey{"token"}}
-	if _, err := auth.LocalValue(t.Context(), "token", secret, noEnv); err != nil {
+	if _, err := auth.LocalValue(t.Context(), "token", secret, nil, noEnv); err != nil {
 		t.Fatalf("SOPS_ variables pass and others stay out: %v", err)
 	}
 }
@@ -161,7 +163,7 @@ func TestSopsFailures(t *testing.T) {
 	t.Run("missing executable", func(t *testing.T) {
 		t.Setenv("PATH", t.TempDir())
 		secret := config.Secret{Kind: "sops", File: file, Key: config.SecretKey{"token"}}
-		_, err := auth.LocalValue(t.Context(), "token", secret, noEnv)
+		_, err := auth.LocalValue(t.Context(), "token", secret, nil, noEnv)
 		if err == nil || !strings.Contains(err.Error(), "sops executable not found") {
 			t.Fatalf("err = %v", err)
 		}
@@ -185,12 +187,12 @@ func TestSopsFailures(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := auth.LocalValue(t.Context(), "token", tc.secret, noEnv)
+			_, err := auth.LocalValue(t.Context(), "token", tc.secret, nil, noEnv)
 			want := "secret token: sops cannot decrypt " + tc.secret.File + ": " + tc.reason
 			if err == nil || err.Error() != want {
 				t.Fatalf("err = %v, want %s", err, want)
 			}
-			status := auth.New("http://127.0.0.1:1/callback").Status("token", tc.secret)
+			status := auth.New("http://127.0.0.1:1/callback").Status("token", tc.secret, nil)
 			if status.State != "unavailable" || status.Problem != want {
 				t.Fatalf("status = %+v", status)
 			}
@@ -242,11 +244,154 @@ func TestSopsAge(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
 	secret := config.Secret{Kind: "sops", File: file, Key: config.SecretKey{"github", "token"}}
-	got, err := auth.LocalValue(ctx, "github", secret, noEnv)
+	got, err := auth.LocalValue(ctx, "github", secret, nil, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != "age-token" {
 		t.Fatalf("value = %q", got)
 	}
+
+	// The same file decrypts with the identity stored as a keychain secret, while the
+	// inherited key file points nowhere.
+	identity, err := os.ReadFile(keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyring.MockInit()
+	age := config.Secret{Kind: "keychain"}
+	manager := auth.New("http://127.0.0.1:1/callback")
+	if err := manager.Set("age", age, identity); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SOPS_AGE_KEY_FILE", filepath.Join(dir, "missing.txt"))
+	secret.AgeKey = config.Value{Secret: "age"}
+	got, err = manager.Value(ctx, "github", secret, map[config.ID]config.Secret{"age": age}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "age-token" {
+		t.Fatalf("value with age_key = %q", got)
+	}
+}
+
+func TestSopsAgeKey(t *testing.T) {
+	log := fakeSops(t)
+	keyring.MockInit()
+	file := filepath.Join(t.TempDir(), "secrets.json")
+	writeFile(t, file, `{"token": "value"}`)
+	// Inherited age settings must not reach sops once age_key is configured.
+	t.Setenv("SOPS_AGE_KEY", "AGE-SECRET-KEY-INHERITED")
+	t.Setenv("SOPS_AGE_KEY_FILE", filepath.Join(t.TempDir(), "keys.txt"))
+	t.Setenv("SOPS_AGE_KEY_CMD", "false")
+	keyFile := filepath.Join(t.TempDir(), "age.txt")
+	writeFile(t, keyFile, "# created: today\nAGE-SECRET-KEY-FROM-FILE\n")
+
+	for _, tc := range []struct {
+		name, want string
+		ageKey     config.Value
+		secrets    map[config.ID]config.Secret
+	}{
+		{"!env", "AGE-SECRET-KEY-ENV", config.Value{Env: "AGE_IDENTITY"}, nil},
+		{"!file", "# created: today\nAGE-SECRET-KEY-FROM-FILE", config.Value{File: keyFile}, nil},
+		{
+			"!secret environment",
+			"AGE-SECRET-KEY-ENV",
+			config.Value{Secret: "age"},
+			map[config.ID]config.Secret{"age": {Kind: "environment", Variable: "AGE_IDENTITY"}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SOPS_FAKE_AGE_KEY", tc.want)
+			secret := config.Secret{Kind: "sops", File: file, Key: config.SecretKey{"token"}, AgeKey: tc.ageKey}
+			env := func(name string) (string, bool) {
+				if name == "AGE_IDENTITY" {
+					return "AGE-SECRET-KEY-ENV", true
+				}
+				return "", false
+			}
+			if got, err := auth.LocalValue(
+				t.Context(),
+				"token",
+				secret,
+				tc.secrets,
+				env,
+			); err != nil ||
+				got != "value" {
+				t.Fatalf("local value = %q, %v", got, err)
+			}
+			inputs := map[string]string{"AGE_IDENTITY": "AGE-SECRET-KEY-ENV"}
+			manager := auth.New("http://127.0.0.1:1/callback")
+			if got, err := manager.Value(
+				t.Context(),
+				"token",
+				secret,
+				tc.secrets,
+				inputs,
+				"",
+			); err != nil ||
+				got != "value" {
+				t.Fatalf("daemon value = %q, %v", got, err)
+			}
+		})
+	}
+
+	t.Run("!secret keychain", func(t *testing.T) {
+		t.Setenv("SOPS_FAKE_AGE_KEY", "AGE-SECRET-KEY-KEYCHAIN")
+		age := config.Secret{Kind: "keychain"}
+		secrets := map[config.ID]config.Secret{"age": age}
+		secret := config.Secret{
+			Kind:   "sops",
+			File:   file,
+			Key:    config.SecretKey{"token"},
+			AgeKey: config.Value{Secret: "age"},
+		}
+		manager := auth.New("http://127.0.0.1:1/callback")
+
+		status := manager.Status("token", secret, secrets)
+		if status.State != "unavailable" || !strings.Contains(status.Problem, "keychain secret age is unavailable") {
+			t.Fatalf("status without the age key = %+v", status)
+		}
+		if err := manager.Set("age", age, []byte("AGE-SECRET-KEY-KEYCHAIN\n")); err != nil {
+			t.Fatal(err)
+		}
+		if status := manager.Status("token", secret, secrets); status.State != "ready" {
+			t.Fatalf("status with the age key = %+v", status)
+		}
+	})
+
+	t.Run("caller environment", func(t *testing.T) {
+		secret := config.Secret{Kind: "sops", File: file, AgeKey: config.Value{Env: "AGE_IDENTITY"}}
+		status := auth.New("http://127.0.0.1:1/callback").Status("token", secret, nil)
+		if status.State != "unconfigured" {
+			t.Fatalf("an age key from the caller's environment resolves at launch: %+v", status)
+		}
+	})
+
+	t.Run("cache follows the key", func(t *testing.T) {
+		cached := filepath.Join(t.TempDir(), "cached.json")
+		writeFile(t, cached, `{"token": "value"}`)
+		secret := config.Secret{Kind: "sops", File: cached, AgeKey: config.Value{Env: "AGE_IDENTITY"}}
+		decrypt := func(key string) error {
+			env := func(string) (string, bool) { return key, true }
+			_, err := auth.LocalValue(t.Context(), "token", secret, nil, env)
+			return err
+		}
+		before := len(runs(t, log))
+		t.Setenv("SOPS_FAKE_AGE_KEY", "AGE-SECRET-KEY-ONE")
+		for range 2 {
+			if err := decrypt("AGE-SECRET-KEY-ONE"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if n := len(runs(t, log)) - before; n != 1 {
+			t.Fatalf("sops ran %d times; an unchanged key and file decrypt once", n)
+		}
+		if err := decrypt("AGE-SECRET-KEY-TWO"); err == nil {
+			t.Fatal("a changed key was served from the cache instead of decrypting again")
+		}
+		if n := len(runs(t, log)) - before; n != 2 {
+			t.Fatalf("sops ran %d times, want 2", n)
+		}
+	})
 }

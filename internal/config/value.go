@@ -293,13 +293,31 @@ func (h ResolvedHarness) Resolve(
 	return args, environment, nil
 }
 
-// Variable returns the caller environment variable a value needs at launch, or "".
+// Variable returns the caller environment variable a value needs at launch, or "". A sops
+// secret needs the variable its age key does.
 func (c *Config) Variable(v Value) string {
-	if v.Env != "" {
-		return v.Env
-	}
-	if s, ok := c.Secrets[v.Secret]; ok && v.Secret != "" && s.Kind == "environment" {
-		return s.Variable
+	return Variable(c.Secrets, v)
+}
+
+// Variable returns the caller environment variable a value needs at launch, given the secrets
+// its !secret references resolve against, or "".
+func Variable(secrets map[ID]Secret, v Value) string {
+	// Validation rejects age_key cycles; the bound keeps an unvalidated configuration finite.
+	for range len(secrets) + 1 {
+		if v.Env != "" {
+			return v.Env
+		}
+		s, ok := secrets[v.Secret]
+		switch {
+		case !ok || v.Secret == "":
+			return ""
+		case s.Kind == "environment":
+			return s.Variable
+		case s.Kind == "sops":
+			v = s.AgeKey
+		default:
+			return ""
+		}
 	}
 	return ""
 }
@@ -321,8 +339,9 @@ var taggedFields = func() [][]string {
 		{"harnesses", "*", "add", "mcp", "#"},
 		{"harnesses", "*", "remove", "mcp", "#"},
 	}
+	out = append(out, []string{"secrets", "*", "age_key"})
 	for _, server := range servers {
-		for _, field := range [][]string{{"environment", "*"}, {"headers", "*"}, {"auth"}} {
+		for _, field := range [][]string{{"environment", "*"}, {"headers", "*"}, {"auth"}, {"auth", "age_key"}} {
 			out = append(out, slices.Concat(server, field))
 		}
 	}
@@ -347,7 +366,7 @@ func checkTags(file string, node *yaml.Node, path []string) error {
 		}
 		if !slices.ContainsFunc(taggedFields, func(pattern []string) bool { return matchPath(pattern, path) }) {
 			return fmt.Errorf(
-				"%s:%d: %s is allowed only in harness env and args and mcp environment, headers, and auth",
+				"%s:%d: %s is allowed only in harness env and args, mcp environment, headers, and auth, and sops age_key",
 				file,
 				node.Line,
 				tag,

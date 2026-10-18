@@ -1,7 +1,9 @@
 // Command fakesops stands in for sops in tests. It reads "encrypted" files as plain JSON and
 // implements sops decrypt [--extract PATH] [--] FILE. A file whose content starts with FAIL
 // fails like a wrong key. Each run appends its arguments to $SOPS_FAKE_LOG when set, and the
-// environment variable SOPS_FAKE_FORBIDDEN names a variable that must not reach sops.
+// environment variable SOPS_FAKE_FORBIDDEN names a variable that must not reach sops. When
+// SOPS_FAKE_AGE_KEY is set, decryption fails unless SOPS_AGE_KEY holds exactly that key and
+// neither SOPS_AGE_KEY_FILE nor SOPS_AGE_KEY_CMD is set.
 package main
 
 import (
@@ -22,6 +24,16 @@ func main() {
 	if name := os.Getenv("SOPS_FAKE_FORBIDDEN"); name != "" {
 		if _, leaked := os.LookupEnv(name); leaked {
 			fail("environment variable " + name + " leaked into sops")
+		}
+	}
+	if want := os.Getenv("SOPS_FAKE_AGE_KEY"); want != "" {
+		if os.Getenv("SOPS_AGE_KEY") != want {
+			fail("Error getting data key: 0 successful groups required, got 0\nGroup 0: FAILED: wrong age key")
+		}
+		for _, name := range []string{"SOPS_AGE_KEY_FILE", "SOPS_AGE_KEY_CMD"} {
+			if _, set := os.LookupEnv(name); set {
+				fail(name + " reached sops alongside SOPS_AGE_KEY")
+			}
 		}
 	}
 	args := os.Args[1:]

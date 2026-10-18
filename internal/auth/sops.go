@@ -2,10 +2,13 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -26,16 +29,29 @@ var sopsEnvironmentPrefixes = []string{
 	"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
 }
 
-func sopsEnvironment() []string {
+// sopsAgeVariables are the ways sops finds an age identity besides its default key file; a
+// configured age key replaces all of them.
+var sopsAgeVariables = []string{"SOPS_AGE_KEY", "SOPS_AGE_KEY_FILE", "SOPS_AGE_KEY_CMD"}
+
+// sopsEnvironment passes ageKey, when set, as SOPS_AGE_KEY instead of the inherited age
+// variables.
+func sopsEnvironment(ageKey string) []string {
 	env := SystemEnvironment()
 	for _, pair := range os.Environ() {
 		name, _, _ := strings.Cut(pair, "=")
+		if ageKey != "" &&
+			slices.ContainsFunc(sopsAgeVariables, func(v string) bool { return strings.EqualFold(v, name) }) {
+			continue
+		}
 		for _, prefix := range sopsEnvironmentPrefixes {
 			if strings.HasPrefix(name, prefix) {
 				env = append(env, pair)
 				break
 			}
 		}
+	}
+	if ageKey != "" {
+		env = append(env, "SOPS_AGE_KEY="+ageKey)
 	}
 	return env
 }
@@ -46,19 +62,40 @@ type sopsEntry struct {
 	value    string
 }
 
-// sopsCache keeps decrypted values in memory, keyed by file and key, until the file's
-// modification time or size changes. Values are never written to disk.
+// sopsCache keeps decrypted values in memory, keyed by file, key, and a hash of the age key,
+// until the file's modification time or size changes. Values are never written to disk.
 var sopsCache = struct {
 	sync.Mutex
 	entries map[string]sopsEntry
 }{entries: map[string]sopsEntry{}}
 
-func sopsValue(ctx context.Context, id config.ID, s config.Secret) (string, error) {
+// sopsValue decrypts sops secret s, named id. env and secret resolve its age key.
+func sopsValue(
+	ctx context.Context,
+	id config.ID,
+	s config.Secret,
+	env func(string) (string, bool),
+	secret func(config.ID) (string, error),
+) (string, error) {
 	info, err := os.Stat(s.File)
 	if err != nil {
 		return "", fmt.Errorf("secret %s: cannot read sops file %s", id, s.File)
 	}
-	cacheKey := s.File + "\x00" + strings.Join(s.Key, "\x00")
+	ageKey := ""
+	if s.AgeKey.Tagged() {
+		ageKey, err = s.AgeKey.Resolve("secret "+string(id)+" age_key", env, secret)
+		if err != nil {
+			return "", err
+		}
+		ageKey = strings.TrimSpace(ageKey)
+		if ageKey == "" {
+			return "", fmt.Errorf("secret %s: age_key %s is empty", id, s.AgeKey)
+		}
+	}
+	// The age key is part of the entry's identity, so a changed key decrypts again rather than
+	// serving what the previous key could read; only its hash is kept.
+	ageHash := sha256.Sum256([]byte(ageKey))
+	cacheKey := s.File + "\x00" + strings.Join(s.Key, "\x00") + "\x00" + hex.EncodeToString(ageHash[:])
 	sopsCache.Lock()
 	entry, ok := sopsCache.entries[cacheKey]
 	sopsCache.Unlock()
@@ -76,7 +113,7 @@ func sopsValue(ctx context.Context, id config.ID, s config.Secret) (string, erro
 	}
 	// "--" keeps a file name starting with a dash from reading as a flag.
 	command = append(command, "--", s.File)
-	out, stderr, err := runBounded(ctx, command, sopsEnvironment(), filepath.Dir(s.File))
+	out, stderr, err := runBounded(ctx, command, sopsEnvironment(ageKey), filepath.Dir(s.File))
 	if err != nil {
 		reason := firstLine(stderr)
 		if reason == "" {

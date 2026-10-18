@@ -759,8 +759,16 @@ func (m *merger) file(path string) (string, error) {
 	return relative(m.base, expanded), nil
 }
 
-// placeSecret anchors a sops secret's file to this file, like a !file path.
+// placeSecret anchors a sops secret's file to this file, like a !file path, and places its
+// age key like any injected value.
 func (m *merger) placeSecret(secret *Secret) error {
+	if secret.AgeKey != (Value{}) {
+		ageKey, err := m.place(secret.AgeKey)
+		if err != nil {
+			return err
+		}
+		secret.AgeKey = ageKey
+	}
 	if secret.File == "" {
 		return nil
 	}
@@ -1105,6 +1113,9 @@ func (c *Config) Validate() error {
 		if secret.Kind != "sops" && (secret.File != "" || len(secret.Key) > 0) {
 			return fmt.Errorf("%s: %s: file and key apply only to sops secrets", at, label)
 		}
+		if secret.Kind != "sops" && secret.AgeKey != (Value{}) {
+			return fmt.Errorf("%s: %s: age_key applies only to sops secrets", at, label)
+		}
 		switch secret.Kind {
 		case "environment", "daemon_environment":
 			if !validEnvironment.MatchString(secret.Variable) {
@@ -1127,6 +1138,15 @@ func (c *Config) Validate() error {
 			}
 			if !info.Mode().IsRegular() {
 				return fmt.Errorf("%s: %s: sops file %s is not a regular file", at, label, secret.File)
+			}
+			// A key written into configuration sits next to the file it decrypts, which
+			// defeats encrypting it.
+			if secret.AgeKey != (Value{}) && !secret.AgeKey.Tagged() {
+				return fmt.Errorf(
+					"%s: %s: age_key must be !secret ID, !env NAME, or !file PATH, not a literal key",
+					at,
+					label,
+				)
 			}
 		case "oauth":
 			if secret.Issuer != "" {
@@ -1172,6 +1192,36 @@ func (c *Config) Validate() error {
 			)
 		}
 		return nil
+	}
+	for _, id := range sortedKeys(c.Secrets) {
+		secret := c.Secrets[id]
+		if !secret.AgeKey.Tagged() {
+			continue
+		}
+		target := "secret " + string(id) + " age_key"
+		if secret.Owner != "" {
+			target = "MCP server " + string(secret.Owner) + " auth age_key"
+		}
+		if err := checkSecret(injection(target, secret.AgeKey)); err != nil {
+			return err
+		}
+		// A sops secret whose age key decrypts through itself would never resolve.
+		chain := []string{string(id)}
+		for next := secret.AgeKey.Secret; next != ""; next = c.Secrets[next].AgeKey.Secret {
+			chain = append(chain, string(next))
+			if next == id {
+				return fmt.Errorf(
+					"%s: %s: age_key forms a cycle: %s",
+					locate(secret.AgeKey.Source),
+					target,
+					strings.Join(chain, " -> "),
+				)
+			}
+			if len(chain) > len(c.Secrets) {
+				// The chain loops without returning here; that loop reports itself.
+				break
+			}
+		}
 	}
 	oauthOrigins := map[ID]struct {
 		id     ID

@@ -99,13 +99,20 @@ func (m *Manager) credentialLock(k string) *sync.Mutex {
 	return lock
 }
 
+// Value resolves secret s, named id. secrets resolves the !secret reference of a sops secret's
+// age key, and inputs holds the caller's environment.
 func (m *Manager) Value(
 	ctx context.Context,
 	id config.ID,
 	s config.Secret,
+	secrets map[config.ID]config.Secret,
 	inputs map[string]string,
 	origin string,
 ) (string, error) {
+	env := func(name string) (string, bool) {
+		value, ok := inputs[name]
+		return value, ok
+	}
 	switch s.Kind {
 	case "daemon_environment":
 		if value := os.Getenv(s.Variable); value != "" {
@@ -114,19 +121,22 @@ func (m *Manager) Value(
 		return "", fmt.Errorf("secret %s: daemon environment variable %s is not set", id, s.Variable)
 	case "oauth":
 		return m.oauthValue(ctx, id, s, origin)
+	case "sops":
+		return sopsValue(ctx, id, s, env, func(ref config.ID) (string, error) {
+			return m.Value(ctx, ref, secrets[ref], secrets, inputs, "")
+		})
 	}
-	return LocalValue(ctx, id, s, func(name string) (string, bool) {
-		value, ok := inputs[name]
-		return value, ok
-	})
+	return LocalValue(ctx, id, s, secrets, env)
 }
 
 // LocalValue resolves secrets that need no daemon state, for commands that run without the
-// daemon. env looks up the caller's environment.
+// daemon. secrets resolves the !secret reference of a sops secret's age key, and env looks up
+// the caller's environment.
 func LocalValue(
 	ctx context.Context,
 	id config.ID,
 	s config.Secret,
+	secrets map[config.ID]config.Secret,
 	env func(string) (string, bool),
 ) (string, error) {
 	switch s.Kind {
@@ -138,7 +148,9 @@ func LocalValue(
 	case "command":
 		return runHelper(ctx, id, s.Command)
 	case "sops":
-		return sopsValue(ctx, id, s)
+		return sopsValue(ctx, id, s, env, func(ref config.ID) (string, error) {
+			return LocalValue(ctx, ref, secrets[ref], secrets, env)
+		})
 	case "keychain":
 		value, err := keyring.Get("agx", key(id, s))
 		if err != nil {
@@ -426,7 +438,9 @@ func (m *Manager) Logout(id config.ID, a config.Secret) error {
 	return nil
 }
 
-func (m *Manager) Status(id config.ID, a config.Secret) Status {
+// Status reports whether secret a, named id, is usable; secrets resolves the !secret reference
+// of a sops secret's age key.
+func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]config.Secret) Status {
 	s := Status{ID: id, State: "unconfigured"}
 	k := key(id, a)
 	m.mu.Lock()
@@ -457,10 +471,16 @@ func (m *Manager) Status(id config.ID, a config.Secret) Status {
 	case "command":
 		s.State = "ready"
 	case "sops":
+		// An age key from the caller's environment exists only at launch, like an
+		// environment secret.
+		if config.Variable(secrets, a.AgeKey) != "" {
+			s.State = "unconfigured"
+			break
+		}
 		// Decrypting proves the key is available; the cache makes repeated checks cheap.
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		if _, err := sopsValue(ctx, id, a); err != nil {
+		if _, err := m.Value(ctx, id, a, secrets, nil, ""); err != nil {
 			s.State = "unavailable"
 			s.Problem = err.Error()
 		} else {

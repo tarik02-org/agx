@@ -141,7 +141,7 @@ func TestLoginAndRefresh(t *testing.T) {
 		t.Fatalf("a second login did not join the pending one: %v", err)
 	}
 	manager.Release(joined)
-	if state := manager.Status("fixture", secret).State; state != "pending" {
+	if state := manager.Status("fixture", secret, nil).State; state != "pending" {
 		t.Fatalf("releasing one waiter ended the shared login: %s", state)
 	}
 
@@ -174,7 +174,7 @@ func TestLoginAndRefresh(t *testing.T) {
 	values := make([]string, 12)
 	for i := range values {
 		wg.Go(func() {
-			value, err := manager.Value(ctx, "fixture", secret, nil, p.URL)
+			value, err := manager.Value(ctx, "fixture", secret, nil, nil, p.URL)
 			if err != nil {
 				t.Error(err)
 			}
@@ -190,17 +190,17 @@ func TestLoginAndRefresh(t *testing.T) {
 	if n := p.refreshes.Load(); n != 1 {
 		t.Fatalf("%d refreshes, want one serialized refresh", n)
 	}
-	if _, err := manager.Value(ctx, "fixture", secret, nil, "https://another-origin.invalid"); err == nil {
+	if _, err := manager.Value(ctx, "fixture", secret, nil, nil, "https://another-origin.invalid"); err == nil {
 		t.Fatal("a credential crossed server origins")
 	}
 
 	if err := manager.Logout("fixture", secret); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := manager.Value(ctx, "fixture", secret, nil, p.URL); !errors.Is(err, auth.ErrNoCredential) {
+	if _, err := manager.Value(ctx, "fixture", secret, nil, nil, p.URL); !errors.Is(err, auth.ErrNoCredential) {
 		t.Fatalf("after logout: %v", err)
 	}
-	if state := manager.Status("fixture", secret).State; state != "needs_login" {
+	if state := manager.Status("fixture", secret, nil).State; state != "needs_login" {
 		t.Fatalf("status after logout = %s", state)
 	}
 	p.check(t)
@@ -213,7 +213,15 @@ func TestKeychainWithoutFallback(t *testing.T) {
 	if err := manager.Set("token", secret, []byte("value\n")); err != nil {
 		t.Fatal(err)
 	}
-	if value, err := manager.Value(context.Background(), "token", secret, nil, ""); err != nil || value != "value" {
+	if value, err := manager.Value(
+		context.Background(),
+		"token",
+		secret,
+		nil,
+		nil,
+		"",
+	); err != nil ||
+		value != "value" {
 		t.Fatalf("Value = %q, %v", value, err)
 	}
 	// Inline and top-level secrets with one ID use separate items.
@@ -221,6 +229,7 @@ func TestKeychainWithoutFallback(t *testing.T) {
 		context.Background(),
 		"token",
 		config.Secret{Kind: "keychain", Owner: "token"},
+		nil,
 		nil,
 		"",
 	); err == nil {
@@ -271,10 +280,10 @@ func TestOnDemandLogin(t *testing.T) {
 	implicit := config.Secret{Kind: "oauth", Owner: "site", Implicit: true}
 	mcpURL := server.URL + "/mcp"
 
-	if _, err := manager.Value(ctx, "site", implicit, nil, server.URL); !errors.Is(err, auth.ErrNoCredential) {
+	if _, err := manager.Value(ctx, "site", implicit, nil, nil, server.URL); !errors.Is(err, auth.ErrNoCredential) {
 		t.Fatalf("missing credential: %v", err)
 	}
-	if state := manager.Status("site", implicit).State; state != "unconfigured" {
+	if state := manager.Status("site", implicit, nil).State; state != "unconfigured" {
 		t.Fatalf("on-demand OAuth needs a login before the server asked: %s", state)
 	}
 	if err := manager.RequireLogin(ctx, "site", implicit, mcpURL, `Bearer error="invalid_token"`); err == nil {
@@ -300,7 +309,7 @@ func TestOnDemandLogin(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if state := manager.Status("site", implicit).State; state != "needs_login" {
+	if state := manager.Status("site", implicit, nil).State; state != "needs_login" {
 		t.Fatalf("the server's login demand is not visible: %s", state)
 	}
 
@@ -344,17 +353,34 @@ func TestOnDemandLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager.Release(attempt)
-	if value, err := manager.Value(ctx, "site", implicit, nil, server.URL); err != nil || value != "on-demand-token" {
+	if value, err := manager.Value(
+		ctx,
+		"site",
+		implicit,
+		nil,
+		nil,
+		server.URL,
+	); err != nil ||
+		value != "on-demand-token" {
 		t.Fatalf("Value = %q, %v", value, err)
 	}
 	explicit := config.Secret{Kind: "oauth", Owner: "site"}
-	if value, err := manager.Value(ctx, "site", explicit, nil, server.URL); err != nil || value != "on-demand-token" {
+	if value, err := manager.Value(
+		ctx,
+		"site",
+		explicit,
+		nil,
+		nil,
+		server.URL,
+	); err != nil ||
+		value != "on-demand-token" {
 		t.Fatalf("auth: oauth does not reuse the on-demand login: %q, %v", value, err)
 	}
 	if _, err := manager.Value(
 		ctx,
 		"site",
 		config.Secret{Kind: "oauth"},
+		nil,
 		nil,
 		server.URL,
 	); !errors.Is(

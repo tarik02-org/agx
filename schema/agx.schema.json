@@ -820,6 +820,10 @@
           "$ref": "#/$defs/SecretKey",
           "description": "sops: dotted key path or list of segments to extract; omit to read the whole file."
         },
+        "age_key": {
+          "$ref": "#/$defs/Value",
+          "description": "sops: age identity passed to sops as SOPS_AGE_KEY: !secret ID, !env NAME, or !file PATH."
+        },
         "issuer": {
           "type": "string",
           "description": "OAuth issuer URL; discovered when omitted."

@@ -108,7 +108,7 @@ func (s *Server) PrepareLaunch(
 		)
 	}
 	harnessArgs, harnessEnv, err := harness.Resolve(mode, env, func(id config.ID) (string, error) {
-		return s.manager.Value(ctx, id, snapshot.Config.Secrets[id], inputs, "")
+		return s.manager.Value(ctx, id, snapshot.Config.Secrets[id], snapshot.Config.Secrets, inputs, "")
 	})
 	if err != nil {
 		return nil, rpcError(connect.CodeFailedPrecondition, err.Error())

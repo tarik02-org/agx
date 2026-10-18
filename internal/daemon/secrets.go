@@ -91,7 +91,7 @@ func (s *Server) GetSecretStatus(
 	}
 	out := &v1.GetSecretStatusResponse{}
 	for id, secret := range secrets {
-		status := s.manager.Status(id, secret)
+		status := s.manager.Status(id, secret, c.Secrets)
 		state := v1.SecretStatus_STATE_UNCONFIGURED
 		switch status.State {
 		case "pending":

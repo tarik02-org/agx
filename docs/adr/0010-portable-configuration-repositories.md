@@ -65,3 +65,15 @@ Home-relative paths are covered by [ADR 0011](0011-straightforward-configuration
 Rejected: linking the sops Go library, which pulls cloud SDKs into the binary;
 an agx-specific age format, which duplicates sops; `${VAR}` interpolation, which
 starts a templating language (`!env` covers caller-supplied values).
+
+## Addendum: age key from a secret
+
+A sops secret may set `age_key`, an injected value (`!secret`, `!env`, `!file`)
+that agx passes to that sops run as `SOPS_AGE_KEY`, replacing inherited
+`SOPS_AGE_KEY`, `SOPS_AGE_KEY_FILE`, and `SOPS_AGE_KEY_CMD`. Keeping the identity
+in a `keychain` secret spares a daemon started by a service manager a key file or
+variable. Literal keys are rejected: a key beside the file it decrypts defeats
+encryption. Validation rejects `oauth` age keys and chains of sops secrets whose
+age keys lead back to themselves. The decrypted-value cache is keyed by a hash of
+the age key too, so changing the key decrypts again; the key itself stays in
+memory only.

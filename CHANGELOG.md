@@ -4,6 +4,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## Unreleased
 
+### Added
+
+- `sops` secrets take an optional `age_key` (`!secret`, `!env`, or `!file`) passed
+  to sops as `SOPS_AGE_KEY`, so the age identity can live in the OS keychain.
+
 ## 0.1.0 - 2026-10-18
 
 First release.

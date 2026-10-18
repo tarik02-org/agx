@@ -471,7 +471,8 @@ secrets:
 - `oauth`: uses discovery, optional public-client registration, PKCE, and the OS
   keychain. Optional fields: `issuer`, `client_id`, `resource`, and `scopes`.
 - `sops`: decrypts one value from a [sops](https://getsops.io)-encrypted `file`
-  with the `sops` CLI (3.9 or later). Optional `key`; see [sops secrets](#sops-secrets).
+  with the `sops` CLI (3.9 or later). Optional `key` and `age_key`; see
+  [sops secrets](#sops-secrets).
 
 OAuth supports public clients using authorization code and refresh tokens.
 `agx secret login <id>` opens the authorization URL in the browser and waits
@@ -526,9 +527,37 @@ launches and MCP servers these come from the daemon's environment, so a daemon
 started by a service manager needs, for example, `SOPS_AGE_KEY_FILE` there or the
 age key at the default location.
 
+#### Age key from a secret
+
+`age_key` gives sops its age identity from an injected value instead of the
+environment: `!secret ID`, `!env NAME`, or `!file PATH`. A literal key is
+rejected, since a key written beside the file it decrypts defeats encrypting it.
+
+```yaml
+secrets:
+  age: {kind: keychain}   # agx secret set age --stdin < ~/.config/sops/age/keys.txt
+  github: {kind: sops, file: ./secrets.yaml, key: github.token, age_key: !secret age}
+```
+
+agx resolves the value like any other injected value and passes it to that sops
+run as `SOPS_AGE_KEY`, dropping inherited `SOPS_AGE_KEY`, `SOPS_AGE_KEY_FILE`, and
+`SOPS_AGE_KEY_CMD`. On macOS a `keychain` age key keeps the identity in the login
+keychain, so the daemon needs no key file and no variable from its service
+manager. The referenced secret cannot be `oauth` or another server's inline auth,
+and a chain of sops secrets whose age keys lead back to the first fails
+validation. An age key from the caller's environment (`!env`, or an
+`environment` secret) resolves at launch, so `agx secret status` shows the sops
+secret `unconfigured`; one that cannot resolve shows it `unavailable` with a
+reason naming the age key's secret.
+
+To have sops run a command for the key instead, leave `age_key` out and set
+`SOPS_AGE_KEY_CMD` in the daemon's environment, for example
+`SOPS_AGE_KEY_CMD='security find-generic-password -s sops-age -w'`.
+
 The file must exist when the configuration is validated; package files stay
-inside the package. Decrypted values are cached in memory by file and key until
-the file's modification time or size changes, and are never written to disk. A
+inside the package. Decrypted values are cached in memory by file, key, and a
+hash of the age key until the file's modification time or size changes, so a
+changed age key decrypts again; values and keys are never written to disk. A
 missing `sops` executable, a decryption failure, or a missing key marks dependent
 MCP servers `needs-auth` with sops's first error line, shows the secret as
 `unavailable` in `agx secret status` with that reason, and fails a launch whose

@@ -132,7 +132,7 @@ func (e *Endpoint) resolve(
 			return value, ok
 		},
 		func(id config.ID) (string, error) {
-			value, err := e.auth.Value(ctx, id, e.secrets[id], inputs, "")
+			value, err := e.auth.Value(ctx, id, e.secrets[id], e.secrets, inputs, "")
 			if err != nil {
 				return "", needsAuth{err}
 			}
@@ -761,7 +761,7 @@ func (e *Endpoint) remoteCredentials(
 	credential := ""
 	if id := e.definition.Auth.Secret; id != "" {
 		secret := e.secrets[id]
-		value, err := e.auth.Value(ctx, id, secret, inputs, origin)
+		value, err := e.auth.Value(ctx, id, secret, e.secrets, inputs, origin)
 		switch {
 		case err == nil:
 			credential = value
