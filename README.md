@@ -23,6 +23,10 @@ From source, with Go 1.26 or newer: `go install github.com/tarik02-org/agx/cmd/a
 Release builds set the version reported by `agx --version`, which wrappers and
 the daemon compare: `-ldflags "-X github.com/tarik02-org/agx/internal/daemon.Version=0.1.0"`.
 
+Shell completion for zsh, bash, fish, and PowerShell completes configured IDs,
+such as `agx mcp remove <TAB>`; load it with `source <(agx completion zsh)`
+([setup](docs/cli.md#shell-completion)).
+
 Git is required for Git package sources. Install the native harnesses
 separately; agx does not download or update them.
 

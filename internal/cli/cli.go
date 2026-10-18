@@ -28,6 +28,11 @@ import (
 )
 
 func Main() int {
+	return run(os.Args, os.Stdout)
+}
+
+// run executes agx for its command line; stdout receives cobra's output, such as completions.
+func run(osArgs []string, stdout io.Writer) int {
 	paths, err := platform.DefaultPaths()
 	if err != nil {
 		return exitCode(err)
@@ -39,7 +44,7 @@ func Main() int {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.SetOut(os.Stdout)
+	root.SetOut(stdout)
 	root.SetErr(os.Stderr)
 	root.PersistentFlags().StringVar(&paths.Config, "config", paths.Config, "root configuration file")
 	root.PersistentFlags().StringVar(&paths.Cache, "cache", paths.Cache, "immutable package and artifact cache")
@@ -228,6 +233,8 @@ func Main() int {
 		}
 	}
 	wrapArgs(root)
+	completion := &completer{paths: &paths, builtins: &builtins}
+	completion.registerCompletions(root)
 	root.InitDefaultHelpCmd()
 	root.InitDefaultCompletionCmd()
 	reserved := []string{root.Name()}
@@ -236,29 +243,51 @@ func Main() int {
 		reserved = append(reserved, cmd.Aliases...)
 	}
 	builtins = registry.Builtins(reserved)
-	if name := invokedName(os.Args[0]); name != root.Name() {
+	if name := invokedName(osArgs[0]); name != root.Name() {
 		harnesses = loadHarnesses(paths.Config, builtins)
 		if slices.Contains(harnesses.config.HarnessNames(), name) {
-			return exitCode(runHarness(context.Background(), paths, registry, harnesses, name, os.Args[1:], ""))
+			return exitCode(runHarness(context.Background(), paths, registry, harnesses, name, osArgs[1:], ""))
 		}
 	}
-	// Harness commands disable flag parsing, so leading root flags would otherwise leak into native arguments.
-	args := os.Args[1:]
-	for len(args) > 0 && strings.HasPrefix(args[0], "--") {
-		name, value, inline := strings.Cut(strings.TrimPrefix(args[0], "--"), "=")
+	args := osArgs[1:]
+	completing := len(args) > 0 && (args[0] == cobra.ShellCompRequestCmd || args[0] == cobra.ShellCompNoDescRequestCmd)
+	words := args
+	if completing {
+		words = args[1:]
+	}
+	// Harness commands disable flag parsing, so leading root flags would otherwise leak into native
+	// arguments. They also select the configuration that names the harness commands, completion included.
+	for len(words) > 0 && strings.HasPrefix(words[0], "--") {
+		name, value, inline := strings.Cut(strings.TrimPrefix(words[0], "--"), "=")
 		if name != "config" && name != "cache" && name != "color" {
 			break
 		}
-		args = args[1:]
+		rest := words[1:]
 		if !inline {
-			if len(args) == 0 {
+			if len(rest) == 0 {
+				if completing {
+					break
+				}
 				return exitCode(&usageError{fmt.Errorf("flag needs an argument: --%s", name)})
 			}
-			value, args = args[0], args[1:]
+			value, rest = rest[0], rest[1:]
+		}
+		// The last word of a completion request is the one being completed; cobra completes it.
+		if completing && len(rest) == 0 {
+			break
 		}
 		if err := root.PersistentFlags().Set(name, value); err != nil {
+			if completing {
+				break
+			}
 			return exitCode(&usageError{err})
 		}
+		words = rest
+	}
+	if completing {
+		args = append([]string{args[0]}, words...)
+	} else {
+		args = words
 	}
 	ui.Configure(color)
 	configPath, err := filepath.Abs(paths.Config)
@@ -278,6 +307,8 @@ func Main() int {
 				Short:              short,
 				GroupID:            "harness",
 				DisableFlagParsing: true,
+				// Native arguments are the harness's own; the shell completes them as files.
+				ValidArgsFunction: files,
 				RunE: func(cmd *cobra.Command, args []string) error {
 					return runHarness(cmd.Context(), paths, registry, harnesses, name, args, "")
 				},
@@ -286,7 +317,6 @@ func Main() int {
 	}
 	root.SetArgs(args)
 	// Cobra adds its completion commands only during Execute, so Find cannot know them yet.
-	completing := len(args) > 0 && (args[0] == cobra.ShellCompRequestCmd || args[0] == cobra.ShellCompNoDescRequestCmd)
 	if _, _, err := root.Find(args); err != nil && !completing {
 		if harnesses.err != nil {
 			err = fmt.Errorf("%w (harness definitions unavailable: %w)", err, harnesses.err)

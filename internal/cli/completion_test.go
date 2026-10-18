@@ -1,0 +1,184 @@
+package cli
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/spf13/cobra"
+)
+
+const completionConfig = `
+instructions:
+  conventions:
+    text: Use pnpm.
+mcp:
+  github:
+    url: https://api.githubcopilot.com/mcp
+  fs:
+    command: [npx, server-filesystem]
+  docs:
+    url: https://docs.example/mcp
+    auth: none
+secrets:
+  token:
+    kind: keychain
+bundles:
+  base:
+    mcp: [fs]
+harnesses:
+  codex-work:
+    base: codex
+`
+
+// isolate points every agx path and home directory into a temporary directory, with the
+// configuration given, and returns the configuration path.
+func isolate(t *testing.T, configuration string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config", "agx.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(configuration), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, value := range map[string]string{
+		"AGX_CONFIG":      path,
+		"AGX_CACHE":       filepath.Join(dir, "cache"),
+		"AGX_STATE":       filepath.Join(dir, "state"),
+		"HOME":            filepath.Join(dir, "home"),
+		"XDG_CONFIG_HOME": filepath.Join(dir, "home", ".config"),
+		"XDG_CACHE_HOME":  filepath.Join(dir, "home", ".cache"),
+		"XDG_STATE_HOME":  filepath.Join(dir, "home", ".local", "state"),
+	} {
+		t.Setenv(name, value)
+	}
+	return path
+}
+
+// complete runs agx __complete with args and returns the candidates and the directive.
+func complete(t *testing.T, args ...string) ([]string, cobra.ShellCompDirective) {
+	t.Helper()
+	var out bytes.Buffer
+	if code := run(append([]string{"agx", cobra.ShellCompRequestCmd}, args...), &out); code != 0 {
+		t.Fatalf("agx __complete %v exited %d", args, code)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	last := lines[len(lines)-1]
+	directive, err := strconv.Atoi(strings.TrimPrefix(last, ":"))
+	if err != nil || !strings.HasPrefix(last, ":") {
+		t.Fatalf("no directive in %q", out.String())
+	}
+	return lines[:len(lines)-1], cobra.ShellCompDirective(directive)
+}
+
+func TestCompletion(t *testing.T) {
+	isolate(t, completionConfig)
+	for _, test := range []struct {
+		args      []string
+		want      []string
+		directive cobra.ShellCompDirective
+	}{
+		{
+			[]string{"mcp", "remove", ""},
+			[]string{"docs\thttps://docs.example/mcp", "fs\tnpx server-filesystem", "github\thttps://api.githubcopilot.com/mcp"},
+			cobra.ShellCompDirectiveNoFileComp,
+		},
+		{[]string{"mcp", "remove", "fs", ""}, []string{}, cobra.ShellCompDirectiveNoFileComp},
+		{
+			[]string{"mcp", "login", ""},
+			[]string{"github\thttps://api.githubcopilot.com/mcp"},
+			cobra.ShellCompDirectiveNoFileComp,
+		},
+		{
+			[]string{"use", "--kind", "mcp", ""},
+			[]string{"docs\tMCP server", "fs\tMCP server", "github\tMCP server"},
+			cobra.ShellCompDirectiveNoFileComp,
+		},
+		{[]string{"unuse", "b"}, []string{"base\tbundle"}, cobra.ShellCompDirectiveNoFileComp},
+		{[]string{"instructions", "remove", ""}, []string{"conventions\ttext"}, cobra.ShellCompDirectiveNoFileComp},
+		{[]string{"secret", "set", ""}, []string{"token\tkeychain"}, cobra.ShellCompDirectiveNoFileComp},
+		{[]string{"secret", "login", ""}, []string{"github\toauth, on demand"}, cobra.ShellCompDirectiveNoFileComp},
+		{[]string{"harness", "remove", ""}, []string{"codex-work\tbase codex"}, cobra.ShellCompDirectiveNoFileComp},
+		{[]string{"run", "codex-"}, []string{"codex-work\tbase codex"}, cobra.ShellCompDirectiveNoFileComp},
+		{[]string{"run", "codex-work", ""}, []string{}, cobra.ShellCompDirectiveDefault},
+		{[]string{"codex-work", ""}, []string{}, cobra.ShellCompDirectiveDefault},
+		{
+			[]string{"use", "fs", "--harness", "codex,codex-"},
+			[]string{"codex,codex-work\tbase codex"},
+			cobra.ShellCompDirectiveNoFileComp,
+		},
+		{[]string{"explain", "--harness", "codex-"}, []string{"codex-work\tbase codex"}, cobra.ShellCompDirectiveNoFileComp},
+		{
+			[]string{"use", "fs", "--scope", ""},
+			[]string{"user\teverywhere", "here\tthis directory"},
+			cobra.ShellCompDirectiveNoFileComp,
+		},
+		{[]string{"use", "fs", "--scope", "./"}, []string{}, cobra.ShellCompDirectiveFilterDirs},
+		{[]string{"use", "fs", "--file", ""}, []string{"yaml", "yml"}, cobra.ShellCompDirectiveFilterFileExt},
+		{[]string{"shims", "list", "--dir", ""}, []string{}, cobra.ShellCompDirectiveFilterDirs},
+		{[]string{"skill", "add", ""}, []string{}, cobra.ShellCompDirectiveDefault},
+		{[]string{"sessions", ""}, []string{}, cobra.ShellCompDirectiveNoFileComp},
+		// No daemon runs, and completion must not start one.
+		{[]string{"launch", "show", ""}, []string{}, cobra.ShellCompDirectiveNoFileComp},
+	} {
+		t.Run(strings.Join(test.args, " "), func(t *testing.T) {
+			got, directive := complete(t, test.args...)
+			if !slices.Equal(got, test.want) {
+				t.Errorf("candidates = %q, want %q", got, test.want)
+			}
+			if directive != test.directive {
+				t.Errorf("directive = %d, want %d", directive, test.directive)
+			}
+		})
+	}
+}
+
+func TestCompletionRootFlags(t *testing.T) {
+	isolate(t, "")
+	other := filepath.Join(t.TempDir(), "other.yaml")
+	if err := os.WriteFile(other, []byte(completionConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"--config", other, "mcp", "login", ""},
+		{"--config=" + other, "mcp", "login", ""},
+		{"mcp", "login", "--config", other, ""},
+	} {
+		if got, _ := complete(t, args...); !slices.Equal(got, []string{"github\thttps://api.githubcopilot.com/mcp"}) {
+			t.Errorf("%q: candidates = %q", args, got)
+		}
+	}
+	// The harness command exists only in the configuration --config names.
+	if _, directive := complete(t, "--config", other, "codex-work", ""); directive != cobra.ShellCompDirectiveDefault {
+		t.Errorf("harness command from --config: directive = %d", directive)
+	}
+	if got, directive := complete(
+		t,
+		"--config",
+		"",
+	); len(got) != 2 ||
+		directive != cobra.ShellCompDirectiveFilterFileExt {
+		t.Errorf("--config value: %q, %d", got, directive)
+	}
+}
+
+func TestCompletionBrokenConfig(t *testing.T) {
+	isolate(t, "mcp: [unclosed\n")
+	for _, args := range [][]string{
+		{"mcp", "remove", ""},
+		{"use", ""},
+		{"run", ""},
+		{"secret", "login", ""},
+	} {
+		got, directive := complete(t, args...)
+		if len(got) != 0 || directive != cobra.ShellCompDirectiveNoFileComp {
+			t.Errorf("%q: candidates = %q, directive = %d", args, got, directive)
+		}
+	}
+}

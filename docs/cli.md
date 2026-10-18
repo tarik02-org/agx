@@ -307,6 +307,29 @@ server or on-demand OAuth, its state, and its expiry. Logout clears the secret's
 stored credentials and closes upstream sessions of MCP servers using it. It does
 not revoke unrelated launches or secrets.
 
+## Shell completion
+
+`agx completion <shell>` prints a completion script for zsh, bash, fish, or
+PowerShell. Load it once in the current shell, or add the line to the shell's
+startup file:
+
+```sh
+source <(agx completion zsh)            # zsh: ~/.zshrc, after compinit
+source <(agx completion bash)           # bash: ~/.bashrc; needs bash-completion
+agx completion fish | source            # fish: ~/.config/fish/config.fish
+agx completion powershell | Out-String | Invoke-Expression   # PowerShell: $PROFILE
+```
+
+Completion reads the configuration that `--config` (or `AGX_CONFIG`) selects
+and offers its IDs with a short description: MCP servers, skills, instructions,
+bundles, secrets, packages, and harnesses wherever a command or `--harness`,
+`--base`, or `--kind` takes one. `use` and `unuse` describe each ID by kind and
+honour `--kind`. `--scope` offers `user` and `here`, then directories; `--file`
+offers YAML files. A configuration that does not load offers nothing. Launch IDs
+for `launch show` and `launch revoke` come from a daemon that already runs,
+asked with a short timeout; completion never starts the daemon. Harness
+commands complete their native arguments as files.
+
 ## Output contract
 
 JSON commands produce one versioned document on stdout; diagnostics use stderr.
