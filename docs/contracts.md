@@ -57,6 +57,12 @@ Take an exclusive per-user startup lock before binding a literal loopback addres
 on an available port. Publish discovery metadata atomically only after startup;
 include an instance ID so clients can recognize restarts. Clear stale metadata
 under the same lock. Process IDs alone are insufficient because they are reused.
+Clients that start the daemon on demand spawn it detached and rely on this lock:
+concurrent starters may each spawn one, the losers exit, and every starter
+connects to the winner. A starter whose daemon exited fails only once the lock is
+free, reporting the log's last line. A client replaces a daemon of another build
+only when it serves the same root and reports no active launches; it asks the
+daemon to stop without force and waits for the lock before starting its own.
 
 Use opaque, unpredictable launch tokens with server-side validity. Renewal extends
 the lease without changing the token already supplied to the harness. Defaults

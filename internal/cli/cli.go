@@ -6,14 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
@@ -206,8 +203,8 @@ func Main() int {
 	root.AddCommand(
 		sessionsCommand(&paths, registry, &harnesses),
 		daemonCommand(&paths, registry, &builtins),
-		launchCommand(&paths),
-		secretCommand(&paths),
+		launchCommand(&paths, &builtins),
+		secretCommand(&paths, &builtins),
 		shimsCommand(&paths, registry, &builtins),
 		mcpCommand(&paths, &builtins),
 		skillCommand(&paths, &builtins),
@@ -409,66 +406,17 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 					return fmt.Errorf("daemon is already running")
 				}
 			}
-			executable, err := os.Executable()
+			logPath, err := startDaemon(cmd.Context(), *paths)
 			if err != nil {
 				return err
 			}
-			if err := os.MkdirAll(paths.Runtime, 0o700); err != nil {
-				return err
-			}
-			logPath := filepath.Join(paths.Runtime, "daemon.log")
-			log, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = log.Close() }()
-			// The daemon must outlive this command, so its process is not tied to the command's cancellation.
-			child := exec.CommandContext(
-				context.WithoutCancel(cmd.Context()),
-				executable,
-				"--config",
-				paths.Config,
-				"--cache",
-				paths.Cache,
-				"daemon",
-				"start",
-				"--foreground",
+			out := ui.Stdout
+			_, err = fmt.Fprint(
+				out,
+				out.Status(ui.OK, "Daemon started.")+"\n",
+				out.Fields([2]string{"log", out.Path(logPath)}),
 			)
-			child.Stdout = log
-			child.Stderr = log
-			platform.Isolate(child)
-			if err := child.Start(); err != nil {
-				return err
-			}
-			exited := make(chan error, 1)
-			go func() { exited <- child.Wait() }()
-			deadline := time.NewTimer(10 * time.Second)
-			defer deadline.Stop()
-			ticker := time.NewTicker(100 * time.Millisecond)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-deadline.C:
-					return fmt.Errorf("daemon startup timed out; inspect %s", logPath)
-				case <-exited:
-					return fmt.Errorf("daemon startup failed; inspect %s", logPath)
-				case <-ticker.C:
-					if c, err := newClient(*paths); err == nil {
-						ctx, cancel := context.WithTimeout(cmd.Context(), time.Second)
-						_, err = c.runtime.GetRuntime(ctx, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
-						cancel()
-						if err == nil {
-							out := ui.Stdout
-							_, err = fmt.Fprint(
-								out,
-								out.Status(ui.OK, "Daemon started.")+"\n",
-								out.Fields([2]string{"log", out.Path(logPath)}),
-							)
-							return err
-						}
-					}
-				}
-			}
+			return err
 		},
 	}
 	start.Flags().BoolVar(&foreground, "foreground", false, "serve in the foreground")
@@ -507,33 +455,8 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			if err != nil {
 				return err
 			}
-			endpoint := c.discovery.URL + "/stop"
-			if force {
-				endpoint += "?force=true"
-			}
-			ctx, cancel := context.WithTimeout(cmd.Context(), callTimeout)
-			defer cancel()
-			req, err := newStopRequest(ctx, endpoint, c.discovery.Token)
-			if err != nil {
+			if err := stopDaemon(cmd.Context(), c, force); err != nil {
 				return err
-			}
-			resp, err := c.http.Do(req)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = resp.Body.Close() }()
-			switch resp.StatusCode {
-			case http.StatusNoContent:
-			case http.StatusConflict:
-				return fmt.Errorf("daemon has active launches; rerun with --force to revoke their MCP access")
-			case http.StatusUnauthorized:
-				return fmt.Errorf(
-					"daemon rejected the discovery token; its discovery file in %s is stale or replaced",
-					paths.Runtime,
-				)
-			default:
-				body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-				return fmt.Errorf("daemon stop failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
 			}
 			_, err = fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, "Daemon stopping."))
 			return err
@@ -544,7 +467,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 	return command
 }
 
-func launchCommand(paths *platform.Paths) *cobra.Command {
+func launchCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
 	command := &cobra.Command{Use: "launch", Short: "Inspect and revoke harness launches", GroupID: "runtime"}
 	shorts := map[string]string{"list": "List active launches", "show": "Show one launch"}
 	for _, name := range []string{"list", "show"} {
@@ -559,7 +482,7 @@ func launchCommand(paths *platform.Paths) *cobra.Command {
 				return cobra.NoArgs(cmd, args)
 			},
 			RunE: func(cmd *cobra.Command, args []string) error {
-				c, err := newClient(*paths)
+				c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
 				if err != nil {
 					return err
 				}
@@ -596,7 +519,7 @@ func launchCommand(paths *platform.Paths) *cobra.Command {
 			Short: "Revoke a launch's MCP access",
 			Args:  cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				c, err := newClient(*paths)
+				c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
 				if err != nil {
 					return err
 				}
@@ -613,7 +536,7 @@ func launchCommand(paths *platform.Paths) *cobra.Command {
 	return command
 }
 
-func secretCommand(paths *platform.Paths) *cobra.Command {
+func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
 	command := &cobra.Command{Use: "secret", Short: "Manage configured secrets and OAuth logins", GroupID: "runtime"}
 	asJSON := false
 	status := &cobra.Command{
@@ -621,7 +544,7 @@ func secretCommand(paths *platform.Paths) *cobra.Command {
 		Short: "Show secret state",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := newClient(*paths)
+			c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
 			if err != nil {
 				return err
 			}
@@ -662,7 +585,7 @@ func secretCommand(paths *platform.Paths) *cobra.Command {
 			if len(data) > 1024*1024 {
 				return fmt.Errorf("secret too large")
 			}
-			c, err := newClient(*paths)
+			c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
 			if err != nil {
 				return err
 			}
@@ -683,7 +606,7 @@ func secretCommand(paths *platform.Paths) *cobra.Command {
 			Short: "Delete a stored secret or OAuth login",
 			Args:  cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				c, err := newClient(*paths)
+				c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
 				if err != nil {
 					return err
 				}
@@ -703,7 +626,7 @@ func secretCommand(paths *platform.Paths) *cobra.Command {
 			"succeeds, fails, or expires; Ctrl-C cancels it.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return login(cmd.Context(), *paths, args[0], !noBrowser)
+			return login(cmd.Context(), *paths, args[0], !noBrowser, configuredAutostart(*paths, *builtins))
 		},
 	}
 	login.Flags().BoolVar(&noBrowser, "no-browser", false, "print the authorization URL without opening a browser")

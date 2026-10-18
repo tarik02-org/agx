@@ -660,6 +660,13 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 		*field.target = field.value
 		c.daemonSet[field.name] = true
 	}
+	if d.Daemon.Autostart != nil {
+		if c.daemonSet["autostart"] && !d.Daemon.Override {
+			return fmt.Errorf("%s: conflicting daemon.autostart; set daemon.override: true", path)
+		}
+		c.Daemon.Autostart = d.Daemon.Autostart
+		c.daemonSet["autostart"] = true
+	}
 	return nil
 }
 

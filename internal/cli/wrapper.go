@@ -106,7 +106,7 @@ func runHarness(
 	if err != nil {
 		return err
 	}
-	c, err := newClient(paths)
+	c, err := daemonClient(ctx, paths, autostart(harnesses.config))
 	if err != nil {
 		return err
 	}

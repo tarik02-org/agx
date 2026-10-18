@@ -60,7 +60,7 @@ func mcpLoginCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 			if err != nil {
 				return err
 			}
-			return login(cmd.Context(), *paths, id, !noBrowser)
+			return login(cmd.Context(), *paths, id, !noBrowser, autostart(c))
 		},
 	}
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the authorization URL without opening a browser")
@@ -230,7 +230,7 @@ func offerLogin(ctx context.Context, s *session, id, url string, browser bool) e
 		ui.Note(id + " asks for an OAuth login; run " + later + " to log in.")
 		return nil
 	}
-	if !daemonReachable(s.paths) {
+	if !autostart(s.config) && !daemonReachable(s.paths) {
 		ui.Note(id + " asks for an OAuth login. Start the daemon with agx daemon start, then run " + later + ".")
 		return nil
 	}
@@ -242,7 +242,7 @@ func offerLogin(ctx context.Context, s *session, id, url string, browser bool) e
 		ui.Note("Run " + later + " to log in later.")
 		return nil
 	}
-	return login(ctx, s.paths, id, browser)
+	return login(ctx, s.paths, id, browser, autostart(s.config))
 }
 
 // daemonReachable reports whether a daemon of this version answers, so a login can run now.
@@ -277,7 +277,7 @@ func testMCP(ctx context.Context, paths platform.Paths, builtins config.Builtins
 	if err != nil {
 		return err
 	}
-	client, err := newClient(paths)
+	client, err := daemonClient(ctx, paths, autostart(c))
 	if err != nil {
 		return err
 	}

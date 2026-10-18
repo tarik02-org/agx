@@ -194,9 +194,10 @@ type ScopeSpec struct {
 }
 
 type Daemon struct {
-	LeaseSeconds int  `yaml:"lease_seconds" json:"lease_seconds" jsonschema:"minimum=3" jsonschema_description:"Launch lease length; defaults to 60."`
-	RenewSeconds int  `yaml:"renew_seconds" json:"renew_seconds" jsonschema:"minimum=1" jsonschema_description:"Lease renewal interval, shorter than the lease; defaults to 20."`
-	Override     bool `yaml:"override"      json:"-"                                    jsonschema_description:"Replace settings made by earlier fragments."`
+	LeaseSeconds int   `yaml:"lease_seconds" json:"lease_seconds"       jsonschema:"minimum=3" jsonschema_description:"Launch lease length; defaults to 60."`
+	RenewSeconds int   `yaml:"renew_seconds" json:"renew_seconds"       jsonschema:"minimum=1" jsonschema_description:"Lease renewal interval, shorter than the lease; defaults to 20."`
+	Autostart    *bool `yaml:"autostart"     json:"autostart,omitempty"                        jsonschema_description:"Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."`
+	Override     bool  `yaml:"override"      json:"-"                                          jsonschema_description:"Replace settings made by earlier fragments."`
 }
 
 type Document struct {
@@ -210,7 +211,7 @@ type Document struct {
 	Bundles      map[ID]BundleSpec   `yaml:"bundles"      jsonschema_description:"Named selections of resources."`
 	Scopes       []ScopeSpec         `yaml:"scopes"       jsonschema_description:"Directory rules that add or remove resources."`
 	Harnesses    map[string]Harness  `yaml:"harnesses"    jsonschema_description:"Built-in harness customizations and new definitions."`
-	Daemon       Daemon              `yaml:"daemon"       jsonschema_description:"Launch lease timing."`
+	Daemon       Daemon              `yaml:"daemon"       jsonschema_description:"Launch lease timing and automatic daemon startup."`
 }
 
 type Config struct {

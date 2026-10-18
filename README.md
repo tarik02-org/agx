@@ -32,7 +32,6 @@ separately; agx does not download or update them.
 agx --config examples/agx.yaml config validate
 agx --config examples/agx.yaml explain .
 agx --config examples/agx.yaml install
-agx --config examples/agx.yaml daemon start
 agx --config examples/agx.yaml codex
 agx daemon stop
 ```
@@ -46,13 +45,14 @@ back to `~/.config` on Linux, `~/Library/Application Support` on macOS, and
 `%LOCALAPPDATA%` on Windows. Without that file, every `agx.d/*.yaml` beside it
 loads instead. Packages and artifacts live under `agx` in `XDG_CACHE_HOME`. `AGX_CONFIG` and `AGX_CACHE`
 select explicit absolute paths; `--config` and `--cache` work before the command.
-The daemon and wrapper must select the same root and cache. Daemon startup is
-explicit. `daemon start --foreground` stays attached to the terminal.
+The daemon and wrapper must select the same root and cache. Commands that need
+the daemon start it in the background when it is not running; `agx daemon start`
+does so explicitly, and `daemon start --foreground` stays attached to the terminal.
+Set `daemon.autostart: false` or `AGX_NO_AUTOSTART=1` to start it only by hand.
 
 ## Quick start
 
 ```sh
-agx daemon start
 agx mcp add github https://api.githubcopilot.com/mcp    # offers the OAuth login
 agx mcp add fs --scope ~/work -- npx -y @modelcontextprotocol/server-filesystem .
 agx skill add anthropics/skills --skill pdf --skill docx

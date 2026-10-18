@@ -21,8 +21,8 @@ import (
 
 // login waits for the daemon's login stream without a deadline of its own: the attempt's
 // expiry bounds it. An interrupt closes the stream, which makes the daemon cancel the attempt.
-func login(ctx context.Context, paths platform.Paths, id string, browser bool) error {
-	c, err := newClient(paths)
+func login(ctx context.Context, paths platform.Paths, id string, browser, autostart bool) error {
+	c, err := daemonClient(ctx, paths, autostart)
 	if err != nil {
 		return err
 	}

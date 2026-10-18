@@ -487,7 +487,10 @@ the reason in its runtime diagnostics.
 
 `daemon.lease_seconds` defaults to 60 and must be at least 3.
 `daemon.renew_seconds` defaults to 20 and must be positive and shorter than the
-lease. Wrappers follow the renewal interval granted by the daemon. Discovery and logs live
+lease. Wrappers follow the renewal interval granted by the daemon.
+`daemon.autostart` defaults to true: commands that need the daemon start it when
+it is not running ([daemon and launches](cli.md#daemon-and-launches)).
+`AGX_NO_AUTOSTART=1` turns it off regardless. Discovery and logs live
 under the cache's `runtime` directory, protected for the current user.
 
 `AGX_CONFIG`, `AGX_CACHE`, and `AGX_STATE` select absolute paths. State, which holds

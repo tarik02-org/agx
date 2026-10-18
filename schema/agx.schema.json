@@ -109,6 +109,10 @@
           "minimum": 1,
           "description": "Lease renewal interval, shorter than the lease; defaults to 20."
         },
+        "autostart": {
+          "type": "boolean",
+          "description": "Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."
+        },
         "override": {
           "type": "boolean",
           "description": "Replace settings made by earlier fragments."
@@ -1247,7 +1251,7 @@
     },
     "daemon": {
       "$ref": "#/$defs/Daemon",
-      "description": "Launch lease timing."
+      "description": "Launch lease timing and automatic daemon startup."
     }
   },
   "additionalProperties": false,

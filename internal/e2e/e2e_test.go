@@ -21,12 +21,13 @@ import (
 )
 
 const (
-	version = "0.0.0-e2e"
-	token   = "e2e-secret-token"
+	version    = "0.0.0-e2e"
+	oldVersion = "0.0.0-e2e-old"
+	token      = "e2e-secret-token"
 )
 
 // binaries holds the executables TestMain builds.
-var binaries struct{ agx, harness, mcp string }
+var binaries struct{ agx, oldAgx, harness, mcp string }
 
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "agx-e2e-bin-")
@@ -40,9 +41,12 @@ func TestMain(m *testing.M) {
 		}
 		return filepath.Join(dir, name)
 	}
-	binaries.agx, binaries.harness, binaries.mcp = exe("agx"), exe("fakeharness"), exe("fakemcp")
+	binaries.agx, binaries.oldAgx = exe("agx"), exe("agx-old")
+	binaries.harness, binaries.mcp = exe("fakeharness"), exe("fakemcp")
+	const versionFlag = "-ldflags=-X github.com/tarik02-org/agx/internal/daemon.Version="
 	for _, b := range [][]string{
-		{binaries.agx, "-ldflags=-X github.com/tarik02-org/agx/internal/daemon.Version=" + version, "github.com/tarik02-org/agx/cmd/agx"},
+		{binaries.agx, versionFlag + version, "github.com/tarik02-org/agx/cmd/agx"},
+		{binaries.oldAgx, versionFlag + oldVersion, "github.com/tarik02-org/agx/cmd/agx"},
 		{binaries.harness, "./testdata/fakeharness"},
 		{binaries.mcp, "./testdata/fakemcp"},
 	} {
@@ -155,9 +159,19 @@ type result struct {
 // agx runs the binary in the work directory with extra environment variables.
 func (e *env) agx(extra []string, args ...string) result {
 	e.t.Helper()
+	r := e.run(binaries.agx, extra, args...)
+	if r.code < 0 {
+		e.t.Fatalf("agx %q: %s", args, r.stderr)
+	}
+	return r
+}
+
+// run runs an agx binary in the work directory with extra environment variables. It is safe
+// for concurrent use.
+func (e *env) run(binary string, extra []string, args ...string) result {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, binaries.agx, args...)
+	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Dir = e.work
 	cmd.Env = append(slices.Clone(e.vars), extra...)
 	var stdout, stderr bytes.Buffer
@@ -169,7 +183,8 @@ func (e *env) agx(extra []string, args ...string) result {
 	case errors.As(err, &exit):
 		r.code = exit.ExitCode()
 	case err != nil:
-		e.t.Fatalf("agx %q: %v", args, err)
+		r.code = -1
+		r.stderr += err.Error()
 	}
 	return r
 }
@@ -240,6 +255,29 @@ func (e *env) stopDaemon(force bool) {
 	e.t.Fatal("daemon did not exit")
 }
 
+// daemonRunning reports whether a daemon published its discovery file.
+func (e *env) daemonRunning() bool {
+	_, err := os.Stat(filepath.Join(e.dir, "cache", "runtime", "daemon.json"))
+	return err == nil
+}
+
+// daemonVersion returns the version daemon status reports.
+func (e *env) daemonVersion() string {
+	e.t.Helper()
+	var status struct {
+		Data struct {
+			Runtime struct {
+				Version string `json:"version"`
+			} `json:"runtime"`
+		} `json:"data"`
+	}
+	r := e.ok("daemon", "status", "--json")
+	if err := json.Unmarshal([]byte(r.stdout), &status); err != nil {
+		e.t.Fatal(err)
+	}
+	return status.Data.Runtime.Version
+}
+
 func TestEndToEnd(t *testing.T) {
 	e := newEnv(t)
 
@@ -264,8 +302,15 @@ func TestEndToEnd(t *testing.T) {
 		}
 	})
 
-	if r := e.agx(nil, "claude", "-p", "hi"); r.code != 1 || !strings.Contains(r.stderr, "agx daemon start") {
-		t.Fatalf("a managed launch without a daemon: exit %d, %q", r.code, r.stderr)
+	if e.daemonRunning() {
+		t.Fatal("a passthrough command started the daemon")
+	}
+	r := e.agx([]string{"AGX_NO_AUTOSTART=1"}, "claude", "-p", "hi")
+	if r.code != 1 || !strings.Contains(r.stderr, "agx daemon start") || e.daemonRunning() {
+		t.Fatalf("a managed launch with autostart disabled: exit %d, %q", r.code, r.stderr)
+	}
+	if r := e.agx(nil, "daemon", "status"); r.code != 1 || e.daemonRunning() {
+		t.Fatalf("daemon status without a daemon: exit %d, %q", r.code, r.stderr)
 	}
 
 	e.ok("daemon", "start")
@@ -360,6 +405,101 @@ func TestEndToEnd(t *testing.T) {
 		e.stopDaemon(false)
 		if r := e.agx(nil, "daemon", "status"); r.code != 1 {
 			t.Fatalf("status after stop: exit %d", r.code)
+		}
+	})
+}
+
+func TestAutostart(t *testing.T) {
+	t.Run("launch starts the daemon", func(t *testing.T) {
+		e := newEnv(t)
+		t.Cleanup(func() { e.stopDaemon(true) })
+		d, r := e.harness("claude", "-p", "hello")
+		if r.code != 0 {
+			t.Fatalf("exit %d: %s", r.code, r.stderr)
+		}
+		if d.Env["AGX_MCP_GRANT"] == "" || d.Tools["agx-echo"] != "echo:hello:"+token {
+			t.Fatalf("launch did not go through the daemon: env %v, tools %v", d.Env, d.Tools)
+		}
+		if r.stdout != "" {
+			t.Errorf("autostart wrote to stdout: %q", r.stdout)
+		}
+		if got := e.daemonVersion(); got != version {
+			t.Fatalf("daemon version = %q", got)
+		}
+	})
+
+	t.Run("concurrent launches share one daemon", func(t *testing.T) {
+		e := newEnv(t)
+		t.Cleanup(func() { e.stopDaemon(true) })
+		const n = 4
+		results := make(chan error, n)
+		endpoints := make([]string, n)
+		for i := range n {
+			go func() {
+				path := filepath.Join(e.dir, fmt.Sprintf("dump-%d.json", i))
+				r := e.run(binaries.agx, []string{"FAKE_DUMP=" + path}, "claude", "-p", "hello")
+				if r.code != 0 {
+					results <- fmt.Errorf("launch %d: exit %d: %s", i, r.code, r.stderr)
+					return
+				}
+				var d dump
+				b, err := os.ReadFile(path)
+				if err == nil {
+					err = json.Unmarshal(b, &d)
+				}
+				endpoints[i] = d.Endpoints["agx-echo"]
+				results <- err
+			}()
+		}
+		for range n {
+			if err := <-results; err != nil {
+				t.Fatal(err)
+			}
+		}
+		origin := func(endpoint string) string {
+			before, _, _ := strings.Cut(strings.TrimPrefix(endpoint, "http://"), "/")
+			return before
+		}
+		for _, endpoint := range endpoints {
+			if endpoint == "" || origin(endpoint) != origin(endpoints[0]) {
+				t.Fatalf("launches reached different daemons: %q", endpoints)
+			}
+		}
+	})
+
+	t.Run("idle daemon of another build is replaced", func(t *testing.T) {
+		e := newEnv(t)
+		t.Cleanup(func() { e.stopDaemon(true) })
+		if r := e.run(binaries.oldAgx, nil, "daemon", "start"); r.code != 0 {
+			t.Fatalf("old daemon start: exit %d: %s", r.code, r.stderr)
+		}
+		if r := e.agx(nil, "daemon", "status"); r.code != 1 || !strings.Contains(r.stderr, "different agx build") {
+			t.Fatalf("status of another build: exit %d, %q", r.code, r.stderr)
+		}
+		_, r := e.harness("claude", "-p", "hello")
+		if r.code != 0 {
+			t.Fatalf("exit %d: %s", r.code, r.stderr)
+		}
+		if !strings.Contains(r.stderr, "restarting daemon "+oldVersion) {
+			t.Errorf("no restart note on stderr: %q", r.stderr)
+		}
+		if got := e.daemonVersion(); got != version {
+			t.Fatalf("daemon version = %q, want %q", got, version)
+		}
+	})
+
+	t.Run("daemon.autostart false", func(t *testing.T) {
+		e := newEnv(t)
+		b, err := os.ReadFile(filepath.Join(e.dir, "config", "agx.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.write("config/agx.yaml", string(b)+"daemon: {autostart: false}\n")
+		if r := e.agx(nil, "secret", "status"); r.code != 1 || !strings.Contains(r.stderr, "agx daemon start") {
+			t.Fatalf("secret status with autostart disabled: exit %d, %q", r.code, r.stderr)
+		}
+		if e.daemonRunning() {
+			t.Fatal("daemon started although daemon.autostart is false")
 		}
 	})
 }

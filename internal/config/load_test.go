@@ -518,3 +518,23 @@ harnesses:
 		wantError(t, err, "~user paths are not supported")
 	}
 }
+
+func TestDaemonAutostart(t *testing.T) {
+	dir := t.TempDir()
+	root := write(t, filepath.Join(dir, "agx.yaml"), "daemon: {autostart: false}\n")
+	if c := read(t, root); c.Daemon.Autostart == nil || *c.Daemon.Autostart {
+		t.Fatalf("autostart = %v, want false", c.Daemon.Autostart)
+	}
+	if c := read(t, write(t, filepath.Join(dir, "default.yaml"), "{}\n")); c.Daemon.Autostart != nil {
+		t.Fatalf("autostart = %v, want unset", *c.Daemon.Autostart)
+	}
+	write(t, filepath.Join(dir, "first.yaml"), "daemon: {autostart: true}\n")
+	write(t, root, "imports: [{path: first.yaml}]\ndaemon: {autostart: false}\n")
+	if _, err := config.Read(
+		root,
+		builtins,
+	); err == nil ||
+		!strings.Contains(err.Error(), "conflicting daemon.autostart") {
+		t.Fatalf("conflicting autostart: %v", err)
+	}
+}

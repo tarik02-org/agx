@@ -260,8 +260,18 @@ agx launch show <launch-id> [--json]
 agx launch revoke <launch-id>
 ```
 
-Use one daemon per OS user. v1 requires explicit startup; automatic
-startup can be added later. Stopping refuses active launches unless
+Use one daemon per OS user. `daemon start` is optional: a command that needs the
+daemon (a managed harness launch, `secret`, `mcp test`, `mcp login`, and `launch`)
+starts it in the background when it is not running, as `daemon start` does, and
+waits up to 10 seconds for it. Concurrent commands start one daemon between them.
+A daemon of another agx build is stopped and replaced, with one line on stderr,
+only when it serves the same root and has no active launches; otherwise the
+command fails with instructions. A daemon serving another root is never
+replaced. `daemon status` and `daemon stop` never start it, and passthrough
+harness commands never need it. `daemon.autostart: false`, or `AGX_NO_AUTOSTART=1`
+in the environment, turns automatic startup off. The daemon inherits the
+environment of the command that starts it and runs in the cache's `runtime`
+directory, where `daemon.log` collects its output. Stopping refuses active launches unless
 forced. Revocation closes MCP access and upstream sessions; it does not kill the
 harness. Launch inspection excludes secrets. A graceful wrapper exit releases
 its launch; abrupt exits are recovered through lease expiry.
@@ -310,5 +320,6 @@ Harness entry points style only their own stderr diagnostics.
 JSON and inspection never reveal grants, credential values, or prompt bodies.
 Usage errors exit 2, operational failures exit 1, success exits 0. Harness entry
 points preserve native exit behavior. Before spawning, wrappers require the daemon to run the
-same agx build (version and executable contents) and fail with actionable instructions instead of printing into a
-harness protocol stream.
+same agx build (version and executable contents), replacing an idle daemon of another build, and fail with actionable instructions instead of printing into a
+harness protocol stream. Starting the daemon writes nothing to stdout; its notes go to stderr, a progress
+line only on a terminal.
