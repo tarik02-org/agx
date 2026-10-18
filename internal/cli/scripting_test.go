@@ -237,6 +237,9 @@ func TestJSONValidate(t *testing.T) {
 		Diagnostics []json.RawMessage `json:"diagnostics"`
 	}
 	okJSON(t, &valid, "config", "validate")
+	if code, docs := runJSON(t, "--json", "--config", path, "config", "validate"); code != 0 || len(docs) != 1 {
+		t.Fatalf("leading --json validate exited %d: %+v", code, docs)
+	}
 	if !valid.Valid || valid.Root == "" || len(valid.Files) != 1 || valid.Counts == nil ||
 		valid.Counts.MCP != 1 || valid.Counts.Secrets != 1 || valid.Counts.Harnesses != 1 ||
 		len(valid.Diagnostics) != 0 {
@@ -268,6 +271,12 @@ func TestJSONValidate(t *testing.T) {
 	if invalid.Valid || len(invalid.Diagnostics) != 1 || invalid.Diagnostics[0].Severity != "error" ||
 		invalid.Diagnostics[0].Source.Line != 2 || !strings.HasSuffix(invalid.Diagnostics[0].Source.Path, "agx.yaml") {
 		t.Fatalf("invalid validate = %+v", invalid)
+	}
+
+	// --json before the command works as after it.
+	failJSON(t, 1, codeConfigInvalid, "--json", "resolve")
+	if code, docs := runJSON(t, "--json", "config", "validate"); code != 1 || len(docs) != 1 || docs[0].Data == nil {
+		t.Fatalf("leading --json validate exited %d: %+v", code, docs)
 	}
 
 	d := failJSON(t, 1, codeConfigInvalid, "resolve", "--json")
@@ -359,6 +368,9 @@ func TestJSONUsageErrors(t *testing.T) {
 		{"nonsense", "--json"},
 		{"config", "validate", "extra", "--json"},
 		{"--color", "bogus", "mcp", "list", "--json"},
+		{"--json", "--color", "bogus", "mcp", "list"},
+		{"--json", "codex", "exec"},
+		{"--json"},
 	} {
 		failJSON(t, 2, codeUsage, args...)
 	}

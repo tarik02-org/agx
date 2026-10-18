@@ -270,8 +270,15 @@ func run(osArgs []string, stdout io.Writer) int {
 	}
 	// Harness commands disable flag parsing, so leading root flags would otherwise leak into native
 	// arguments. They also select the configuration that names the harness commands, completion included.
+	// A leading --json moves behind the command path, where the command's own flag takes it.
+	leadingJSON := []string{}
 	for len(words) > 0 && strings.HasPrefix(words[0], "--") {
 		name, value, inline := strings.Cut(strings.TrimPrefix(words[0], "--"), "=")
+		if name == "json" && !completing {
+			leadingJSON = append(leadingJSON, words[0])
+			words = words[1:]
+			continue
+		}
 		if name != "config" && name != "cache" && name != "color" {
 			break
 		}
@@ -304,6 +311,13 @@ func run(osArgs []string, stdout io.Writer) int {
 	} else {
 		args = words
 	}
+	if len(leadingJSON) > 0 {
+		end := slices.Index(args, "--")
+		if end < 0 {
+			end = len(args)
+		}
+		args = slices.Concat(args[:end], leadingJSON, args[end:])
+	}
 	ui.Configure(color)
 	configPath, err := filepath.Abs(paths.Config)
 	if err != nil {
@@ -334,6 +348,10 @@ func run(osArgs []string, stdout io.Writer) int {
 	found, _, err := root.Find(args)
 	if !completing {
 		scripting.enabled = wantsJSON(found, args)
+	}
+	if len(leadingJSON) > 0 && err == nil && found.DisableFlagParsing {
+		scripting.enabled = true
+		return exitCode(&usageError{fmt.Errorf("--json does not apply to %s", found.Name())})
 	}
 	// Cobra adds its completion commands only during Execute, so Find cannot know them yet.
 	if err != nil && !completing {
