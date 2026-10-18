@@ -774,10 +774,17 @@ func launchCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 				ctx,
 				request(&v1.RevokeLaunchRequest{LaunchId: args[0]}, c.discovery.Token),
 			)
-			if err != nil || !scripting.enabled {
+			if err != nil {
 				return err
 			}
-			return printJSON(launchRevokeJSON{LaunchID: args[0], Revoked: true})
+			if scripting.enabled {
+				return printJSON(launchRevokeJSON{LaunchID: args[0], Revoked: true})
+			}
+			_, err = fmt.Fprintln(
+				ui.Stdout,
+				ui.Stdout.Status(ui.OK, "Revoked launch "+args[0]+"; its harness keeps running without MCP access."),
+			)
+			return err
 		},
 	}
 	jsonFlag(revoke)
