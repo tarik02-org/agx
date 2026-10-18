@@ -196,6 +196,9 @@ message PrepareLaunchRequest {
   // Sensitive: only names declared by the expected snapshot are accepted, and the variables
   // the harness's adapter forwards, such as CODEX_HOME; an empty value means unset.
   map<string, string> environment_inputs = 6;
+  // Absolute path of the native executable the wrapper found on its own PATH, or the configured
+  // one. The wrapper runs it; the daemon runs it only for native installation on its behalf.
+  string executable = 7;
 }
 message PrepareLaunchResponse {
   Launch launch = 1;
@@ -206,8 +209,10 @@ message PrepareLaunchResponse {
   // Problems the launch proceeds despite, such as skills the harness cannot load.
   repeated string warnings = 5;
 }
+// The wrapper runs the native executable it resolved itself, so per-directory PATHs apply.
 message SpawnPlan {
-  string executable = 1;
+  reserved 1;
+  reserved "executable";
   repeated string arguments = 2;
   string directory = 3;
   // Sensitive: includes the stable harness MCP grant for this lease.
@@ -298,6 +303,8 @@ message RestoreLaunchRequest {
   map<string, string> environment_inputs = 3;
   // Sensitive: the native arguments the launch was prepared with; empty for a thread launch.
   repeated string native_arguments = 4;
+  // The native executable the launch was prepared with; empty for a thread launch.
+  string executable = 5;
 }
 message RestoreLaunchResponse {}
 

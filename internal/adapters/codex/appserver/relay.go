@@ -2,7 +2,8 @@
 // one app-server process, giving every thread the resources of its own directory: each
 // thread/start, thread/fork, and thread/resume gets a thread launch whose MCP servers, skill
 // plugins, and instructions it adds to the request, and turn/start keeps unselected skill
-// plugins disabled. Every other message passes byte for byte.
+// plugins disabled. Every other message passes byte for byte, without waiting for requests
+// that are still being prepared.
 package appserver
 
 import (
@@ -35,8 +36,12 @@ func Relay(ctx context.Context, host adapters.ThreadHost, base string, client, s
 		threads: map[string]*thread{},
 		pending: map[string]*pending{},
 		calls:   map[string]chan object{},
+		dropped: map[string]bool{},
 		work:    make(chan func(), 64),
 	}
+	// Preparations still running when the server exits give up; their launches end below.
+	prepareCtx, stopPreparing := context.WithCancel(ctx)
+	defer stopPreparing()
 	worked := make(chan struct{})
 	go func() {
 		defer close(worked)
@@ -45,10 +50,12 @@ func Relay(ctx context.Context, host adapters.ThreadHost, base string, client, s
 		}
 	}()
 	go func() {
-		err := r.fromClient(ctx, client.In)
+		err := r.fromClient(prepareCtx, client.In)
 		if err != nil && !errors.Is(err, io.ErrClosedPipe) {
 			host.Warn("relaying to codex app-server: " + err.Error())
 		}
+		// Requests the client sent before its input ended still reach the server.
+		r.preparing.Wait()
 		if c, ok := server.Out.(io.Closer); ok {
 			_ = c.Close()
 		}
@@ -58,8 +65,12 @@ func Relay(ctx context.Context, host adapters.ThreadHost, base string, client, s
 		// The server must not block on output nobody reads.
 		go func() { _, _ = io.Copy(io.Discard, server.In) }()
 	}
+	stopPreparing()
 	r.mu.Lock()
 	r.closed = true
+	r.mu.Unlock()
+	r.preparing.Wait()
+	r.mu.Lock()
 	for _, call := range r.calls {
 		close(call)
 	}
@@ -88,8 +99,11 @@ func Relay(ctx context.Context, host adapters.ThreadHost, base string, client, s
 type relay struct {
 	host adapters.ThreadHost
 	base string
-	// server is written by the client loop only.
-	server io.Writer
+	// server takes whole lines under writing.
+	server  io.Writer
+	writing sync.Mutex
+	// preparing counts requests being prepared off the client loop.
+	preparing sync.WaitGroup
 	// work runs host lifecycle calls in order, off the message loops.
 	work chan func()
 
@@ -98,9 +112,12 @@ type relay struct {
 	// pending maps client request IDs to what their responses settle.
 	pending map[string]*pending
 	// calls maps the relay's own request IDs to their waiters.
-	calls  map[string]chan object
-	next   int
-	closed bool
+	calls map[string]chan object
+	// dropped holds the relay's own request IDs that timed out; their late responses are
+	// dropped too, since the client never sent them.
+	dropped map[string]bool
+	next    int
+	closed  bool
 }
 
 type thread struct {
@@ -123,13 +140,18 @@ type pending struct {
 	disabled map[string][]string
 }
 
+// fromClient forwards the client's messages. A request that needs a thread launch or the
+// daemon's skill selection is prepared off the loop, so that messages behind it, such as
+// turn/interrupt, pass at once; the client orders nothing after a request it awaits.
 func (r *relay) fromClient(ctx context.Context, in io.Reader) error {
 	reader := bufio.NewReaderSize(in, 64<<10)
 	for {
 		line, err := reader.ReadBytes('\n')
 		if len(line) > 0 {
-			if _, err := r.server.Write(r.request(ctx, line)); err != nil {
-				return err
+			if !prepared(line) || !r.prepareAsync(ctx, line) {
+				if err := r.write(line); err != nil {
+					return err
+				}
 			}
 		}
 		if err == io.EOF {
@@ -159,6 +181,47 @@ func (r *relay) fromServer(in io.Reader, out io.Writer) error {
 			return err
 		}
 	}
+}
+
+// prepareAsync prepares and sends a request off the client loop, unless the relay is closing.
+func (r *relay) prepareAsync(ctx context.Context, line []byte) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Relay waits for preparations once closed, so none may start after.
+	if r.closed {
+		return false
+	}
+	r.preparing.Go(func() {
+		// A failed write means the server exited, which ends the relay.
+		_ = r.write(r.request(ctx, line))
+	})
+	return true
+}
+
+// write sends one line to the server.
+func (r *relay) write(line []byte) error {
+	r.writing.Lock()
+	defer r.writing.Unlock()
+	_, err := r.server.Write(line)
+	return err
+}
+
+// prepared reports whether request rewrites the line, which may wait for the daemon or the
+// server.
+func prepared(line []byte) bool {
+	msg, ok := message(line)
+	if !ok {
+		return false
+	}
+	if _, hasID := msg.get("id"); !hasID {
+		return false
+	}
+	method, _ := msg.string("method")
+	switch method {
+	case "thread/start", "thread/fork", "thread/resume", "turn/start", "skills/list":
+		return true
+	}
+	return false
 }
 
 // message decodes a JSON-RPC line, ignoring its line ending.
@@ -278,7 +341,10 @@ func (r *relay) call(ctx context.Context, method string, params map[string]any) 
 	r.calls[key(id)] = wait
 	r.mu.Unlock()
 	request := object{{"id", id}, {"method", encode(method)}, {"params", encode(params)}}
-	if _, err := r.server.Write(append(request.marshal(), '\n')); err != nil {
+	if err := r.write(append(request.marshal(), '\n')); err != nil {
+		r.mu.Lock()
+		delete(r.calls, key(id))
+		r.mu.Unlock()
 		return nil, err
 	}
 	timer := time.NewTimer(readTimeout)
@@ -297,7 +363,10 @@ func (r *relay) call(ctx context.Context, method string, params map[string]any) 
 	case <-ctx.Done():
 	}
 	r.mu.Lock()
-	delete(r.calls, key(id))
+	if _, waiting := r.calls[key(id)]; waiting {
+		delete(r.calls, key(id))
+		r.dropped[key(id)] = true
+	}
 	r.mu.Unlock()
 	return nil, fmt.Errorf("%s timed out", method)
 }
@@ -434,11 +503,16 @@ func (r *relay) response(line []byte) []byte {
 	r.mu.Lock()
 	call, own := r.calls[key(id)]
 	delete(r.calls, key(id))
+	late := r.dropped[key(id)]
+	delete(r.dropped, key(id))
 	p := r.pending[key(id)]
 	delete(r.pending, key(id))
 	r.mu.Unlock()
 	if own {
 		call <- msg
+		return nil
+	}
+	if late {
 		return nil
 	}
 	if p == nil {

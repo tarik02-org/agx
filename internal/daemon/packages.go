@@ -56,6 +56,9 @@ func (s *Server) packageOperation(
 		}
 		return op.state.OperationId, nil
 	}
+	if s.installsClosed {
+		return "", refusal()
+	}
 	if len(s.operations) >= 1000 {
 		return "", rpcError(
 			connect.CodeResourceExhausted,
@@ -73,7 +76,8 @@ func (s *Server) packageOperation(
 	}
 	s.operationRequests[requestID] = op
 	s.operations[id] = op
-	go func() {
+	// A stopping daemon waits for installations for its grace period, then cancels them.
+	s.installs.Go(func() {
 		result, err := packages.Install(
 			s.ctx,
 			s.paths.Config,
@@ -114,7 +118,7 @@ func (s *Server) packageOperation(
 				Result: &v1.PackageResult{PackageIds: names, Lockfiles: result.Lockfiles},
 			},
 		}
-	}()
+	})
 	return id, nil
 }
 

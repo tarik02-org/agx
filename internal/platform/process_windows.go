@@ -83,6 +83,9 @@ func Own(cmd *exec.Cmd) (func(), error) {
 	return func() { _ = windows.CloseHandle(job) }, nil
 }
 
+// SurviveBrokenPipes does nothing: Windows has no SIGPIPE, and writes to a closed pipe fail.
+func SurviveBrokenPipes() {}
+
 func Interrupts() []os.Signal { return []os.Signal{os.Interrupt} }
 
 // Terminate does nothing: Windows has no termination request a console-less child could handle,

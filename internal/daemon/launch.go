@@ -5,6 +5,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -34,6 +35,9 @@ func (s *Server) PrepareLaunch(
 	}
 	if msg.Harness == "" {
 		return nil, rpcError(connect.CodeInvalidArgument, "harness is required")
+	}
+	if msg.Executable != "" && !filepath.IsAbs(msg.Executable) {
+		return nil, rpcError(connect.CodeInvalidArgument, "executable must be absolute")
 	}
 	fingerprint := config.Digest(msg)
 	s.mu.Lock()
@@ -127,7 +131,7 @@ func (s *Server) PrepareLaunch(
 			Cache:     s.paths.Cache,
 			ID:        id,
 			Endpoints: nativeEndpoints,
-			Target:    adapters.Target{Lookup: lookup},
+			Target:    adapters.Target{Lookup: lookup, Resolved: msg.Executable},
 		},
 		harness,
 		harnessArgs,
@@ -146,8 +150,9 @@ func (s *Server) PrepareLaunch(
 		Harness:    msg.Harness,
 		Mode:       mode,
 		State:      v1.Launch_STATE_PREPARED,
-		ExpiresAt:  timestamppb.New(time.Now().Add(time.Duration(c.Daemon.LeaseSeconds) * time.Second)),
 	}
+	target := adapters.NewTarget(harness, harnessArgs, harnessEnv, msg.NativeArguments, lookup)
+	target.Resolved = msg.Executable
 	l := &launch{
 		view:         view,
 		grant:        auth.Verifier(grant),
@@ -156,15 +161,15 @@ func (s *Server) PrepareLaunch(
 		cancel:       cancel,
 		endpoints:    endpoints,
 		snapshot:     snapshot,
-		target:       adapters.NewTarget(harness, harnessArgs, harnessEnv, msg.NativeArguments, lookup),
+		target:       target,
 		created:      time.Now(),
 		lease:        time.Duration(c.Daemon.LeaseSeconds) * time.Second,
 		threadServer: threadServer,
 	}
+	l.extend(time.Now().Add(l.lease))
 	response := &v1.PrepareLaunchResponse{
 		Launch: proto.Clone(view).(*v1.Launch),
 		Spawn: &v1.SpawnPlan{
-			Executable:             plan.Executable,
 			Arguments:              plan.Arguments,
 			Directory:              plan.Directory,
 			EnvironmentOverrides:   plan.Environment,
@@ -193,6 +198,12 @@ func (s *Server) PrepareLaunch(
 			return nil, rpcError(connect.CodeInternal, "cannot recover launch response")
 		}
 		return connect.NewResponse(response), nil
+	}
+	// The state the next daemon restores is final: a launch it does not hold must go there.
+	if s.flushed {
+		s.mu.Unlock()
+		discard()
+		return nil, refusal()
 	}
 	if len(s.launches) >= 10000 {
 		s.mu.Unlock()
@@ -304,13 +315,13 @@ func (s *Server) renew(msg *v1.RenewLaunchRequest, authorization string) (*v1.Re
 	if err != nil {
 		return nil, false, err
 	}
-	if !active(l.view.State) || time.Now().After(l.view.ExpiresAt.AsTime()) {
+	if !active(l.view.State) || time.Now().After(l.expires) {
 		changed := active(l.view.State)
 		s.end(l, v1.Launch_STATE_EXPIRED)
 		if changed {
 			go s.persist(false)
 		}
-		return nil, false, rpcError(connect.CodeUnauthenticated, "launch has ended or expired")
+		return nil, false, endedError(l.view.State)
 	}
 	before := l.view.State.String() + "/" + l.view.SessionId
 	if parent := s.launches[l.view.ParentLaunchId]; parent != nil {
@@ -319,7 +330,7 @@ func (s *Server) renew(msg *v1.RenewLaunchRequest, authorization string) (*v1.Re
 			l.view.SessionId = msg.SessionId
 			l.view.State = v1.Launch_STATE_RUNNING
 		}
-		l.view.ExpiresAt = proto.Clone(parent.view.ExpiresAt).(*timestamppb.Timestamp)
+		l.extend(parent.expires)
 	} else {
 		if msg.HarnessPid != 0 {
 			l.view.State = v1.Launch_STATE_RUNNING
@@ -327,15 +338,36 @@ func (s *Server) renew(msg *v1.RenewLaunchRequest, authorization string) (*v1.Re
 		if msg.SessionId != "" {
 			l.view.SessionId = msg.SessionId
 		}
-		l.view.ExpiresAt = timestamppb.New(time.Now().Add(l.lease))
+		l.extend(time.Now().Add(l.lease))
 		for _, child := range s.children(l) {
-			child.view.ExpiresAt = proto.Clone(l.view.ExpiresAt).(*timestamppb.Timestamp)
+			child.extend(l.expires)
 		}
 	}
 	return &v1.RenewLaunchResponse{
 		ExpiresAt:        proto.Clone(l.view.ExpiresAt).(*timestamppb.Timestamp),
 		RestoreLaunchIds: s.awaitingRestore(l),
 	}, before != l.view.State.String()+"/"+l.view.SessionId, nil
+}
+
+// EndedHeader carries, on a renewal refused because the launch ended, how it ended: revoked,
+// finished, or expired, so the wrapper can tell its user.
+const EndedHeader = "Agx-Launch-Ended"
+
+// endedError refuses renewing a launch that ended in state.
+func endedError(state v1.Launch_State) error {
+	var how, message string
+	switch state {
+	case v1.Launch_STATE_REVOKED:
+		how, message = "revoked", "launch was revoked"
+	case v1.Launch_STATE_FINISHED:
+		how, message = "finished", "launch has finished"
+	case v1.Launch_STATE_EXPIRED, v1.Launch_STATE_UNSPECIFIED, v1.Launch_STATE_PREPARED, v1.Launch_STATE_RUNNING:
+		// renew ends an active launch past its lease as expired before refusing it.
+		how, message = "expired", "launch lease expired"
+	}
+	err := connect.NewError(connect.CodeUnauthenticated, errors.New(message))
+	err.Meta().Set(EndedHeader, how)
+	return err
 }
 
 func (s *Server) FinishLaunch(

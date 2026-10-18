@@ -166,6 +166,7 @@ func (s *Server) PrepareThreadLaunch(
 		ExpiresAt:      proto.Clone(p.launch.view.ExpiresAt).(*timestamppb.Timestamp),
 		ParentLaunchId: p.launch.view.Id,
 	}
+	expires := p.launch.expires
 	s.mu.Unlock()
 	response := &v1.PrepareThreadLaunchResponse{
 		Launch: proto.Clone(view).(*v1.Launch),
@@ -183,6 +184,7 @@ func (s *Server) PrepareThreadLaunch(
 	}
 	if err := s.addThreadLaunch(msg.RequestId, p.launch, &launch{
 		view:      view,
+		expires:   expires,
 		grant:     auth.Verifier(grant),
 		lifecycle: p.launch.lifecycle,
 		ctx:       launchCtx,
@@ -207,6 +209,9 @@ func (s *Server) addThreadLaunch(requestID string, parent, l *launch, record pre
 		return rpcError(connect.CodeAborted, "concurrent preparation with the same idempotency key; retry")
 	}
 	switch {
+	case s.flushed:
+		// The state the next daemon restores is final; the relay retries with that daemon.
+		return refusal()
 	case !active(parent.view.State):
 		return rpcError(connect.CodeFailedPrecondition, "launch has ended")
 	case len(s.launches) >= 10000:

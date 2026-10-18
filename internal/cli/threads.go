@@ -99,7 +99,7 @@ func (h *threadHost) prepare(ctx context.Context, c *client, directory string) (
 		return adapters.ThreadLaunch{}, err
 	}
 	p := prepared.Msg
-	h.lease.remember(p.Launch.Id, inputs, nil)
+	h.lease.remember(p.Launch.Id, inputs, nil, "")
 	for _, warning := range p.Warnings {
 		h.Warn(warning)
 	}

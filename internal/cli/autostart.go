@@ -79,6 +79,8 @@ func (s daemonState) action() daemonAction {
 	switch {
 	case s.discovery == nil && s.reachable:
 		return useDaemon
+	case errors.Is(s.discovery, daemon.ErrNewerDiscovery):
+		return refuseDaemon
 	case errors.Is(s.discovery, daemon.ErrVersionMismatch) && s.reachable:
 		if s.sameConfig && (s.activeLaunches == 0 || s.restores) {
 			return replaceDaemon
@@ -220,6 +222,10 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 		}
 		c, err := newClient(paths)
 		lastErr = err
+		// The daemon holding the startup lock belongs to a newer agx; this one cannot replace it.
+		if errors.Is(err, daemon.ErrNewerDiscovery) {
+			return "", err
+		}
 		if err == nil {
 			probe, cancel := context.WithTimeout(ctx, time.Second)
 			_, err = c.runtime.GetRuntime(probe, request(&v1.GetRuntimeRequest{}, c.discovery.Token))

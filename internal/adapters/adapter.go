@@ -79,6 +79,9 @@ type Target struct {
 	Harness string
 	// Executable is the definition's configured executable; "" searches PATH.
 	Executable string
+	// Resolved is the native executable the launch's wrapper found on its own PATH, which native
+	// commands run on the harness's behalf use; "" locates one from Executable here.
+	Resolved string
 	// Env holds the definition's resolved env, which overrides the rest of the environment.
 	Env map[string]string
 	// Lookup finds the rest of the environment: the caller's, as far as it is forwarded, then
@@ -225,8 +228,8 @@ func (l Launch) HTTPServers() map[string]any {
 
 type Plan struct {
 	// Warnings are shown before the harness starts.
-	Warnings    []string
-	Executable  string
+	Warnings []string
+	// Arguments follow the native executable, which the wrapper resolves on its own PATH.
 	Arguments   []string
 	Directory   string
 	Environment map[string]string
@@ -310,7 +313,7 @@ func (r Registry) Install(
 	return warnings, nil
 }
 
-// Build composes argv as the adapter's managed arguments, the definition's resolved groups, then
+// Build composes the arguments as the adapter's managed arguments, the definition's resolved groups, then
 // native args. It fills in the launch's artifacts, and runs the adapter's installation when the
 // launch finds it missing.
 func Build(
@@ -323,12 +326,7 @@ func Build(
 	grant string,
 	args []string,
 ) (Plan, error) {
-	executable, err := a.Executable(h.Executable)
-	if err != nil {
-		return Plan{}, err
-	}
 	plan := Plan{
-		Executable:  executable,
 		Directory:   l.Snapshot.Directory,
 		Environment: map[string]string{},
 		Unset:       []string{"AGX_MANAGEMENT_TOKEN", "AGX_LIFECYCLE_TOKEN"},
@@ -338,7 +336,9 @@ func Build(
 	}
 	plan.Environment[GrantEnvironment] = grant
 	l.Native = args
+	resolved := l.Target.Resolved
 	l.Target = NewTarget(h, harnessArgs, harnessEnv, args, l.Target.Lookup)
+	l.Target.Resolved = resolved
 	l.plan = &plan
 	var prefix []string
 	if err := withArtifacts(ctx, a, l, func(l Launch) (err error) {

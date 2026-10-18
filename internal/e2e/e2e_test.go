@@ -673,7 +673,7 @@ func TestAutostart(t *testing.T) {
 		if r := e.run(binaries.oldAgx, nil, "daemon", "start"); r.code != 0 {
 			t.Fatalf("old daemon start: exit %d: %s", r.code, r.stderr)
 		}
-		if r := e.agx(nil, "daemon", "status"); r.code != 1 || !strings.Contains(r.stderr, "different agx build") {
+		if r := e.agx(nil, "daemon", "status"); r.code != 0 || !strings.Contains(r.stderr, "runs agx "+oldVersion) {
 			t.Fatalf("status of another build: exit %d, %q", r.code, r.stderr)
 		}
 		_, r := e.harness("claude", "-p", "hello")

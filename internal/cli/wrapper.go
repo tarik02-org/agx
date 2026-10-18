@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -25,10 +26,27 @@ import (
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/daemon"
 	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/securefs"
 	"github.com/tarik02-org/agx/internal/sessions"
 )
+
+// wrapperPID holds, in a harness's environment, the PID of the agx wrapper that started it. agx
+// started as that harness itself, through a shim or link that lookup did not skip, would wrap
+// itself again without end, so it refuses instead.
+const wrapperPID = "AGX_WRAPPER_PID"
+
+// guardEnviron is environ with wrapperPID set to this process's PID.
+func guardEnviron(environ []string) []string {
+	out := make([]string, 0, len(environ)+1)
+	for _, pair := range environ {
+		if name, _, _ := strings.Cut(pair, "="); !strings.EqualFold(name, wrapperPID) {
+			out = append(out, pair)
+		}
+	}
+	return append(out, wrapperPID+"="+strconv.Itoa(os.Getpid()))
+}
 
 type ExitError struct{ Code int }
 
@@ -61,6 +79,15 @@ func runHarness(
 	args []string,
 	resumed string,
 ) error {
+	// A host that closes the wrapper's output must not kill it before it ends its launch.
+	platform.SurviveBrokenPipes()
+	if os.Getenv(wrapperPID) == strconv.Itoa(os.Getppid()) {
+		return fmt.Errorf(
+			"%s: the agx wrapper started agx again instead of the native harness (a shim or link to agx "+
+				"is on PATH before it); configure the native executable's absolute path as harnesses.<name>.executable",
+			name,
+		)
+	}
 	if harnesses.err != nil {
 		if _, builtin := registry.Adapter(name); !builtin {
 			return fmt.Errorf("unknown harness %s (harness definitions unavailable: %w)", name, harnesses.err)
@@ -79,12 +106,14 @@ func runHarness(
 	if err != nil {
 		return err
 	}
+	// The caller's PATH decides which native executable runs, so per-directory shells such as
+	// mise or Nix ones apply; a configured absolute path wins.
+	executable, err := adapter.Executable(h.Executable)
+	if err != nil {
+		return err
+	}
 	mode := adapter.Classify(args)
 	if mode == config.ModePassthrough {
-		executable, err := adapter.Executable(h.Executable)
-		if err != nil {
-			return err
-		}
 		// Without a managed launch there is no daemon to ask, so secrets resolve here when their
 		// kind allows it: environment, command, keychain, or sops.
 		harnessArgs, harnessEnv, err := h.Resolve(mode, os.LookupEnv, func(id config.ID) (string, error) {
@@ -102,6 +131,7 @@ func runHarness(
 		for _, key := range slices.Sorted(maps.Keys(harnessEnv)) {
 			cmd.Env = append(cmd.Env, key+"="+harnessEnv[key])
 		}
+		cmd.Env = guardEnviron(cmd.Env)
 		return supervise(cmd, nil, nil)
 	}
 	directory, nativeArgs, err := adapter.Directory(args, cwd)
@@ -150,6 +180,7 @@ func runHarness(
 			Harness:           name,
 			NativeArguments:   nativeArgs,
 			EnvironmentInputs: inputs,
+			Executable:        executable,
 		},
 		c.discovery.Token,
 	)
@@ -184,7 +215,7 @@ func runHarness(
 	for _, warning := range p.Warnings {
 		ui.Diagnose(ui.Warn, "%s", warning)
 	}
-	cmd := exec.CommandContext(ctx, p.Spawn.Executable, p.Spawn.Arguments...)
+	cmd := exec.CommandContext(ctx, executable, p.Spawn.Arguments...)
 	cmd.Dir = p.Spawn.Directory
 	envKey := func(name string) string {
 		if runtime.GOOS == "windows" {
@@ -214,6 +245,7 @@ func runHarness(
 	for _, name := range overrides {
 		cmd.Env = append(cmd.Env, name+"="+p.Spawn.EnvironmentOverrides[name])
 	}
+	cmd.Env = guardEnviron(cmd.Env)
 	// The record lets the launcher resume this launch's sessions with the same definition.
 	records := sessions.NewRecords(paths.State)
 	record := sessions.Record{
@@ -230,11 +262,12 @@ func runHarness(
 		ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
 	}
 	link := newLease(paths, c, p.Launch.Id, p.LifecycleToken)
-	link.remember(p.Launch.Id, inputs, nativeArgs)
+	link.remember(p.Launch.Id, inputs, nativeArgs, executable)
 	finished := make(chan struct{})
 	var wg sync.WaitGroup
 	start := func() {
-		expires := p.Launch.GetExpiresAt().AsTime()
+		// The daemon's expiry turns into a monotonic deadline, which a wall clock jump leaves be.
+		expires := time.Now().Add(time.Until(p.Launch.GetExpiresAt().AsTime()))
 		// Failures are retried every second until the lease runs out, because the daemon may
 		// recover, or another one restore the launch, before then.
 		renew := func() (bool, bool) {
@@ -246,11 +279,30 @@ func runHarness(
 			)
 			if err == nil {
 				if next := response.GetExpiresAt(); next != nil {
-					expires = next.AsTime()
+					expires = time.Now().Add(time.Until(next.AsTime()))
 				}
 				return true, true
 			}
-			if time.Now().Before(expires) {
+			var rpcErr *connect.Error
+			ended := ""
+			if errors.As(err, &rpcErr) {
+				ended = rpcErr.Meta().Get(daemon.EndedHeader)
+			}
+			switch {
+			case ended == "revoked":
+				ui.Diagnose(ui.Warn, "launch was revoked; MCP access is lost. Relaunch to reconnect.")
+				return false, false
+			case ended == "finished":
+				return false, false
+			case ended == "" && connect.CodeOf(err) == connect.CodeNotFound:
+				// A serving daemon has restored every launch it could; the next one would not either.
+				ui.Diagnose(
+					ui.Warn,
+					"the daemon no longer knows this launch (revoked by agx daemon stop --force, or its saved state "+
+						"was lost); MCP access is lost. Relaunch to reconnect.",
+				)
+				return false, false
+			case ended == "" && time.Now().Before(expires):
 				return false, true
 			}
 			ui.Diagnose(ui.Warn, "launch lease expired; MCP access is lost. Relaunch to reconnect.")
@@ -406,22 +458,29 @@ func supervise(cmd *exec.Cmd, started func(), connect streams) error {
 				ui.Diagnose(ui.Warn, "cannot forward %v to native process: %v", sig, err)
 			}
 		case err := <-done:
-			if err == nil {
+			state := cmd.ProcessState
+			if state == nil {
+				return err
+			}
+			// Wait also fails when its children hold the process's output open past WaitDelay,
+			// or copying that output fails, after the process itself exited: its exit status
+			// still decides the outcome, not a failure to start.
+			var exit *exec.ExitError
+			if err != nil && !errors.As(err, &exit) && !errors.Is(err, exec.ErrWaitDelay) {
+				ui.Diagnose(ui.Warn, "native process output: %v", err)
+			}
+			if state.Success() {
 				return nil
 			}
-			var exit *exec.ExitError
-			if errors.As(err, &exit) {
-				code := exit.ExitCode()
-				if code < 0 {
-					if status, ok := exit.Sys().(syscall.WaitStatus); ok && status.Signaled() {
-						code = 128 + int(status.Signal())
-					} else {
-						code = 1
-					}
+			code := state.ExitCode()
+			if code < 0 {
+				if status, ok := state.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+					code = 128 + int(status.Signal())
+				} else {
+					code = 1
 				}
-				return &ExitError{Code: code}
 			}
-			return err
+			return &ExitError{Code: code}
 		}
 	}
 }

@@ -31,6 +31,7 @@ func stateServer(t *testing.T) *Server {
 
 func addLaunch(s *Server, id, parent string, state v1.Launch_State, expires, created time.Time) {
 	s.launches[id] = &launch{
+		expires: expires,
 		view: &v1.Launch{
 			Id:             id,
 			SnapshotId:     "snapshot-" + id,
@@ -213,7 +214,7 @@ func TestRestoreSkipsEndedAndCleansLaunchFiles(t *testing.T) {
 	next := stateServer(t)
 	next.ctx, next.paths = context.Background(), s.paths
 	next.store.path = s.store.path
-	next.restore(restored)
+	next.restore(restored, true)
 	l := next.launches["plain"]
 	if l == nil || !l.restored || l.endpoints != nil || !active(l.view.State) {
 		t.Fatalf("restored launch = %+v", l)

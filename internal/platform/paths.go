@@ -35,7 +35,10 @@ func defaultCache() string { return filepath.Join(xdg.CacheHome, "agx") }
 
 // Derive sets Runtime and State from Cache. State is AGX_STATE when set; a cache other than the
 // default keeps its state beside it, so a run isolated by AGX_CACHE or --cache stays isolated.
+// It also spells Config as the filesystem does, so that a daemon and its callers, comparing
+// configuration roots, do not tell apart spellings of one file (case, or a Windows short name).
 func (p *Paths) Derive() error {
+	p.Config = ActualCase(filepath.Clean(p.Config))
 	p.Runtime = filepath.Join(p.Cache, "runtime")
 	switch value := os.Getenv("AGX_STATE"); {
 	case value != "":

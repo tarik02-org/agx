@@ -573,7 +573,8 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 		Short: "Show daemon version and launch count",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := newClient(*paths)
+			// A daemon of another build, such as one started before agx was upgraded, still reports.
+			c, err := newAnyVersionClient(*paths)
 			if err != nil {
 				return err
 			}
@@ -582,6 +583,17 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			view, err := c.runtime.GetRuntime(ctx, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
 			if err != nil {
 				return err
+			}
+			switch {
+			case c.discovery.Version != daemon.Version:
+				ui.Diagnose(
+					ui.Warn,
+					"the daemon runs agx %s, not this agx %s; run agx daemon restart to replace it",
+					c.discovery.Version,
+					daemon.Version,
+				)
+			case c.discovery.Build != daemon.Build():
+				ui.Diagnose(ui.Warn, "the daemon runs another build of agx; run agx daemon restart to replace it")
 			}
 			if scripting.enabled {
 				return printJSON(daemonStatusDocument(view.Msg.Runtime))

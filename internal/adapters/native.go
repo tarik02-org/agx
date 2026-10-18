@@ -9,10 +9,11 @@ import (
 	"strings"
 
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/shims"
 )
 
-// FindExecutable locates a native executable, skipping agx itself so a harness-named link to agx
-// cannot recurse. On Windows it accepts only real executables: Go cannot pass arguments to a batch
+// FindExecutable locates a native executable, skipping agx itself and shims, so a harness-named
+// link to agx cannot recurse. On Windows it accepts only real executables: Go cannot pass arguments to a batch
 // file without cmd.exe reparsing them.
 func FindExecutable(name, configured string) (string, error) {
 	self, err := os.Executable()
@@ -44,6 +45,10 @@ func FindExecutable(name, configured string) (string, error) {
 	for _, p := range candidates {
 		info, err := os.Stat(p)
 		if err != nil || info.IsDir() || os.SameFile(selfInfo, info) {
+			continue
+		}
+		// A configured path is the user's explicit choice; the wrapper's guard catches a shim there.
+		if configured == "" && shims.IsShim(p) {
 			continue
 		}
 		if runtime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0 {

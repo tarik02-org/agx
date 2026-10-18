@@ -21,7 +21,6 @@ type fixture struct {
 	config    *config.Config
 	work      string
 	cache     string
-	fake      string
 	endpoints []adapters.Endpoint
 }
 
@@ -81,7 +80,6 @@ harnesses:
 		config: c,
 		work:   filepath.Join(dir, "work"),
 		cache:  filepath.Join(dir, "cache"),
-		fake:   fake,
 		endpoints: []adapters.Endpoint{
 			{ID: "up", URL: "http://127.0.0.1:9/launch/L/mcp/up"},
 			{ID: "team/remote", URL: "http://127.0.0.1:9/launch/L/mcp/team%2Fremote"},
@@ -122,9 +120,6 @@ func checkPlan(t *testing.T, f fixture, plan adapters.Plan, s *config.Snapshot, 
 	t.Helper()
 	if !slices.Equal(plan.Arguments, want) {
 		t.Errorf("arguments:\n got %q\nwant %q", plan.Arguments, want)
-	}
-	if plan.Executable != f.fake {
-		t.Errorf("executable = %q, want %q", plan.Executable, f.fake)
 	}
 	if plan.Directory != s.Directory {
 		t.Errorf("directory = %q, want %q", plan.Directory, s.Directory)

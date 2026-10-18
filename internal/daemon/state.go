@@ -111,10 +111,40 @@ func (r restoredLaunch) view() *v1.Launch {
 	}
 }
 
+// newerState is the error of a state file written by a newer agx, which this one must not
+// replace: the launches it holds would be lost.
+type newerState struct {
+	path    string
+	version int
+}
+
+func (e newerState) Error() string {
+	return fmt.Sprintf(
+		"daemon state %s has format version %d, newer than this agx reads (%d); upgrade agx, "+
+			"or run a daemon of the agx that wrote it",
+		e.path,
+		e.version,
+		stateVersion,
+	)
+}
+
+// invalidState is the error of a state file that does not decode. Writes are atomic, so only
+// an edit by hand or a damaged disk leaves one; the daemon moves it aside.
+type invalidState struct {
+	path string
+	err  error
+}
+
+func (e invalidState) Error() string {
+	return fmt.Sprintf("invalid daemon state %s: %v", e.path, e.err)
+}
+
+func (e invalidState) Unwrap() error { return e.err }
+
 // loadState reads the state file for configuration root config at now. It keeps the launches
 // still active, parents before their thread launches, and drops expired ones, those of another
 // configuration, and thread launches whose parent is gone. A missing file holds nothing; a file
-// that does not decode, or has another format version, is an error.
+// of a newer format version is a newerState error, and one that does not decode an invalidState.
 func loadState(path, config string, now time.Time) (int, []restoredLaunch, error) {
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -123,12 +153,22 @@ func loadState(path, config string, now time.Time) (int, []restoredLaunch, error
 	if err != nil {
 		return 0, nil, err
 	}
+	// The version decodes first, so a newer format is recognized even when its fields changed.
+	var header struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(b, &header); err != nil {
+		return 0, nil, invalidState{path: path, err: err}
+	}
+	if header.Version > stateVersion {
+		return 0, nil, newerState{path: path, version: header.Version}
+	}
 	var saved savedState
 	if err := json.Unmarshal(b, &saved); err != nil {
-		return 0, nil, fmt.Errorf("invalid daemon state %s: %w", path, err)
+		return 0, nil, invalidState{path: path, err: err}
 	}
 	if saved.Version != stateVersion {
-		return 0, nil, fmt.Errorf("daemon state %s has format version %d, not %d", path, saved.Version, stateVersion)
+		return 0, nil, invalidState{path: path, err: fmt.Errorf("unknown format version %d", saved.Version)}
 	}
 	if saved.Config != config {
 		return saved.Port, nil, nil

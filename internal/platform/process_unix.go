@@ -36,6 +36,11 @@ func StopSignals(attached bool) []os.Signal {
 
 func IsolateOwned(cmd *exec.Cmd) { Isolate(cmd) }
 
+// SurviveBrokenPipes makes writes to a closed standard output or error fail with EPIPE for the
+// rest of the process's life instead of killing it with SIGPIPE. Catching the signal, unlike
+// ignoring it, leaves it at its default for the processes this one starts.
+func SurviveBrokenPipes() { signal.Notify(make(chan os.Signal, 1), syscall.SIGPIPE) }
+
 // TerminalDelivered reports whether a terminal-generated sig already reached pid because pid is in the
 // terminal's foreground process group. Signals sent with kill to the wrapper alone cannot be told apart
 // there, so a foreground child relies on the terminal for SIGINT and SIGHUP.

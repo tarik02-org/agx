@@ -1562,8 +1562,11 @@ type PrepareLaunchRequest struct {
 	// Sensitive: only names declared by the expected snapshot are accepted, and the variables
 	// the harness's adapter forwards, such as CODEX_HOME; an empty value means unset.
 	EnvironmentInputs map[string]string `protobuf:"bytes,6,rep,name=environment_inputs,json=environmentInputs,proto3" json:"environment_inputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Absolute path of the native executable the wrapper found on its own PATH, or the configured
+	// one. The wrapper runs it; the daemon runs it only for native installation on its behalf.
+	Executable    string `protobuf:"bytes,7,opt,name=executable,proto3" json:"executable,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PrepareLaunchRequest) Reset() {
@@ -1636,6 +1639,13 @@ func (x *PrepareLaunchRequest) GetEnvironmentInputs() map[string]string {
 		return x.EnvironmentInputs
 	}
 	return nil
+}
+
+func (x *PrepareLaunchRequest) GetExecutable() string {
+	if x != nil {
+		return x.Executable
+	}
+	return ""
 }
 
 type PrepareLaunchResponse struct {
@@ -1716,11 +1726,11 @@ func (x *PrepareLaunchResponse) GetWarnings() []string {
 	return nil
 }
 
+// The wrapper runs the native executable it resolved itself, so per-directory PATHs apply.
 type SpawnPlan struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	Executable string                 `protobuf:"bytes,1,opt,name=executable,proto3" json:"executable,omitempty"`
-	Arguments  []string               `protobuf:"bytes,2,rep,name=arguments,proto3" json:"arguments,omitempty"`
-	Directory  string                 `protobuf:"bytes,3,opt,name=directory,proto3" json:"directory,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Arguments []string               `protobuf:"bytes,2,rep,name=arguments,proto3" json:"arguments,omitempty"`
+	Directory string                 `protobuf:"bytes,3,opt,name=directory,proto3" json:"directory,omitempty"`
 	// Sensitive: includes the stable harness MCP grant for this lease.
 	EnvironmentOverrides map[string]string `protobuf:"bytes,4,rep,name=environment_overrides,json=environmentOverrides,proto3" json:"environment_overrides,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	UnsetEnvironment     []string          `protobuf:"bytes,5,rep,name=unset_environment,json=unsetEnvironment,proto3" json:"unset_environment,omitempty"`
@@ -1759,13 +1769,6 @@ func (x *SpawnPlan) ProtoReflect() protoreflect.Message {
 // Deprecated: Use SpawnPlan.ProtoReflect.Descriptor instead.
 func (*SpawnPlan) Descriptor() ([]byte, []int) {
 	return file_agx_v1_agx_proto_rawDescGZIP(), []int{21}
-}
-
-func (x *SpawnPlan) GetExecutable() string {
-	if x != nil {
-		return x.Executable
-	}
-	return ""
 }
 
 func (x *SpawnPlan) GetArguments() []string {
@@ -2347,8 +2350,10 @@ type RestoreLaunchRequest struct {
 	EnvironmentInputs map[string]string `protobuf:"bytes,3,rep,name=environment_inputs,json=environmentInputs,proto3" json:"environment_inputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Sensitive: the native arguments the launch was prepared with; empty for a thread launch.
 	NativeArguments []string `protobuf:"bytes,4,rep,name=native_arguments,json=nativeArguments,proto3" json:"native_arguments,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// The native executable the launch was prepared with; empty for a thread launch.
+	Executable    string `protobuf:"bytes,5,opt,name=executable,proto3" json:"executable,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RestoreLaunchRequest) Reset() {
@@ -2407,6 +2412,13 @@ func (x *RestoreLaunchRequest) GetNativeArguments() []string {
 		return x.NativeArguments
 	}
 	return nil
+}
+
+func (x *RestoreLaunchRequest) GetExecutable() string {
+	if x != nil {
+		return x.Executable
+	}
+	return ""
 }
 
 type RestoreLaunchResponse struct {
@@ -3867,7 +3879,7 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\rPackageResult\x12\x1f\n" +
 	"\vpackage_ids\x18\x01 \x03(\tR\n" +
 	"packageIds\x12\x1c\n" +
-	"\tlockfiles\x18\x02 \x03(\tR\tlockfiles\"\xe3\x02\n" +
+	"\tlockfiles\x18\x02 \x03(\tR\tlockfiles\"\x83\x03\n" +
 	"\x14PrepareLaunchRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
@@ -3876,7 +3888,10 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\tdirectory\x18\x03 \x01(\tR\tdirectory\x12\x18\n" +
 	"\aharness\x18\x04 \x01(\tR\aharness\x12)\n" +
 	"\x10native_arguments\x18\x05 \x03(\tR\x0fnativeArguments\x12b\n" +
-	"\x12environment_inputs\x18\x06 \x03(\v23.agx.v1.PrepareLaunchRequest.EnvironmentInputsEntryR\x11environmentInputs\x1aD\n" +
+	"\x12environment_inputs\x18\x06 \x03(\v23.agx.v1.PrepareLaunchRequest.EnvironmentInputsEntryR\x11environmentInputs\x12\x1e\n" +
+	"\n" +
+	"executable\x18\a \x01(\tR\n" +
+	"executable\x1aD\n" +
 	"\x16EnvironmentInputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xdd\x01\n" +
@@ -3885,11 +3900,8 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x05spawn\x18\x02 \x01(\v2\x11.agx.v1.SpawnPlanR\x05spawn\x12'\n" +
 	"\x0flifecycle_token\x18\x03 \x01(\tR\x0elifecycleToken\x12.\n" +
 	"\x13renew_after_seconds\x18\x04 \x01(\rR\x11renewAfterSeconds\x12\x1a\n" +
-	"\bwarnings\x18\x05 \x03(\tR\bwarnings\"\xf9\x02\n" +
-	"\tSpawnPlan\x12\x1e\n" +
-	"\n" +
-	"executable\x18\x01 \x01(\tR\n" +
-	"executable\x12\x1c\n" +
+	"\bwarnings\x18\x05 \x03(\tR\bwarnings\"\xeb\x02\n" +
+	"\tSpawnPlan\x12\x1c\n" +
 	"\targuments\x18\x02 \x03(\tR\targuments\x12\x1c\n" +
 	"\tdirectory\x18\x03 \x01(\tR\tdirectory\x12`\n" +
 	"\x15environment_overrides\x18\x04 \x03(\v2+.agx.v1.SpawnPlan.EnvironmentOverridesEntryR\x14environmentOverrides\x12+\n" +
@@ -3897,7 +3909,8 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x18initialize_system_prompt\x18\x06 \x01(\tR\x16initializeSystemPrompt\x1aG\n" +
 	"\x19EnvironmentOverridesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb6\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x01\x10\x02R\n" +
+	"executable\"\xb6\x03\n" +
 	"\x06Launch\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vsnapshot_id\x18\x02 \x01(\tR\n" +
@@ -3954,12 +3967,15 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x13RenewLaunchResponse\x129\n" +
 	"\n" +
 	"expires_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12,\n" +
-	"\x12restore_launch_ids\x18\x02 \x03(\tR\x10restoreLaunchIds\"\xb1\x02\n" +
+	"\x12restore_launch_ids\x18\x02 \x03(\tR\x10restoreLaunchIds\"\xd1\x02\n" +
 	"\x14RestoreLaunchRequest\x12\x1b\n" +
 	"\tlaunch_id\x18\x01 \x01(\tR\blaunchId\x12'\n" +
 	"\x0flifecycle_token\x18\x02 \x01(\tR\x0elifecycleToken\x12b\n" +
 	"\x12environment_inputs\x18\x03 \x03(\v23.agx.v1.RestoreLaunchRequest.EnvironmentInputsEntryR\x11environmentInputs\x12)\n" +
-	"\x10native_arguments\x18\x04 \x03(\tR\x0fnativeArguments\x1aD\n" +
+	"\x10native_arguments\x18\x04 \x03(\tR\x0fnativeArguments\x12\x1e\n" +
+	"\n" +
+	"executable\x18\x05 \x01(\tR\n" +
+	"executable\x1aD\n" +
 	"\x16EnvironmentInputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x17\n" +

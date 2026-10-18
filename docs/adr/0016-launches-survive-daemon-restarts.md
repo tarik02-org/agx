@@ -28,6 +28,13 @@ resends their environment inputs and native arguments under management
 authorization; that rebuilds endpoints and, for a process serving threads, its
 harness process. Endpoints needing no inputs rebuild on first use.
 
+A state file of a newer format version, left by a downgrade, keeps the daemon
+from starting with a hint to upgrade agx: replacing it would lose the launches
+it holds. Writes are atomic, so a file that does not decode comes from an edit
+by hand; the daemon moves it aside to `daemon-state.json.bad-<UTC time>`, starts
+without restoring, and keeps every launch file, since the launches of the
+moved file may still need them.
+
 A restored launch keeps its definitions: when its directory no longer resolves
 to the saved snapshot ID, its MCP servers answer 403 until relaunch. Upstream
 sessions are not restored; endpoints answer 404 for unknown session IDs, and
@@ -38,6 +45,9 @@ by harnesses are lost until relaunch or, for Codex app-server threads,
 `daemon stop --force` still revokes everything and clears the file. A command
 finding a daemon of another build that advertises `restores_launches` in its
 discovery replaces it even with active launches; older builds still refuse.
+Discovery also carries a `format` version; a build finding a newer one neither
+uses nor replaces that daemon and asks for an agx upgrade. `version` keeps
+naming the agx release, which builds without `format` compare.
 
 ## Addendum: graceful shutdown
 

@@ -253,12 +253,16 @@ func (a Adapter) Install(ctx context.Context, c *config.Config, cache string, ta
 			}
 			continue
 		}
-		executable, err := a.Executable(t.Executable)
-		if err != nil {
-			if t.Executable != "" {
-				return err
+		executable := t.Resolved
+		if executable == "" {
+			found, err := a.Executable(t.Executable)
+			if err != nil {
+				if t.Executable != "" {
+					return err
+				}
+				continue
 			}
-			continue
+			executable = found
 		}
 		// Definitions sharing a home share its installation; one that enables plugins decides.
 		if previous, ok := installs[home]; ok && (previous.disabled == "" || disabled != "") {

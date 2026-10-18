@@ -77,7 +77,7 @@ func (l *lease) current() *client {
 }
 
 // remember keeps what launch id was prepared with, for a daemon that restores it.
-func (l *lease) remember(id string, inputs map[string]string, native []string) {
+func (l *lease) remember(id string, inputs map[string]string, native []string, executable string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.restore[id] = &v1.RestoreLaunchRequest{
@@ -85,6 +85,7 @@ func (l *lease) remember(id string, inputs map[string]string, native []string) {
 		LifecycleToken:    l.lifecycle,
 		EnvironmentInputs: inputs,
 		NativeArguments:   native,
+		Executable:        executable,
 	}
 }
 

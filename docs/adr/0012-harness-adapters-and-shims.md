@@ -30,10 +30,16 @@ names, TOML assignments, help/version probes, and executable lookup, whose
 Windows rule (only `.exe`, since Go cannot pass arguments to a batch file
 safely) applies to every harness.
 
-`Arguments` returns only the managed prefix. `Build` locates the executable,
-compiles the snapshot's artifacts into the `Launch`, and appends the
-definition's groups and the caller's arguments, so argv order is the same for
-every harness.
+`Arguments` returns only the managed prefix. `Build` compiles the snapshot's
+artifacts into the `Launch` and appends the definition's groups and the
+caller's arguments, so argv order is the same for every harness.
+
+The wrapper, not the daemon, locates the executable: a configured absolute
+path, else the caller's PATH. The daemon's PATH is that of whichever shell
+first started it, so it would ignore per-project mise or Nix shells. The
+wrapper sends the path with the preparation (and again when a restarted daemon
+restores the launch), and native installation run for the launch, such as
+Codex's plugin commands, uses it.
 
 `internal/adapters/builtin` is the one explicit list of adapters; nothing
 registers through `init`. The CLI builds the registry once and hands it to the
@@ -73,5 +79,9 @@ definitions, `remove` deletes them all, and a file agx did not create, or one
 changed since, is reported and left alone. `install` and `list` warn when the
 directory is not on PATH and when another executable on PATH has a shim's name.
 Built-in names (`codex`, `claude`, `pi`) get no shim: shadowing the native
-executables is deferred, and would need executable lookup to skip the shim
-directory.
+executables is deferred. Native executable lookup still skips agx itself, the
+default shim directory, and files a shim manifest lists, so a link or shim
+named after a native harness cannot be taken for it. As a last guard, the
+wrapper sets `AGX_WRAPPER_PID` for the harness it starts; agx started directly
+by that wrapper, through a link lookup could not recognize, refuses with an
+error instead of wrapping itself again.

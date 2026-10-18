@@ -23,6 +23,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/gofrs/flock"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/gen/agx/v1/agxv1connect"
@@ -40,6 +41,13 @@ var Version = "dev"
 // ErrVersionMismatch is returned by ReadDiscovery together with the decoded
 // discovery when the running daemon has a different version.
 var ErrVersionMismatch = errors.New("daemon version mismatch")
+
+// ErrNewerDiscovery is returned by ReadDiscovery when the discovery file has a format newer than
+// this build reads, written by a newer agx; this build must neither use nor replace that daemon.
+var ErrNewerDiscovery = errors.New("daemon discovery from a newer agx")
+
+// discoveryFormat is the format version of the discovery file.
+const discoveryFormat = 1
 
 // ErrUnavailable marks ReadDiscovery errors that leave no daemon to reach: it is not running,
 // or its discovery file is invalid.
@@ -61,6 +69,9 @@ const KeptLaunchesHeader = "Agx-Kept-Launches"
 const historyRetention = time.Hour
 
 type Discovery struct {
+	// Format is the file's format version, discoveryFormat; files from builds before it have none.
+	// Version names the agx release, which older builds compare, so it keeps its name.
+	Format     int    `json:"format"`
 	Version    string `json:"version"`
 	Build      string `json:"build"`
 	InstanceID string `json:"instance_id"`
@@ -73,7 +84,10 @@ type Discovery struct {
 }
 
 type launch struct {
+	// view.ExpiresAt shows and saves expires, which alone decides expiry: it holds a monotonic
+	// clock reading, so that a wall clock jump expires no lease early or late.
 	view      *v1.Launch
+	expires   time.Time
 	grant     [32]byte
 	lifecycle [32]byte
 	ctx       context.Context
@@ -136,6 +150,13 @@ type Server struct {
 	// grace, when set by a stop, replaces daemon.shutdown_grace_seconds.
 	grace time.Duration
 	drain *drain
+	// flushed is set once a stopping daemon collected the state the next one gets; new launches
+	// are refused from then on, for their callers to retry with the next daemon.
+	flushed bool
+	// installs counts package installations running off their requests; none starts once
+	// installsClosed is set, so that waiting for them is final.
+	installs       sync.WaitGroup
+	installsClosed bool
 	// store keeps active launches across restarts; generation numbers the states built for it.
 	store      *stateStore
 	generation uint64
@@ -176,8 +197,26 @@ func Serve(
 	}
 	store := &stateStore{path: StatePath(paths), interval: renewalWriteInterval}
 	port, restored, err := loadState(store.path, paths.Config, time.Now())
-	if err != nil {
-		// A state this daemon cannot read must not keep it from starting; its launches are lost.
+	// Without a readable state, launch files may still belong to launches a daemon could restore.
+	sweep := err == nil
+	var newer newerState
+	var invalid invalidState
+	switch {
+	case errors.As(err, &newer):
+		return err
+	case errors.As(err, &invalid):
+		aside := store.path + ".bad-" + time.Now().UTC().Format("20060102T150405Z")
+		if renameErr := os.Rename(store.path, aside); renameErr != nil {
+			fmt.Fprintf(
+				os.Stderr,
+				"agx daemon: ignoring saved launches: %v; cannot move it aside: %v\n",
+				err,
+				renameErr,
+			)
+		} else {
+			fmt.Fprintf(os.Stderr, "agx daemon: ignoring saved launches: %v; moved it to %s\n", err, aside)
+		}
+	case err != nil:
 		fmt.Fprintf(os.Stderr, "agx daemon: ignoring saved launches: %v\n", err)
 	}
 	listener, err := listen(ctx, port)
@@ -189,6 +228,7 @@ func Serve(
 	serverCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 	discovery := Discovery{
+		Format:           discoveryFormat,
 		Version:          Version,
 		Build:            Build(),
 		InstanceID:       securefs.Token(),
@@ -224,7 +264,7 @@ func Serve(
 			port,
 		)
 	}
-	s.restore(restored)
+	s.restore(restored, sweep)
 	s.manager = auth.New(discovery.URL + "/oauth/callback")
 	mux := http.NewServeMux()
 	interceptor := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
@@ -307,13 +347,14 @@ func Serve(
 		w.Header().Set("Cache-Control", "no-store")
 		tracked.ServeHTTP(w, r)
 	}), ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 64 * 1024}
-	errCh := make(chan error, 1)
-	go func() { errCh <- server.Serve(listener) }()
+	// Discovery goes first: the listener queues connections meanwhile, and a wrapper whose old
+	// client reaches this daemon on a reused port must find the token it needs then.
 	if err := securefs.WriteJSON(discoveryPath, discovery); err != nil {
-		_ = server.Close()
 		return err
 	}
 	defer func() { _ = os.Remove(discoveryPath) }()
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.Serve(listener) }()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	var serveErr error
@@ -360,6 +401,12 @@ loop:
 	<-shutdownDone
 	_ = server.Close()
 	s.cancel()
+	// Cancelled installations still remove what they started; they must not be cut off by exit.
+	installCtx, stopInstalls := context.WithTimeout(context.Background(), forcedGrace)
+	if !s.awaitInstalls(installCtx) {
+		fmt.Fprintln(os.Stderr, "agx daemon: package installation did not stop in time")
+	}
+	stopInstalls()
 	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 		return serveErr
 	}
@@ -396,6 +443,28 @@ func (s *Server) settle(ctx context.Context) {
 	if !s.drain.wait(ctx) {
 		fmt.Fprintf(os.Stderr, "agx daemon: requests still in flight after %s end now\n", grace)
 	}
+	if !s.awaitInstalls(ctx) {
+		fmt.Fprintf(os.Stderr, "agx daemon: package installations still running after %s are cancelled\n", grace)
+	}
+}
+
+// awaitInstalls refuses new package installations and waits until those running finished, or
+// ctx ends; it reports whether they all finished.
+func (s *Server) awaitInstalls(ctx context.Context) bool {
+	s.mu.Lock()
+	s.installsClosed = true
+	s.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		s.installs.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // reload loads configuration on demand, skipping the load while every file it read is unchanged.
@@ -424,6 +493,12 @@ func (s *Server) reload() (*config.Config, error) {
 
 func active(state v1.Launch_State) bool {
 	return state == v1.Launch_STATE_PREPARED || state == v1.Launch_STATE_RUNNING
+}
+
+// extend sets when the launch's lease runs out; s.mu must be held.
+func (l *launch) extend(expires time.Time) {
+	l.expires = expires
+	l.view.ExpiresAt = timestamppb.New(expires)
 }
 
 // end must be called with s.mu held; endpoint and cache cleanup run outside it. A launch's
@@ -470,7 +545,7 @@ func (s *Server) expire() {
 	now := time.Now()
 	ended := false
 	for _, l := range s.launches {
-		if active(l.view.State) && now.After(l.view.ExpiresAt.AsTime()) {
+		if active(l.view.State) && now.After(l.expires) {
 			s.end(l, v1.Launch_STATE_EXPIRED)
 			ended = true
 		}
@@ -487,6 +562,7 @@ func (s *Server) expire() {
 // daemon to restore.
 func (s *Server) flush() []*launch {
 	s.mu.Lock()
+	s.flushed = true
 	launches := []*launch{}
 	for _, l := range s.launches {
 		if s.forced {
@@ -616,7 +692,7 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	l := s.launches[parts[0]]
 	if l == nil || !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") || !active(l.view.State) ||
-		time.Now().After(l.view.ExpiresAt.AsTime()) ||
+		time.Now().After(l.expires) ||
 		!auth.Match(l.grant, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")) {
 		s.mu.Unlock()
 		http.Error(w, "invalid or expired launch grant", http.StatusUnauthorized)
@@ -631,7 +707,7 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if pending {
-		if err := s.revive(r.Context(), l, nil, nil, false); err != nil {
+		if err := s.revive(r.Context(), l, nil, false); err != nil {
 			w.Header().Set("Retry-After", "1")
 			http.Error(w, errAwaitingWrapper.Error(), http.StatusServiceUnavailable)
 			return
@@ -842,9 +918,23 @@ func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 // ErrVersionMismatch, so callers such as daemon stop can still reach the daemon.
 func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 	var d Discovery
-	b, err := os.ReadFile(filepath.Join(paths.Runtime, "daemon.json"))
+	path := filepath.Join(paths.Runtime, "daemon.json")
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return d, unavailable("daemon unavailable; run agx daemon start")
+	}
+	// The format decodes first, so a newer one is recognized even when its fields changed.
+	var header struct {
+		Format int `json:"format"`
+	}
+	if err := json.Unmarshal(b, &header); err == nil && header.Format > discoveryFormat {
+		return Discovery{}, fmt.Errorf(
+			"%w: %s has format %d, newer than this agx reads (%d); the daemon runs a newer agx, so upgrade agx",
+			ErrNewerDiscovery,
+			path,
+			header.Format,
+			discoveryFormat,
+		)
 	}
 	if err := json.Unmarshal(b, &d); err != nil {
 		return d, unavailable("invalid daemon discovery; restart the daemon")

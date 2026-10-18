@@ -142,7 +142,7 @@ func errorCode(err error) string {
 		return codeUsage
 	case errors.As(err, &c):
 		return c.code
-	case errors.Is(err, daemon.ErrVersionMismatch):
+	case errors.Is(err, daemon.ErrVersionMismatch), errors.Is(err, daemon.ErrNewerDiscovery):
 		return codeVersionMismatch
 	case errors.Is(err, daemon.ErrUnavailable):
 		return codeDaemonUnavailable

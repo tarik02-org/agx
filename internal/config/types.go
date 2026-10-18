@@ -12,6 +12,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 type ID string
@@ -287,7 +289,7 @@ func Canonical(path string) (string, error) {
 	for {
 		real, err := filepath.EvalSymlinks(abs)
 		if err == nil {
-			real = actualCase(real)
+			real = platform.ActualCase(real)
 			for i := len(suffix) - 1; i >= 0; i-- {
 				real = filepath.Join(real, suffix[i])
 			}
@@ -631,34 +633,4 @@ func stripPositions[T any](in map[ID]T, strip func(T) T) map[ID]T {
 		out[id] = strip(v)
 	}
 	return out
-}
-
-// Preserve distinct names on case-sensitive volumes while normalizing names that
-// the filesystem resolves to the same directory on case-insensitive volumes.
-// Components of directories that cannot be listed (traversable but not readable)
-// or that vanished meanwhile are kept as given.
-func actualCase(path string) string {
-	volume := filepath.VolumeName(path)
-	current := volume + string(filepath.Separator)
-	rest := strings.TrimLeft(strings.TrimPrefix(path, volume), string(filepath.Separator))
-	for _, part := range strings.Split(rest, string(filepath.Separator)) {
-		if part == "" {
-			continue
-		}
-		name := part
-		entries, err := os.ReadDir(current)
-		if err == nil && !slices.ContainsFunc(entries, func(e os.DirEntry) bool { return e.Name() == part }) {
-			if target, err := os.Stat(filepath.Join(current, part)); err == nil {
-				for _, entry := range entries {
-					info, err := entry.Info()
-					if err == nil && os.SameFile(target, info) {
-						name = entry.Name()
-						break
-					}
-				}
-			}
-		}
-		current = filepath.Join(current, name)
-	}
-	return current
 }

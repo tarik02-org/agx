@@ -21,9 +21,9 @@ var errAwaitingWrapper = errors.New(
 	"launch restored after a daemon restart; waiting for its wrapper to resend its environment",
 )
 
-// restore adds the launches a previous daemon saved and removes the launch files no restored
-// launch uses. It runs before the daemon serves requests.
-func (s *Server) restore(restored []restoredLaunch) {
+// restore adds the launches a previous daemon saved and, when sweep is set, removes the launch
+// files no restored launch uses. It runs before the daemon serves requests.
+func (s *Server) restore(restored []restoredLaunch, sweep bool) {
 	kept := map[string]bool{}
 	for _, r := range restored {
 		parentCtx := s.ctx
@@ -32,7 +32,9 @@ func (s *Server) restore(restored []restoredLaunch) {
 		}
 		ctx, cancel := context.WithCancel(parentCtx)
 		s.launches[r.saved.ID] = &launch{
-			view:         r.view(),
+			view: r.view(),
+			// The saved expiry is a wall clock time; from now on the monotonic clock counts.
+			expires:      time.Now().Add(time.Until(r.saved.Expires)),
 			grant:        r.grant,
 			lifecycle:    r.lifecycle,
 			ctx:          ctx,
@@ -46,7 +48,7 @@ func (s *Server) restore(restored []restoredLaunch) {
 	}
 	// Launches that ended while no daemon ran, or that a crashed daemon left, own nothing anymore.
 	root := filepath.Join(s.paths.Cache, "launches")
-	if entries, err := os.ReadDir(root); err == nil {
+	if entries, err := os.ReadDir(root); sweep && err == nil {
 		for _, entry := range entries {
 			if !kept[entry.Name()] {
 				_ = os.RemoveAll(filepath.Join(root, entry.Name()))
@@ -80,14 +82,17 @@ func (s *Server) RestoreLaunch(
 	if err != nil {
 		return nil, err
 	}
-	if err := s.revive(ctx, l, req.Msg.EnvironmentInputs, req.Msg.NativeArguments, true); err != nil {
+	if req.Msg.Executable != "" && !filepath.IsAbs(req.Msg.Executable) {
+		return nil, rpcError(connect.CodeInvalidArgument, "executable must be absolute")
+	}
+	if err := s.revive(ctx, l, req.Msg, true); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&v1.RestoreLaunchResponse{}), nil
 }
 
 // revive rebuilds what a restored launch's state file does not hold: its snapshot, MCP endpoints
-// and, for a process serving threads, its harness process. fromWrapper says inputs and native
+// and, for a process serving threads, its harness process. fromWrapper says the restore request
 // came from the launch's wrapper, which completes the restoration; without them, only endpoints
 // that need no environment inputs are rebuilt, so harnesses reconnecting before their wrapper
 // do not wait for it.
@@ -98,10 +103,10 @@ func (s *Server) RestoreLaunch(
 func (s *Server) revive(
 	ctx context.Context,
 	l *launch,
-	inputs map[string]string,
-	native []string,
+	restore *v1.RestoreLaunchRequest,
 	fromWrapper bool,
 ) error {
+	inputs, native := restore.GetEnvironmentInputs(), restore.GetNativeArguments()
 	l.reviving.Lock()
 	defer l.reviving.Unlock()
 	s.mu.Lock()
@@ -175,6 +180,7 @@ func (s *Server) revive(
 				return rpcError(connect.CodeFailedPrecondition, err.Error())
 			}
 			target = adapters.NewTarget(harness, harnessArgs, harnessEnv, native, lookup)
+			target.Resolved = restore.GetExecutable()
 		}
 	}
 	var endpoints map[config.ID]*mcpruntime.Endpoint
