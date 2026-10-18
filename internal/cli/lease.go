@@ -2,14 +2,50 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"sync"
+	"time"
 
 	"connectrpc.com/connect"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/cli/ui"
+	"github.com/tarik02-org/agx/internal/daemon"
 	"github.com/tarik02-org/agx/internal/platform"
 )
+
+const (
+	// restartWait bounds retrying new work while a daemon restarts: it drains for its grace
+	// period, exits, and the next one starts.
+	restartWait = 30 * time.Second
+	// discoveryPoll is how often a wrapper looks for a daemon that replaced its own, so a
+	// restarted daemon gets its launches restored promptly.
+	discoveryPoll = 250 * time.Millisecond
+)
+
+// stopping reports whether err comes from a daemon that stopped taking new work, so the request
+// is worth retrying with the next one.
+func stopping(err error) bool {
+	var e *connect.Error
+	return errors.As(err, &e) && e.Meta().Get(daemon.StoppingHeader) != ""
+}
+
+// backoff is the pause before retry attempt n (from 0) with a daemon that is restarting.
+func backoff(n int) time.Duration {
+	return min(200*time.Millisecond<<min(n, 4), 2*time.Second)
+}
+
+// pause waits d, or less if ctx ends first, and returns ctx's error then.
+func pause(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
 
 // lease is a wrapper's connection to the daemon serving its launch. When that daemon stops and
 // another one restores the launch, possibly of another build, lease follows the discovery file to
@@ -73,6 +109,39 @@ func (l *lease) reconnect(used *client) bool {
 	}
 	l.client = next
 	return true
+}
+
+// replaced reports whether discovery names another daemon instance than the one in use, which
+// then waits to have this wrapper's launches restored.
+func (l *lease) replaced() bool {
+	d, err := daemon.ReadDiscovery(l.paths)
+	if err != nil && !errors.Is(err, daemon.ErrVersionMismatch) {
+		return false
+	}
+	return d.InstanceID != l.current().discovery.InstanceID
+}
+
+// await waits d, and returns early once another daemon replaced the one in use, switching to it.
+// It reports false when done closes first.
+func (l *lease) await(done <-chan struct{}, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	poll := time.NewTicker(discoveryPoll)
+	defer poll.Stop()
+	for {
+		select {
+		case <-done:
+			return false
+		case <-timer.C:
+			return true
+		case <-poll.C:
+			// The next daemon may listen on the same port, where the old client would reach it
+			// with the old management token.
+			if l.replaced() && l.reconnect(l.current()) {
+				return true
+			}
+		}
+	}
 }
 
 // call runs fn against the current daemon and, when it fails, once more against a daemon that

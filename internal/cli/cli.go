@@ -5,12 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
@@ -492,9 +491,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if foreground {
-				ctx, cancel := signal.NotifyContext(cmd.Context(), platform.Interrupts()...)
-				defer cancel()
-				return daemon.Serve(ctx, *paths, registry, *builtins)
+				return serveDaemon(cmd.Context(), *paths, registry, *builtins)
 			}
 			if c, err := newAnyVersionClient(*paths); err == nil {
 				ctx, cancel := boundedContext()
@@ -559,6 +556,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 	jsonFlag(status)
 	command.AddCommand(status)
 	force := false
+	var grace time.Duration
 	stop := &cobra.Command{
 		Use:   "stop",
 		Short: "Stop the daemon",
@@ -567,11 +565,10 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			c, err := newAnyVersionClient(*paths)
 			kept := 0
 			if err == nil {
-				kept, err = stopDaemon(cmd.Context(), c, force)
+				kept, err = stopDaemon(cmd.Context(), c, force, grace)
 			}
 			// Stopping a daemon that is not there leaves the state asked for.
-			var dial *net.OpError
-			if errors.Is(err, daemon.ErrUnavailable) || errors.As(err, &dial) && dial.Op == "dial" {
+			if daemonGone(err) {
 				if scripting.enabled {
 					return printJSON(daemonStopped{})
 				}
@@ -604,14 +601,51 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			return err
 		},
 	}
-	stop.Flags().BoolVar(
-		&force,
-		"force",
-		false,
-		"revoke the MCP access of active launches instead of keeping them for the next daemon",
-	)
-	jsonFlag(stop)
-	command.AddCommand(stop)
+	restart := &cobra.Command{
+		Use:   "restart",
+		Short: "Stop the daemon and start one of this build",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			keepRoot := !cmd.Flags().Changed("config")
+			result, err := restartDaemon(cmd.Context(), *paths, *builtins, keepRoot, force, grace)
+			if err != nil {
+				return err
+			}
+			if scripting.enabled {
+				return printJSON(result)
+			}
+			message := "Daemon started"
+			if result.Stopped {
+				message = "Daemon restarted"
+			}
+			switch {
+			case result.Restored == 1:
+				message += "; it restored 1 active launch."
+			case result.Restored > 1:
+				message += fmt.Sprintf("; it restored %d active launches.", result.Restored)
+			default:
+				message += "."
+			}
+			_, err = fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, message))
+			return err
+		},
+	}
+	for _, sub := range []*cobra.Command{stop, restart} {
+		sub.Flags().BoolVar(
+			&force,
+			"force",
+			false,
+			"revoke the MCP access of active launches instead of keeping them for the next daemon",
+		)
+		sub.Flags().DurationVar(
+			&grace,
+			"timeout",
+			0,
+			"how long requests in flight may finish (default daemon.shutdown_grace_seconds)",
+		)
+		jsonFlag(sub)
+		command.AddCommand(sub)
+	}
 	return command
 }
 

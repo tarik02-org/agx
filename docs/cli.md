@@ -318,7 +318,8 @@ warning.
 ```text
 agx daemon start [--foreground] [--config <path>] [--json]
 agx daemon status [--json]
-agx daemon stop [--force] [--json]
+agx daemon stop [--force] [--timeout <duration>] [--json]
+agx daemon restart [--force] [--timeout <duration>] [--json]
 agx launch list [--json]
 agx launch show <launch-id> [--json]
 agx launch revoke <launch-id> [--json]
@@ -342,12 +343,42 @@ launches in `daemon-state.json` in the state directory, and says how many: the
 next daemon, started by any command, restores those whose lease has not run out,
 their wrappers reconnect, and their harnesses keep their grants and endpoint URLs,
 though MCP sessions start again. `daemon stop --force` revokes them instead and
-clears the file. Revocation closes MCP access and upstream sessions; it does not
-kill the harness. Launch inspection excludes secrets. A graceful wrapper exit releases
+clears the file. `daemon restart` stops the running daemon as `daemon stop` does,
+waits until its process exited, and starts one of this build with the same root
+(unless `--config` names another) and cache, then reports how many active
+launches it restored; with no daemon running it only starts one. Revocation
+closes MCP access and upstream sessions; it does not kill the harness. Launch inspection excludes secrets. A graceful wrapper exit releases
 its launch; abrupt exits are recovered through lease expiry. `launch list` shows
 the thread launches of a `codex app-server` process (mode `thread`) indented
 under its launch; `launch show` names a thread launch's parent and thread
 (`session`), and the JSON carries `parent_launch_id` and `session_id`.
+
+### Graceful shutdown
+
+`daemon stop`, `daemon restart`, a command replacing a daemon of another build,
+and SIGTERM or SIGINT (on Windows, Ctrl-C, Ctrl-Break, and the console close,
+logoff, and shutdown events) all shut the daemon down gracefully:
+
+1. It stops taking new work: harness and thread launches, package operations,
+   logins, MCP server tests, and new MCP sessions get a retryable "daemon
+   stopping" error (Connect `unavailable`, or HTTP 503 with `Retry-After`).
+   Wrappers retry them, backing off from 200 ms, with the daemon that discovery
+   names next; event streams (MCP `GET`, `daemon status` watches) end cleanly.
+2. MCP requests and tool calls in flight finish, for up to
+   `daemon.shutdown_grace_seconds` (10 by default); `--timeout` overrides it.
+   Requests on the sessions it serves are still taken meanwhile.
+3. It saves its launches (none after `--force`, which revokes them and drains for
+   at most 2 seconds), then closes its listener.
+4. Its stdio MCP servers get their input closed, SIGTERM 2 seconds later, and
+   are killed after one more second (on Windows, with their job object, without
+   SIGTERM); remote MCP sessions get `DELETE`.
+5. It removes its discovery file and releases its startup lock.
+
+A second signal skips what remains of the grace period and kills MCP servers at
+once; launches are still saved. A detached daemon ignores SIGHUP; one serving in
+the foreground of a terminal stops on it as on SIGTERM. Wrappers watch discovery
+and renew with the next daemon as soon as it runs, so it restores their launches,
+`!env` values included, within a fraction of a second.
 
 ## Doctor
 
@@ -489,6 +520,7 @@ data below.
 | `doctor` | `{directory, root, files, checks, summary}`: each check is `{group, name, status, detail, hint?}` with `status` `pass`, `warn`, or `fail`; `group` is `config`, `harness`, `codex`, `daemon`, `mcp`, `secret`, or `shims`; `summary` counts `pass`, `warn`, and `fail`. A failing check exits 1 after the document. |
 | `daemon start` | `{started, version, log}` |
 | `daemon stop` | `{running, stopping, forced, version, kept_launches}`: `running` says whether a daemon was running; with none, `stopping` and `forced` are `false` and `version` is `""`; `kept_launches` counts the active launches the next daemon restores |
+| `daemon restart` | `{stopped, started, version, restored}`: `stopped` says whether a daemon was running; `version` is the new daemon's; `restored` counts the active launches it restored |
 | `daemon status`, `launch list`, `launch show`, `secret status` | the Connect message as protobuf JSON (`GetRuntimeResponse`, `RuntimeView`, `Launch`, `GetSecretStatusResponse`) |
 | `launch revoke` | `{launch_id, revoked}` |
 | `secret set` | `{secret_id, stored}` |

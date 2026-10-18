@@ -86,11 +86,11 @@ func TestStopBusyDaemon(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	c := dial(daemon.Discovery{URL: server.URL, Token: "token"})
-	_, err := stopDaemon(t.Context(), c, false)
+	_, err := stopDaemon(t.Context(), c, false, 0)
 	if errorCode(err) != codeConflict || !strings.Contains(err.Error(), "agx daemon stop --force") {
 		t.Fatalf("busy stop = %v (%s)", err, errorCode(err))
 	}
-	if _, err := stopDaemon(t.Context(), c, true); err != nil {
+	if _, err := stopDaemon(t.Context(), c, true, 0); err != nil {
 		t.Fatalf("forced stop = %v", err)
 	}
 }
@@ -102,7 +102,7 @@ func TestStopKeepsLaunches(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	c := dial(daemon.Discovery{URL: server.URL, Token: "token"})
-	if kept, err := stopDaemon(t.Context(), c, false); err != nil || kept != 2 {
+	if kept, err := stopDaemon(t.Context(), c, false, 0); err != nil || kept != 2 {
 		t.Fatalf("stop = %d, %v", kept, err)
 	}
 }

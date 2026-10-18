@@ -90,7 +90,7 @@ func main() {
 				r.Endpoints[name] = s.URL
 				clients[name] = &mcpClient{url: s.URL, authorization: os.ExpandEnv(s.Headers["Authorization"])}
 			}
-			r.Tools, _ = echoAll(clients)
+			r.Tools, _ = echoAll(clients, nil)
 		}
 	}
 	if path := os.Getenv("FAKE_STDIN"); path != "" {
@@ -271,15 +271,20 @@ func (c *mcpClient) initialize() error {
 	return nil
 }
 
-// echo calls the echo tool, starting a session first when there is none.
-func (c *mcpClient) echo() (string, error) {
+// echo calls the echo tool with arguments added to its text, starting a session first when
+// there is none.
+func (c *mcpClient) echo(arguments map[string]any) (string, error) {
 	if c.session == "" {
 		if err := c.initialize(); err != nil {
 			return "", err
 		}
 	}
+	args := map[string]any{"text": "hello"}
+	for name, value := range arguments {
+		args[name] = value
+	}
 	call := map[string]any{"id": 2, "method": "tools/call", "params": map[string]any{
-		"name": "echo", "arguments": map[string]any{"text": "hello"},
+		"name": "echo", "arguments": args,
 	}}
 	result, err := c.post(call)
 	if errors.Is(err, errSessionNotFound) {
@@ -308,16 +313,16 @@ func (c *mcpClient) echo() (string, error) {
 
 // callEcho runs the MCP handshake over streamable HTTP and calls the echo tool.
 func callEcho(url, authorization string) (string, error) {
-	return (&mcpClient{url: url, authorization: authorization}).echo()
+	return (&mcpClient{url: url, authorization: authorization}).echo(nil)
 }
 
-// echoAll calls the echo tool of every client, keyed like clients, and reports how many
-// sessions started again.
-func echoAll(clients map[string]*mcpClient) (map[string]string, int) {
+// echoAll calls the echo tool of every client, keyed like clients, with arguments added, and
+// reports how many sessions started again.
+func echoAll(clients map[string]*mcpClient, arguments map[string]any) (map[string]string, int) {
 	tools, reinitialized := map[string]string{}, 0
 	for name, c := range clients {
 		before := c.reinitialized
-		text, err := c.echo()
+		text, err := c.echo(arguments)
 		if err != nil {
 			text = "error: " + err.Error()
 		}
@@ -328,18 +333,26 @@ func echoAll(clients map[string]*mcpClient) (map[string]string, int) {
 }
 
 // hold keeps the harness running after its first calls, as a session does: for each file
-// call-<n> that appears in dir, it calls the echo tools again over the same sessions and writes
-// result-<n>.json; the file exit ends it.
+// call-<n> that appears in dir, it calls the echo tools again over the same sessions, adding the
+// JSON object the file may hold to their arguments, and writes result-<n>.json; the file exit
+// ends it.
 func hold(dir string, clients map[string]*mcpClient) {
 	for n := 1; ; {
 		if _, err := os.Stat(filepath.Join(dir, "exit")); err == nil {
 			return
 		}
-		if _, err := os.Stat(filepath.Join(dir, fmt.Sprintf("call-%d", n))); err != nil {
+		call, err := os.ReadFile(filepath.Join(dir, fmt.Sprintf("call-%d", n)))
+		if err != nil {
 			time.Sleep(50 * time.Millisecond)
 			continue
 		}
-		tools, reinitialized := echoAll(clients)
+		arguments := map[string]any{}
+		if len(call) > 0 {
+			if err := json.Unmarshal(call, &arguments); err != nil {
+				fail(err)
+			}
+		}
+		tools, reinitialized := echoAll(clients, arguments)
 		b, _ := json.Marshal(map[string]any{"tools": tools, "reinitialized": reinitialized})
 		path := filepath.Join(dir, fmt.Sprintf("result-%d.json", n))
 		if err := os.WriteFile(path+".tmp", b, 0o600); err != nil {
@@ -419,10 +432,10 @@ func appServer(args []string) {
 				clients[name] = &mcpClient{url: url, authorization: authorization}
 			}
 			sessions[id] = clients
-			result["tools"], _ = echoAll(clients)
+			result["tools"], _ = echoAll(clients, nil)
 		case "test/call":
 			id, _ := request.Params["threadId"].(string)
-			result["tools"], result["reinitialized"] = echoAll(sessions[id])
+			result["tools"], result["reinitialized"] = echoAll(sessions[id], nil)
 		case "test/close":
 			_ = out.Encode(map[string]any{"id": request.ID, "result": result})
 			_ = out.Encode(map[string]any{"method": "thread/closed", "params": map[string]any{"threadId": request.Params["threadId"]}})

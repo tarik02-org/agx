@@ -124,6 +124,8 @@ func TestCompletion(t *testing.T) {
 		{[]string{"shims", "list", "--dir", ""}, []string{}, cobra.ShellCompDirectiveFilterDirs},
 		{[]string{"skill", "add", ""}, []string{}, cobra.ShellCompDirectiveDefault},
 		{[]string{"sessions", ""}, []string{}, cobra.ShellCompDirectiveNoFileComp},
+		{[]string{"daemon", "re"}, []string{"restart\tStop the daemon and start one of this build"}, cobra.ShellCompDirectiveNoFileComp},
+		{[]string{"daemon", "restart", "--timeout", "1"}, []string{"10s", "1m"}, cobra.ShellCompDirectiveNoFileComp},
 		// No daemon runs, and completion must not start one.
 		{[]string{"launch", "show", ""}, []string{}, cobra.ShellCompDirectiveNoFileComp},
 	} {

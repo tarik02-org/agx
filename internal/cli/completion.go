@@ -348,6 +348,7 @@ func (k *completer) registerCompletions(root *cobra.Command) {
 		"executable": files,
 		"color":      fixed(string(ui.ColorAuto), string(ui.ColorAlways), string(ui.ColorNever)),
 		"kind":       fixed(edit.Skills, edit.Instructions, edit.MCP, edit.Bundles),
+		"timeout":    fixed("5s", "10s", "30s", "1m"),
 	}
 	var walk func(*cobra.Command)
 	walk = func(cmd *cobra.Command) {

@@ -133,14 +133,26 @@ type Server struct {
 	stop              chan struct{}
 	// forced is set by a stop that revokes active launches instead of keeping them.
 	forced bool
+	// grace, when set by a stop, replaces daemon.shutdown_grace_seconds.
+	grace time.Duration
+	drain *drain
 	// store keeps active launches across restarts; generation numbers the states built for it.
 	store      *stateStore
 	generation uint64
 	port       int
 }
 
-// Serve runs the daemon until ctx ends; builtins must describe the adapters in registry.
-func Serve(ctx context.Context, paths platform.Paths, registry adapters.Registry, builtins config.Builtins) error {
+// Serve runs the daemon until stop closes or a stop request arrives, then shuts down gracefully:
+// it takes no new launches or MCP sessions, lets requests in flight finish for the grace period,
+// saves its launches, and lets its MCP servers exit. When ctx ends, it shuts down at once, still
+// saving its launches. builtins must describe the adapters in registry.
+func Serve(
+	ctx context.Context,
+	stop <-chan struct{},
+	paths platform.Paths,
+	registry adapters.Registry,
+	builtins config.Builtins,
+) error {
 	if err := securefs.EnsureDir(paths.Runtime); err != nil {
 		return err
 	}
@@ -173,7 +185,8 @@ func Serve(ctx context.Context, paths platform.Paths, registry adapters.Registry
 		return err
 	}
 	defer func() { _ = listener.Close() }()
-	ctx, cancel := context.WithCancel(ctx)
+	// Launches and their MCP servers outlive ctx until shutdown ends them.
+	serverCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 	discovery := Discovery{
 		Version:          Version,
@@ -191,9 +204,10 @@ func Serve(ctx context.Context, paths platform.Paths, registry adapters.Registry
 		config:            c,
 		inputs:            inputs,
 		discovery:         discovery,
-		ctx:               ctx,
+		ctx:               serverCtx,
 		cancel:            cancel,
 		stop:              make(chan struct{}),
+		drain:             newDrain(),
 		launches:          map[string]*launch{},
 		preparations:      map[string]prepareRecord{},
 		operations:        map[string]*operation{},
@@ -221,6 +235,9 @@ func Serve(ctx context.Context, paths platform.Paths, registry adapters.Registry
 					return nil, rpcError(connect.CodeUnauthenticated, "management credential required")
 				}
 			}
+			if s.drain.draining() && startsWork[req.Spec().Procedure] {
+				return nil, refusal()
+			}
 			return next(ctx, req)
 		}
 	})
@@ -246,11 +263,23 @@ func Serve(ctx context.Context, paths platform.Paths, registry adapters.Registry
 			http.Error(w, "unauthenticated", http.StatusUnauthorized)
 			return
 		}
+		var grace time.Duration
+		if value := r.URL.Query().Get("grace"); value != "" {
+			parsed, err := time.ParseDuration(value)
+			if err != nil || parsed <= 0 {
+				http.Error(w, "grace must be a positive duration", http.StatusBadRequest)
+				return
+			}
+			grace = parsed
+		}
 		s.expire()
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		// Without force, active launches stay in the state file for the next daemon to restore.
 		s.forced = s.forced || r.URL.Query().Get("force") == "true"
+		if grace > 0 {
+			s.grace = grace
+		}
 		kept := 0
 		for _, l := range s.launches {
 			if active(l.view.State) && l.view.ParentLaunchId == "" && !s.forced {
@@ -265,6 +294,7 @@ func Serve(ctx context.Context, paths platform.Paths, registry adapters.Registry
 		w.Header().Set(KeptLaunchesHeader, strconv.Itoa(kept))
 		w.WriteHeader(http.StatusNoContent)
 	})
+	tracked := s.drain.track(mux)
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Host != listener.Addr().String() {
 			http.Error(w, "invalid host", http.StatusForbidden)
@@ -275,7 +305,7 @@ func Serve(ctx context.Context, paths platform.Paths, registry adapters.Registry
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		mux.ServeHTTP(w, r)
+		tracked.ServeHTTP(w, r)
 	}), ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 64 * 1024}
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.Serve(listener) }()
@@ -287,12 +317,17 @@ func Serve(ctx context.Context, paths platform.Paths, registry adapters.Registry
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	var serveErr error
+	graceful := false
 loop:
 	for {
 		select {
 		case <-ctx.Done():
 			break loop
+		case <-stop:
+			graceful = true
+			break loop
 		case <-s.stop:
+			graceful = true
 			break loop
 		case serveErr = <-errCh:
 			break loop
@@ -303,15 +338,64 @@ loop:
 			}
 		}
 	}
-	s.shutdown()
-	shutdownCtx, stop := context.WithTimeout(context.Background(), 3*time.Second)
-	defer stop()
-	_ = server.Shutdown(shutdownCtx)
+	s.drain.start()
+	if graceful {
+		s.settle(ctx)
+	}
+	launches := s.flush()
+	// Shutdown closes the listener at once; requests that outlasted the grace period end as
+	// their MCP sessions close.
+	shutdownCtx, stopShutdown := context.WithCancel(ctx)
+	shutdownDone := make(chan struct{})
+	go func() {
+		defer close(shutdownDone)
+		_ = server.Shutdown(shutdownCtx)
+	}()
+	s.closeLaunches(ctx, launches)
+	select {
+	case <-shutdownDone:
+	case <-time.After(time.Second):
+	}
+	stopShutdown()
+	<-shutdownDone
 	_ = server.Close()
+	s.cancel()
 	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 		return serveErr
 	}
 	return nil
+}
+
+// startsWork are the procedures a stopping daemon refuses, so that callers retry them with the
+// next daemon.
+var startsWork = map[string]bool{
+	agxv1connect.LaunchServicePrepareLaunchProcedure:       true,
+	agxv1connect.LaunchServicePrepareThreadLaunchProcedure: true,
+	agxv1connect.PackageServiceInstallProcedure:            true,
+	agxv1connect.PackageServiceUpdateProcedure:             true,
+	agxv1connect.RuntimeServiceTestMcpServerProcedure:      true,
+}
+
+// settle waits for the grace period until requests in flight finished, or ctx ends.
+func (s *Server) settle(ctx context.Context) {
+	c, _ := s.reload()
+	s.mu.Lock()
+	if c == nil {
+		c = s.config
+	}
+	grace := time.Duration(c.Daemon.ShutdownGraceSeconds) * time.Second
+	if s.grace > 0 {
+		grace = s.grace
+	}
+	if s.forced {
+		grace = min(grace, forcedGrace)
+	}
+	s.mu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, grace)
+	defer cancel()
+	if !s.drain.wait(ctx) {
+		fmt.Fprintf(os.Stderr, "agx daemon: requests still in flight after %s end now\n", grace)
+	}
 }
 
 // reload loads configuration on demand, skipping the load while every file it read is unchanged.
@@ -398,16 +482,14 @@ func (s *Server) expire() {
 	}
 }
 
-// shutdown ends the daemon's launches. A forced stop revokes them; otherwise they stay in the
-// state file, with their launch files, for the next daemon to restore, and only their MCP
-// sessions end here.
-func (s *Server) shutdown() {
-	s.cancel()
+// flush writes the state the next daemon gets and returns the daemon's launches. A forced stop
+// revokes them; otherwise they stay in the state file, with their launch files, for the next
+// daemon to restore.
+func (s *Server) flush() []*launch {
 	s.mu.Lock()
-	forced := s.forced
 	launches := []*launch{}
 	for _, l := range s.launches {
-		if forced {
+		if s.forced {
 			s.end(l, v1.Launch_STATE_REVOKED)
 		}
 		launches = append(launches, l)
@@ -416,6 +498,27 @@ func (s *Server) shutdown() {
 	// Requests still in flight must not rewrite the state once it holds what the next daemon gets.
 	s.persist(false)
 	s.store.freeze()
+	return launches
+}
+
+// closeLaunches ends the MCP sessions of launches, letting their servers exit, or killing them
+// once ctx ends; for a forced stop, it also removes their launch files.
+func (s *Server) closeLaunches(ctx context.Context, launches []*launch) {
+	s.mu.Lock()
+	forced := s.forced
+	all := map[*mcpruntime.Endpoint]bool{}
+	for _, l := range launches {
+		for _, e := range l.endpoints {
+			all[e] = true
+		}
+	}
+	s.mu.Unlock()
+	stopKilling := context.AfterFunc(ctx, func() {
+		for e := range all {
+			go e.Kill()
+		}
+	})
+	defer stopKilling()
 	var cleanup sync.WaitGroup
 	for _, l := range launches {
 		s.mu.Lock()
@@ -525,6 +628,12 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	pending := l.restored && l.endpoints == nil && l.unavailable == "" && !l.threadServer
 	s.mu.Unlock()
+	// A stopping daemon finishes the sessions it serves but opens none; event streams would
+	// outlast it.
+	if s.drain.draining() && (r.Header.Get("Mcp-Session-Id") == "" || r.Method == http.MethodGet) {
+		refuse(w)
+		return
+	}
 	if pending {
 		if err := s.revive(r.Context(), l, nil, nil, false); err != nil {
 			w.Header().Set("Retry-After", "1")
@@ -670,8 +779,8 @@ func (s *Server) WatchRuntime(
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-s.ctx.Done():
-			return rpcError(connect.CodeUnavailable, "daemon stopping")
+		case <-s.drain.stopping.Done():
+			return refusal()
 		case <-ticker.C:
 		}
 	}

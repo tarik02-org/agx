@@ -6,6 +6,9 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Added
 
+- `agx daemon restart [--force] [--timeout <duration>] [--json]` stops the daemon,
+  waits for it to exit, starts one of this build with the same root, and reports
+  how many launches it restored (`{stopped, started, version, restored}`).
 - `--json` on every command except harness entry points: edits, `config validate`,
   `install`, `update`, `mcp test`, `use`, `unuse`, `remove`, `shims`, `daemon start|stop`,
   `launch revoke`, and `secret set|logout` print one versioned document; `secret login` and
@@ -20,6 +23,14 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Changed
 
+- The daemon shuts down gracefully on `daemon stop`, `daemon restart`, replacement,
+  and SIGTERM or SIGINT (Windows console close events included): it refuses new
+  launches and MCP sessions with a retryable error, lets MCP requests and tool
+  calls in flight finish for `daemon.shutdown_grace_seconds` (default 10;
+  `--timeout` overrides it), saves its launches, and lets stdio MCP servers exit
+  before killing them. A second signal stops it at once; a detached daemon
+  ignores SIGHUP. Wrappers retry refused launches and find the next daemon
+  within a fraction of a second.
 - Running launches survive daemon restarts and upgrades. The daemon keeps active
   launches in `daemon-state.json` in the state directory (mode 0600, token
   verifiers and metadata only); the next daemon restores them on the same port,

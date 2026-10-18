@@ -39,6 +39,26 @@ by harnesses are lost until relaunch or, for Codex app-server threads,
 finding a daemon of another build that advertises `restores_launches` in its
 discovery replaces it even with active launches; older builds still refuse.
 
+## Addendum: graceful shutdown
+
+Keeping launches across a restart still cut off whatever was in flight: the
+daemon killed its MCP servers the moment it was asked to stop. Every stop that
+keeps launches, and a forced one briefly, now drains first. The daemon refuses
+new launches and MCP sessions with a retryable error marked
+`Agx-Daemon-Stopping`, lets requests in flight finish for
+`daemon.shutdown_grace_seconds` (default 10, `--timeout` on `daemon stop` and
+the new `daemon restart`), writes the state file, closes its listener, and only
+then lets stdio servers exit (input closed, SIGTERM, kill) and deletes remote
+sessions; discovery goes last. SIGTERM and SIGINT, and the Windows console
+events Go reports as SIGTERM, stop it the same way; a second signal skips the
+rest. A detached daemon ignores SIGHUP. Wrappers poll discovery and renew with a
+successor at once, so restoration does not wait for the next renewal.
+
+Rejected: closing the listener at once and letting `http.Server.Shutdown` drain.
+Callers would see connection errors instead of a refusal they can tell apart
+from a crash, and the next daemon could not start before every request ended
+anyway, as it needs the startup lock.
+
 ## Rejected
 
 - Storing environment inputs encrypted under a keychain key: it puts secrets on

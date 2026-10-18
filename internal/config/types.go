@@ -196,11 +196,15 @@ type ScopeSpec struct {
 	Remove    SelectionSpec `yaml:"remove"    jsonschema_description:"Resources to deselect."`
 }
 
+// DefaultShutdownGraceSeconds is daemon.shutdown_grace_seconds when no fragment sets it.
+const DefaultShutdownGraceSeconds = 10
+
 type Daemon struct {
-	LeaseSeconds int   `yaml:"lease_seconds" json:"lease_seconds"       jsonschema:"minimum=3" jsonschema_description:"Launch lease length; defaults to 60."`
-	RenewSeconds int   `yaml:"renew_seconds" json:"renew_seconds"       jsonschema:"minimum=1" jsonschema_description:"Lease renewal interval, shorter than the lease; defaults to 20."`
-	Autostart    *bool `yaml:"autostart"     json:"autostart,omitempty"                        jsonschema_description:"Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."`
-	Override     bool  `yaml:"override"      json:"-"                                          jsonschema_description:"Replace settings made by earlier fragments."`
+	LeaseSeconds         int   `yaml:"lease_seconds"          json:"lease_seconds"          jsonschema:"minimum=3" jsonschema_description:"Launch lease length; defaults to 60."`
+	RenewSeconds         int   `yaml:"renew_seconds"          json:"renew_seconds"          jsonschema:"minimum=1" jsonschema_description:"Lease renewal interval, shorter than the lease; defaults to 20."`
+	ShutdownGraceSeconds int   `yaml:"shutdown_grace_seconds" json:"shutdown_grace_seconds" jsonschema:"minimum=1" jsonschema_description:"How long a stopping daemon lets MCP requests and tool calls in flight finish; defaults to 10. daemon stop and daemon restart take --timeout instead."`
+	Autostart            *bool `yaml:"autostart"              json:"autostart,omitempty"                           jsonschema_description:"Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."`
+	Override             bool  `yaml:"override"               json:"-"                                             jsonschema_description:"Replace settings made by earlier fragments."`
 }
 
 type Document struct {

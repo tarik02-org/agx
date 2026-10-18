@@ -1,11 +1,14 @@
 // Command fakemcp is a stdio MCP server for end-to-end tests. Its echo tool answers
 // echo:<text>:<$ECHO_TOKEN>[:<$ECHO_EXTRA>], proving the daemon injected the server's environment.
+// With the arguments started and sleep_ms, it first creates the file started and then waits,
+// standing in for a long tool call.
 package main
 
 import (
 	"bufio"
 	"encoding/json"
 	"os"
+	"time"
 )
 
 func main() {
@@ -19,7 +22,9 @@ func main() {
 			Params struct {
 				ProtocolVersion string `json:"protocolVersion"`
 				Arguments       struct {
-					Text string `json:"text"`
+					Text    string `json:"text"`
+					Started string `json:"started"`
+					SleepMS int    `json:"sleep_ms"`
 				} `json:"arguments"`
 			} `json:"params"`
 		}
@@ -39,6 +44,10 @@ func main() {
 				"name": "echo", "description": "Echo text.", "inputSchema": map[string]any{"type": "object"},
 			}}}
 		case "tools/call":
+			if path := m.Params.Arguments.Started; path != "" {
+				_ = os.WriteFile(path, nil, 0o600)
+			}
+			time.Sleep(time.Duration(m.Params.Arguments.SleepMS) * time.Millisecond)
 			text := "echo:" + m.Params.Arguments.Text + ":" + os.Getenv("ECHO_TOKEN")
 			if extra := os.Getenv("ECHO_EXTRA"); extra != "" {
 				text += ":" + extra

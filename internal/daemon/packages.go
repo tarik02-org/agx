@@ -153,8 +153,8 @@ func (s *Server) WatchOperation(
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-s.ctx.Done():
-			return rpcError(connect.CodeUnavailable, "daemon stopped")
+		case <-s.drain.stopping.Done():
+			return refusal()
 		case <-ticker.C:
 		}
 	}

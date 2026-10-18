@@ -109,6 +109,11 @@
           "minimum": 1,
           "description": "Lease renewal interval, shorter than the lease; defaults to 20."
         },
+        "shutdown_grace_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How long a stopping daemon lets MCP requests and tool calls in flight finish; defaults to 10. daemon stop and daemon restart take --timeout instead."
+        },
         "autostart": {
           "type": "boolean",
           "description": "Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."

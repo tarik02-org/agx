@@ -151,6 +151,9 @@ func (s *Server) Login(
 	if !equalBearer(req.Header().Get("Authorization"), s.discovery.Token) {
 		return rpcError(connect.CodeUnauthenticated, "management credential required")
 	}
+	if s.drain.draining() {
+		return refusal()
+	}
 	c, err := s.reload()
 	if err != nil {
 		return configError(err)
@@ -187,12 +190,12 @@ func (s *Server) Login(
 	// Waiting ends with the caller's stream or with the daemon.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stop := context.AfterFunc(s.ctx, cancel)
+	stop := context.AfterFunc(s.drain.stopping, cancel)
 	defer stop()
 	attempt, err := s.manager.Begin(ctx, id, secret, c.MCP[serverID].URL)
 	if err != nil {
-		if s.ctx.Err() != nil {
-			return rpcError(connect.CodeUnavailable, "daemon stopping")
+		if s.drain.draining() {
+			return refusal()
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -211,8 +214,8 @@ func (s *Server) Login(
 	err = s.manager.Wait(ctx, attempt)
 	finished := &v1.LoginFinished{Outcome: v1.LoginFinished_OUTCOME_SUCCEEDED}
 	switch {
-	case s.ctx.Err() != nil:
-		return rpcError(connect.CodeUnavailable, "daemon stopping")
+	case s.drain.draining():
+		return refusal()
 	case ctx.Err() != nil:
 		return ctx.Err()
 	case errors.Is(err, auth.ErrLoginExpired):

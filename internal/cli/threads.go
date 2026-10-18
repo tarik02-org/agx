@@ -26,11 +26,23 @@ type threadHost struct {
 
 func (h *threadHost) Prepare(ctx context.Context, directory string) (adapters.ThreadLaunch, error) {
 	// A configuration change between resolving and preparing invalidates the snapshot once; a
-	// restarted daemon needs the process's launch restored first.
+	// restarted daemon needs the process's launch restored first. A restarting daemon refuses
+	// new thread launches until the next one serves them.
+	deadline := time.Now().Add(restartWait)
+	recovered := false
 	for attempt := 0; ; attempt++ {
 		c := h.lease.current()
 		launch, err := h.prepare(ctx, c, directory)
-		if err != nil && attempt == 0 && h.recover(ctx, c, err) {
+		if stopping(err) && time.Now().Before(deadline) {
+			if err := pause(ctx, backoff(attempt)); err != nil {
+				return launch, err
+			}
+			// Syncing switches to the next daemon once it runs, and has the launch restored.
+			_ = h.lease.sync(ctx)
+			continue
+		}
+		if err != nil && !recovered && h.recover(ctx, c, err) {
+			recovered = true
 			continue
 		}
 		return launch, err

@@ -12,6 +12,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,10 @@ const (
 	// Harnesses rarely DELETE their sessions, so abandoned ones would otherwise
 	// hold one of the session slots and, for stdio, a child process forever.
 	sessionIdleTimeout = 30 * time.Minute
+	// A stdio server whose session ends gets its input closed, then, after inputGrace, a
+	// termination request, and after terminateGrace more it is killed.
+	inputGrace     = 2 * time.Second
+	terminateGrace = time.Second
 )
 
 var (
@@ -57,7 +62,9 @@ type Endpoint struct {
 	generation     uint64
 	closeDone      chan struct{}
 	closed         bool
-	state          string
+	// closing holds the stdio sessions Close waits for, so Kill can still reach them.
+	closing []*stdioSession
+	state   string
 	// problem explains the latest failure for runtime views; it never contains values.
 	problem string
 }
@@ -67,11 +74,13 @@ type stdioSession struct {
 	downstream mcp.Connection
 	upstream   mcp.Connection
 	cancel     context.CancelFunc
-	kill       func()
-	done       sync.Once
-	ended      chan struct{}
-	active     int
-	lastUsed   time.Time
+	// kill ends the server's process tree at once; exited closes once its process exited.
+	kill     func()
+	exited   chan struct{}
+	done     sync.Once
+	ended    chan struct{}
+	active   int
+	lastUsed time.Time
 }
 
 type remoteSession struct {
@@ -154,6 +163,9 @@ func (e *Endpoint) fail(err error) {
 	e.problem = err.Error()
 }
 
+// Close ends every session and waits until their stdio servers exited: each gets its input
+// closed first, so it can exit by itself, and is killed only when it outlasts the grace periods.
+// Remote sessions are deleted upstream.
 func (e *Endpoint) Close() {
 	e.mu.Lock()
 	if e.closed {
@@ -166,9 +178,28 @@ func (e *Endpoint) Close() {
 	e.cancel()
 	e.inputs = nil
 	stdio, remote := e.takeSessionsLocked(func(int, time.Time) bool { return true })
+	e.closing = stdio
 	e.mu.Unlock()
 	defer close(e.closeDone)
 	e.release(stdio, remote)
+	for _, s := range stdio {
+		<-s.exited
+	}
+}
+
+// Kill ends the endpoint like Close, but kills its stdio servers at once, also those a Close
+// in progress waits for.
+func (e *Endpoint) Kill() {
+	e.mu.Lock()
+	stdio := slices.Clone(e.closing)
+	for _, s := range e.sessions {
+		stdio = append(stdio, s)
+	}
+	e.mu.Unlock()
+	for _, s := range stdio {
+		s.kill()
+	}
+	e.Close()
 }
 
 // Reset ends all sessions and the credentials cached with them while keeping the
@@ -269,8 +300,10 @@ func (e *Endpoint) deleteUpstream(upstreamID, credential string, headers map[str
 	}
 }
 
+// close ends the session without waiting for its server: cancelling the session's context
+// starts the server's shutdown (see startStdio).
 func (s *stdioSession) close() {
-	s.done.Do(func() { s.cancel(); s.kill(); _ = s.upstream.Close(); _ = s.downstream.Close(); close(s.ended) })
+	s.done.Do(func() { s.cancel(); _ = s.upstream.Close(); _ = s.downstream.Close(); close(s.ended) })
 }
 
 func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -501,6 +534,21 @@ func (e *Endpoint) startStdio(id string, inputs map[string]string) (*stdioSessio
 		cancel()
 		return nil, err
 	}
+	exited := make(chan struct{})
+	// Most stdio servers exit when their input ends; a termination request and then the kill
+	// that WaitDelay sends cover those that do not.
+	cmd.Cancel = func() error {
+		_ = stdin.Close()
+		time.AfterFunc(inputGrace, func() {
+			select {
+			case <-exited:
+			default:
+				platform.Terminate(cmd)
+			}
+		})
+		return nil
+	}
+	cmd.WaitDelay = inputGrace + terminateGrace
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		_ = stdin.Close()
@@ -514,7 +562,7 @@ func (e *Endpoint) startStdio(id string, inputs map[string]string) (*stdioSessio
 		cancel()
 		return nil, err
 	}
-	kill, err := platform.Own(cmd)
+	owned, err := platform.Own(cmd)
 	if err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
@@ -523,6 +571,8 @@ func (e *Endpoint) startStdio(id string, inputs map[string]string) (*stdioSessio
 		cancel()
 		return nil, err
 	}
+	// On Windows, the kill closes the job handle, which must happen once.
+	kill := sync.OnceFunc(owned)
 	up, err := (&mcp.IOTransport{Reader: stdout, Writer: stdin}).Connect(ctx)
 	if err != nil {
 		kill()
@@ -545,6 +595,7 @@ func (e *Endpoint) startStdio(id string, inputs map[string]string) (*stdioSessio
 		upstream:   up,
 		cancel:     cancel,
 		kill:       kill,
+		exited:     exited,
 		ended:      make(chan struct{}),
 	}
 	go func() {
@@ -591,6 +642,9 @@ func (e *Endpoint) startStdio(id string, inputs map[string]string) (*stdioSessio
 	}()
 	go func() {
 		_ = cmd.Wait()
+		close(exited)
+		// Descendants the server left behind end with it.
+		kill()
 		s.close()
 		e.mu.Lock()
 		if e.sessions[id] == s {

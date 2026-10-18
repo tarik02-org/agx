@@ -66,19 +66,53 @@ func (h *heldLaunch) await(path string, decode func([]byte) error) {
 // call has the running harness call its echo tools again over its MCP sessions.
 func (h *heldLaunch) call() (tools map[string]string, reinitialized int) {
 	h.t.Helper()
+	return h.result(h.start(nil))
+}
+
+// start has the running harness call its echo tools again with arguments added, without waiting
+// for the result, and returns the call's number.
+func (h *heldLaunch) start(arguments map[string]any) int {
+	h.t.Helper()
 	h.calls++
-	if err := os.WriteFile(filepath.Join(h.dir, fmt.Sprintf("call-%d", h.calls)), nil, 0o600); err != nil {
+	b := []byte{}
+	if arguments != nil {
+		var err error
+		if b, err = json.Marshal(arguments); err != nil {
+			h.t.Fatal(err)
+		}
+	}
+	// The harness polls for the file, so it must appear with its content.
+	path := filepath.Join(h.dir, fmt.Sprintf("call-%d", h.calls))
+	if err := os.WriteFile(path+".tmp", b, 0o600); err != nil {
 		h.t.Fatal(err)
 	}
+	if err := os.Rename(path+".tmp", path); err != nil {
+		h.t.Fatal(err)
+	}
+	return h.calls
+}
+
+// result waits for the results of call n.
+func (h *heldLaunch) result(n int) (tools map[string]string, reinitialized int) {
+	h.t.Helper()
 	var result struct {
 		Tools         map[string]string `json:"tools"`
 		Reinitialized int               `json:"reinitialized"`
 	}
 	h.await(
-		filepath.Join(h.dir, fmt.Sprintf("result-%d.json", h.calls)),
+		filepath.Join(h.dir, fmt.Sprintf("result-%d.json", n)),
 		func(b []byte) error { return json.Unmarshal(b, &result) },
 	)
 	return result.Tools, result.Reinitialized
+}
+
+// slowCall starts a call whose echo tool takes duration, and waits until the MCP server runs it.
+func (h *heldLaunch) slowCall(duration time.Duration) int {
+	h.t.Helper()
+	started := filepath.Join(h.dir, fmt.Sprintf("started-%d", h.calls+1))
+	n := h.start(map[string]any{"sleep_ms": duration.Milliseconds(), "started": started})
+	h.await(started, func([]byte) error { return nil })
+	return n
 }
 
 // exit ends the harness and waits for its wrapper.

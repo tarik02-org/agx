@@ -104,7 +104,7 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 		Bundles:       map[ID]Bundle{},
 		Harnesses:     map[string]HarnessDefinition{},
 		PackageHashes: map[ID]string{},
-		Daemon:        Daemon{LeaseSeconds: 60, RenewSeconds: 20},
+		Daemon:        Daemon{LeaseSeconds: 60, RenewSeconds: 20, ShutdownGraceSeconds: DefaultShutdownGraceSeconds},
 		builtins:      builtins,
 	}
 	active, seen := map[string]bool{}, map[string]bool{}
@@ -653,6 +653,7 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 	}{
 		{"lease_seconds", d.Daemon.LeaseSeconds, &c.Daemon.LeaseSeconds},
 		{"renew_seconds", d.Daemon.RenewSeconds, &c.Daemon.RenewSeconds},
+		{"shutdown_grace_seconds", d.Daemon.ShutdownGraceSeconds, &c.Daemon.ShutdownGraceSeconds},
 	} {
 		if field.value == 0 {
 			continue
@@ -1085,6 +1086,9 @@ func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
 func (c *Config) Validate() error {
 	if c.Daemon.LeaseSeconds < 3 || c.Daemon.RenewSeconds < 1 || c.Daemon.RenewSeconds >= c.Daemon.LeaseSeconds {
 		return fmt.Errorf("daemon renewal must be positive and shorter than lease (minimum 3 seconds)")
+	}
+	if c.Daemon.ShutdownGraceSeconds < 1 {
+		return fmt.Errorf("daemon.shutdown_grace_seconds must be positive")
 	}
 	for _, id := range sortedKeys(c.Skills) {
 		r := c.Skills[id]

@@ -94,6 +94,15 @@ daemon listens elsewhere: launches keep their lease and grant, but harnesses
 holding the old endpoint URLs lose MCP access until relaunch (a Codex app-server
 thread gets new URLs on `thread/resume`). A forced stop revokes all launches and
 clears them from the file. Lease loss does not automatically kill a harness.
+
+A stopping daemon shuts down gracefully (see
+[graceful shutdown](cli.md#graceful-shutdown)). It refuses new launches, thread
+launches, and MCP sessions with Connect `unavailable`, or HTTP 503, carrying
+`Agx-Daemon-Stopping: 1`; callers retry those with the daemon discovery names
+next. It lets requests in flight finish for `daemon.shutdown_grace_seconds`, or a
+stop's `grace`, ends event streams, writes and freezes the state file, closes its
+listener, ends upstream MCP sessions, and removes discovery last. A forced stop
+drains at most 2 seconds. A second signal skips the rest of the grace period.
 Account credentials survive daemon restart according to their configured storage.
 
 ## MCP runtime
@@ -106,8 +115,10 @@ capabilities must be negotiated honestly. Do not retry tool calls automatically:
 the upstream may already have performed a side effect.
 
 Daemon-owned stdio upstreams receive only their required environment and cwd.
-Terminate their process trees on shutdown using Unix process groups or Windows
-Job Objects. A child cannot receive rotated environment values after startup;
+End a stdio session by closing the server's input, then sending SIGTERM to its
+process group after 2 seconds, then killing it after 1 more; terminate the
+remaining process tree using Unix process groups or Windows Job Objects (Windows
+skips SIGTERM). A child cannot receive rotated environment values after startup;
 servers needing that must support native refresh/reload or be restarted.
 
 API keys and OAuth state stay daemon-owned, except credentials that upstream child

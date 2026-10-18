@@ -156,10 +156,25 @@ func runHarness(
 	prepareLaunch := func() (*connect.Response[v1.PrepareLaunchResponse], error) {
 		ctx, cancel := context.WithTimeout(ctx, launchTimeout)
 		defer cancel()
+		prepare.Header().Set("Authorization", "Bearer "+c.discovery.Token)
 		return c.launches.PrepareLaunch(ctx, prepare)
 	}
 	prepared, err := prepareLaunch()
-	if err != nil && connect.CodeOf(err) == connect.CodeUnavailable {
+	if err != nil && connect.CodeOf(err) == connect.CodeUnavailable && !stopping(err) {
+		prepared, err = prepareLaunch()
+	}
+	// A restarting daemon refuses new launches; the next one, which the restart or this command
+	// starts, takes the same request.
+	deadline := time.Now().Add(restartWait)
+	for attempt := 0; stopping(err) && time.Now().Before(deadline); attempt++ {
+		if err := pause(ctx, backoff(attempt)); err != nil {
+			return err
+		}
+		next, dialErr := daemonClient(ctx, paths, autostart(harnesses.config))
+		if dialErr != nil {
+			continue
+		}
+		c = next
 		prepared, err = prepareLaunch()
 	}
 	if err != nil {
@@ -246,21 +261,21 @@ func runHarness(
 			if interval < time.Second {
 				interval = time.Second
 			}
-			for {
+			for failures := 0; ; {
 				renewed, alive := renew()
 				if !alive {
 					return
 				}
 				wait := interval
-				if !renewed {
-					wait = time.Second
+				if renewed {
+					failures = 0
+				} else {
+					wait = backoff(failures)
+					failures++
 				}
-				timer := time.NewTimer(wait)
-				select {
-				case <-finished:
-					timer.Stop()
+				// A daemon that replaced this one renews, and restores the launch, at once.
+				if !link.await(finished, wait) {
 					return
-				case <-timer.C:
 				}
 			}
 		})

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -132,10 +133,10 @@ func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*cli
 		return nil, err
 	case replaceDaemon:
 		ui.Diagnose(ui.Info, "restarting daemon %s, which runs another agx build", d.Version)
-		if _, err := stopDaemon(ctx, current, false); err != nil {
+		if _, err := stopDaemon(ctx, current, false, 0); err != nil {
 			return nil, fmt.Errorf("cannot replace daemon %s: %w", d.Version, err)
 		}
-		if err := awaitExit(ctx, paths); err != nil {
+		if err := awaitExit(ctx, paths, replaceTimeout); err != nil {
 			return nil, err
 		}
 	case startNewDaemon:
@@ -240,11 +241,19 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 }
 
 // stopDaemon asks the daemon to stop and returns how many active launches it keeps for the next
-// one to restore; force revokes their MCP access instead.
-func stopDaemon(ctx context.Context, c *client, force bool) (int, error) {
-	endpoint := c.discovery.URL + "/stop"
+// one to restore; force revokes their MCP access instead. A positive grace replaces how long the
+// daemon lets requests in flight finish.
+func stopDaemon(ctx context.Context, c *client, force bool, grace time.Duration) (int, error) {
+	query := url.Values{}
 	if force {
-		endpoint += "?force=true"
+		query.Set("force", "true")
+	}
+	if grace > 0 {
+		query.Set("grace", grace.String())
+	}
+	endpoint := c.discovery.URL + "/stop"
+	if len(query) > 0 {
+		endpoint += "?" + query.Encode()
 	}
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
@@ -275,9 +284,10 @@ func stopDaemon(ctx context.Context, c *client, force bool) (int, error) {
 	}
 }
 
-// awaitExit waits until a stopping daemon released the startup lock, so a new one can take it.
-func awaitExit(ctx context.Context, paths platform.Paths) error {
-	ctx, cancel := context.WithTimeout(ctx, startupTimeout)
+// awaitExit waits up to timeout until a stopping daemon released the startup lock, so a new one
+// can take it.
+func awaitExit(ctx context.Context, paths platform.Paths, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()

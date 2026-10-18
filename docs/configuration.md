@@ -599,6 +599,9 @@ To restore a machine from a configuration repository:
 `daemon.lease_seconds` defaults to 60 and must be at least 3.
 `daemon.renew_seconds` defaults to 20 and must be positive and shorter than the
 lease. Wrappers follow the renewal interval granted by the daemon.
+`daemon.shutdown_grace_seconds` defaults to 10 and must be positive: how long a
+stopping daemon lets MCP requests and tool calls in flight finish
+([graceful shutdown](cli.md#graceful-shutdown)).
 `daemon.autostart` defaults to true: commands that need the daemon start it when
 it is not running ([daemon and launches](cli.md#daemon-and-launches)).
 `AGX_NO_AUTOSTART=1` turns it off regardless. Discovery and logs live

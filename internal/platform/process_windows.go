@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -83,6 +84,14 @@ func Own(cmd *exec.Cmd) (func(), error) {
 }
 
 func Interrupts() []os.Signal { return []os.Signal{os.Interrupt} }
+
+// Terminate does nothing: Windows has no termination request a console-less child could handle,
+// so callers kill it, with its job, once their grace period ends.
+func Terminate(cmd *exec.Cmd) {}
+
+// StopSignals are the signals that stop the daemon gracefully: Ctrl-C and Ctrl-Break, and the
+// console close, logoff, and shutdown events, which Go delivers as SIGTERM.
+func StopSignals(attached bool) []os.Signal { return []os.Signal{os.Interrupt, syscall.SIGTERM} }
 
 // TerminalDelivered reports true for console Ctrl-C and Ctrl-Break: the console delivers them to every
 // attached process, and Process.Signal cannot send os.Interrupt on Windows.
