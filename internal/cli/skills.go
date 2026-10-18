@@ -81,7 +81,7 @@ func localSource(arg string) (skillSource, error) {
 	if info, err := os.Stat(abs); err != nil {
 		return skillSource{}, err
 	} else if !info.IsDir() {
-		return skillSource{}, fmt.Errorf("%s is not a directory", arg)
+		return skillSource{}, codedf(codeInvalidRequest, "%s is not a directory", arg)
 	}
 	return skillSource{local: abs}, nil
 }
@@ -95,7 +95,7 @@ type skillChoice struct {
 // picker on a terminal.
 func (s *session) choose(found []config.FoundSkill, choice skillChoice, where string) ([]config.FoundSkill, error) {
 	if len(found) == 0 {
-		return nil, fmt.Errorf("no SKILL.md found in %s", where)
+		return nil, codedf(codeNotFound, "no SKILL.md found in %s", where)
 	}
 	names := []string{}
 	for _, f := range found {
@@ -109,7 +109,13 @@ func (s *session) choose(found []config.FoundSkill, choice skillChoice, where st
 		for _, name := range choice.names {
 			i := slices.Index(names, name)
 			if i < 0 {
-				return nil, fmt.Errorf("%s has no skill %s; it has %s", where, name, strings.Join(names, ", "))
+				return nil, codedf(
+					codeNotFound,
+					"%s has no skill %s; it has %s",
+					where,
+					name,
+					strings.Join(names, ", "),
+				)
 			}
 			out = append(out, found[i])
 		}
@@ -189,6 +195,7 @@ func skillAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 		},
 	}
 	flags.register(cmd, true)
+	jsonFlag(cmd)
 	cmd.Flags().StringArrayVar(&choice.names, "skill", nil, "skill to add by name (repeatable)")
 	cmd.Flags().BoolVar(&choice.all, "all", false, "add every skill found")
 	cmd.Flags().StringVar(&ref, "ref", "", "Git branch, tag, or commit to lock")
@@ -219,8 +226,10 @@ func (s *session) addLocalSkills(dir, file string, choice skillChoice, flags edi
 			return err
 		}
 	}
-	_, err = s.commit()
-	return err
+	if _, err := s.commit(); err != nil {
+		return err
+	}
+	return s.report()
 }
 
 // addPackageSkills declares the repository as a package, installs and locks it in memory to find
@@ -259,11 +268,21 @@ func (s *session) addPackageSkills(
 			return err
 		}
 		if f.Definition("packages", string(id)) != nil {
-			return fmt.Errorf("package %s is already defined in %s; pass --package to choose another ID", id, file)
+			return codedf(
+				codeConflict,
+				"package %s is already defined in %s; pass --package to choose another ID",
+				id,
+				file,
+			)
 		}
 		f.Define("packages", string(id), definition)
+		s.result.Defined = append(s.result.Defined, resourceRef{Kind: "packages", ID: string(id)})
 	} else if p := s.config.Packages[id]; p.Git != source.git || p.Ref != source.ref || p.Subdir != source.subdir {
-		return fmt.Errorf("package %s already exists with another source; pass --package to choose another ID", id)
+		return codedf(
+			codeConflict,
+			"package %s already exists with another source; pass --package to choose another ID",
+			id,
+		)
 	}
 	progress("Fetching " + source.git)
 	overlay, err := s.overlay()
@@ -288,7 +307,7 @@ func (s *session) addPackageSkills(
 	s.locks = result.Locks
 	c, err := config.LoadWith(root, s.paths.Cache, s.builtins, overlay)
 	if err != nil {
-		return fmt.Errorf("package %s: %w", id, err)
+		return codedf(codeConfigInvalid, "package %s: %w", id, err)
 	}
 	found := []config.FoundSkill{}
 	prefix := string(id) + "/"
@@ -320,8 +339,10 @@ func (s *session) addPackageSkills(
 			return err
 		}
 	}
-	_, err = s.commit()
-	return err
+	if _, err := s.commit(); err != nil {
+		return err
+	}
+	return s.report()
 }
 
 // overlay renders the session's files without committing them.

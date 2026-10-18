@@ -6,6 +6,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Added
 
+- `--json` on every command except harness entry points: edits, `config validate`,
+  `install`, `update`, `mcp test`, `use`, `unuse`, `remove`, `shims`, `daemon start|stop`,
+  `launch revoke`, and `secret set|logout` print one versioned document; `secret login` and
+  `mcp login` stream `started` and `finished` events, one per line. Errors become
+  `{"version":1,"error":{…}}` documents with stable codes, usage errors included, and
+  `--json` implies `--yes` and never prompts. `TestMcpServer` returns tool descriptions.
 - `sops` secrets take an optional `age_key` (`!secret`, `!env`, or `!file`) passed
   to sops as `SOPS_AGE_KEY`, so the age identity can live in the OS keychain.
 

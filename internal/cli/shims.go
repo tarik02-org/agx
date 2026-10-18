@@ -35,7 +35,7 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 	definitions := func() ([]string, error) {
 		c, err := config.Read(paths.Config, *builtins)
 		if err != nil {
-			return nil, err
+			return nil, coded(codeConfigInvalid, err)
 		}
 		names := []string{}
 		for _, name := range c.HarnessNames() {
@@ -57,26 +57,28 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 		target, err := shims.Target(os.Args[0])
 		return dir, target, names, err
 	}
-	command.AddCommand(
-		&cobra.Command{
-			Use:   "install",
-			Short: "Create, update, and remove shims to match the harness definitions",
-			Args:  cobra.NoArgs,
-			RunE: func(cmd *cobra.Command, args []string) error {
-				dir, target, names, err := prepare()
-				if err != nil {
-					return err
-				}
-				changes, err := shims.Install(dir, target, names)
-				if printErr := printShimChanges(dir, changes); printErr != nil {
-					return printErr
-				}
-				warnShims(dir, target, names)
+	install := &cobra.Command{
+		Use:   "install",
+		Short: "Create, update, and remove shims to match the harness definitions",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir, target, names, err := prepare()
+			if err != nil {
 				return err
-			},
+			}
+			changes, err := shims.Install(dir, target, names)
+			if scripting.enabled {
+				return printShimChangesJSON(dir, target, changes, err)
+			}
+			if printErr := printShimChanges(dir, changes); printErr != nil {
+				return printErr
+			}
+			warnShims(dir, target, names)
+			return err
 		},
-	)
-	asJSON := false
+	}
+	jsonFlag(install)
+	command.AddCommand(install)
 	list := &cobra.Command{
 		Use:   "list",
 		Short: "List shims and the definitions without one",
@@ -90,7 +92,7 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 			if err != nil {
 				return err
 			}
-			if asJSON {
+			if scripting.enabled {
 				return printJSON(struct {
 					Directory string        `json:"directory"`
 					OnPath    bool          `json:"on_path"`
@@ -105,27 +107,46 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 			return nil
 		},
 	}
-	list.Flags().BoolVar(&asJSON, "json", false, "versioned JSON output")
-	command.AddCommand(
-		list,
-		&cobra.Command{
-			Use:   "remove",
-			Short: "Delete the shims agx created",
-			Args:  cobra.NoArgs,
-			RunE: func(cmd *cobra.Command, args []string) error {
-				dir, err := shimDir()
-				if err != nil {
-					return err
-				}
-				changes, err := shims.Remove(dir)
-				if printErr := printShimChanges(dir, changes); printErr != nil {
-					return printErr
-				}
+	jsonFlag(list)
+	remove := &cobra.Command{
+		Use:   "remove",
+		Short: "Delete the shims agx created",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir, err := shimDir()
+			if err != nil {
 				return err
-			},
+			}
+			changes, err := shims.Remove(dir)
+			if scripting.enabled {
+				return printShimChangesJSON(dir, "", changes, err)
+			}
+			if printErr := printShimChanges(dir, changes); printErr != nil {
+				return printErr
+			}
+			return err
 		},
-	)
+	}
+	jsonFlag(remove)
+	command.AddCommand(list, remove)
 	return command
+}
+
+// printShimChangesJSON writes the document of shims install and remove. A failure is reported
+// as an error document; the changes made before it remain recorded in the shim directory.
+func printShimChangesJSON(dir, target string, changes []shims.Change, err error) error {
+	if err != nil {
+		return err
+	}
+	if changes == nil {
+		changes = []shims.Change{}
+	}
+	return printJSON(struct {
+		Directory string         `json:"directory"`
+		OnPath    bool           `json:"on_path"`
+		Target    string         `json:"target,omitempty"`
+		Changes   []shims.Change `json:"changes"`
+	}{dir, shims.OnPath(dir), target, changes})
 }
 
 func printShimChanges(dir string, changes []shims.Change) error {

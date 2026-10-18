@@ -76,8 +76,9 @@ const (
 
 type Change struct {
 	Shim
-	Action Action
-	State  State
+	Action Action `json:"action"`
+	// State explains a kept shim.
+	State State `json:"state,omitempty"`
 }
 
 type manifest struct {

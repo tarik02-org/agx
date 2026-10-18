@@ -291,6 +291,49 @@ func (e *env) daemonVersion() string {
 	return status.Data.Runtime.Version
 }
 
+// envelope is one JSON document agx writes to stdout with --json.
+type envelope struct {
+	Version int             `json:"version"`
+	Data    json.RawMessage `json:"data"`
+	Error   *struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// jsonRun runs agx with --json and checks that stdout is exactly one versioned document, with
+// data when it exits 0 and an error otherwise.
+func (e *env) jsonRun(args ...string) (int, envelope) {
+	e.t.Helper()
+	r := e.agx(nil, append(args, "--json")...)
+	var doc envelope
+	if strings.Count(r.stdout, "\n") != 1 || json.Unmarshal([]byte(r.stdout), &doc) != nil || doc.Version != 1 {
+		e.t.Fatalf("agx %q --json printed %q (stderr %q)", args, r.stdout, r.stderr)
+	}
+	if (r.code == 0) != (doc.Data != nil) || (r.code == 0) == (doc.Error != nil) {
+		e.t.Fatalf("agx %q --json exited %d with %s", args, r.code, r.stdout)
+	}
+	return r.code, doc
+}
+
+// jsonOK runs agx with --json, requires success, and decodes the document's data into into.
+func (e *env) jsonOK(into any, args ...string) {
+	e.t.Helper()
+	if code, doc := e.jsonRun(args...); code != 0 {
+		e.t.Fatalf("agx %q --json exited %d: %+v", args, code, doc.Error)
+	} else if err := json.Unmarshal(doc.Data, into); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+// jsonFail runs agx with --json and requires exit status 1 with the error code given.
+func (e *env) jsonFail(code string, args ...string) {
+	e.t.Helper()
+	if got, doc := e.jsonRun(args...); got != 1 || doc.Error.Code != code {
+		e.t.Fatalf("agx %q --json exited %d with %+v, want error %s", args, got, doc.Error, code)
+	}
+}
+
 func TestEndToEnd(t *testing.T) {
 	e := newEnv(t)
 
@@ -422,6 +465,57 @@ func TestEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("json", func(t *testing.T) {
+		var view struct {
+			Launches []struct {
+				ID string `json:"id"`
+			} `json:"launches"`
+		}
+		e.jsonOK(&view, "launch", "list")
+		if len(view.Launches) != 1 {
+			t.Fatalf("launches = %+v", view.Launches)
+		}
+		var revoked struct {
+			LaunchID string `json:"launch_id"`
+			Revoked  bool   `json:"revoked"`
+		}
+		e.jsonOK(&revoked, "launch", "revoke", view.Launches[0].ID)
+		if revoked.LaunchID != view.Launches[0].ID || !revoked.Revoked {
+			t.Fatalf("revoke = %+v", revoked)
+		}
+		e.jsonFail("not_found", "launch", "revoke", "missing")
+		e.jsonFail("not_found", "launch", "show", "missing")
+
+		var tested struct {
+			Transport string `json:"transport"`
+			Server    struct {
+				Name string `json:"name"`
+			} `json:"server"`
+			Tools []struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+			} `json:"tools"`
+			State string `json:"state"`
+		}
+		e.jsonOK(&tested, "mcp", "test", "echo")
+		if tested.Transport != "stdio" || tested.Server.Name != "fakemcp" || tested.State != "ready" ||
+			len(tested.Tools) != 1 || tested.Tools[0].Name != "echo" || tested.Tools[0].Description != "Echo text." {
+			t.Fatalf("mcp test = %+v", tested)
+		}
+		e.jsonFail("not_found", "mcp", "test", "missing")
+
+		var secrets struct {
+			Statuses []struct {
+				SecretID string `json:"secret_id"`
+			} `json:"statuses"`
+		}
+		e.jsonOK(&secrets, "secret", "status")
+		if len(secrets.Statuses) != 2 {
+			t.Fatalf("secret status = %+v", secrets)
+		}
+		e.jsonFail("failed_precondition", "secret", "set", "sealed", "--stdin")
+	})
+
 	t.Run("native exit status", func(t *testing.T) {
 		if _, r := e.harness("claude", "--exit=7"); r.code != 7 {
 			t.Fatalf("exit %d: %s", r.code, r.stderr)
@@ -434,6 +528,31 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("status after stop: exit %d", r.code)
 		}
 	})
+}
+
+func TestDaemonJSON(t *testing.T) {
+	e := newEnv(t)
+	e.jsonFail("daemon_unavailable", "daemon", "status")
+	e.jsonFail("daemon_unavailable", "daemon", "stop")
+	var started struct {
+		Started bool   `json:"started"`
+		Version string `json:"version"`
+		Log     string `json:"log"`
+	}
+	e.jsonOK(&started, "daemon", "start")
+	t.Cleanup(func() { e.stopDaemon(true) })
+	if !started.Started || started.Version != version || started.Log == "" {
+		t.Fatalf("daemon start = %+v", started)
+	}
+	e.jsonFail("conflict", "daemon", "start")
+	var stopped struct {
+		Stopping bool `json:"stopping"`
+		Forced   bool `json:"forced"`
+	}
+	e.jsonOK(&stopped, "daemon", "stop", "--force")
+	if !stopped.Stopping || !stopped.Forced {
+		t.Fatalf("daemon stop = %+v", stopped)
+	}
 }
 
 func TestAutostart(t *testing.T) {

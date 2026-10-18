@@ -131,18 +131,64 @@ type session struct {
 	interactive bool
 	// written lists the files the commit wrote.
 	written []string
+	// result records what the command did, for its JSON document.
+	result editResult
+}
+
+// editResult is the JSON document of a command that edits configuration.
+type editResult struct {
+	Files    []fileChange  `json:"files"`
+	Defined  []resourceRef `json:"defined"`
+	Enabled  []resourceRef `json:"enabled"`
+	Disabled []resourceRef `json:"disabled"`
+	Removed  []resourceRef `json:"removed"`
+	// Scope is where resources were enabled or disabled; nil when the command changed no scope.
+	Scope *jsonScope `json:"scope"`
+	// NeedsLogin is set by mcp add: whether the new server asks for an OAuth login.
+	NeedsLogin *bool `json:"needs_login,omitempty"`
+}
+
+type fileChange struct {
+	Path    string `json:"path"`
+	Diff    string `json:"diff"`
+	Written bool   `json:"written"`
+}
+
+// resourceRef names a definition by its configuration section, such as mcp or harnesses.
+type resourceRef struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+}
+
+type jsonScope struct {
+	// Directory is nil for everywhere.
+	Directory *string  `json:"directory"`
+	Harnesses []string `json:"harnesses"`
+}
+
+func (s scope) json() *jsonScope {
+	out := &jsonScope{Harnesses: slices.Clone(s.harnesses)}
+	if out.Harnesses == nil {
+		out.Harnesses = []string{}
+	}
+	if s.directory != "" {
+		directory := s.directory
+		out.Directory = &directory
+	}
+	return out
 }
 
 func newSession(ctx context.Context, paths platform.Paths, builtins config.Builtins, yes bool) (*session, error) {
 	c, err := config.Load(paths.Config, paths.Cache, builtins)
 	if err != nil {
-		return nil, fmt.Errorf("configuration is invalid; fix it before editing: %w", err)
+		return nil, codedf(codeConfigInvalid, "configuration is invalid; fix it before editing: %w", err)
 	}
 	root, err := config.Canonical(paths.Config)
 	if err != nil {
 		return nil, err
 	}
-	tty := interactive()
+	// JSON mode implies --yes and never prompts.
+	tty := interactive() && !scripting.enabled
 	return &session{
 		ctx:         ctx,
 		paths:       paths,
@@ -153,7 +199,22 @@ func newSession(ctx context.Context, paths platform.Paths, builtins config.Built
 		locks:       map[string][]byte{},
 		yes:         yes || !tty,
 		interactive: tty,
+		result: editResult{
+			Files:    []fileChange{},
+			Defined:  []resourceRef{},
+			Enabled:  []resourceRef{},
+			Disabled: []resourceRef{},
+			Removed:  []resourceRef{},
+		},
 	}, nil
+}
+
+// report prints the session's JSON document in JSON mode.
+func (s *session) report() error {
+	if !scripting.enabled {
+		return nil
+	}
+	return printJSON(s.result)
 }
 
 // file opens a fragment once per session; a missing root starts from the default configuration.
@@ -231,6 +292,8 @@ func (s *session) matchingRules(target scope, visit func(*edit.File, edit.Rule) 
 // enable selects id in the first rule matching target, or in a new rule in fallback, and drops it
 // from that rule's remove list. It returns whether anything changed.
 func (s *session) enable(kind, id string, target scope, fallback string) (bool, error) {
+	s.result.Enabled = append(s.result.Enabled, resourceRef{Kind: kind, ID: id})
+	s.result.Scope = target.json()
 	changed := false
 	found := false
 	err := s.matchingRules(target, func(f *edit.File, r edit.Rule) (bool, error) {
@@ -269,6 +332,8 @@ func include(f *edit.File, rule *yaml.Node, kind, id string) bool {
 // otherwise by appending it to the remove list of the first matching rule or a new rule in
 // fallback, since another rule selects it.
 func (s *session) disable(kind, id string, target scope, fallback string) (bool, error) {
+	s.result.Disabled = append(s.result.Disabled, resourceRef{Kind: kind, ID: id})
+	s.result.Scope = target.json()
 	changed := false
 	err := s.matchingRules(target, func(f *edit.File, r edit.Rule) (bool, error) {
 		add := f.List(edit.Get(r.Node, "add"), kind, false)
@@ -277,7 +342,8 @@ func (s *session) disable(kind, id string, target scope, fallback string) (bool,
 			return false, nil
 		}
 		if _, defines := edit.EntryID(kind, add.Content[i]); defines {
-			return true, fmt.Errorf(
+			return true, codedf(
+				codeConflict,
 				"%s %s is defined inline in a rule of %s; remove it with agx %s remove %s",
 				kindLabel(kind), id, f.Path, kindCommand(kind), id,
 			)
@@ -340,7 +406,7 @@ func (s *session) removeReferences(kind, id string) error {
 			continue
 		}
 		if err := edit.Writable(path); err != nil {
-			return fmt.Errorf("cannot remove the references to %s: %w", id, err)
+			return codedf(codeReadOnly, "cannot remove the references to %s: %w", id, err)
 		}
 		for _, r := range refs {
 			f.Remove(r)
@@ -374,7 +440,7 @@ func (s *session) commit() (bool, error) {
 		overlay[path] = after
 	}
 	if len(changed) == 0 {
-		ui.Note("Nothing to change.")
+		hint("Nothing to change.")
 		return false, nil
 	}
 	for path, b := range s.locks {
@@ -382,12 +448,16 @@ func (s *session) commit() (bool, error) {
 	}
 	for _, p := range changed {
 		if err := edit.Writable(p.path); err != nil {
-			return false, err
+			return false, coded(codeReadOnly, err)
 		}
 	}
 	c, err := config.LoadWith(s.paths.Config, s.paths.Cache, s.builtins, overlay)
 	if err != nil {
-		return false, fmt.Errorf("the change would make the configuration invalid, so nothing was written: %w", err)
+		return false, codedf(
+			codeConfigInvalid,
+			"the change would make the configuration invalid, so nothing was written: %w",
+			err,
+		)
 	}
 	for _, p := range changed {
 		if slices.Contains(c.Files, p.path) {
@@ -395,16 +465,23 @@ func (s *session) commit() (bool, error) {
 		}
 		// A fragment outside the configuration is checked on its own.
 		if _, err := config.LoadWith(p.path, s.paths.Cache, s.builtins, overlay); err != nil {
-			return false, fmt.Errorf("the change would make %s invalid, so nothing was written: %w", p.path, err)
+			return false, codedf(
+				codeConfigInvalid,
+				"the change would make %s invalid, so nothing was written: %w",
+				p.path,
+				err,
+			)
 		}
 		ui.Diagnose(ui.Warn, "%s is not imported by %s; its definitions apply once it is", p.path, s.root)
 	}
-	var preview strings.Builder
-	for _, p := range changed {
-		preview.WriteString(styleDiff(ui.Stdout, edit.Diff(p.path, p.before, p.after)))
-	}
-	if _, err := io.WriteString(ui.Stdout, preview.String()); err != nil {
-		return false, err
+	if !scripting.enabled {
+		var preview strings.Builder
+		for _, p := range changed {
+			preview.WriteString(styleDiff(ui.Stdout, edit.Diff(p.path, p.before, p.after)))
+		}
+		if _, err := io.WriteString(ui.Stdout, preview.String()); err != nil {
+			return false, err
+		}
 	}
 	if !s.yes {
 		ok, err := prompt.Confirm(s.ctx, "Write the change?", true)
@@ -420,18 +497,29 @@ func (s *session) commit() (bool, error) {
 			return false, err
 		}
 		s.written = append(s.written, p.path)
+		s.result.Files = append(
+			s.result.Files,
+			fileChange{Path: p.path, Diff: edit.Diff(p.path, p.before, p.after), Written: true},
+		)
 	}
 	for _, path := range slices.Sorted(maps.Keys(s.locks)) {
-		if current, err := os.ReadFile(path); err == nil && bytes.Equal(current, s.locks[path]) {
+		current, err := os.ReadFile(path)
+		if err == nil && bytes.Equal(current, s.locks[path]) {
 			continue
 		}
 		if err := securefs.Write(path, s.locks[path], 0o600); err != nil {
 			return false, err
 		}
 		s.written = append(s.written, path)
+		s.result.Files = append(
+			s.result.Files,
+			fileChange{Path: path, Diff: edit.Diff(path, current, s.locks[path]), Written: true},
+		)
 	}
-	for _, path := range s.written {
-		_, _ = fmt.Fprintln(ui.Stderr, ui.Stderr.Status(ui.OK, "Wrote "+ui.Stderr.Path(path)+"."))
+	if !scripting.enabled {
+		for _, path := range s.written {
+			_, _ = fmt.Fprintln(ui.Stderr, ui.Stderr.Status(ui.OK, "Wrote "+ui.Stderr.Path(path)+"."))
+		}
 	}
 	s.config = c
 	return true, nil
@@ -546,13 +634,21 @@ func definitionSource(c *config.Config, kind, id string) (config.Source, bool, b
 // define adds a top-level definition to file, refusing an ID that is already defined.
 func (s *session) define(kind, id, file string, value *yaml.Node) error {
 	if source, _, exists := definitionSource(s.config, kind, id); exists {
-		return fmt.Errorf("%s %s is already defined at %s:%d", kindLabel(kind), id, source.Path, source.Line)
+		return codedf(
+			codeConflict,
+			"%s %s is already defined at %s:%d",
+			kindLabel(kind),
+			id,
+			source.Path,
+			source.Line,
+		)
 	}
 	f, err := s.file(file)
 	if err != nil {
 		return err
 	}
 	f.Define(kind, id, value)
+	s.result.Defined = append(s.result.Defined, resourceRef{Kind: kind, ID: id})
 	return nil
 }
 
@@ -574,10 +670,11 @@ func (s *session) enableAfterDefine(kind, id, file string, flags editFlags) erro
 func (s *session) removeDefinition(kind, id string, force bool) error {
 	source, inline, exists := definitionSource(s.config, kind, id)
 	if !exists {
-		return fmt.Errorf("unknown %s %s", kindLabel(kind), id)
+		return codedf(codeNotFound, "unknown %s %s", kindLabel(kind), id)
 	}
 	if !slices.Contains(s.config.Files, source.Path) {
-		return fmt.Errorf(
+		return codedf(
+			codeReadOnly,
 			"%s %s is defined by a package (%s); remove that package instead, or disable it with agx unuse %s",
 			kindLabel(kind),
 			id,
@@ -604,6 +701,7 @@ func (s *session) removeDefinition(kind, id string, force bool) error {
 	} else if !f.Undefine(kind, id) {
 		return fmt.Errorf("cannot find the definition of %s in %s", id, source.Path)
 	}
+	s.result.Removed = append(s.result.Removed, resourceRef{Kind: kind, ID: id})
 	refs, err := s.references(kind, id)
 	if err != nil {
 		return err
@@ -612,7 +710,7 @@ func (s *session) removeDefinition(kind, id string, force bool) error {
 		return nil
 	}
 	if !force {
-		return fmt.Errorf("%s %s is still referenced; pass --force to remove the references too:\n  %s",
+		return codedf(codeConflict, "%s %s is still referenced; pass --force to remove the references too:\n  %s",
 			kindLabel(kind), id, strings.Join(refs, "\n  "))
 	}
 	return s.removeReferences(kind, id)

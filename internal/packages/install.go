@@ -18,6 +18,28 @@ import (
 	"github.com/tarik02-org/agx/internal/securefs"
 )
 
+// Install marks its errors with these, keeping each error's own message, so callers can tell a
+// failed fetch from a lock that no longer matches without parsing messages.
+var (
+	ErrFetch     = errors.New("package fetch failed")
+	ErrStaleLock = errors.New("lockfile does not match")
+	ErrUnknown   = errors.New("unknown package")
+	ErrBusy      = errors.New("package installer is busy")
+)
+
+type marked struct {
+	err  error
+	kind error
+}
+
+func (m marked) Error() string { return m.err.Error() }
+
+func (m marked) Unwrap() error { return m.err }
+
+func (m marked) Is(target error) bool { return target == m.kind }
+
+func mark(kind, err error) error { return marked{err: err, kind: kind} }
+
 type Result struct {
 	PackageIDs []config.ID `json:"package_ids"`
 	Lockfiles  []string    `json:"lockfiles"`
@@ -50,7 +72,7 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 		return result, err
 	}
 	if !ok {
-		return result, fmt.Errorf("package installer is busy")
+		return result, mark(ErrBusy, fmt.Errorf("package installer is busy"))
 	}
 	defer func() { _ = lock.Unlock() }()
 	c, err := config.ReadWith(root, builtins, opts.Overlay)
@@ -78,7 +100,7 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 		}
 		p, ok := c.Packages[id]
 		if !ok {
-			return fmt.Errorf("unknown package %s", id)
+			return mark(ErrUnknown, fmt.Errorf("unknown package %s", id))
 		}
 		pinned := p.Pinned()
 		l, ok := locks[p.Lockfile]
@@ -92,7 +114,7 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 			// Pinned packages need no lockfile, so none is created for them.
 			case pinned:
 			case frozen:
-				return fmt.Errorf("missing lockfile %s", p.Lockfile)
+				return mark(ErrStaleLock, fmt.Errorf("missing lockfile %s", p.Lockfile))
 			default:
 				l = config.Lock{Version: 1, Packages: map[config.ID]config.LockedPackage{}}
 				locks[p.Lockfile] = l
@@ -102,7 +124,7 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 		source := p.LockSource()
 		sourceMatches := !pinned && locked && config.Digest(previous.Source) == config.Digest(source)
 		if frozen && !pinned && !sourceMatches {
-			return fmt.Errorf("stale lock for %s", id)
+			return mark(ErrStaleLock, fmt.Errorf("stale lock for %s", id))
 		}
 		hash, revision, dest := "", "", ""
 		reuse := func(candidateHash, candidateRevision string) {
@@ -227,7 +249,7 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 				return fmt.Errorf("package %s content hash %s does not match its pinned hash %s", id, hash, p.Hash)
 			}
 			if frozen && !pinned && (hash != previous.Hash || revision != previous.Revision) {
-				return fmt.Errorf("locked package %s content changed", id)
+				return mark(ErrStaleLock, fmt.Errorf("locked package %s content changed", id))
 			}
 			dest = filepath.Join(cache, "packages", hash)
 			if _, err := os.Stat(dest); os.IsNotExist(err) {
@@ -290,7 +312,7 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 	}
 	for id := range wanted {
 		if !loaded[id] {
-			return result, fmt.Errorf("unknown package %s", id)
+			return result, mark(ErrUnknown, fmt.Errorf("unknown package %s", id))
 		}
 	}
 	if err := c.Validate(); err != nil {
@@ -406,9 +428,11 @@ func git(ctx context.Context, protocols string, isolated bool, args ...string) (
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && len(exit.Stderr) > 0 {
-			return nil, fmt.Errorf("git package operation failed: %w: %s", err, strings.TrimSpace(string(exit.Stderr)))
+			return nil, mark(ErrFetch, fmt.Errorf(
+				"git package operation failed: %w: %s", err, strings.TrimSpace(string(exit.Stderr)),
+			))
 		}
-		return nil, fmt.Errorf("git package operation failed: %w", err)
+		return nil, mark(ErrFetch, fmt.Errorf("git package operation failed: %w", err))
 	}
 	return out, nil
 }

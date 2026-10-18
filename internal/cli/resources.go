@@ -69,7 +69,7 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 				if info, err := os.Stat(abs); err != nil {
 					return err
 				} else if info.IsDir() {
-					return fmt.Errorf("%s is a directory; instructions are a file", path)
+					return codedf(codeInvalidRequest, "%s is a directory; instructions are a file", path)
 				}
 				if id == "" {
 					base := filepath.Base(abs)
@@ -83,11 +83,14 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 			if err := s.enableAfterDefine(edit.Instructions, id, file, flags); err != nil {
 				return err
 			}
-			_, err = s.commit()
-			return err
+			if _, err := s.commit(); err != nil {
+				return err
+			}
+			return s.report()
 		},
 	}
 	flags.register(add, true)
+	jsonFlag(add)
 	add.Flags().StringVar(&id, "id", "", "instructions ID (default: the file stem)")
 	add.Flags().StringVar(&text, "text", "", "instructions text instead of a file")
 	command.AddCommand(
@@ -180,7 +183,7 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 				}
 			}
 			if slices.Contains(s.config.HarnessNames(), name) {
-				return fmt.Errorf("harness %s already exists; edit its definition instead", name)
+				return codedf(codeConflict, "harness %s already exists; edit its definition instead", name)
 			}
 			definition := edit.Mapping("base", base)
 			if executable != "" {
@@ -209,14 +212,19 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 				return err
 			}
 			f.Define("harnesses", name, definition)
-			if ok, err := s.commit(); err != nil || !ok {
+			s.result.Defined = append(s.result.Defined, resourceRef{Kind: "harnesses", ID: name})
+			ok, err := s.commit()
+			if err != nil {
 				return err
 			}
-			ui.Note("Run agx " + name + ", or agx shims install to put " + name + " on PATH.")
-			return nil
+			if ok {
+				hint("Run agx " + name + ", or agx shims install to put " + name + " on PATH.")
+			}
+			return s.report()
 		},
 	}
 	flags.registerYes(add)
+	jsonFlag(add)
 	add.Flags().
 		StringVar(&flags.file, "file", "", "fragment to write the definition to (default: the root configuration)")
 	add.Flags().StringVar(&base, "base", "", "harness this definition extends")
@@ -263,7 +271,7 @@ func harnessRows(c *config.Config) ([]string, [][]string, []any) {
 func (s *session) removeHarness(name string, force bool) error {
 	for _, other := range slices.Sorted(maps.Keys(s.config.Harnesses)) {
 		if s.config.Harnesses[other].Base == name {
-			return fmt.Errorf("harness %s extends %s; remove it first", other, name)
+			return codedf(codeConflict, "harness %s extends %s; remove it first", other, name)
 		}
 	}
 	declared := false
@@ -275,7 +283,7 @@ func (s *session) removeHarness(name string, force bool) error {
 		}
 		if f.Definition("harnesses", name) != nil {
 			if err := edit.Writable(path); err != nil {
-				return err
+				return coded(codeReadOnly, err)
 			}
 			f.Undefine("harnesses", name)
 			declared = true
@@ -291,15 +299,16 @@ func (s *session) removeHarness(name string, force bool) error {
 	}
 	if !declared {
 		if slices.Contains(s.config.HarnessNames(), name) {
-			return fmt.Errorf("%s is built in and not customized", name)
+			return codedf(codeReadOnly, "%s is built in and not customized", name)
 		}
-		return fmt.Errorf("unknown harness %s", name)
+		return codedf(codeNotFound, "unknown harness %s", name)
 	}
+	s.result.Removed = append(s.result.Removed, resourceRef{Kind: "harnesses", ID: name})
 	if len(filters) == 0 {
 		return nil
 	}
 	if !force {
-		return fmt.Errorf("scope rules apply only to %s; pass --force to drop it from them:\n  %s",
+		return codedf(codeConflict, "scope rules apply only to %s; pass --force to drop it from them:\n  %s",
 			name, strings.Join(filters, "\n  "))
 	}
 	for _, path := range s.fragments() {
@@ -312,7 +321,7 @@ func (s *session) removeHarness(name string, force bool) error {
 				continue
 			}
 			if err := edit.Writable(path); err != nil {
-				return err
+				return coded(codeReadOnly, err)
 			}
 			list := edit.Get(r.Node, "harnesses")
 			list.Content = slices.DeleteFunc(list.Content, func(n *yaml.Node) bool { return n.Value == name })
@@ -382,11 +391,13 @@ func useCommands(paths *platform.Paths, builtins *config.Builtins) []*cobra.Comm
 					if !use {
 						state = "disabled"
 					}
-					ui.Note(fmt.Sprintf("%s %s is already %s %s.", kindLabel(kind), id, state, inScope(target)))
-					return nil
+					hint(fmt.Sprintf("%s %s is already %s %s.", kindLabel(kind), id, state, inScope(target)))
+					return s.report()
 				}
-				_, err = s.commit()
-				return err
+				if _, err := s.commit(); err != nil {
+					return err
+				}
+				return s.report()
 			},
 		}
 		cmd.Flags().StringVar(&flags.scope, "scope", "user",
@@ -395,6 +406,7 @@ func useCommands(paths *platform.Paths, builtins *config.Builtins) []*cobra.Comm
 		cmd.Flags().StringVar(&flags.file, "file", "", "fragment for a new rule (default: beside the definition)")
 		cmd.Flags().StringVar(&kind, "kind", "", "skills, instructions, mcp, or bundles, when the ID names several")
 		flags.registerYes(cmd)
+		jsonFlag(cmd)
 		out = append(out, cmd)
 	}
 	return out
@@ -422,7 +434,8 @@ func resourceKind(c *config.Config, id, kind string) (string, error) {
 	case kind != "" && !slices.Contains([]string{edit.Skills, edit.Instructions, edit.MCP, edit.Bundles}, kind):
 		return "", &usageError{fmt.Errorf("--kind must be skills, instructions, mcp, or bundles")}
 	case len(kinds) == 0:
-		return "", fmt.Errorf(
+		return "", codedf(
+			codeNotFound,
 			"nothing named %s is defined; add it first, such as with agx skill add or agx mcp add",
 			id,
 		)

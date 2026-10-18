@@ -16,7 +16,7 @@ The Go module path is `github.com/tarik02-org/agx`.
 - `LaunchService`: prepare, renew, finish, and administratively revoke a launch.
 - `RuntimeService`: inspect/watch redacted daemon, launch, and MCP server state,
   and `TestMcpServer`, which connects to one MCP server outside any launch and
-  lists its tools (`agx mcp test`). It accepts only the environment variables the
+  lists its tools with their descriptions (`agx mcp test`). It accepts only the environment variables the
   server's values name and reports failures with the endpoint's diagnostics.
 - `SecretService`: log in with OAuth, set a keychain secret, inspect secret
   state, and log out.

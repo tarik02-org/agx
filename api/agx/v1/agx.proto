@@ -261,6 +261,13 @@ message TestMcpServerResponse {
   string server_version = 2;
   // Names of the tools the server lists.
   repeated string tools = 3;
+  // The tools the server lists, in its order, with their descriptions.
+  repeated Tool tool_details = 4;
+
+  message Tool {
+    string name = 1;
+    string description = 2;
+  }
 }
 
 message LoginRequest {

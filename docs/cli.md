@@ -103,9 +103,9 @@ session files `parsed`, reused from the cache (`cached`), and `malformed`.
 ## Shims
 
 ```text
-agx shims install [--dir <directory>]
+agx shims install [--dir <directory>] [--json]
 agx shims list [--dir <directory>] [--json]
-agx shims remove [--dir <directory>]
+agx shims remove [--dir <directory>] [--json]
 ```
 
 Shims put harness definitions on PATH: after `install`, `codex-cpa` runs `agx
@@ -129,12 +129,12 @@ another executable on PATH has a shim's name.
 ## Configuration and packages
 
 ```text
-agx config validate
+agx config validate [--json]
 agx config schema [--package]
 agx resolve [directory] [--harness <name>] [--json]
 agx explain [directory] [--harness <name>] [--json]
-agx install [--frozen]
-agx update [package-id...]
+agx install [--frozen] [--json]
+agx update [package-id...] [--json]
 ```
 
 The default directory is the current directory. `resolve` reports selected
@@ -172,7 +172,8 @@ agx use <id> [--kind <kind>]
 agx unuse <id> [--kind <kind>]
 ```
 
-These commands edit the YAML fragments for the common cases
+Each of these commands also takes `--json` ([scripting](#scripting)). They edit
+the YAML fragments for the common cases
 ([ADR 0014](adr/0014-configuration-editing-commands.md)); everything else stays
 hand-written. Commands that write share these flags:
 
@@ -252,12 +253,12 @@ warning.
 ## Daemon and launches
 
 ```text
-agx daemon start [--foreground] [--config <path>]
+agx daemon start [--foreground] [--config <path>] [--json]
 agx daemon status [--json]
-agx daemon stop [--force]
+agx daemon stop [--force] [--json]
 agx launch list [--json]
 agx launch show <launch-id> [--json]
-agx launch revoke <launch-id>
+agx launch revoke <launch-id> [--json]
 ```
 
 Use one daemon per OS user. `daemon start` is optional: a command that needs the
@@ -279,10 +280,10 @@ its launch; abrupt exits are recovered through lease expiry.
 ## Secrets
 
 ```text
-agx secret login <secret-id> [--no-browser]
-agx secret set <secret-id> --stdin
+agx secret login <secret-id> [--no-browser] [--json]
+agx secret set <secret-id> --stdin [--json]
 agx secret status [secret-id] [--json]
-agx secret logout <secret-id>
+agx secret logout <secret-id> [--json]
 ```
 
 A secret ID names a top-level secret or, for [inline and on-demand
@@ -336,7 +337,8 @@ commands complete their native arguments as files.
 
 ## Output contract
 
-JSON commands produce one versioned document on stdout; diagnostics use stderr.
+JSON commands produce one versioned document on stdout, and logins a stream of
+them ([scripting](#scripting)); diagnostics use stderr.
 Human output is styled per stream: `--color=auto` (the default) styles a stream
 only when it is a terminal, `NO_COLOR` is unset, and `TERM` is not `dumb`;
 `CLICOLOR_FORCE` or `FORCE_COLOR` styles it anyway. `--color=always` and
@@ -350,3 +352,81 @@ points preserve native exit behavior. Before spawning, wrappers require the daem
 same agx build (version and executable contents), replacing an idle daemon of another build, and fail with actionable instructions instead of printing into a
 harness protocol stream. Starting the daemon writes nothing to stdout; its notes go to stderr, a progress
 line only on a terminal.
+
+## Scripting
+
+Every command that acts takes `--json`, except the harness entry points, `run`,
+the launcher, `config schema`, `completion`, and `help`. Then stdout carries only JSON, one
+document per line, and nothing styled:
+
+```json
+{"version":1,"data":{"secret_id":"token","logged_out":true}}
+{"version":1,"error":{"code":"not_found","message":"unknown MCP server docs"}}
+```
+
+`version` is 1; it changes only when a document changes incompatibly, while new
+fields may appear in any version. `--json` implies `--yes` and never prompts: a
+missing argument is a usage error, and edits are written without showing a diff.
+Warnings stay diagnostics on stderr; progress lines and hints appear on stderr
+only when it is a terminal. `--json` counts anywhere before `--`, so usage errors
+that occur before a command runs, such as an unknown flag, are JSON too.
+
+Exit codes are those of the human output: 0 for success, 1 for operational
+failures, 2 for usage errors, and 128 plus the signal number when a signal stops
+a command, which then prints an `interrupted` error. A failure prints an error
+document instead of `data`, except where a command reports the failure in its
+data below.
+
+| Command | `data` |
+| --- | --- |
+| `config validate` | `{valid, root, files, counts, diagnostics}`: `counts` has `skills`, `instructions`, `mcp`, `secrets`, `harnesses`, `scopes`, `packages`; each diagnostic is `{severity, message, source?: {path, line?}}`. An invalid configuration exits 1 with `valid: false`, empty `files`, `counts: null`, and one error diagnostic. |
+| `resolve`, `explain`, `sessions`, `list`, `shims list` | as described with each command |
+| `install`, `update` | `{packages, lockfiles, frozen, updated}`: the package IDs installed and locked, and the lockfiles written (checked, with `--frozen`) |
+| `mcp`, `skill`, `instructions`, `harness` `add` and `remove`; `use`, `unuse` | `{files, defined, enabled, disabled, removed, scope}`; `mcp add` adds `needs_login` |
+| `mcp test` | `{id, transport, server: {name, version}, tools: [{name, description}], state}`; a server that does not answer exits 1 with `state` `needs_auth` or `failed`, `server: null`, and `message` |
+| `shims install`, `shims remove` | `{directory, on_path, target, changes}`; each change is a shim (`name`, `file`, `kind`, `target`) with its `action` (`created`, `updated`, `removed`, `unchanged`, `kept`); a kept shim has its `state` |
+| `daemon start` | `{started, version, log}` |
+| `daemon stop` | `{stopping, forced, version}` |
+| `daemon status`, `launch list`, `launch show`, `secret status` | the Connect message as protobuf JSON (`GetRuntimeResponse`, `RuntimeView`, `Launch`, `GetSecretStatusResponse`) |
+| `launch revoke` | `{launch_id, revoked}` |
+| `secret set` | `{secret_id, stored}` |
+| `secret logout` | `{secret_id, logged_out}` |
+
+In edit documents, `files` lists each fragment and lockfile written, as `{path,
+diff, written}` with a unified diff; it is empty when nothing changed. `defined`,
+`enabled`, `disabled`, and `removed` list `{kind, id}`, where `kind` is the
+configuration section: `skills`, `instructions`, `mcp`, `bundles`, `harnesses`, or
+`packages`. `enabled` and `disabled` name what the command enabled or disabled
+even when it already was. `scope` is `{directory, harnesses}`, with `directory`
+`null` for everywhere, or `null` when the command changed no scope.
+
+`secret login` and `mcp login` stream events instead, one document per line, as
+they happen:
+
+```json
+{"version":1,"event":"started","secret":"github","mcp_id":"github","url":"https://github.com/login/oauth/authorize?…","expires_at":"2026-10-18T12:05:00Z"}
+{"version":1,"event":"finished","secret":"github","outcome":"success","message":""}
+```
+
+`mcp_id` names the MCP server whose URL the login authorizes. `outcome` is
+`success`, `failure`, or `expired`; the command exits 0 only on success. An error
+before or during the login is an error document as the last line. With `--json`,
+the browser opens only when stdout is a terminal and `--no-browser` is not given,
+so a script reading the stream opens the URL itself.
+
+| Code | Meaning |
+| --- | --- |
+| `usage` | invalid arguments or flags (exit 2) |
+| `config_invalid` | the configuration does not load, or an edit would make it invalid; `source` locates the cause when known |
+| `not_found` | an unknown ID, launch, package, or file |
+| `conflict` | the target exists, is still referenced, or is busy: an ID already defined, a definition other entries use, a running daemon, a lockfile that `--frozen` would change |
+| `read_only` | a file agx may not write, a definition inside a package, or a built-in |
+| `invalid_request` | a request agx or the daemon cannot carry out as given |
+| `failed_precondition` | the target does not support the operation, such as logging in to a stdio server or setting a sops secret |
+| `needs_login` | the operation needs an OAuth login first |
+| `daemon_unavailable` | no daemon answers, or it stopped |
+| `version_mismatch` | the daemon runs another agx build and cannot be replaced |
+| `network` | fetching a package failed |
+| `timeout` | the daemon or an upstream did not answer in time |
+| `interrupted` | a signal or cancellation stopped the command |
+| `internal` | anything unclassified, which is a defect |

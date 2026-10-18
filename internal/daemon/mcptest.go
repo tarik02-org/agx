@@ -71,7 +71,7 @@ func (s *Server) TestMcpServer(
 		return nil, testFailure(ctx, endpoint, err)
 	}
 	defer func() { _ = session.Close() }()
-	response := &v1.TestMcpServerResponse{Tools: []string{}}
+	response := &v1.TestMcpServerResponse{Tools: []string{}, ToolDetails: []*v1.TestMcpServerResponse_Tool{}}
 	if info := session.InitializeResult().ServerInfo; info != nil {
 		response.ServerName, response.ServerVersion = info.Name, info.Version
 	}
@@ -80,6 +80,10 @@ func (s *Server) TestMcpServer(
 			return nil, testFailure(ctx, endpoint, err)
 		}
 		response.Tools = append(response.Tools, tool.Name)
+		response.ToolDetails = append(
+			response.ToolDetails,
+			&v1.TestMcpServerResponse_Tool{Name: tool.Name, Description: tool.Description},
+		)
 	}
 	return connect.NewResponse(response), nil
 }

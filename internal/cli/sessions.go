@@ -26,7 +26,6 @@ import (
 
 func sessionsCommand(paths *platform.Paths, registry adapters.Registry, harnesses *harnessConfig) *cobra.Command {
 	all := false
-	asJSON := false
 	cmd := &cobra.Command{
 		Use:     "sessions [query]",
 		Short:   "List harness sessions to resume, here or in every directory",
@@ -46,7 +45,7 @@ func sessionsCommand(paths *platform.Paths, registry adapters.Registry, harnesse
 			}
 			query := strings.Join(args, " ")
 			entries = sessions.Search(entries, query)
-			if asJSON {
+			if scripting.enabled {
 				errs := map[string]string{}
 				for name, err := range listing.Errors {
 					errs[name] = err.Error()
@@ -69,7 +68,7 @@ func sessionsCommand(paths *platform.Paths, registry adapters.Registry, harnesse
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "list sessions of every directory, not only this one and below")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "versioned JSON output")
+	jsonFlag(cmd)
 	return cmd
 }
 

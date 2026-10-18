@@ -36,7 +36,7 @@ func main() {
 			}
 		case "tools/list":
 			result = map[string]any{"tools": []any{map[string]any{
-				"name": "echo", "inputSchema": map[string]any{"type": "object"},
+				"name": "echo", "description": "Echo text.", "inputSchema": map[string]any{"type": "object"},
 			}}}
 		case "tools/call":
 			text := "echo:" + m.Params.Arguments.Text + ":" + os.Getenv("ECHO_TOKEN")

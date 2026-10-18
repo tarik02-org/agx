@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,8 +13,6 @@ import (
 
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
@@ -31,8 +28,10 @@ func Main() int {
 	return run(os.Args, os.Stdout)
 }
 
-// run executes agx for its command line; stdout receives cobra's output, such as completions.
+// run executes agx for its command line; stdout receives cobra's output, such as completions,
+// and JSON documents.
 func run(osArgs []string, stdout io.Writer) int {
+	scripting.enabled, scripting.stdout = false, stdout
 	paths, err := platform.DefaultPaths()
 	if err != nil {
 		return exitCode(err)
@@ -57,6 +56,9 @@ func run(osArgs []string, stdout io.Writer) int {
 	)
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		ui.Configure(color)
+		if flag := cmd.Flags().Lookup("json"); flag != nil {
+			scripting.enabled = flag.Value.String() == "true"
+		}
 		var err error
 		paths.Config, err = filepath.Abs(paths.Config)
 		if err != nil {
@@ -92,20 +94,23 @@ func run(osArgs []string, stdout io.Writer) int {
 		},
 	)
 	configCmd := &cobra.Command{Use: "config", Short: "Inspect the root configuration", GroupID: "config"}
-	configCmd.AddCommand(
-		&cobra.Command{
-			Use:   "validate",
-			Short: "Load and validate the configuration",
-			Args:  cobra.NoArgs,
-			RunE: func(cmd *cobra.Command, args []string) error {
-				c, err := config.Load(paths.Config, paths.Cache, builtins)
-				if err != nil {
-					return err
-				}
-				return printValid(c)
-			},
+	validate := &cobra.Command{
+		Use:   "validate",
+		Short: "Load and validate the configuration",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := config.Load(paths.Config, paths.Cache, builtins)
+			if scripting.enabled {
+				return printValidation(paths.Config, c, err)
+			}
+			if err != nil {
+				return coded(codeConfigInvalid, err)
+			}
+			return printValid(c)
 		},
-	)
+	}
+	jsonFlag(validate)
+	configCmd.AddCommand(validate)
 	schemaManifest := false
 	schemaCmd := &cobra.Command{
 		Use:   "schema",
@@ -128,7 +133,6 @@ func run(osArgs []string, stdout io.Writer) int {
 		"explain": "Show why each resource is selected or removed for a directory",
 	}
 	for _, name := range []string{"resolve", "explain"} {
-		asJSON := false
 		verbose := false
 		harness := ""
 		cmd := &cobra.Command{
@@ -143,7 +147,15 @@ func run(osArgs []string, stdout io.Writer) int {
 				}
 				c, err := config.Load(paths.Config, paths.Cache, builtins)
 				if err != nil {
+					return coded(codeConfigInvalid, err)
+				}
+				if harness != "" && !slices.Contains(c.HarnessNames(), harness) {
+					return codedf(codeNotFound, "unknown harness %s", harness)
+				}
+				if info, err := os.Stat(directory); err != nil {
 					return err
+				} else if !info.IsDir() {
+					return codedf(codeInvalidRequest, "not a directory: %s", directory)
 				}
 				snapshot, err := c.Resolve(directory, harness)
 				if err != nil {
@@ -153,7 +165,7 @@ func run(osArgs []string, stdout io.Writer) int {
 					snapshot.Traces = nil
 					snapshot.Injections = nil
 				}
-				if asJSON {
+				if scripting.enabled {
 					return printJSON(snapshot)
 				}
 				if name == "resolve" {
@@ -168,7 +180,7 @@ func run(osArgs []string, stdout io.Writer) int {
 		if name == "explain" {
 			cmd.Flags().BoolVar(&verbose, "verbose", false, "show every step with full paths")
 		}
-		cmd.Flags().BoolVar(&asJSON, "json", false, "versioned JSON output")
+		jsonFlag(cmd)
 		cmd.Flags().
 			StringVar(&harness, "harness", "", "resolve for a harness (default: harness-independent rules only)")
 		root.AddCommand(cmd)
@@ -181,24 +193,25 @@ func run(osArgs []string, stdout io.Writer) int {
 	}
 	frozen := false
 	install.Flags().BoolVar(&frozen, "frozen", false, "require unchanged lockfiles and content")
+	jsonFlag(install)
 	install.RunE = func(cmd *cobra.Command, args []string) error {
 		return installPackages(cmd.Context(), paths, registry, builtins, frozen, nil, false)
 	}
 	root.AddCommand(install)
-	root.AddCommand(
-		&cobra.Command{
-			Use:     "update [package-id...]",
-			Short:   "Update packages and their lockfiles (all when none given)",
-			GroupID: "config",
-			RunE: func(cmd *cobra.Command, args []string) error {
-				ids := []config.ID{}
-				for _, id := range args {
-					ids = append(ids, config.ID(id))
-				}
-				return installPackages(cmd.Context(), paths, registry, builtins, false, ids, len(ids) == 0)
-			},
+	update := &cobra.Command{
+		Use:     "update [package-id...]",
+		Short:   "Update packages and their lockfiles (all when none given)",
+		GroupID: "config",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ids := []config.ID{}
+			for _, id := range args {
+				ids = append(ids, config.ID(id))
+			}
+			return installPackages(cmd.Context(), paths, registry, builtins, false, ids, len(ids) == 0)
 		},
-	)
+	}
+	jsonFlag(update)
+	root.AddCommand(update)
 	root.RunE = func(cmd *cobra.Command, args []string) error {
 		if !ui.Stdout.Terminal() || !term.IsTerminal(os.Stdin.Fd()) {
 			return cmd.Help()
@@ -268,6 +281,7 @@ func run(osArgs []string, stdout io.Writer) int {
 				if completing {
 					break
 				}
+				scripting.enabled = wantsJSON(nil, args)
 				return exitCode(&usageError{fmt.Errorf("flag needs an argument: --%s", name)})
 			}
 			value, rest = rest[0], rest[1:]
@@ -280,6 +294,7 @@ func run(osArgs []string, stdout io.Writer) int {
 			if completing {
 				break
 			}
+			scripting.enabled = wantsJSON(nil, args)
 			return exitCode(&usageError{err})
 		}
 		words = rest
@@ -316,8 +331,12 @@ func run(osArgs []string, stdout io.Writer) int {
 		)
 	}
 	root.SetArgs(args)
+	found, _, err := root.Find(args)
+	if !completing {
+		scripting.enabled = wantsJSON(found, args)
+	}
 	// Cobra adds its completion commands only during Execute, so Find cannot know them yet.
-	if _, _, err := root.Find(args); err != nil && !completing {
+	if err != nil && !completing {
 		if harnesses.err != nil {
 			err = fmt.Errorf("%w (harness definitions unavailable: %w)", err, harnesses.err)
 		}
@@ -338,36 +357,34 @@ func invokedName(arg0 string) string {
 
 type usageError struct{ error }
 
+// exitCode reports err and returns the exit status: 2 for usage errors, 1 for other failures. In
+// JSON mode the report is an error document on stdout instead of a diagnostic on stderr.
 func exitCode(err error) int {
 	if err == nil {
 		return 0
 	}
 	var exit *ExitError
 	if errors.As(err, &exit) {
+		// Status 1 follows output that already reported the failure; higher ones are signals.
+		if scripting.enabled && exit.Code > 1 {
+			printError(codeInterrupted, fmt.Errorf("interrupted"))
+		}
 		return exit.Code
 	}
-	ui.Diagnose(ui.Error, "%v", err)
 	var usage *usageError
+	status := 1
 	if errors.As(err, &usage) {
+		status = 2
+	}
+	if scripting.enabled {
+		printError(errorCode(err), err)
+		return status
+	}
+	ui.Diagnose(ui.Error, "%v", err)
+	if status == 2 {
 		ui.Note("Run 'agx --help' for usage.")
-		return 2
 	}
-	return 1
-}
-
-func printJSON(value any) error {
-	return json.NewEncoder(os.Stdout).Encode(struct {
-		Version int `json:"version"`
-		Data    any `json:"data"`
-	}{1, value})
-}
-
-func printProto(value proto.Message) error {
-	b, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(value)
-	if err != nil {
-		return err
-	}
-	return printJSON(json.RawMessage(b))
+	return status
 }
 
 func installPackages(
@@ -393,17 +410,29 @@ func installPackages(
 		packages.Options{Frozen: frozen, Updates: ids, UpdateAll: all},
 	)
 	if err != nil {
+		// What the installer does not mark is the configuration's fault: cycles, invalid fragments.
+		if errorCode(err) == codeInternal {
+			err = coded(codeConfigInvalid, err)
+		}
 		return err
 	}
 	c, err := config.Load(paths.Config, paths.Cache, builtins)
 	if err != nil {
-		return err
+		return coded(codeConfigInvalid, err)
 	}
 	if !frozen {
 		progress("Installing native harness plugins")
 		if err := registry.Install(ctx, c, paths.Cache); err != nil {
 			return err
 		}
+	}
+	if scripting.enabled {
+		return printJSON(struct {
+			Packages  []config.ID `json:"packages"`
+			Lockfiles []string    `json:"lockfiles"`
+			Frozen    bool        `json:"frozen"`
+			Updated   bool        `json:"updated"`
+		}{result.PackageIDs, result.Lockfiles, frozen, update})
 	}
 	return printInstalled(result, update)
 }
@@ -426,19 +455,27 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 				_, err = c.runtime.GetRuntime(ctx, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
 				cancel()
 				if err == nil && c.discovery.Version != daemon.Version {
-					return fmt.Errorf(
+					return codedf(
+						codeVersionMismatch,
 						"daemon %s is already running (agx is %s); run agx daemon stop first",
 						c.discovery.Version,
 						daemon.Version,
 					)
 				}
 				if err == nil {
-					return fmt.Errorf("daemon is already running")
+					return codedf(codeConflict, "daemon is already running")
 				}
 			}
 			logPath, err := startDaemon(cmd.Context(), *paths)
 			if err != nil {
 				return err
+			}
+			if scripting.enabled {
+				return printJSON(struct {
+					Started bool   `json:"started"`
+					Version string `json:"version"`
+					Log     string `json:"log"`
+				}{true, daemon.Version, logPath})
 			}
 			out := ui.Stdout
 			_, err = fmt.Fprint(
@@ -450,8 +487,8 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 		},
 	}
 	start.Flags().BoolVar(&foreground, "foreground", false, "serve in the foreground")
+	jsonFlag(start)
 	command.AddCommand(start)
-	asJSON := false
 	status := &cobra.Command{
 		Use:   "status",
 		Short: "Show daemon version and launch count",
@@ -467,13 +504,13 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			if err != nil {
 				return err
 			}
-			if asJSON {
+			if scripting.enabled {
 				return printProto(view.Msg)
 			}
 			return printDaemonStatus(view.Msg.Runtime)
 		},
 	}
-	status.Flags().BoolVar(&asJSON, "json", false, "versioned JSON output")
+	jsonFlag(status)
 	command.AddCommand(status)
 	force := false
 	stop := &cobra.Command{
@@ -488,11 +525,19 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			if err := stopDaemon(cmd.Context(), c, force); err != nil {
 				return err
 			}
+			if scripting.enabled {
+				return printJSON(struct {
+					Stopping bool   `json:"stopping"`
+					Forced   bool   `json:"forced"`
+					Version  string `json:"version"`
+				}{true, force, c.discovery.Version})
+			}
 			_, err = fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, "Daemon stopping."))
 			return err
 		},
 	}
 	stop.Flags().BoolVar(&force, "force", false, "revoke active MCP access before stopping")
+	jsonFlag(stop)
 	command.AddCommand(stop)
 	return command
 }
@@ -501,7 +546,6 @@ func launchCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 	command := &cobra.Command{Use: "launch", Short: "Inspect and revoke harness launches", GroupID: "runtime"}
 	shorts := map[string]string{"list": "List active launches", "show": "Show one launch"}
 	for _, name := range []string{"list", "show"} {
-		asJSON := false
 		sub := &cobra.Command{
 			Use:   name + " [launch-id]",
 			Short: shorts[name],
@@ -526,49 +570,54 @@ func launchCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 				if name == "show" {
 					for _, l := range view.Launches {
 						if l.Id == args[0] {
-							if asJSON {
+							if scripting.enabled {
 								return printProto(l)
 							}
 							return printLaunch(l, view.McpServers)
 						}
 					}
-					return fmt.Errorf("unknown launch %s", args[0])
+					return codedf(codeNotFound, "unknown launch %s", args[0])
 				}
-				if asJSON {
+				if scripting.enabled {
 					return printProto(view)
 				}
 				return printLaunches(view.Launches)
 			},
 		}
-		sub.Flags().BoolVar(&asJSON, "json", false, "versioned JSON output")
+		jsonFlag(sub)
 		command.AddCommand(sub)
 	}
-	command.AddCommand(
-		&cobra.Command{
-			Use:   "revoke <launch-id>",
-			Short: "Revoke a launch's MCP access",
-			Args:  cobra.ExactArgs(1),
-			RunE: func(cmd *cobra.Command, args []string) error {
-				c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
-				if err != nil {
-					return err
-				}
-				ctx, cancel := context.WithTimeout(cmd.Context(), callTimeout)
-				defer cancel()
-				_, err = c.launches.RevokeLaunch(
-					ctx,
-					request(&v1.RevokeLaunchRequest{LaunchId: args[0]}, c.discovery.Token),
-				)
+	revoke := &cobra.Command{
+		Use:   "revoke <launch-id>",
+		Short: "Revoke a launch's MCP access",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
+			if err != nil {
 				return err
-			},
+			}
+			ctx, cancel := context.WithTimeout(cmd.Context(), callTimeout)
+			defer cancel()
+			_, err = c.launches.RevokeLaunch(
+				ctx,
+				request(&v1.RevokeLaunchRequest{LaunchId: args[0]}, c.discovery.Token),
+			)
+			if err != nil || !scripting.enabled {
+				return err
+			}
+			return printJSON(struct {
+				LaunchID string `json:"launch_id"`
+				Revoked  bool   `json:"revoked"`
+			}{args[0], true})
 		},
-	)
+	}
+	jsonFlag(revoke)
+	command.AddCommand(revoke)
 	return command
 }
 
 func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
 	command := &cobra.Command{Use: "secret", Short: "Manage configured secrets and OAuth logins", GroupID: "runtime"}
-	asJSON := false
 	status := &cobra.Command{
 		Use:   "status [secret-id]",
 		Short: "Show secret state",
@@ -591,13 +640,13 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			if err != nil {
 				return err
 			}
-			if asJSON {
+			if scripting.enabled {
 				return printProto(response.Msg)
 			}
 			return printSecretStatuses(response.Msg.Statuses)
 		},
 	}
-	status.Flags().BoolVar(&asJSON, "json", false, "versioned JSON output")
+	jsonFlag(status)
 	command.AddCommand(status)
 	stdin := false
 	set := &cobra.Command{
@@ -606,14 +655,14 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !stdin {
-				return fmt.Errorf("use --stdin to supply the secret")
+				return codedf(codeInvalidRequest, "use --stdin to supply the secret")
 			}
 			data, err := io.ReadAll(io.LimitReader(os.Stdin, 1024*1024+1))
 			if err != nil {
 				return err
 			}
 			if len(data) > 1024*1024 {
-				return fmt.Errorf("secret too large")
+				return codedf(codeInvalidRequest, "secret too large")
 			}
 			c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
 			if err != nil {
@@ -625,28 +674,41 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 				ctx,
 				request(&v1.SetSecretRequest{SecretId: args[0], Value: data}, c.discovery.Token),
 			)
-			return err
+			if err != nil || !scripting.enabled {
+				return err
+			}
+			return printJSON(struct {
+				SecretID string `json:"secret_id"`
+				Stored   bool   `json:"stored"`
+			}{args[0], true})
 		},
 	}
 	set.Flags().BoolVar(&stdin, "stdin", false, "read secret from stdin")
+	jsonFlag(set)
 	command.AddCommand(set)
-	command.AddCommand(
-		&cobra.Command{
-			Use:   "logout <secret-id>",
-			Short: "Delete a stored secret or OAuth login",
-			Args:  cobra.ExactArgs(1),
-			RunE: func(cmd *cobra.Command, args []string) error {
-				c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
-				if err != nil {
-					return err
-				}
-				ctx, cancel := context.WithTimeout(cmd.Context(), callTimeout)
-				defer cancel()
-				_, err = c.secrets.Logout(ctx, request(&v1.LogoutRequest{SecretId: args[0]}, c.discovery.Token))
+	logout := &cobra.Command{
+		Use:   "logout <secret-id>",
+		Short: "Delete a stored secret or OAuth login",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
+			if err != nil {
 				return err
-			},
+			}
+			ctx, cancel := context.WithTimeout(cmd.Context(), callTimeout)
+			defer cancel()
+			_, err = c.secrets.Logout(ctx, request(&v1.LogoutRequest{SecretId: args[0]}, c.discovery.Token))
+			if err != nil || !scripting.enabled {
+				return err
+			}
+			return printJSON(struct {
+				SecretID  string `json:"secret_id"`
+				LoggedOut bool   `json:"logged_out"`
+			}{args[0], true})
 		},
-	)
+	}
+	jsonFlag(logout)
+	command.AddCommand(logout)
 	noBrowser := false
 	login := &cobra.Command{
 		Use:   "login <secret-id>",
@@ -660,6 +722,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 		},
 	}
 	login.Flags().BoolVar(&noBrowser, "no-browser", false, "print the authorization URL without opening a browser")
+	jsonFlag(login)
 	command.AddCommand(login)
 	return command
 }

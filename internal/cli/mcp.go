@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
@@ -28,19 +30,21 @@ func mcpCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command
 		Short:   "Add, list, remove, log in to, and test MCP servers",
 		GroupID: "config",
 	}
+	test := &cobra.Command{
+		Use:   "test <id>",
+		Short: "Connect to an MCP server through the daemon and list its tools",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return testMCP(cmd.Context(), *paths, *builtins, args[0])
+		},
+	}
+	jsonFlag(test)
 	command.AddCommand(
 		mcpAddCommand(paths, builtins),
 		listCommand(paths, builtins, edit.MCP),
 		removeCommand(paths, builtins, edit.MCP),
 		mcpLoginCommand(paths, builtins),
-		&cobra.Command{
-			Use:   "test <id>",
-			Short: "Connect to an MCP server through the daemon and list its tools",
-			Args:  cobra.ExactArgs(1),
-			RunE: func(cmd *cobra.Command, args []string) error {
-				return testMCP(cmd.Context(), *paths, *builtins, args[0])
-			},
-		},
+		test,
 	)
 	return command
 }
@@ -54,7 +58,7 @@ func mcpLoginCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := config.Load(paths.Config, paths.Cache, *builtins)
 			if err != nil {
-				return err
+				return coded(codeConfigInvalid, err)
 			}
 			id, err := loginSecret(c, args[0])
 			if err != nil {
@@ -64,6 +68,7 @@ func mcpLoginCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 		},
 	}
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the authorization URL without opening a browser")
+	jsonFlag(cmd)
 	return cmd
 }
 
@@ -72,21 +77,23 @@ func mcpLoginCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 func loginSecret(c *config.Config, id string) (string, error) {
 	server, ok := c.MCP[config.ID(id)]
 	if !ok {
-		return "", fmt.Errorf("unknown MCP server %s", id)
+		return "", codedf(codeNotFound, "unknown MCP server %s", id)
 	}
 	secret := c.Secrets[server.Auth.Secret]
 	switch {
 	case server.Transport != "http":
-		return "", fmt.Errorf("MCP server %s runs over stdio and has no login", id)
+		return "", codedf(codeFailedPrecondition, "MCP server %s runs over stdio and has no login", id)
 	case server.Auth.None:
-		return "", fmt.Errorf("MCP server %s has auth: none", id)
+		return "", codedf(codeFailedPrecondition, "MCP server %s has auth: none", id)
 	case secret.Kind == "sops":
-		return "", fmt.Errorf(
+		return "", codedf(
+			codeFailedPrecondition,
 			"MCP server %s authenticates with sops secret %s; edit it with sops %s",
 			id, server.Auth.Secret, secret.File,
 		)
 	case secret.Kind != "oauth":
-		return "", fmt.Errorf(
+		return "", codedf(
+			codeFailedPrecondition,
 			"MCP server %s authenticates with %s secret %s; store it with agx secret set %s --stdin",
 			id, secret.Kind, server.Auth.Secret, server.Auth.Secret,
 		)
@@ -197,17 +204,23 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			if err := s.enableAfterDefine(edit.MCP, id, file, flags); err != nil {
 				return err
 			}
-			if ok, err := s.commit(); err != nil || !ok {
+			needsLogin := false
+			s.result.NeedsLogin = &needsLogin
+			ok, err := s.commit()
+			if err != nil {
 				return err
 			}
-			if command != nil || authValue == "none" || authValue == "keychain" ||
-				strings.HasPrefix(authValue, "!secret") {
-				return nil
+			if ok && command == nil && authValue != "none" && authValue != "keychain" &&
+				!strings.HasPrefix(authValue, "!secret") {
+				if needsLogin, err = offerLogin(cmd.Context(), s, id, target, !noBrowser); err != nil {
+					return err
+				}
 			}
-			return offerLogin(cmd.Context(), s, id, target, !noBrowser)
+			return s.report()
 		},
 	}
 	flags.register(cmd, true)
+	jsonFlag(cmd)
 	cmd.Flags().
 		StringArrayVar(&headers, "header", nil, "HTTP header KEY=VALUE; VALUE may be '!secret id', '!env NAME', or '!file path'")
 	cmd.Flags().StringArrayVar(&env, "env", nil, "stdio environment KEY=VALUE; VALUE may be a tag as for --header")
@@ -217,9 +230,10 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 	return cmd
 }
 
-// offerLogin probes a new HTTP server; when it asks for OAuth, a person at a terminal may log in
-// at once through the daemon, and everyone else learns the command for later.
-func offerLogin(ctx context.Context, s *session, id, url string, browser bool) error {
+// offerLogin probes a new HTTP server and reports whether it asks for OAuth. A person at a
+// terminal may then log in at once through the daemon, and everyone else learns the command for
+// later; JSON mode only reports it.
+func offerLogin(ctx context.Context, s *session, id, url string, browser bool) (bool, error) {
 	probe, cancel := context.WithTimeout(ctx, 15*time.Second)
 	needed, err := auth.NeedsLogin(probe, url)
 	cancel()
@@ -228,26 +242,26 @@ func offerLogin(ctx context.Context, s *session, id, url string, browser bool) e
 		needed = false
 	}
 	if !needed {
-		return nil
+		return false, nil
 	}
 	later := "agx mcp login " + id
 	if !s.interactive {
-		ui.Note(id + " asks for an OAuth login; run " + later + " to log in.")
-		return nil
+		hint(id + " asks for an OAuth login; run " + later + " to log in.")
+		return true, nil
 	}
 	if !autostart(s.config) && !daemonReachable(s.paths) {
 		ui.Note(id + " asks for an OAuth login. Start the daemon with agx daemon start, then run " + later + ".")
-		return nil
+		return true, nil
 	}
 	yes, err := prompt.Confirm(ctx, id+" asks for an OAuth login. Log in now?", true)
 	if err != nil {
-		return promptError(err)
+		return true, promptError(err)
 	}
 	if !yes {
 		ui.Note("Run " + later + " to log in later.")
-		return nil
+		return true, nil
 	}
-	return login(ctx, s.paths, id, browser, autostart(s.config))
+	return true, login(ctx, s.paths, id, browser, autostart(s.config))
 }
 
 // daemonReachable reports whether a daemon of this version answers, so a login can run now.
@@ -265,10 +279,11 @@ func daemonReachable(paths platform.Paths) bool {
 func testMCP(ctx context.Context, paths platform.Paths, builtins config.Builtins, id string) error {
 	c, err := config.Load(paths.Config, paths.Cache, builtins)
 	if err != nil {
-		return err
+		return coded(codeConfigInvalid, err)
 	}
-	if _, ok := c.MCP[config.ID(id)]; !ok {
-		return fmt.Errorf("unknown MCP server %s", id)
+	definition, ok := c.MCP[config.ID(id)]
+	if !ok {
+		return codedf(codeNotFound, "unknown MCP server %s", id)
 	}
 	// Only the variables the server's values read are forwarded, as for a launch.
 	snapshot := &config.Snapshot{Config: c, Resources: []config.Resource{{Kind: "mcp", ID: config.ID(id)}}}
@@ -294,6 +309,9 @@ func testMCP(ctx context.Context, paths platform.Paths, builtins config.Builtins
 		Directory:         directory,
 		EnvironmentInputs: inputs,
 	}, client.discovery.Token))
+	if scripting.enabled {
+		return printMCPTest(id, definition.Transport, response, err)
+	}
 	if err != nil {
 		return fmt.Errorf("MCP server %s: %w", id, err)
 	}
@@ -306,6 +324,61 @@ func testMCP(ctx context.Context, paths platform.Paths, builtins config.Builtins
 		out.Fields([2]string{"server", server}, [2]string{"tools", strings.Join(tools, " ")}),
 	)
 	return err
+}
+
+// printMCPTest writes mcp test's document. A server that fails the test still gets one, with its
+// state and the endpoint's diagnosis, and exits 1; failures to reach the daemon are errors.
+func printMCPTest(id, transport string, response *connect.Response[v1.TestMcpServerResponse], err error) error {
+	type tool struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	type server struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	}
+	type result struct {
+		ID        string  `json:"id"`
+		Transport string  `json:"transport"`
+		Server    *server `json:"server"`
+		Tools     []tool  `json:"tools"`
+		State     string  `json:"state"`
+		Message   string  `json:"message,omitempty"`
+	}
+	if err != nil {
+		var state string
+		switch errorCode(err) {
+		case codeNeedsLogin:
+			state = "needs_auth"
+		case codeFailedPrecondition, codeTimeout:
+			state = "failed"
+		default:
+			return fmt.Errorf("MCP server %s: %w", id, err)
+		}
+		message := err.Error()
+		var rpc *connect.Error
+		if errors.As(err, &rpc) {
+			message = rpc.Message()
+		}
+		if printErr := printJSON(result{
+			ID: id, Transport: transport, Tools: []tool{}, State: state, Message: message,
+		}); printErr != nil {
+			return printErr
+		}
+		return &ExitError{Code: 1}
+	}
+	msg := response.Msg
+	tools := []tool{}
+	for _, t := range msg.ToolDetails {
+		tools = append(tools, tool{Name: t.Name, Description: t.Description})
+	}
+	return printJSON(result{
+		ID:        id,
+		Transport: transport,
+		Server:    &server{Name: msg.ServerName, Version: msg.ServerVersion},
+		Tools:     tools,
+		State:     "ready",
+	})
 }
 
 // mcpRows describes MCP servers for list output; values are shown as configured, never resolved.
@@ -353,7 +426,6 @@ func location(c *config.Config, source config.Source) string {
 
 // listCommand lists the definitions of a kind as a table or JSON.
 func listCommand(paths *platform.Paths, builtins *config.Builtins, kind string) *cobra.Command {
-	asJSON := false
 	cmd := &cobra.Command{
 		Use: "list",
 		Short: map[string]string{
@@ -372,7 +444,7 @@ func listCommand(paths *platform.Paths, builtins *config.Builtins, kind string) 
 				c, err = config.Load(paths.Config, paths.Cache, *builtins)
 			}
 			if err != nil {
-				return err
+				return coded(codeConfigInvalid, err)
 			}
 			var headers []string
 			var rows [][]string
@@ -387,7 +459,7 @@ func listCommand(paths *platform.Paths, builtins *config.Builtins, kind string) 
 			default:
 				headers, rows, items = harnessRows(c)
 			}
-			if asJSON {
+			if scripting.enabled {
 				return printJSON(items)
 			}
 			if len(rows) == 0 {
@@ -398,7 +470,7 @@ func listCommand(paths *platform.Paths, builtins *config.Builtins, kind string) 
 			return err
 		},
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "versioned JSON output")
+	jsonFlag(cmd)
 	return cmd
 }
 
@@ -432,11 +504,14 @@ func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind string
 			if err != nil {
 				return err
 			}
-			_, err = s.commit()
-			return err
+			if _, err := s.commit(); err != nil {
+				return err
+			}
+			return s.report()
 		},
 	}
 	flags.registerYes(cmd)
+	jsonFlag(cmd)
 	cmd.Flags().BoolVar(&force, "force", false, "also remove the entries that reference it")
 	return cmd
 }

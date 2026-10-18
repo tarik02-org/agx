@@ -41,6 +41,17 @@ var Version = "dev"
 // discovery when the running daemon has a different version.
 var ErrVersionMismatch = errors.New("daemon version mismatch")
 
+// ErrUnavailable marks ReadDiscovery errors that leave no daemon to reach: it is not running,
+// or its discovery file is invalid.
+var ErrUnavailable = errors.New("daemon unavailable")
+
+// unavailable keeps a discovery error's own message while matching ErrUnavailable.
+type unavailable string
+
+func (u unavailable) Error() string { return string(u) }
+
+func (u unavailable) Is(target error) bool { return target == ErrUnavailable }
+
 // historyRetention keeps ended launches and finished operations
 // around long enough for idempotent replays and status inspection.
 const historyRetention = time.Hour
@@ -576,10 +587,10 @@ func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 	var d Discovery
 	b, err := os.ReadFile(filepath.Join(paths.Runtime, "daemon.json"))
 	if err != nil {
-		return d, fmt.Errorf("daemon unavailable; run agx daemon start")
+		return d, unavailable("daemon unavailable; run agx daemon start")
 	}
 	if err := json.Unmarshal(b, &d); err != nil {
-		return d, fmt.Errorf("invalid daemon discovery; restart the daemon")
+		return d, unavailable("invalid daemon discovery; restart the daemon")
 	}
 	u, err := url.Parse(d.URL)
 	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.User != nil || u.Path != "" ||
@@ -587,11 +598,11 @@ func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 		u.Fragment != "" ||
 		d.Token == "" ||
 		d.InstanceID == "" {
-		return d, fmt.Errorf("invalid daemon discovery")
+		return d, unavailable("invalid daemon discovery")
 	}
 	port, err := strconv.Atoi(u.Port())
 	if err != nil || port < 1 || port > 65535 {
-		return d, fmt.Errorf("invalid daemon port")
+		return d, unavailable("invalid daemon port")
 	}
 
 	if d.Version != Version || d.Build != Build() {

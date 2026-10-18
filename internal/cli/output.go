@@ -24,26 +24,91 @@ func progress(text string) {
 	}
 }
 
-func printValid(c *config.Config) error {
-	out := ui.Stdout
+// definitionCounts counts what a configuration defines; on-demand OAuth secrets are implied, not
+// defined.
+type definitionCounts struct {
+	Skills       int `json:"skills"`
+	Instructions int `json:"instructions"`
+	MCP          int `json:"mcp"`
+	Secrets      int `json:"secrets"`
+	Harnesses    int `json:"harnesses"`
+	Scopes       int `json:"scopes"`
+	Packages     int `json:"packages"`
+}
+
+func countDefinitions(c *config.Config) definitionCounts {
 	secrets := 0
 	for _, secret := range c.Secrets {
 		if !secret.Implicit {
 			secrets++
 		}
 	}
+	return definitionCounts{
+		Skills:       len(c.Skills),
+		Instructions: len(c.Instructions),
+		MCP:          len(c.MCP),
+		Secrets:      secrets,
+		Harnesses:    len(c.Harnesses),
+		Scopes:       len(c.Scopes),
+		Packages:     len(c.Packages),
+	}
+}
+
+// printValidation writes config validate's document. An invalid configuration gets one too,
+// carrying the failure as a diagnostic, and exits 1.
+func printValidation(root string, c *config.Config, loadErr error) error {
+	type diagnostic struct {
+		Severity string      `json:"severity"`
+		Message  string      `json:"message"`
+		Source   *jsonSource `json:"source,omitempty"`
+	}
+	type validation struct {
+		Valid       bool              `json:"valid"`
+		Root        string            `json:"root"`
+		Files       []string          `json:"files"`
+		Counts      *definitionCounts `json:"counts"`
+		Diagnostics []diagnostic      `json:"diagnostics"`
+	}
+	if loadErr != nil {
+		if canonical, err := config.Canonical(root); err == nil {
+			root = canonical
+		}
+		message := loadErr.Error()
+		err := printJSON(validation{
+			Root:        root,
+			Files:       []string{},
+			Diagnostics: []diagnostic{{Severity: "error", Message: message, Source: errorSource(message)}},
+		})
+		if err != nil {
+			return err
+		}
+		return &ExitError{Code: 1}
+	}
+	counts := countDefinitions(c)
+	return printJSON(validation{
+		Valid:       true,
+		Root:        c.Root,
+		Files:       c.Files,
+		Counts:      &counts,
+		Diagnostics: []diagnostic{},
+	})
+}
+
+func printValid(c *config.Config) error {
+	out := ui.Stdout
+	n := countDefinitions(c)
 	counts := []string{}
 	for _, count := range []struct {
 		n    int
 		noun string
 	}{
-		{len(c.Skills), "skill"},
-		{len(c.Instructions), "instruction"},
-		{len(c.MCP), "MCP server"},
-		{secrets, "secret"},
-		{len(c.Harnesses), "harness definition"},
-		{len(c.Scopes), "scope"},
-		{len(c.Packages), "package"},
+		{n.Skills, "skill"},
+		{n.Instructions, "instruction"},
+		{n.MCP, "MCP server"},
+		{n.Secrets, "secret"},
+		{n.Harnesses, "harness definition"},
+		{n.Scopes, "scope"},
+		{n.Packages, "package"},
 	} {
 		counts = append(counts, plural(count.n, count.noun))
 	}

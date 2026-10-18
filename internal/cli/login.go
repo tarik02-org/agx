@@ -21,7 +21,12 @@ import (
 
 // login waits for the daemon's login stream without a deadline of its own: the attempt's
 // expiry bounds it. An interrupt closes the stream, which makes the daemon cancel the attempt.
+// In JSON mode the stream's events become lines on stdout, and a browser opens only for a person
+// reading stdout on a terminal.
 func login(ctx context.Context, paths platform.Paths, id string, browser, autostart bool) error {
+	if scripting.enabled && !ui.Stdout.Terminal() {
+		browser = false
+	}
 	c, err := daemonClient(ctx, paths, autostart)
 	if err != nil {
 		return err
@@ -47,7 +52,7 @@ func login(ctx context.Context, paths platform.Paths, id string, browser, autost
 		for stream.Receive() {
 			switch event := stream.Msg().Event.(type) {
 			case *v1.LoginResponse_Started:
-				if err := printLoginURL(id, event.Started.AuthorizationUrl); err != nil {
+				if err := printLoginStarted(id, event.Started); err != nil {
 					return err
 				}
 				if browser {
@@ -74,14 +79,40 @@ func login(ctx context.Context, paths platform.Paths, id string, browser, autost
 	}
 	switch {
 	case err == nil:
-		return fmt.Errorf("daemon ended the login to %s without an outcome", id)
+		return codedf(codeInternal, "daemon ended the login to %s without an outcome", id)
 	case connect.CodeOf(err) == connect.CodeUnavailable:
-		return fmt.Errorf("daemon stopped during the login; run agx secret login %s again", id)
+		return codedf(codeDaemonUnavailable, "daemon stopped during the login; run agx secret login %s again", id)
 	}
 	return err
 }
 
+// loginOutcomes names LoginFinished outcomes in JSON events.
+var loginOutcomes = map[v1.LoginFinished_Outcome]string{
+	v1.LoginFinished_OUTCOME_SUCCEEDED: "success",
+	v1.LoginFinished_OUTCOME_FAILED:    "failure",
+	v1.LoginFinished_OUTCOME_EXPIRED:   "expired",
+}
+
 func loginOutcome(id string, finished *v1.LoginFinished) error {
+	if scripting.enabled {
+		outcome, ok := loginOutcomes[finished.Outcome]
+		if !ok {
+			return codedf(codeInternal, "login to %s ended with an unknown outcome", id)
+		}
+		err := printEvent(struct {
+			event
+			Secret  string `json:"secret"`
+			Outcome string `json:"outcome"`
+			Message string `json:"message"`
+		}{newEvent("finished"), id, outcome, finished.Message})
+		if err != nil {
+			return err
+		}
+		if finished.Outcome != v1.LoginFinished_OUTCOME_SUCCEEDED {
+			return &ExitError{Code: 1}
+		}
+		return nil
+	}
 	switch finished.Outcome {
 	case v1.LoginFinished_OUTCOME_SUCCEEDED:
 		// stdout carries only the URL unless a person reads it.
@@ -100,13 +131,26 @@ func loginOutcome(id string, finished *v1.LoginFinished) error {
 	}
 }
 
-// printLoginURL keeps stdout to the URL alone so it can be piped to a browser opener; the
-// instructions go to stderr for a person at a terminal.
-func printLoginURL(id, authorization string) error {
+// printLoginStarted keeps stdout to the URL alone, or its JSON event, so it can be piped to a
+// browser opener; the instructions go to stderr for a person at a terminal.
+func printLoginStarted(id string, started *v1.LoginStarted) error {
 	if ui.Stderr.Terminal() {
 		ui.Note("Open this URL in a browser on this machine to log in to " + id + ":")
 	}
-	_, err := fmt.Fprintln(ui.Stdout, ui.Stdout.Link(authorization))
+	if scripting.enabled {
+		expires := ""
+		if started.ExpiresAt != nil {
+			expires = started.ExpiresAt.AsTime().UTC().Format(time.RFC3339)
+		}
+		return printEvent(struct {
+			event
+			Secret    string `json:"secret"`
+			MCP       string `json:"mcp_id,omitempty"`
+			URL       string `json:"url"`
+			ExpiresAt string `json:"expires_at"`
+		}{newEvent("started"), id, started.McpId, started.AuthorizationUrl, expires})
+	}
+	_, err := fmt.Fprintln(ui.Stdout, ui.Stdout.Link(started.AuthorizationUrl))
 	return err
 }
 
@@ -146,7 +190,7 @@ func openBrowser(ctx context.Context, target string) {
 }
 
 // waiting animates a line on stderr while a person watches a styled terminal; unstyled
-// terminals get the line once, and other streams nothing.
+// terminals and JSON mode get the line once, and other streams nothing.
 type waiting struct {
 	stop chan struct{}
 	done chan struct{}
@@ -157,7 +201,7 @@ func startWaiting(text string) *waiting {
 	if !ui.Stderr.Terminal() {
 		return nil
 	}
-	if !ui.Stderr.Styled() {
+	if !ui.Stderr.Styled() || scripting.enabled {
 		ui.Note(text)
 		return nil
 	}
