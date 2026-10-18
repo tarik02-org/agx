@@ -3,9 +3,11 @@ package config
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/tarik02-org/agx/internal/yaml"
 )
@@ -13,7 +15,7 @@ import (
 var (
 	// Decoding errors of nested values repeat the library's framing inside their message.
 	nestedFraming = regexp.MustCompile(`yaml: construct errors: (?:line \d+: )?`)
-	unknownField  = regexp.MustCompile(`field (\S+) not found in type \S+`)
+	unknownField  = regexp.MustCompile(`field (\S+) not found in type (\S+)`)
 	wrongKind     = regexp.MustCompile("cannot construct (!!\\w+)(?: `[^`]*`)? into (\\S+)(?: \\(TextUnmarshaler\\))?")
 	wrongScalar   = regexp.MustCompile("cannot construct (!!\\w+) `([^`]*)` as a (!!\\w+)")
 )
@@ -61,7 +63,14 @@ func describeProblem(file string, data []byte, root *yaml.Node, p *yaml.LoadErro
 		return where + ": " + message
 	}
 	message := nestedFraming.ReplaceAllString(p.Message, "")
-	message = unknownField.ReplaceAllString(message, "unknown key $1")
+	message = unknownField.ReplaceAllStringFunc(message, func(match string) string {
+		m := unknownField.FindStringSubmatch(match)
+		message := "unknown key " + m[1]
+		if suggestion := closestKey(m[1], yamlKeys(m[2])); suggestion != "" {
+			message += " (did you mean " + suggestion + "?)"
+		}
+		return message
+	})
 	message = wrongKind.ReplaceAllStringFunc(message, func(match string) string {
 		m := wrongKind.FindStringSubmatch(match)
 		return "expected " + goKind(m[2]) + ", not " + tagKind(m[1])
@@ -160,4 +169,85 @@ func tagKind(tag string) string {
 		return "empty"
 	}
 	return tag
+}
+
+// documentTypes maps the Go type names a document decodes into, as decoding errors spell them,
+// to their types.
+var documentTypes = sync.OnceValue(func() map[string]reflect.Type {
+	types := map[string]reflect.Type{}
+	var visit func(t reflect.Type)
+	visit = func(t reflect.Type) {
+		switch t.Kind() {
+		case reflect.Pointer, reflect.Slice, reflect.Array:
+			visit(t.Elem())
+		case reflect.Map:
+			visit(t.Key())
+			visit(t.Elem())
+		case reflect.Struct:
+			if _, seen := types[t.String()]; seen {
+				return
+			}
+			types[t.String()] = t
+			for field := range t.Fields() {
+				visit(field.Type)
+			}
+		default:
+		}
+	}
+	visit(reflect.TypeFor[Document]())
+	return types
+})
+
+// yamlKeys lists the keys of the document type named goType, or nothing for a type decoded
+// another way.
+func yamlKeys(goType string) []string {
+	t, ok := documentTypes()[strings.TrimPrefix(goType, "*")]
+	if !ok {
+		return nil
+	}
+	keys := []string{}
+	for field := range t.Fields() {
+		if name, _, _ := strings.Cut(field.Tag.Get("yaml"), ","); name != "" && name != "-" {
+			keys = append(keys, name)
+		}
+	}
+	return keys
+}
+
+// closestKey is the key among known that key most likely misspells or abbreviates, such as
+// environment for env, or "" when none is close.
+func closestKey(key string, known []string) string {
+	best, bestDistance := "", 0
+	for _, candidate := range known {
+		distance := editDistance(key, candidate)
+		abbreviates := len(key) >= 3 && strings.HasPrefix(candidate, key)
+		if distance > max(1, len(candidate)/3) && !abbreviates {
+			continue
+		}
+		if best == "" || distance < bestDistance {
+			best, bestDistance = candidate, distance
+		}
+	}
+	return best
+}
+
+// editDistance is the Levenshtein distance between a and b.
+func editDistance(a, b string) int {
+	previous := make([]int, len(b)+1)
+	for j := range previous {
+		previous[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		current := make([]int, len(b)+1)
+		current[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			current[j] = min(previous[j]+1, current[j-1]+1, previous[j-1]+cost)
+		}
+		previous = current
+	}
+	return previous[len(b)]
 }

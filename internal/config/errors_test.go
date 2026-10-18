@@ -16,6 +16,7 @@ func TestReadableDecodeErrors(t *testing.T) {
 		{"string expected", "skills:\n  a: {path: [x]}\n", "agx.yaml:2: skills.a.path: expected a string, not a list"},
 		{"in a sequence", "scopes:\n  - add: {skills: x}\n", "agx.yaml:2: scopes[0].add.skills: expected a list, not a string"},
 		{"unknown key", "mcp:\n  x:\n    url: 'https://a.example'\n    bogus: 1\n", "agx.yaml:4: mcp.x: unknown key bogus"},
+		{"misspelled key", "harnesses:\n  codex:\n    env: {A: b}\n", "agx.yaml:3: harnesses.codex: unknown key env (did you mean environment?)"},
 		{"nested unknown key", "harnesses:\n  codex:\n    args:\n      - {values: [a], mode: [x]}\n", "agx.yaml:4: harnesses.codex.args[0]: unknown key mode"},
 		{"number expected", "daemon:\n  lease_seconds: abc\n", "agx.yaml:2: daemon.lease_seconds: expected a number, not a string"},
 		{"missing import", "imports: [{path: other.yaml}]\n", "agx.yaml:1: import other.yaml: "},
