@@ -100,6 +100,55 @@ func (s Skill) TreeHash() (string, error) {
 	return Digest([]any{hash, executable}), nil
 }
 
+// NativeName is the name harnesses show for the skill: the configured name of a generated skill,
+// otherwise the name in its SKILL.md front matter. A missing or invalid name falls back to the
+// directory name made valid, since the name also names the skill's directory.
+func (s Skill) NativeName() string {
+	if s.Generated() {
+		return s.Name
+	}
+	if b, err := os.ReadFile(filepath.Join(s.Path, "SKILL.md")); err == nil {
+		if name := frontmatterName(string(b)); skillNamePattern.MatchString(name) && len(name) <= maxSkillName {
+			return name
+		}
+	}
+	var name strings.Builder
+	for _, r := range strings.ToLower(filepath.Base(s.Path)) {
+		switch {
+		case r < 128 && (r >= 'a' && r <= 'z' || r >= '0' && r <= '9'):
+			name.WriteRune(r)
+		case name.Len() > 0 && !strings.HasSuffix(name.String(), "-"):
+			name.WriteRune('-')
+		}
+	}
+	result := strings.TrimSuffix(name.String()[:min(name.Len(), maxSkillName)], "-")
+	if result == "" {
+		return "skill"
+	}
+	return result
+}
+
+// frontmatterName reads name from a leading YAML front matter block, or returns "".
+func frontmatterName(document string) string {
+	document = strings.TrimPrefix(document, "\ufeff")
+	document = strings.ReplaceAll(document, "\r\n", "\n")
+	rest, ok := strings.CutPrefix(document, "---\n")
+	if !ok {
+		return ""
+	}
+	head, _, ok := strings.Cut(rest, "\n---")
+	if !ok {
+		return ""
+	}
+	var fields struct {
+		Name string `yaml:"name"`
+	}
+	if yaml.Unmarshal([]byte(head), &fields) != nil {
+		return ""
+	}
+	return strings.TrimSpace(fields.Name)
+}
+
 // Materialize writes the skill directory to dest, which must not exist yet.
 func (s Skill) Materialize(dest string) error {
 	if !s.Generated() {

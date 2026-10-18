@@ -24,12 +24,15 @@ type catalog struct {
 	Names []string `json:"names"`
 }
 
+// pluginName leads with the skill's native name, which Codex shows as the skill's namespace, and
+// ends with its content hash, so each version of a skill is its own plugin.
 func pluginName(skill config.Skill) (string, error) {
 	hash, err := skill.TreeHash()
 	if err != nil {
 		return "", err
 	}
-	return "agx-" + hash[:24], nil
+	name := strings.TrimSuffix(skill.NativeName()[:min(len(skill.NativeName()), 40)], "-")
+	return name + "-" + hash[:12], nil
 }
 
 func readCatalog(cache string) (catalog, error) {
@@ -91,7 +94,7 @@ func (a Adapter) Install(ctx context.Context, c *config.Config, cache string) er
 			if err != nil {
 				return err
 			}
-			err = r.Materialize(filepath.Join(tmp, "skills", "managed"))
+			err = r.Materialize(filepath.Join(tmp, "skills", r.NativeName()))
 			if err == nil {
 				err = securefs.WriteJSON(
 					filepath.Join(tmp, ".codex-plugin", "plugin.json"),

@@ -39,15 +39,36 @@ func TOMLAssignment(key string, value any) (string, error) {
 	return key + "={" + strings.Join(parts, ", ") + "}", nil
 }
 
-// ArtifactName is the directory name of a resource inside the shared artifacts.
-func ArtifactName(id config.ID) string { return "resource-" + config.Digest(string(id))[:16] }
+// SkillNames names the snapshot's skills inside the shared artifacts by their native names, which
+// harnesses show; skills sharing a native name each get a suffix from their ID.
+func SkillNames(s *config.Snapshot) map[config.ID]string {
+	candidates := map[config.ID]string{}
+	count := map[string]int{}
+	for _, r := range s.Resources {
+		if r.Kind != "skill" {
+			continue
+		}
+		name := s.Config.Skills[r.ID].NativeName()
+		candidates[r.ID] = name
+		count[name]++
+	}
+	names := map[config.ID]string{}
+	for id, name := range candidates {
+		if count[name] > 1 {
+			name += "-" + config.Digest(string(id))[:8]
+		}
+		names[id] = name
+	}
+	return names
+}
 
 func artifacts(s *config.Snapshot, cache string) (string, error) {
 	parent := filepath.Join(cache, "artifacts")
 	if err := securefs.EnsureDir(parent); err != nil {
 		return "", err
 	}
-	dest := filepath.Join(parent, "v1-"+s.ID)
+	// v2 names skill directories by native name instead of by ID.
+	dest := filepath.Join(parent, "v2-"+s.ID)
 	if _, err := os.Stat(dest); err == nil {
 		return dest, nil
 	}
@@ -67,11 +88,12 @@ func artifacts(s *config.Snapshot, cache string) (string, error) {
 		return "", err
 	}
 	var text strings.Builder
+	skills := SkillNames(s)
 	for _, r := range s.Resources {
 		switch r.Kind {
 		case "skill":
 			if err := s.Config.Skills[r.ID].Materialize(
-				filepath.Join(plugin, "skills", ArtifactName(r.ID)),
+				filepath.Join(plugin, "skills", skills[r.ID]),
 			); err != nil {
 				return "", err
 			}

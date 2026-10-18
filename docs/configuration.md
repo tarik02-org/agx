@@ -199,6 +199,12 @@ selects new artifacts. Path and Git skills take `name` and `description` from
 their own `SKILL.md`; setting them, `frontmatter`, or `files` on such a skill is
 an error.
 
+Harnesses show skills under that native name: Claude Code as
+`agx-managed:<name>`, Pi as `<name>`, and Codex as `<name>-<hash>:<name>`, since
+each version of a skill is its own Codex plugin. Two selected skills with the
+same name each get a short suffix from their ID; a path skill whose `SKILL.md`
+lacks a valid `name` is named after its folder.
+
 Selected instructions concatenate in resolution order: shallower scopes before
 deeper ones, harness rules last, and list order within a rule, so more specific
 guidance comes later. An optional integer `order` (default `0`) sorts before

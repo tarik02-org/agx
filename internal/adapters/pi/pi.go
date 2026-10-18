@@ -96,13 +96,10 @@ func (Adapter) Directory(args []string, cwd string) (string, []string, error) {
 
 func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
 	prefix := []string{}
+	skills := adapters.SkillNames(l.Snapshot)
 	for _, r := range l.Snapshot.Resources {
 		if r.Kind == "skill" {
-			prefix = append(
-				prefix,
-				"--skill",
-				filepath.Join(l.Artifacts, "plugin", "skills", adapters.ArtifactName(r.ID)),
-			)
+			prefix = append(prefix, "--skill", filepath.Join(l.Artifacts, "plugin", "skills", skills[r.ID]))
 		}
 	}
 	if len(l.Instructions) > 0 {

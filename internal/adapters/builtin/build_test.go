@@ -114,7 +114,7 @@ func (f fixture) build(t *testing.T, harness string, native ...string) (adapters
 }
 
 func artifacts(f fixture, s *config.Snapshot) string {
-	return filepath.Join(f.cache, "artifacts", "v1-"+s.ID)
+	return filepath.Join(f.cache, "artifacts", "v2-"+s.ID)
 }
 
 func checkPlan(t *testing.T, f fixture, plan adapters.Plan, s *config.Snapshot, want []string) {
@@ -144,7 +144,7 @@ func checkPlan(t *testing.T, f fixture, plan adapters.Plan, s *config.Snapshot, 
 	if err != nil || string(text) != "first\n\nsecond\n\n" {
 		t.Errorf("instructions.md = %q, %v", text, err)
 	}
-	skill := filepath.Join(artifacts(f, s), "plugin", "skills", adapters.ArtifactName("review"), "SKILL.md")
+	skill := filepath.Join(artifacts(f, s), "plugin", "skills", "review", "SKILL.md")
 	if b, err := os.ReadFile(skill); err != nil || !strings.Contains(string(b), "Review.") {
 		t.Errorf("materialized skill = %q, %v", b, err)
 	}
@@ -192,7 +192,7 @@ func TestBuildPi(t *testing.T) {
 	dir := artifacts(f, s)
 	extension := filepath.Join(f.cache, "launches", "L", "mcp-extension.mjs")
 	checkPlan(t, f, plan, s, []string{
-		"--skill", filepath.Join(dir, "plugin", "skills", adapters.ArtifactName("review")),
+		"--skill", filepath.Join(dir, "plugin", "skills", "review"),
 		"--append-system-prompt", filepath.Join(dir, "instructions.md"),
 		"--extension", extension,
 		"--definition", "--mode", "rpc",
@@ -214,7 +214,7 @@ func TestBuildCodex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	selected := "agx-" + hash[:24]
+	selected := "review-" + hash[:12]
 
 	_, _, err = f.build(t, "codex")
 	if err == nil || !strings.Contains(err.Error(), "selected skill plugin is not installed; run agx install") {
@@ -246,6 +246,31 @@ func TestBuildCodex(t *testing.T) {
 		"exec",
 		"hi",
 	})
+}
+
+func TestSkillNames(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "a", "SKILL.md"), "---\nname: lint\ndescription: a\n---\nA.\n")
+	write(t, filepath.Join(dir, "b", "SKILL.md"), "---\r\nname: lint\r\ndescription: b\r\n---\r\nB.\r\n")
+	write(t, filepath.Join(dir, "My Notes", "SKILL.md"), "no front matter\n")
+	skills := map[config.ID]config.Skill{
+		"team/a":    {Path: filepath.Join(dir, "a")},
+		"team/b":    {Path: filepath.Join(dir, "b")},
+		"notes":     {Path: filepath.Join(dir, "My Notes")},
+		"generated": {Name: "deploy", Description: "d", Content: "Deploy."},
+	}
+	s := &config.Snapshot{Config: &config.Config{Skills: skills}}
+	for _, id := range []config.ID{"team/a", "team/b", "notes", "generated"} {
+		s.Resources = append(s.Resources, config.Resource{Kind: "skill", ID: id})
+	}
+	names := adapters.SkillNames(s)
+	if names["notes"] != "my-notes" || names["generated"] != "deploy" {
+		t.Errorf("names = %v", names)
+	}
+	if names["team/a"] == names["team/b"] || !strings.HasPrefix(names["team/a"], "lint-") ||
+		!strings.HasPrefix(names["team/b"], "lint-") {
+		t.Errorf("colliding names not separated: %q, %q", names["team/a"], names["team/b"])
+	}
 }
 
 func TestServerNames(t *testing.T) {
