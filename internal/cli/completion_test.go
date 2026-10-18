@@ -193,6 +193,10 @@ func TestCompletionKeepsStderrQuiet(t *testing.T) {
 	os.Stderr = stderr
 	complete(t, "daemon", "")
 	os.Stderr = saved
+	// Windows cannot remove the temporary directory while the file is open.
+	if err := stderr.Close(); err != nil {
+		t.Fatal(err)
+	}
 	b, err := os.ReadFile(stderr.Name())
 	if err != nil {
 		t.Fatal(err)

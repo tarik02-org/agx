@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -218,6 +219,9 @@ func (s *session) eventually(check func(bound map[string]string, finished []stri
 }
 
 func TestRelayThreads(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the scripted protocol uses POSIX paths; the e2e suite runs the relay with native Windows paths")
+	}
 	s := newSession(t)
 
 	// Unrelated messages pass byte for byte, both ways.
