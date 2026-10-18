@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -389,12 +390,17 @@ func TestErrorCodes(t *testing.T) {
 			t.Errorf("errorCode(%v) = %s, want %s", test.err, got, test.want)
 		}
 	}
+	// A drive-letter path on Windows exercises the colon after the drive.
+	path := "/etc/agx.yaml"
+	if runtime.GOOS == "windows" {
+		path = `C:\agx\agx.yaml`
+	}
 	for message, want := range map[string]*jsonSource{
-		"/etc/agx.yaml:12: MCP server x: bad":                      {Path: "/etc/agx.yaml", Line: 12},
-		"configuration is invalid; fix it: /etc/agx.yaml: bad":     {Path: "/etc/agx.yaml"},
-		"/etc/agx.yaml: yaml: construct errors: line 4: field x":   {Path: "/etc/agx.yaml", Line: 4},
-		"/etc/agx.yaml: load error in parser at L5.C1: no content": {Path: "/etc/agx.yaml", Line: 5},
-		"package x is not installed; run agx install":              nil,
+		path + ":12: MCP server x: bad":                       {Path: path, Line: 12},
+		"configuration is invalid; fix it: " + path + ": bad": {Path: path},
+		path + ": yaml: construct errors: line 4: field x":    {Path: path, Line: 4},
+		path + ": load error in parser at L5.C1: no content":  {Path: path, Line: 5},
+		"package x is not installed; run agx install":         nil,
 	} {
 		got := errorSource(message)
 		if (got == nil) != (want == nil) || got != nil && *got != *want {
