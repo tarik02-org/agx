@@ -158,8 +158,9 @@ Architecture records: [background and core model](docs/adr/0000-background.md),
 [straightforward configuration](docs/adr/0011-straightforward-configuration.md),
 [harness adapters and shims](docs/adr/0012-harness-adapters-and-shims.md),
 [launcher and sessions](docs/adr/0013-launcher-and-session-search.md),
-[configuration editing](docs/adr/0014-configuration-editing-commands.md), and
-[per-thread resources for multi-session hosts](docs/adr/0015-per-thread-resources-for-multi-session-hosts.md).
+[configuration editing](docs/adr/0014-configuration-editing-commands.md),
+[per-thread resources for multi-session hosts](docs/adr/0015-per-thread-resources-for-multi-session-hosts.md), and
+[launches surviving daemon restarts](docs/adr/0016-launches-survive-daemon-restarts.md).
 
 Go messages and Connect handlers live in `gen/agx/v1`; TypeScript Protobuf
 messages and service descriptors live in `gen/typescript`. Regenerate with

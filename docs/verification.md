@@ -59,7 +59,12 @@ package on Linux and macOS.
   `initialize` merge on the harness's input, native exit status, and daemon
   stop. The fake harness also serves a minimal Codex app server: two threads in
   different scopes get their own MCP servers, grants, instructions, and disabled
-  plugins, and closing a thread revokes its grant only.
+  plugins, and closing a thread revokes its grant only. Restarts: a running
+  launch's grant calls its tool again after a plain `daemon stop` and the next
+  daemon's start (the harness re-initializing on 404), after another build
+  replaces the busy daemon, and on a new port when the old one is taken; a
+  forced stop revokes the grant and clears the state file; an app-server
+  thread keeps working and new threads start after a restart.
 
 ## Exercised manually
 
@@ -100,8 +105,12 @@ SSE streams without rewriting tool catalogs or retrying calls.
 OAuth currently supports public clients, with optional dynamic registration.
 Confidential-client methods are not implemented. OAuth secrets apply to HTTP MCP
 servers' `auth`; injected credentials can use keychain, environment, or command
-secrets. Logout applies to keychain and OAuth secrets; other kinds reject it. A
-daemon restart invalidates active grants.
+secrets. Logout applies to keychain and OAuth secrets; other kinds reject it.
+Launches survive a daemon restart without force, but their MCP sessions do not:
+clients must start a new session on 404, as the MCP specification requires.
+Claude Code recovers for tool calls in recent releases; Codex bundling rmcp
+older than 1.2 does not re-initialize and needs a new thread or `thread/resume`;
+Pi was not checked.
 
 The daemon reloads configuration on demand (resolution, launches, status) and
 skips the load while every file, glob, lockfile, and package cache entry it read

@@ -95,6 +95,7 @@ scopes:
 harnesses:
   codex:
     executable: '`+filepath.ToSlash(binaries.harness)+`'
+daemon: {renew_seconds: 1}
 `)
 	e.ok("install")
 	e.ok("daemon", "start")
@@ -236,6 +237,21 @@ harnesses:
 	}
 	if got := status(second); got == http.StatusUnauthorized {
 		t.Error("closing one thread revoked another's grant")
+	}
+
+	// A restarted daemon restores the process's launch and its open thread, and the relay
+	// prepares new threads with it.
+	e.stopDaemon(false)
+	e.ok("secret", "status")
+	awaitServing(t, second.url, second.grant)
+	call := a.call("test/call", map[string]any{"threadId": second.id})
+	if tools, _ := call["tools"].(map[string]any); tools["agx-second"] != "echo:hello:second:other" ||
+		call["reinitialized"] != float64(1) {
+		t.Errorf("other thread after the restart = %v", call)
+	}
+	third := start(e.work)
+	if got := third.tools["agx-echo"]; got != "echo:hello:"+token+":"+sealed {
+		t.Errorf("thread started after the restart: echo = %v (tools %v)\n%s", got, third.tools, stderr.String())
 	}
 
 	_ = stdin.Close()

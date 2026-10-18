@@ -72,6 +72,9 @@ const (
 	// LaunchServicePrepareThreadLaunchProcedure is the fully-qualified name of the LaunchService's
 	// PrepareThreadLaunch RPC.
 	LaunchServicePrepareThreadLaunchProcedure = "/agx.v1.LaunchService/PrepareThreadLaunch"
+	// LaunchServiceRestoreLaunchProcedure is the fully-qualified name of the LaunchService's
+	// RestoreLaunch RPC.
+	LaunchServiceRestoreLaunchProcedure = "/agx.v1.LaunchService/RestoreLaunch"
 	// RuntimeServiceGetRuntimeProcedure is the fully-qualified name of the RuntimeService's GetRuntime
 	// RPC.
 	RuntimeServiceGetRuntimeProcedure = "/agx.v1.RuntimeService/GetRuntime"
@@ -321,6 +324,9 @@ type LaunchServiceClient interface {
 	// Prepares the resources of one such thread as a launch under the process's launch. It shares
 	// the parent's lease and lifecycle token and ends with it.
 	PrepareThreadLaunch(context.Context, *connect.Request[v1.PrepareThreadLaunchRequest]) (*connect.Response[v1.PrepareThreadLaunchResponse], error)
+	// Resends what a daemon restored after a restart does not keep: the environment inputs of a
+	// launch, or one of its thread launches, and the native arguments of the launch itself.
+	RestoreLaunch(context.Context, *connect.Request[v1.RestoreLaunchRequest]) (*connect.Response[v1.RestoreLaunchResponse], error)
 }
 
 // NewLaunchServiceClient constructs a client for the agx.v1.LaunchService service. By default, it
@@ -370,6 +376,12 @@ func NewLaunchServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(launchServiceMethods.ByName("PrepareThreadLaunch")),
 			connect.WithClientOptions(opts...),
 		),
+		restoreLaunch: connect.NewClient[v1.RestoreLaunchRequest, v1.RestoreLaunchResponse](
+			httpClient,
+			baseURL+LaunchServiceRestoreLaunchProcedure,
+			connect.WithSchema(launchServiceMethods.ByName("RestoreLaunch")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -381,6 +393,7 @@ type launchServiceClient struct {
 	revokeLaunch        *connect.Client[v1.RevokeLaunchRequest, v1.RevokeLaunchResponse]
 	resolveThread       *connect.Client[v1.ResolveThreadRequest, v1.ResolveThreadResponse]
 	prepareThreadLaunch *connect.Client[v1.PrepareThreadLaunchRequest, v1.PrepareThreadLaunchResponse]
+	restoreLaunch       *connect.Client[v1.RestoreLaunchRequest, v1.RestoreLaunchResponse]
 }
 
 // PrepareLaunch calls agx.v1.LaunchService.PrepareLaunch.
@@ -413,6 +426,11 @@ func (c *launchServiceClient) PrepareThreadLaunch(ctx context.Context, req *conn
 	return c.prepareThreadLaunch.CallUnary(ctx, req)
 }
 
+// RestoreLaunch calls agx.v1.LaunchService.RestoreLaunch.
+func (c *launchServiceClient) RestoreLaunch(ctx context.Context, req *connect.Request[v1.RestoreLaunchRequest]) (*connect.Response[v1.RestoreLaunchResponse], error) {
+	return c.restoreLaunch.CallUnary(ctx, req)
+}
+
 // LaunchServiceHandler is an implementation of the agx.v1.LaunchService service.
 type LaunchServiceHandler interface {
 	PrepareLaunch(context.Context, *connect.Request[v1.PrepareLaunchRequest]) (*connect.Response[v1.PrepareLaunchResponse], error)
@@ -424,6 +442,9 @@ type LaunchServiceHandler interface {
 	// Prepares the resources of one such thread as a launch under the process's launch. It shares
 	// the parent's lease and lifecycle token and ends with it.
 	PrepareThreadLaunch(context.Context, *connect.Request[v1.PrepareThreadLaunchRequest]) (*connect.Response[v1.PrepareThreadLaunchResponse], error)
+	// Resends what a daemon restored after a restart does not keep: the environment inputs of a
+	// launch, or one of its thread launches, and the native arguments of the launch itself.
+	RestoreLaunch(context.Context, *connect.Request[v1.RestoreLaunchRequest]) (*connect.Response[v1.RestoreLaunchResponse], error)
 }
 
 // NewLaunchServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -469,6 +490,12 @@ func NewLaunchServiceHandler(svc LaunchServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(launchServiceMethods.ByName("PrepareThreadLaunch")),
 		connect.WithHandlerOptions(opts...),
 	)
+	launchServiceRestoreLaunchHandler := connect.NewUnaryHandler(
+		LaunchServiceRestoreLaunchProcedure,
+		svc.RestoreLaunch,
+		connect.WithSchema(launchServiceMethods.ByName("RestoreLaunch")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.LaunchService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case LaunchServicePrepareLaunchProcedure:
@@ -483,6 +510,8 @@ func NewLaunchServiceHandler(svc LaunchServiceHandler, opts ...connect.HandlerOp
 			launchServiceResolveThreadHandler.ServeHTTP(w, r)
 		case LaunchServicePrepareThreadLaunchProcedure:
 			launchServicePrepareThreadLaunchHandler.ServeHTTP(w, r)
+		case LaunchServiceRestoreLaunchProcedure:
+			launchServiceRestoreLaunchHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -514,6 +543,10 @@ func (UnimplementedLaunchServiceHandler) ResolveThread(context.Context, *connect
 
 func (UnimplementedLaunchServiceHandler) PrepareThreadLaunch(context.Context, *connect.Request[v1.PrepareThreadLaunchRequest]) (*connect.Response[v1.PrepareThreadLaunchResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.PrepareThreadLaunch is not implemented"))
+}
+
+func (UnimplementedLaunchServiceHandler) RestoreLaunch(context.Context, *connect.Request[v1.RestoreLaunchRequest]) (*connect.Response[v1.RestoreLaunchResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.RestoreLaunch is not implemented"))
 }
 
 // RuntimeServiceClient is a client for the agx.v1.RuntimeService service.

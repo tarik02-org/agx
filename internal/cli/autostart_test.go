@@ -32,6 +32,16 @@ func TestDaemonAction(t *testing.T) {
 			daemonState{discovery: mismatch, reachable: true, sameConfig: true, activeLaunches: 1},
 			refuseDaemon,
 		},
+		{
+			"busy other build that restores its launches",
+			daemonState{discovery: mismatch, reachable: true, sameConfig: true, activeLaunches: 1, restores: true},
+			replaceDaemon,
+		},
+		{
+			"other build with another configuration that restores its launches",
+			daemonState{discovery: mismatch, reachable: true, restores: true},
+			refuseDaemon,
+		},
 		{"other build with another configuration", daemonState{discovery: mismatch, reachable: true}, refuseDaemon},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -76,11 +86,23 @@ func TestStopBusyDaemon(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	c := dial(daemon.Discovery{URL: server.URL, Token: "token"})
-	err := stopDaemon(t.Context(), c, false)
+	_, err := stopDaemon(t.Context(), c, false)
 	if errorCode(err) != codeConflict || !strings.Contains(err.Error(), "agx daemon stop --force") {
 		t.Fatalf("busy stop = %v (%s)", err, errorCode(err))
 	}
-	if err := stopDaemon(t.Context(), c, true); err != nil {
+	if _, err := stopDaemon(t.Context(), c, true); err != nil {
 		t.Fatalf("forced stop = %v", err)
+	}
+}
+
+func TestStopKeepsLaunches(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(daemon.KeptLaunchesHeader, "2")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+	c := dial(daemon.Discovery{URL: server.URL, Token: "token"})
+	if kept, err := stopDaemon(t.Context(), c, false); err != nil || kept != 2 {
+		t.Fatalf("stop = %d, %v", kept, err)
 	}
 }

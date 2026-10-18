@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -172,7 +174,7 @@ func runDoctor(
 	}
 
 	client, daemonRow := connectDaemon(ctx, paths, c)
-	add(daemonRow)
+	add(daemonRow, stateCheck(daemon.StatePath(paths)))
 	if client != nil && loaded {
 		add(mcpChecks(ctx, client, c, directory, all)...)
 	}
@@ -458,6 +460,28 @@ func daemonClientCheck(
 		mayHaveStarted: started,
 		launches:       len(view.Msg.GetRuntime().GetLaunches()),
 	})
+}
+
+// stateCheck checks the file in which the daemon keeps active launches across restarts. It holds
+// only token verifiers and metadata, but no one else may read or replace it.
+func stateCheck(path string) check {
+	row := check{Group: "daemon", Name: "state", Status: checkPass, Detail: path}
+	info, err := os.Stat(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		row.Detail = "no saved launches"
+	case err != nil:
+		row.Status, row.Detail = checkFail, err.Error()
+	case !info.Mode().IsRegular():
+		row.Status, row.Detail = checkFail, path+" is not a regular file"
+		row.Hint = "remove it; the daemon writes it again"
+	// Windows protects the file with an ACL the daemon sets; mode bits say nothing there.
+	case runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0:
+		row.Status = checkFail
+		row.Detail = fmt.Sprintf("%s is accessible to other users (mode %04o)", path, info.Mode().Perm())
+		row.Hint = "run chmod 600 " + path
+	}
+	return row
 }
 
 type daemonFacts struct {

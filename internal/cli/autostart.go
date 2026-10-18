@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,17 +67,19 @@ type daemonState struct {
 	sameConfig bool
 	// activeLaunches counts launches of a reachable daemon that still hold MCP access.
 	activeLaunches int
+	// restores is whether the daemon keeps its active launches for the next one when it stops.
+	restores bool
 }
 
-// action decides how to reach a daemon of this build. A daemon of another build is replaced only
-// when nothing depends on it: replacing it would revoke the MCP access of its launches, and one
-// serving another configuration belongs to someone who chose it.
+// action decides how to reach a daemon of this build. A daemon of another build is replaced
+// when its launches survive that, because it restores them or has none, and it serves the same
+// configuration: one serving another configuration belongs to someone who chose it.
 func (s daemonState) action() daemonAction {
 	switch {
 	case s.discovery == nil && s.reachable:
 		return useDaemon
 	case errors.Is(s.discovery, daemon.ErrVersionMismatch) && s.reachable:
-		if s.sameConfig && s.activeLaunches == 0 {
+		if s.sameConfig && (s.activeLaunches == 0 || s.restores) {
 			return replaceDaemon
 		}
 		return refuseDaemon
@@ -93,7 +96,7 @@ func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*cli
 		return newClient(paths)
 	}
 	d, err := daemon.ReadDiscovery(paths)
-	state := daemonState{discovery: err, sameConfig: d.Config == paths.Config}
+	state := daemonState{discovery: err, sameConfig: d.Config == paths.Config, restores: d.RestoresLaunches}
 	var current *client
 	if err == nil || errors.Is(err, daemon.ErrVersionMismatch) {
 		current = dial(d)
@@ -118,8 +121,9 @@ func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*cli
 			if state.activeLaunches == 1 {
 				launches = "an active launch"
 			}
+			// Only builds that predate restoring launches get here.
 			return nil, fmt.Errorf(
-				"%w: it runs a different agx build and has %s; "+
+				"%w: it runs an older agx build and has %s it cannot hand over; "+
 					"run agx daemon stop --force, which revokes their MCP access, then retry",
 				daemon.ErrVersionMismatch,
 				launches,
@@ -128,7 +132,7 @@ func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*cli
 		return nil, err
 	case replaceDaemon:
 		ui.Diagnose(ui.Info, "restarting daemon %s, which runs another agx build", d.Version)
-		if err := stopDaemon(ctx, current, false); err != nil {
+		if _, err := stopDaemon(ctx, current, false); err != nil {
 			return nil, fmt.Errorf("cannot replace daemon %s: %w", d.Version, err)
 		}
 		if err := awaitExit(ctx, paths); err != nil {
@@ -235,8 +239,9 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 	}
 }
 
-// stopDaemon asks the daemon to stop; force revokes the MCP access of active launches first.
-func stopDaemon(ctx context.Context, c *client, force bool) error {
+// stopDaemon asks the daemon to stop and returns how many active launches it keeps for the next
+// one to restore; force revokes their MCP access instead.
+func stopDaemon(ctx context.Context, c *client, force bool) (int, error) {
 	endpoint := c.discovery.URL + "/stop"
 	if force {
 		endpoint += "?force=true"
@@ -245,26 +250,28 @@ func stopDaemon(ctx context.Context, c *client, force bool) error {
 	defer cancel()
 	req, err := newStopRequest(ctx, endpoint, c.discovery.Token)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	switch resp.StatusCode {
 	case http.StatusNoContent:
-		return nil
+		kept, _ := strconv.Atoi(resp.Header.Get(daemon.KeptLaunchesHeader))
+		return kept, nil
 	case http.StatusConflict:
-		return codedf(
+		// Only builds that predate restoring launches refuse.
+		return 0, codedf(
 			codeConflict,
 			"daemon has active launches; run agx daemon stop --force to stop it and revoke their MCP access",
 		)
 	case http.StatusUnauthorized:
-		return fmt.Errorf("daemon rejected the discovery token; its discovery file is stale or replaced")
+		return 0, fmt.Errorf("daemon rejected the discovery token; its discovery file is stale or replaced")
 	default:
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("daemon stop failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		return 0, fmt.Errorf("daemon stop failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
 	}
 }
 

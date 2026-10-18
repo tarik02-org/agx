@@ -20,6 +20,16 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Changed
 
+- Running launches survive daemon restarts and upgrades. The daemon keeps active
+  launches in `daemon-state.json` in the state directory (mode 0600, token
+  verifiers and metadata only); the next daemon restores them on the same port,
+  and wrappers reconnect to it and resend their environment inputs, so harnesses
+  keep their MCP grants, `codex app-server` threads included. MCP sessions start
+  again: clients get 404 for the old session ID. Plain `daemon stop` now succeeds
+  with active launches and keeps them; `--force` revokes them and clears the
+  file. A command finding a busy daemon of another build replaces it instead of
+  failing. `daemon stop --json` adds `kept_launches`, and `doctor` checks the
+  file's permissions.
 - Codex launches install a missing skill plugin themselves instead of failing
   with "run agx install".
 

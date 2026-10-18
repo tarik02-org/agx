@@ -28,6 +28,9 @@ service LaunchService {
   // Prepares the resources of one such thread as a launch under the process's launch. It shares
   // the parent's lease and lifecycle token and ends with it.
   rpc PrepareThreadLaunch(PrepareThreadLaunchRequest) returns (PrepareThreadLaunchResponse);
+  // Resends what a daemon restored after a restart does not keep: the environment inputs of a
+  // launch, or one of its thread launches, and the native arguments of the launch itself.
+  rpc RestoreLaunch(RestoreLaunchRequest) returns (RestoreLaunchResponse);
 }
 
 service RuntimeService {
@@ -253,7 +256,22 @@ message RenewLaunchRequest {
 }
 message RenewLaunchResponse {
   google.protobuf.Timestamp expires_at = 1;
+  // This launch and its thread launches that a restarted daemon restored and that wait for
+  // RestoreLaunch before they serve MCP or prepare threads.
+  repeated string restore_launch_ids = 2;
 }
+
+// Uses management authorization; the lifecycle token proves the caller is the launch's wrapper.
+message RestoreLaunchRequest {
+  string launch_id = 1;
+  // Sensitive: the launch's lifecycle token, its parent's for a thread launch.
+  string lifecycle_token = 2;
+  // Sensitive: the environment inputs the launch was prepared with.
+  map<string, string> environment_inputs = 3;
+  // Sensitive: the native arguments the launch was prepared with; empty for a thread launch.
+  repeated string native_arguments = 4;
+}
+message RestoreLaunchResponse {}
 
 message FinishLaunchRequest {
   string launch_id = 1;

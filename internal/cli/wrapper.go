@@ -214,56 +214,56 @@ func runHarness(
 	if err := records.Start(record); err != nil {
 		ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
 	}
+	link := newLease(paths, c, p.Launch.Id, p.LifecycleToken)
+	link.remember(p.Launch.Id, inputs, nativeArgs)
 	finished := make(chan struct{})
 	var wg sync.WaitGroup
 	start := func() {
 		expires := p.Launch.GetExpiresAt().AsTime()
-		// Failures are retried every tick because the daemon may recover before the lease runs out.
-		renew := func() bool {
+		// Failures are retried every second until the lease runs out, because the daemon may
+		// recover, or another one restore the launch, before then.
+		renew := func() (bool, bool) {
 			ctx, cancel := boundedContext()
 			defer cancel()
-			response, err := c.launches.RenewLaunch(
+			response, err := link.renew(
 				ctx,
-				request(
-					&v1.RenewLaunchRequest{LaunchId: p.Launch.Id, HarnessPid: uint64(cmd.Process.Pid)},
-					p.LifecycleToken,
-				),
+				&v1.RenewLaunchRequest{LaunchId: p.Launch.Id, HarnessPid: uint64(cmd.Process.Pid)},
 			)
 			if err == nil {
-				if next := response.Msg.GetExpiresAt(); next != nil {
+				if next := response.GetExpiresAt(); next != nil {
 					expires = next.AsTime()
 				}
-				return true
+				return true, true
 			}
 			if time.Now().Before(expires) {
-				return true
+				return false, true
 			}
 			ui.Diagnose(ui.Warn, "launch lease expired; MCP access is lost. Relaunch to reconnect.")
-			return false
+			return false, false
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if !renew() {
-				return
-			}
+		wg.Go(func() {
 			interval := time.Duration(p.RenewAfterSeconds) * time.Second
 			if interval < time.Second {
 				interval = time.Second
 			}
-			ticker := time.NewTicker(interval)
-			defer ticker.Stop()
 			for {
+				renewed, alive := renew()
+				if !alive {
+					return
+				}
+				wait := interval
+				if !renewed {
+					wait = time.Second
+				}
+				timer := time.NewTimer(wait)
 				select {
 				case <-finished:
+					timer.Stop()
 					return
-				case <-ticker.C:
-					if !renew() {
-						return
-					}
+				case <-timer.C:
 				}
 			}
-		}()
+		})
 	}
 	var connect streams
 	if prompt := p.Spawn.InitializeSystemPrompt; prompt != "" {
@@ -286,12 +286,11 @@ func runHarness(
 	var serverOutput *io.PipeWriter
 	if isThreads && threads.ThreadServer(nativeArgs) {
 		host := &threadHost{
-			client:    c,
-			parent:    p.Launch.Id,
-			lifecycle: p.LifecycleToken,
-			harness:   name,
-			builtin:   h.Builtin,
-			records:   records,
+			lease:   link,
+			parent:  p.Launch.Id,
+			harness: name,
+			builtin: h.Builtin,
+			records: records,
 		}
 		connect = func(cmd *exec.Cmd) (func(), error) {
 			input, err := cmd.StdinPipe()
@@ -339,7 +338,10 @@ func runHarness(
 	}
 	finishCtx, cancel := boundedContext()
 	defer cancel()
-	if _, err := c.launches.FinishLaunch(finishCtx, request(finish, p.LifecycleToken)); err != nil {
+	if err := link.call(func(c *client) error {
+		_, err := c.launches.FinishLaunch(finishCtx, request(finish, p.LifecycleToken))
+		return err
+	}); err != nil {
 		ui.Diagnose(ui.Warn, "launch cleanup unavailable; lease expiry will release MCP resources")
 	}
 	return runErr

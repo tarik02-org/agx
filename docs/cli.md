@@ -329,18 +329,21 @@ daemon (a managed harness launch, `secret`, `mcp test`, `mcp login`, and `launch
 starts it in the background when it is not running, as `daemon start` does, and
 waits up to 10 seconds for it. Concurrent commands start one daemon between them.
 A daemon of another agx build is stopped and replaced, with one line on stderr,
-only when it serves the same root and has no active launches; otherwise the
-command fails with instructions. A daemon serving another root is never
-replaced. `daemon status` and `daemon stop` never start it, and passthrough
+when it serves the same root; its active launches carry over to the new daemon
+([ADR 0016](adr/0016-launches-survive-daemon-restarts.md)). Builds that predate
+that refuse while they have active launches, and the command fails with
+instructions. A daemon serving another root is never replaced. `daemon status` and `daemon stop` never start it, and passthrough
 harness commands never need it. `daemon.autostart: false`, or `AGX_NO_AUTOSTART=1`
 in the environment, turns automatic startup off. The daemon inherits the
 environment of the command that starts it and runs in the cache's `runtime`
 directory, where `daemon.log` collects its output. `daemon stop`, with or without `--force`, succeeds with
-"Daemon is not running." when no daemon answers. Stopping refuses active launches unless
-forced: `daemon stop` then fails with error code `conflict` and points to
-`daemon stop --force`, as does a command that finds a busy daemon of another
-build. Revocation closes MCP access and upstream sessions; it does not kill the
-harness. Launch inspection excludes secrets. A graceful wrapper exit releases
+"Daemon is not running." when no daemon answers. Plain `daemon stop` keeps active
+launches in `daemon-state.json` in the state directory, and says how many: the
+next daemon, started by any command, restores those whose lease has not run out,
+their wrappers reconnect, and their harnesses keep their grants and endpoint URLs,
+though MCP sessions start again. `daemon stop --force` revokes them instead and
+clears the file. Revocation closes MCP access and upstream sessions; it does not
+kill the harness. Launch inspection excludes secrets. A graceful wrapper exit releases
 its launch; abrupt exits are recovered through lease expiry. `launch list` shows
 the thread launches of a `codex app-server` process (mode `thread`) indented
 under its launch; `launch show` names a thread launch's parent and thread
@@ -371,8 +374,9 @@ each, as `mcp test` does; a server that needs authorization is a warning naming
 against this shell), whether `sops` is on PATH when sops secrets exist, and, for
 harness definitions, whether shims are installed in the default directory, on
 PATH, and not shadowed. A missing harness is a warning unless its executable is
-configured; an older harness is a warning. `doctor` changes nothing besides
-starting the daemon.
+configured; an older harness is a warning. It also checks that the daemon's
+saved launches (`daemon-state.json`) are accessible only to the current user.
+`doctor` changes nothing besides starting the daemon.
 
 ## Secrets
 
@@ -484,7 +488,7 @@ data below.
 | `shims install`, `shims remove` | `{directory, on_path, target, changes}`; each change is a shim (`name`, `file`, `kind`, `target`) with its `action` (`created`, `updated`, `removed`, `unchanged`, `kept`); a kept shim has its `state` |
 | `doctor` | `{directory, root, files, checks, summary}`: each check is `{group, name, status, detail, hint?}` with `status` `pass`, `warn`, or `fail`; `group` is `config`, `harness`, `codex`, `daemon`, `mcp`, `secret`, or `shims`; `summary` counts `pass`, `warn`, and `fail`. A failing check exits 1 after the document. |
 | `daemon start` | `{started, version, log}` |
-| `daemon stop` | `{running, stopping, forced, version}`: `running` says whether a daemon was running; with none, `stopping` and `forced` are `false` and `version` is `""` |
+| `daemon stop` | `{running, stopping, forced, version, kept_launches}`: `running` says whether a daemon was running; with none, `stopping` and `forced` are `false` and `version` is `""`; `kept_launches` counts the active launches the next daemon restores |
 | `daemon status`, `launch list`, `launch show`, `secret status` | the Connect message as protobuf JSON (`GetRuntimeResponse`, `RuntimeView`, `Launch`, `GetSecretStatusResponse`) |
 | `launch revoke` | `{launch_id, revoked}` |
 | `secret set` | `{secret_id, stored}` |

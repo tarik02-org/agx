@@ -17,31 +17,49 @@ import (
 // threadHost prepares the thread launches of a harness process serving many threads, under
 // the process's launch, and records each for resumption.
 type threadHost struct {
-	client    *client
-	parent    string
-	lifecycle string
-	harness   string
-	builtin   string
-	records   sessions.Records
+	lease   *lease
+	parent  string
+	harness string
+	builtin string
+	records sessions.Records
 }
 
 func (h *threadHost) Prepare(ctx context.Context, directory string) (adapters.ThreadLaunch, error) {
-	// A configuration change between resolving and preparing invalidates the snapshot once.
+	// A configuration change between resolving and preparing invalidates the snapshot once; a
+	// restarted daemon needs the process's launch restored first.
 	for attempt := 0; ; attempt++ {
-		launch, err := h.prepare(ctx, directory)
-		if connect.CodeOf(err) == connect.CodeAborted && attempt == 0 {
+		c := h.lease.current()
+		launch, err := h.prepare(ctx, c, directory)
+		if err != nil && attempt == 0 && h.recover(ctx, c, err) {
 			continue
 		}
 		return launch, err
 	}
 }
 
-func (h *threadHost) prepare(ctx context.Context, directory string) (adapters.ThreadLaunch, error) {
+// recover reports whether a request that failed with err is worth retrying: the snapshot changed,
+// or another daemon serves the process's launch now and has it restored.
+func (h *threadHost) recover(ctx context.Context, used *client, err error) bool {
+	switch connect.CodeOf(err) {
+	case connect.CodeAborted:
+		return true
+	case connect.CodeUnavailable, connect.CodeUnauthenticated, connect.CodeNotFound:
+		if h.lease.sync(ctx) != nil {
+			return false
+		}
+		// A restored launch answers Unavailable until synced; another daemon answers anything.
+		return connect.CodeOf(err) == connect.CodeUnavailable || h.lease.current() != used
+	default:
+		return false
+	}
+}
+
+func (h *threadHost) prepare(ctx context.Context, c *client, directory string) (adapters.ThreadLaunch, error) {
 	resolveCtx, cancel := context.WithTimeout(ctx, launchTimeout)
 	defer cancel()
-	resolved, err := h.client.launches.ResolveThread(
+	resolved, err := c.launches.ResolveThread(
 		resolveCtx,
-		request(&v1.ResolveThreadRequest{ParentLaunchId: h.parent, Directory: directory}, h.client.discovery.Token),
+		request(&v1.ResolveThreadRequest{ParentLaunchId: h.parent, Directory: directory}, c.discovery.Token),
 	)
 	if err != nil {
 		return adapters.ThreadLaunch{}, err
@@ -52,7 +70,7 @@ func (h *threadHost) prepare(ctx context.Context, directory string) (adapters.Th
 			inputs[name] = value
 		}
 	}
-	prepared, err := h.client.launches.PrepareThreadLaunch(
+	prepared, err := c.launches.PrepareThreadLaunch(
 		resolveCtx,
 		request(
 			&v1.PrepareThreadLaunchRequest{
@@ -62,13 +80,14 @@ func (h *threadHost) prepare(ctx context.Context, directory string) (adapters.Th
 				Directory:         directory,
 				EnvironmentInputs: inputs,
 			},
-			h.client.discovery.Token,
+			c.discovery.Token,
 		),
 	)
 	if err != nil {
 		return adapters.ThreadLaunch{}, err
 	}
 	p := prepared.Msg
+	h.lease.remember(p.Launch.Id, inputs, nil)
 	for _, warning := range p.Warnings {
 		h.Warn(warning)
 	}
@@ -84,23 +103,26 @@ func (h *threadHost) prepare(ctx context.Context, directory string) (adapters.Th
 func (h *threadHost) DisabledPlugins(ctx context.Context, directory string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, launchTimeout)
 	defer cancel()
-	resolved, err := h.client.launches.ResolveThread(
-		ctx,
-		request(&v1.ResolveThreadRequest{ParentLaunchId: h.parent, Directory: directory}, h.client.discovery.Token),
-	)
-	if err != nil {
-		return nil, err
+	for attempt := 0; ; attempt++ {
+		c := h.lease.current()
+		resolved, err := c.launches.ResolveThread(
+			ctx,
+			request(&v1.ResolveThreadRequest{ParentLaunchId: h.parent, Directory: directory}, c.discovery.Token),
+		)
+		if err != nil && attempt == 0 && connect.CodeOf(err) != connect.CodeAborted && h.recover(ctx, c, err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		return resolved.Msg.DisabledPlugins, nil
 	}
-	return resolved.Msg.DisabledPlugins, nil
 }
 
 func (h *threadHost) Bind(ctx context.Context, launch adapters.ThreadLaunch, thread string) error {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
-	if _, err := h.client.launches.RenewLaunch(
-		ctx,
-		request(&v1.RenewLaunchRequest{LaunchId: launch.ID, SessionId: thread}, h.lifecycle),
-	); err != nil {
+	if _, err := h.lease.renew(ctx, &v1.RenewLaunchRequest{LaunchId: launch.ID, SessionId: thread}); err != nil {
 		return err
 	}
 	return h.records.Start(sessions.Record{
@@ -118,16 +140,20 @@ func (h *threadHost) Finish(ctx context.Context, launch adapters.ThreadLaunch) e
 	defer cancel()
 	// A thread that never bound has no record; finishing one is a no-op.
 	recordErr := h.records.Finish(launch.ID, time.Now())
-	_, err := h.client.launches.FinishLaunch(
-		ctx,
-		request(
-			&v1.FinishLaunchRequest{
-				LaunchId: launch.ID,
-				Outcome:  &v1.FinishLaunchRequest_ThreadClosed{ThreadClosed: true},
-			},
-			h.lifecycle,
-		),
-	)
+	h.lease.forget(launch.ID)
+	err := h.lease.call(func(c *client) error {
+		_, err := c.launches.FinishLaunch(
+			ctx,
+			request(
+				&v1.FinishLaunchRequest{
+					LaunchId: launch.ID,
+					Outcome:  &v1.FinishLaunchRequest_ThreadClosed{ThreadClosed: true},
+				},
+				h.lease.lifecycle,
+			),
+		)
+		return err
+	})
 	if err != nil {
 		return err
 	}

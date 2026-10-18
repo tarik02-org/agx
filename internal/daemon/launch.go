@@ -110,7 +110,9 @@ func (s *Server) PrepareLaunch(
 	launchCtx, cancel := context.WithCancel(s.ctx)
 	endpoints, nativeEndpoints := map[config.ID]*mcpruntime.Endpoint{}, []adapters.Endpoint{}
 	// A process serving many threads gets its MCP servers per thread launch.
-	if threads, ok := adapter.(adapters.Threads); !ok || !threads.ThreadServer(msg.NativeArguments) {
+	threads, isThreads := adapter.(adapters.Threads)
+	threadServer := isThreads && threads.ThreadServer(msg.NativeArguments)
+	if !threadServer {
 		endpoints, nativeEndpoints = s.endpoints(launchCtx, id, snapshot, inputs)
 	}
 	discard := func() {
@@ -147,14 +149,17 @@ func (s *Server) PrepareLaunch(
 		ExpiresAt:  timestamppb.New(time.Now().Add(time.Duration(c.Daemon.LeaseSeconds) * time.Second)),
 	}
 	l := &launch{
-		view:      view,
-		grant:     auth.Verifier(grant),
-		lifecycle: auth.Verifier(lifecycle),
-		ctx:       launchCtx,
-		cancel:    cancel,
-		endpoints: endpoints,
-		snapshot:  snapshot,
-		target:    adapters.NewTarget(harness, harnessArgs, harnessEnv, msg.NativeArguments, lookup),
+		view:         view,
+		grant:        auth.Verifier(grant),
+		lifecycle:    auth.Verifier(lifecycle),
+		ctx:          launchCtx,
+		cancel:       cancel,
+		endpoints:    endpoints,
+		snapshot:     snapshot,
+		target:       adapters.NewTarget(harness, harnessArgs, harnessEnv, msg.NativeArguments, lookup),
+		created:      time.Now(),
+		lease:        time.Duration(c.Daemon.LeaseSeconds) * time.Second,
+		threadServer: threadServer,
 	}
 	response := &v1.PrepareLaunchResponse{
 		Launch: proto.Clone(view).(*v1.Launch),
@@ -200,6 +205,7 @@ func (s *Server) PrepareLaunch(
 	s.launches[id] = l
 	s.preparations[msg.RequestId] = prepareRecord{fingerprint: fingerprint, response: sealed, launchID: id}
 	s.mu.Unlock()
+	s.persist(false)
 	return connect.NewResponse(response), nil
 }
 
@@ -281,42 +287,55 @@ func (s *Server) RenewLaunch(
 	ctx context.Context,
 	req *connect.Request[v1.RenewLaunchRequest],
 ) (*connect.Response[v1.RenewLaunchResponse], error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	l, err := s.lifecycleLaunch(req.Msg.LaunchId, req.Header().Get("Authorization"))
+	response, changed, err := s.renew(req.Msg, req.Header().Get("Authorization"))
 	if err != nil {
 		return nil, err
 	}
-	if !active(l.view.State) || time.Now().After(l.view.ExpiresAt.AsTime()) {
-		s.end(l, v1.Launch_STATE_EXPIRED)
-		return nil, rpcError(connect.CodeUnauthenticated, "launch has ended or expired")
+	// The lease alone moving forward is written at most every renewalWriteInterval.
+	s.persist(!changed)
+	return connect.NewResponse(response), nil
+}
+
+// renew extends a launch's lease and reports whether anything besides the lease changed.
+func (s *Server) renew(msg *v1.RenewLaunchRequest, authorization string) (*v1.RenewLaunchResponse, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	l, err := s.lifecycleLaunch(msg.LaunchId, authorization)
+	if err != nil {
+		return nil, false, err
 	}
+	if !active(l.view.State) || time.Now().After(l.view.ExpiresAt.AsTime()) {
+		changed := active(l.view.State)
+		s.end(l, v1.Launch_STATE_EXPIRED)
+		if changed {
+			go s.persist(false)
+		}
+		return nil, false, rpcError(connect.CodeUnauthenticated, "launch has ended or expired")
+	}
+	before := l.view.State.String() + "/" + l.view.SessionId
 	if parent := s.launches[l.view.ParentLaunchId]; parent != nil {
 		// A thread launch follows its parent's lease; renewing it reports its thread.
-		if req.Msg.SessionId != "" {
-			l.view.SessionId = req.Msg.SessionId
+		if msg.SessionId != "" {
+			l.view.SessionId = msg.SessionId
 			l.view.State = v1.Launch_STATE_RUNNING
 		}
 		l.view.ExpiresAt = proto.Clone(parent.view.ExpiresAt).(*timestamppb.Timestamp)
-		return connect.NewResponse(
-			&v1.RenewLaunchResponse{ExpiresAt: proto.Clone(l.view.ExpiresAt).(*timestamppb.Timestamp)},
-		), nil
+	} else {
+		if msg.HarnessPid != 0 {
+			l.view.State = v1.Launch_STATE_RUNNING
+		}
+		if msg.SessionId != "" {
+			l.view.SessionId = msg.SessionId
+		}
+		l.view.ExpiresAt = timestamppb.New(time.Now().Add(l.lease))
+		for _, child := range s.children(l) {
+			child.view.ExpiresAt = proto.Clone(l.view.ExpiresAt).(*timestamppb.Timestamp)
+		}
 	}
-	if req.Msg.HarnessPid != 0 {
-		l.view.State = v1.Launch_STATE_RUNNING
-	}
-	if req.Msg.SessionId != "" {
-		l.view.SessionId = req.Msg.SessionId
-	}
-	l.view.ExpiresAt = timestamppb.New(
-		time.Now().Add(time.Duration(l.snapshot.Config.Daemon.LeaseSeconds) * time.Second),
-	)
-	for _, child := range s.children(l) {
-		child.view.ExpiresAt = proto.Clone(l.view.ExpiresAt).(*timestamppb.Timestamp)
-	}
-	return connect.NewResponse(
-		&v1.RenewLaunchResponse{ExpiresAt: proto.Clone(l.view.ExpiresAt).(*timestamppb.Timestamp)},
-	), nil
+	return &v1.RenewLaunchResponse{
+		ExpiresAt:        proto.Clone(l.view.ExpiresAt).(*timestamppb.Timestamp),
+		RestoreLaunchIds: s.awaitingRestore(l),
+	}, before != l.view.State.String()+"/"+l.view.SessionId, nil
 }
 
 func (s *Server) FinishLaunch(
@@ -330,12 +349,15 @@ func (s *Server) FinishLaunch(
 		return nil, rpcError(connect.CodeInvalidArgument, "finish outcome is required")
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	l, err := s.lifecycleLaunch(req.Msg.LaunchId, req.Header().Get("Authorization"))
+	if err == nil {
+		s.end(l, v1.Launch_STATE_FINISHED)
+	}
+	s.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
-	s.end(l, v1.Launch_STATE_FINISHED)
+	s.persist(false)
 	return connect.NewResponse(&v1.FinishLaunchResponse{}), nil
 }
 
@@ -344,12 +366,15 @@ func (s *Server) RevokeLaunch(
 	req *connect.Request[v1.RevokeLaunchRequest],
 ) (*connect.Response[v1.RevokeLaunchResponse], error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	l := s.launches[req.Msg.LaunchId]
+	if l != nil {
+		s.end(l, v1.Launch_STATE_REVOKED)
+	}
+	s.mu.Unlock()
 	if l == nil {
 		return nil, rpcError(connect.CodeNotFound, "unknown launch")
 	}
-	s.end(l, v1.Launch_STATE_REVOKED)
+	s.persist(false)
 	return connect.NewResponse(&v1.RevokeLaunchResponse{}), nil
 }
 

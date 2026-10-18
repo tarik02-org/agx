@@ -3,13 +3,15 @@
 // records its arguments,
 // selected environment variables, and launch artifacts as JSON in $FAKE_DUMP, and calls the echo
 // tool on every MCP server passed with --mcp-config. --exit=N sets its exit status. With
-// $FAKE_STDIN set, it copies its standard input there until EOF.
+// $FAKE_STDIN set, it copies its standard input there until EOF. With $FAKE_HOLD set, it then
+// keeps running and calls the tools again on request (see hold).
 package main
 
 import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -50,6 +52,7 @@ func main() {
 		}
 	}
 	exit := 0
+	clients := map[string]*mcpClient{}
 	for i := 0; i < len(args); i++ {
 		value := func() string {
 			if i+1 < len(args) {
@@ -85,12 +88,9 @@ func main() {
 			}
 			for name, s := range cfg.Servers {
 				r.Endpoints[name] = s.URL
-				text, err := callEcho(s.URL, os.ExpandEnv(s.Headers["Authorization"]))
-				if err != nil {
-					text = "error: " + err.Error()
-				}
-				r.Tools[name] = text
+				clients[name] = &mcpClient{url: s.URL, authorization: os.ExpandEnv(s.Headers["Authorization"])}
 			}
+			r.Tools, _ = echoAll(clients)
 		}
 	}
 	if path := os.Getenv("FAKE_STDIN"); path != "" {
@@ -110,6 +110,9 @@ func main() {
 		if err := os.WriteFile(path, b, 0o600); err != nil {
 			fail(err)
 		}
+	}
+	if dir := os.Getenv("FAKE_HOLD"); dir != "" {
+		hold(dir, clients)
 	}
 	os.Exit(exit)
 }
@@ -206,57 +209,90 @@ func fail(err error) {
 	os.Exit(99)
 }
 
-// callEcho runs the MCP handshake over streamable HTTP and calls the echo tool.
-func callEcho(url, authorization string) (string, error) {
+// errSessionNotFound is the HTTP 404 a server answers for a session it does not know.
+var errSessionNotFound = errors.New("session not found")
+
+// mcpClient is a streamable HTTP MCP client that keeps its session between calls and, as the
+// specification asks, starts a new one when the server answers 404 for it.
+type mcpClient struct {
+	url, authorization string
+	session            string
+	// reinitialized counts sessions started again after a 404.
+	reinitialized int
+}
+
+func (c *mcpClient) post(message map[string]any) (map[string]any, error) {
 	client := &http.Client{Timeout: 20 * time.Second}
-	session := ""
-	post := func(message map[string]any) (map[string]any, error) {
-		message["jsonrpc"] = "2.0"
-		body, _ := json.Marshal(message)
-		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "application/json, text/event-stream")
-		req.Header.Set("Authorization", authorization)
-		if session != "" {
-			req.Header.Set("Mcp-Session-Id", session)
-			req.Header.Set("Mcp-Protocol-Version", "2025-11-25")
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode == http.StatusAccepted {
-			return nil, nil
-		}
-		if resp.StatusCode != http.StatusOK {
-			b, _ := io.ReadAll(resp.Body)
-			return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
-		}
-		if id := resp.Header.Get("Mcp-Session-Id"); id != "" {
-			session = id
-		}
-		return decode(resp)
+	message["jsonrpc"] = "2.0"
+	body, _ := json.Marshal(message)
+	req, err := http.NewRequest(http.MethodPost, c.url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
 	}
-	if _, err := post(map[string]any{"id": 1, "method": "initialize", "params": map[string]any{
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Authorization", c.authorization)
+	if c.session != "" {
+		req.Header.Set("Mcp-Session-Id", c.session)
+		req.Header.Set("Mcp-Protocol-Version", "2025-11-25")
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusAccepted {
+		return nil, nil
+	}
+	if resp.StatusCode == http.StatusNotFound && c.session != "" {
+		return nil, errSessionNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	if id := resp.Header.Get("Mcp-Session-Id"); id != "" {
+		c.session = id
+	}
+	return decode(resp)
+}
+
+func (c *mcpClient) initialize() error {
+	c.session = ""
+	if _, err := c.post(map[string]any{"id": 1, "method": "initialize", "params": map[string]any{
 		"protocolVersion": "2025-11-25", "capabilities": map[string]any{},
 		"clientInfo": map[string]any{"name": "fakeharness", "version": "1"},
 	}}); err != nil {
-		return "", fmt.Errorf("initialize: %w", err)
+		return fmt.Errorf("initialize: %w", err)
 	}
-	if _, err := post(map[string]any{"method": "notifications/initialized"}); err != nil {
-		return "", fmt.Errorf("initialized: %w", err)
+	if _, err := c.post(map[string]any{"method": "notifications/initialized"}); err != nil {
+		return fmt.Errorf("initialized: %w", err)
 	}
-	result, err := post(map[string]any{"id": 2, "method": "tools/call", "params": map[string]any{
+	return nil
+}
+
+// echo calls the echo tool, starting a session first when there is none.
+func (c *mcpClient) echo() (string, error) {
+	if c.session == "" {
+		if err := c.initialize(); err != nil {
+			return "", err
+		}
+	}
+	call := map[string]any{"id": 2, "method": "tools/call", "params": map[string]any{
 		"name": "echo", "arguments": map[string]any{"text": "hello"},
-	}})
+	}}
+	result, err := c.post(call)
+	if errors.Is(err, errSessionNotFound) {
+		c.reinitialized++
+		if err := c.initialize(); err != nil {
+			return "", err
+		}
+		result, err = c.post(call)
+	}
 	if err != nil {
 		return "", fmt.Errorf("tools/call: %w", err)
 	}
-	var call struct {
+	var reply struct {
 		Result struct {
 			Content []struct {
 				Text string `json:"text"`
@@ -264,10 +300,56 @@ func callEcho(url, authorization string) (string, error) {
 		} `json:"result"`
 	}
 	b, _ := json.Marshal(result)
-	if err := json.Unmarshal(b, &call); err != nil || len(call.Result.Content) == 0 {
+	if err := json.Unmarshal(b, &reply); err != nil || len(reply.Result.Content) == 0 {
 		return "", fmt.Errorf("unexpected tools/call response %s", b)
 	}
-	return call.Result.Content[0].Text, nil
+	return reply.Result.Content[0].Text, nil
+}
+
+// callEcho runs the MCP handshake over streamable HTTP and calls the echo tool.
+func callEcho(url, authorization string) (string, error) {
+	return (&mcpClient{url: url, authorization: authorization}).echo()
+}
+
+// echoAll calls the echo tool of every client, keyed like clients, and reports how many
+// sessions started again.
+func echoAll(clients map[string]*mcpClient) (map[string]string, int) {
+	tools, reinitialized := map[string]string{}, 0
+	for name, c := range clients {
+		before := c.reinitialized
+		text, err := c.echo()
+		if err != nil {
+			text = "error: " + err.Error()
+		}
+		tools[name] = text
+		reinitialized += c.reinitialized - before
+	}
+	return tools, reinitialized
+}
+
+// hold keeps the harness running after its first calls, as a session does: for each file
+// call-<n> that appears in dir, it calls the echo tools again over the same sessions and writes
+// result-<n>.json; the file exit ends it.
+func hold(dir string, clients map[string]*mcpClient) {
+	for n := 1; ; {
+		if _, err := os.Stat(filepath.Join(dir, "exit")); err == nil {
+			return
+		}
+		if _, err := os.Stat(filepath.Join(dir, fmt.Sprintf("call-%d", n))); err != nil {
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		tools, reinitialized := echoAll(clients)
+		b, _ := json.Marshal(map[string]any{"tools": tools, "reinitialized": reinitialized})
+		path := filepath.Join(dir, fmt.Sprintf("result-%d.json", n))
+		if err := os.WriteFile(path+".tmp", b, 0o600); err != nil {
+			fail(err)
+		}
+		if err := os.Rename(path+".tmp", path); err != nil {
+			fail(err)
+		}
+		n++
+	}
 }
 
 // decode reads a JSON response, or the last JSON-RPC response of an event stream.
@@ -297,11 +379,14 @@ func decode(resp *http.Response) (map[string]any, error) {
 // appServer answers newline-delimited JSON-RPC like codex app-server. Every result echoes the
 // request's params as "received"; initialize adds the process arguments, and thread/start a
 // new thread in the requested cwd plus the echo tool's reply from every MCP server in its
-// config. test/close closes a thread with a thread/closed notification.
+// config. test/call calls a thread's echo tools again over the same sessions, and test/close
+// closes a thread with a thread/closed notification.
 func appServer(args []string) {
 	reader := bufio.NewReader(os.Stdin)
 	out := json.NewEncoder(os.Stdout)
 	threads := 0
+	// sessions keeps each thread's MCP clients, as Codex keeps a thread's MCP connections.
+	sessions := map[string]map[string]*mcpClient{}
 	for {
 		line, err := reader.ReadBytes('\n')
 		if err != nil {
@@ -323,7 +408,7 @@ func appServer(args []string) {
 			threads++
 			id := fmt.Sprintf("thread-%d", threads)
 			result["thread"] = map[string]any{"id": id, "cwd": request.Params["cwd"]}
-			tools := map[string]string{}
+			clients := map[string]*mcpClient{}
 			config, _ := request.Params["config"].(map[string]any)
 			servers, _ := config["mcp_servers"].(map[string]any)
 			for name, s := range servers {
@@ -331,13 +416,13 @@ func appServer(args []string) {
 				url, _ := server["url"].(string)
 				headers, _ := server["http_headers"].(map[string]any)
 				authorization, _ := headers["Authorization"].(string)
-				text, err := callEcho(url, authorization)
-				if err != nil {
-					text = "error: " + err.Error()
-				}
-				tools[name] = text
+				clients[name] = &mcpClient{url: url, authorization: authorization}
 			}
-			result["tools"] = tools
+			sessions[id] = clients
+			result["tools"], _ = echoAll(clients)
+		case "test/call":
+			id, _ := request.Params["threadId"].(string)
+			result["tools"], result["reinitialized"] = echoAll(sessions[id])
 		case "test/close":
 			_ = out.Encode(map[string]any{"id": request.ID, "result": result})
 			_ = out.Encode(map[string]any{"method": "thread/closed", "params": map[string]any{"threadId": request.Params["threadId"]}})

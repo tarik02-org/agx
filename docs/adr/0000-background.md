@@ -93,7 +93,9 @@ Generated artifacts, packages, and locks hold no secret values.
 The wrapper supervises the harness, renews a lease, and reports exit. Ended or
 expired launches lose MCP access and release their runtime; an HTTP disconnect
 alone does not end a launch, and a grant never changes an upstream credential's
-own lifetime. See [contracts](../contracts.md#launch-preparation-and-credentials)
+own lifetime. A daemon restart or upgrade does not end launches either: the
+daemon saves them, without secrets, and the next one restores them
+([ADR 0016](0016-launches-survive-daemon-restarts.md)). See [contracts](../contracts.md#launch-preparation-and-credentials)
 and the [launch flow](../api.md#launch-flow).
 
 ## Go and Connect

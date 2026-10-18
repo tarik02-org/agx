@@ -61,7 +61,8 @@ Clients that start the daemon on demand spawn it detached and rely on this lock:
 concurrent starters may each spawn one, the losers exit, and every starter
 connects to the winner. A starter whose daemon exited fails only once the lock is
 free, reporting the log's last line. A client replaces a daemon of another build
-only when it serves the same root and reports no active launches; it asks the
+only when it serves the same root, and either keeps its launches for the next
+daemon (discovery `restores_launches`) or reports none active; it asks the
 daemon to stop without force and waits for the lock before starting its own.
 
 Use opaque, unpredictable launch tokens with server-side validity. Renewal extends
@@ -71,10 +72,29 @@ are a 60-second lease, renewed every 20 seconds; `daemon.lease_seconds` and
 Hash stored token verifiers and redact all sensitive request/response fields.
 Repeat mutation requests with the same idempotency key after ambiguous failures.
 
-A daemon restart invalidates active grants in v1. Existing harnesses can keep doing
-non-MCP work, but need relaunching for managed MCP access. Lease loss does not
-automatically kill a harness. Account credentials survive daemon restart according
-to their configured storage; launches and tokens do not.
+Active launches survive a daemon restart that does not revoke them
+([ADR 0016](adr/0016-launches-survive-daemon-restarts.md)). The daemon writes
+`daemon-state.json` in the state directory atomically, mode 0600 (a private ACL on
+Windows), whenever a launch or thread launch starts, ends, or changes state, and
+for renewals at most every five seconds. It holds the format version, listener
+port, configuration root, and per launch its ID, parent, session, snapshot ID,
+directory, harness, mode, state, lease, creation and expiry times, and SHA-256
+verifiers of its grant and lifecycle token: never tokens, environment inputs, or
+native arguments. The next daemon drops expired launches and those of another
+root, binds the saved port when it is free, and restores the rest; harnesses keep
+their grants. Their wrappers find the new daemon through discovery and resend
+environment inputs and native arguments with `RestoreLaunch`, under management
+authorization plus the lifecycle token. Endpoints whose values need no inputs
+serve before that; the others answer 503. A restored launch must resolve to its
+saved snapshot ID: when configuration or packages changed meanwhile, its MCP
+servers answer 403 until relaunch, since snapshots freeze definitions. Upstream
+MCP sessions do not survive; the endpoint answers 404 for an unknown
+`Mcp-Session-Id`, and clients start a new session. When the port is taken, the
+daemon listens elsewhere: launches keep their lease and grant, but harnesses
+holding the old endpoint URLs lose MCP access until relaunch (a Codex app-server
+thread gets new URLs on `thread/resume`). A forced stop revokes all launches and
+clears them from the file. Lease loss does not automatically kill a harness.
+Account credentials survive daemon restart according to their configured storage.
 
 ## MCP runtime
 

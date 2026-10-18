@@ -605,7 +605,7 @@ it is not running ([daemon and launches](cli.md#daemon-and-launches)).
 under the cache's `runtime` directory, protected for the current user.
 
 `AGX_CONFIG`, `AGX_CACHE`, and `AGX_STATE` select absolute paths. State, which holds
-launch records, defaults to `<cache>/state` when the cache is not the default one, so
+launch records and the daemon's saved launches, defaults to `<cache>/state` when the cache is not the default one, so
 an isolated cache isolates everything. Management commands also
 accept `--config` and `--cache` before the command. Native harness arguments pass
 through their dedicated entry points; put agx flags before the harness name.

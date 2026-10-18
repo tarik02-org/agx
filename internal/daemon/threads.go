@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -39,10 +40,14 @@ func (s *Server) threadParent(id string) (threadParent, error) {
 	}
 	s.mu.Lock()
 	running := active(l.view.State) && l.view.ParentLaunchId == ""
-	target := l.target
+	target, restored := l.target, l.restored
 	s.mu.Unlock()
 	if !running {
 		return threadParent{}, rpcError(connect.CodeFailedPrecondition, "launch has ended or is a thread launch")
+	}
+	if restored {
+		// The harness process is known again once its wrapper resends its environment.
+		return threadParent{}, rpcError(connect.CodeUnavailable, errAwaitingWrapper.Error())
 	}
 	harness, err := c.Harness(l.view.Harness)
 	if err != nil {
@@ -176,24 +181,7 @@ func (s *Server) PrepareThreadLaunch(
 		discard()
 		return nil, rpcError(connect.CodeInternal, "cannot cache launch response")
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.preparations[msg.RequestId]; ok {
-		discard()
-		return nil, rpcError(connect.CodeAborted, "concurrent preparation with the same idempotency key; retry")
-	}
-	switch {
-	case !active(p.launch.view.State):
-		discard()
-		return nil, rpcError(connect.CodeFailedPrecondition, "launch has ended")
-	case len(s.launches) >= 10000:
-		discard()
-		return nil, rpcError(
-			connect.CodeResourceExhausted,
-			"launch history full; retry after ended launches are pruned",
-		)
-	}
-	s.launches[id] = &launch{
+	if err := s.addThreadLaunch(msg.RequestId, p.launch, &launch{
 		view:      view,
 		grant:     auth.Verifier(grant),
 		lifecycle: p.launch.lifecycle,
@@ -202,9 +190,34 @@ func (s *Server) PrepareThreadLaunch(
 		endpoints: endpoints,
 		snapshot:  snapshot,
 		target:    p.target,
+		created:   time.Now(),
+		lease:     p.launch.lease,
+	}, prepareRecord{fingerprint: fingerprint, response: sealed, launchID: id}); err != nil {
+		discard()
+		return nil, err
 	}
-	s.preparations[msg.RequestId] = prepareRecord{fingerprint: fingerprint, response: sealed, launchID: id}
+	s.persist(false)
 	return connect.NewResponse(response), nil
+}
+
+func (s *Server) addThreadLaunch(requestID string, parent, l *launch, record prepareRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.preparations[requestID]; ok {
+		return rpcError(connect.CodeAborted, "concurrent preparation with the same idempotency key; retry")
+	}
+	switch {
+	case !active(parent.view.State):
+		return rpcError(connect.CodeFailedPrecondition, "launch has ended")
+	case len(s.launches) >= 10000:
+		return rpcError(
+			connect.CodeResourceExhausted,
+			"launch history full; retry after ended launches are pruned",
+		)
+	}
+	s.launches[l.view.Id] = l
+	s.preparations[requestID] = record
+	return nil
 }
 
 // replay returns the cached response of an earlier thread preparation with the same key.

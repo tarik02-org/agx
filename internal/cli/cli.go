@@ -479,6 +479,8 @@ type daemonStopped struct {
 	Stopping bool   `json:"stopping"`
 	Forced   bool   `json:"forced"`
 	Version  string `json:"version"`
+	// KeptLaunches counts the active launches the next daemon restores.
+	KeptLaunches int `json:"kept_launches"`
 }
 
 func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *config.Builtins) *cobra.Command {
@@ -563,8 +565,9 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := newAnyVersionClient(*paths)
+			kept := 0
 			if err == nil {
-				err = stopDaemon(cmd.Context(), c, force)
+				kept, err = stopDaemon(cmd.Context(), c, force)
 			}
 			// Stopping a daemon that is not there leaves the state asked for.
 			var dial *net.OpError
@@ -579,15 +582,34 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 				return err
 			}
 			if scripting.enabled {
-				return printJSON(
-					daemonStopped{Running: true, Stopping: true, Forced: force, Version: c.discovery.Version},
+				return printJSON(daemonStopped{
+					Running:      true,
+					Stopping:     true,
+					Forced:       force,
+					Version:      c.discovery.Version,
+					KeptLaunches: kept,
+				})
+			}
+			message := "Daemon stopping."
+			switch {
+			case kept == 1:
+				message = "Daemon stopping; the next daemon restores its active launch while its lease lasts."
+			case kept > 1:
+				message = fmt.Sprintf(
+					"Daemon stopping; the next daemon restores its %d active launches while their leases last.",
+					kept,
 				)
 			}
-			_, err = fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, "Daemon stopping."))
+			_, err = fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, message))
 			return err
 		},
 	}
-	stop.Flags().BoolVar(&force, "force", false, "revoke active MCP access before stopping")
+	stop.Flags().BoolVar(
+		&force,
+		"force",
+		false,
+		"revoke the MCP access of active launches instead of keeping them for the next daemon",
+	)
 	jsonFlag(stop)
 	command.AddCommand(stop)
 	return command

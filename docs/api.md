@@ -14,7 +14,8 @@ The Go module path is `github.com/tarik02-org/agx`.
 - `PackageService`: start install/update operations and watch their progress.
   The CLI installs in-process instead; both paths share the installer lock.
 - `LaunchService`: prepare, renew, finish, and administratively revoke a launch;
-  resolve and prepare thread launches of a process serving many threads.
+  resolve and prepare thread launches of a process serving many threads; restore
+  a launch a restarted daemon brought back.
 - `RuntimeService`: inspect/watch redacted daemon, launch, and MCP server state,
   and `TestMcpServer`, which connects to one MCP server outside any launch and
   lists its tools with their descriptions (`agx mcp test`). It accepts only the environment variables the
@@ -58,6 +59,16 @@ headers), instructions, and disabled plugins. A thread launch shares its
 parent's lease and lifecycle token. Renewing it with `session_id` reports its
 thread and marks it running; it finishes with outcome `thread_closed`, and ends
 with its parent however the parent ends.
+
+A daemon stopped without force keeps its active launches for the next one
+([ADR 0016](adr/0016-launches-survive-daemon-restarts.md)). When renewal fails,
+the wrapper rereads discovery and renews with the daemon it names, whatever its
+build, until its lease runs out. `RenewLaunchResponse.restore_launch_ids` lists
+the launch and its thread launches that the new daemon restored and that wait for
+`RestoreLaunch`: management authorization, the lifecycle token in the message, and
+the environment inputs (plus, for the launch itself, the native arguments) it was
+prepared with, which the state file never holds. Until then a restored process
+serving threads answers `Unavailable` to thread preparation.
 
 Use management authorization for other RPCs. Preparation and package mutations
 require an idempotency key: retries within the same daemon instance return the
