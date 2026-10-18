@@ -50,6 +50,17 @@ absolute native executable first; otherwise search PATH while excluding agx
 itself, so a `codex` symlink cannot recurse. Handle Windows executable/script
 launching explicitly rather than constructing a POSIX shell command.
 
+### Harness versions
+
+| Harness | Needs | Tested |
+| --- | --- | --- |
+| Codex | plugins and marketplaces (`codex plugin`, `features.plugins`), `-c` overrides for `mcp_servers` and `developer_instructions` | 0.160 and later (0.162.1) |
+| Claude Code | `--plugin-dir`, `--append-system-prompt-file`, `--mcp-config` | 2.1.29x (2.1.300) |
+| Pi | `pi.registerMcpServer()` with `exposure`, from 0.99.0 | 1.2.0 |
+
+Older versions may launch but lose skills, instructions, or MCP servers;
+`agx doctor` reports each harness's version against these minimums.
+
 ## Launcher and sessions
 
 ```text

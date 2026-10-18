@@ -276,7 +276,10 @@ or a group without `modes` applies to every mode except `passthrough`. `env` val
 in every mode; values in `env` and in argument groups may be
 [tags](#injected-values); names starting with `AGX_` are reserved. An extension
 replaces `executable`, appends its groups after its base's, and replaces `env`
-per key. `executable` must be absolute once `~` is expanded.
+per key. `executable` must be absolute once `~` is expanded. Untagged `env` and
+`args` values are literal: agx expands neither `~` nor `$VAR` in them, and the
+harness receives them unchanged, so write an absolute path or build one from a
+tag (`!env HOME` for the home directory itself).
 
 Selection gains a harness dimension: after directory scopes, each harness in the
 base chain applies its `add` and then `remove`, built-in first, so a harness's
