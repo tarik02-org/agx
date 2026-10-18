@@ -1,6 +1,6 @@
 # Management API
 
-The contract is [agx.v1](../api/agx/v1/agx.proto), exposed through Connect over
+The contract is [agx.v1](../../api/agx/v1/agx.proto), exposed through Connect over
 authenticated loopback HTTP. Generated Go/Connect and TypeScript bindings are included; `buf generate`
 regenerates them. The MCP
 endpoints are separate native MCP interfaces, not methods on these services.
@@ -61,7 +61,7 @@ thread and marks it running; it finishes with outcome `thread_closed`, and ends
 with its parent however the parent ends.
 
 A daemon stopped without force keeps its active launches for the next one
-([ADR 0016](adr/0016-launches-survive-daemon-restarts.md)). When renewal fails,
+([ADR 0016](../adr/0016-launches-survive-daemon-restarts.md)). When renewal fails,
 the wrapper rereads discovery and renews with the daemon it names, whatever its
 build, until its lease runs out. `RenewLaunchResponse.restore_launch_ids` lists
 the launch and its thread launches that the new daemon restored and that wait for

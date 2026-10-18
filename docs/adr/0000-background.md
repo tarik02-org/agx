@@ -5,7 +5,7 @@ Status: accepted. Condenses the original design records; later ADRs refine it.
 agx composes agent resources (skills, instructions, MCP servers) for the
 directory a harness runs in, and launches the harness with them natively. The
 decisions below still hold. [Configuration](../configuration.md) and
-[contracts](../contracts.md) specify the details.
+[contracts](../development/contracts.md) specify the details.
 
 ## Additive directory scopes
 
@@ -95,8 +95,8 @@ expired launches lose MCP access and release their runtime; an HTTP disconnect
 alone does not end a launch, and a grant never changes an upstream credential's
 own lifetime. A daemon restart or upgrade does not end launches either: the
 daemon saves them, without secrets, and the next one restores them
-([ADR 0016](0016-launches-survive-daemon-restarts.md)). See [contracts](../contracts.md#launch-preparation-and-credentials)
-and the [launch flow](../api.md#launch-flow).
+([ADR 0016](0016-launches-survive-daemon-restarts.md)). See [contracts](../development/contracts.md#launch-preparation-and-credentials)
+and the [launch flow](../development/api.md#launch-flow).
 
 ## Go and Connect
 
@@ -110,4 +110,4 @@ with Buf, so the CLI and a future UI share it. MCP traffic stays on the native
 endpoints rather than being tunneled through RPCs. Both interfaces authenticate
 on loopback, with management authority separate from launch grants. YAML decodes
 into typed documents and composition is explicit code; Viper's generic merging
-cannot express these rules. See [API](../api.md) and [libraries](../libraries.md).
+cannot express these rules. See [API](../development/api.md) and [libraries](../development/libraries.md).

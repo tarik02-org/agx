@@ -1,6 +1,6 @@
 # Runtime and configuration contracts
 
-These contracts guide the implementation. See [configuration](configuration.md)
+These contracts guide the implementation. See [configuration](../configuration.md)
 for the concrete schema and [verification](verification.md) for exercised behavior
 and current support limits.
 
@@ -73,7 +73,7 @@ Hash stored token verifiers and redact all sensitive request/response fields.
 Repeat mutation requests with the same idempotency key after ambiguous failures.
 
 Active launches survive a daemon restart that does not revoke them
-([ADR 0016](adr/0016-launches-survive-daemon-restarts.md)). The daemon writes
+([ADR 0016](../adr/0016-launches-survive-daemon-restarts.md)). The daemon writes
 `daemon-state.json` in the state directory atomically, mode 0600 (a private ACL on
 Windows), whenever a launch or thread launch starts, ends, or changes state, and
 for renewals at most every five seconds. It holds the format version, listener
@@ -96,7 +96,7 @@ thread gets new URLs on `thread/resume`). A forced stop revokes all launches and
 clears them from the file. Lease loss does not automatically kill a harness.
 
 A stopping daemon shuts down gracefully (see
-[graceful shutdown](cli.md#graceful-shutdown)). It refuses new launches, thread
+[graceful shutdown](../daemon.md#graceful-shutdown)). It refuses new launches, thread
 launches, and MCP sessions with Connect `unavailable`, or HTTP 503, carrying
 `Agx-Daemon-Stopping: 1`; callers retry those with the daemon discovery names
 next. It lets requests in flight finish for `daemon.shutdown_grace_seconds`, or a

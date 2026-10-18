@@ -30,6 +30,9 @@ archives:
       - LICENSE
       - README.md
       - CHANGELOG.md
+      # The README's links and quick start rely on these.
+      - docs/*.md
+      - examples/*
 
 checksum:
   name_template: checksums.txt

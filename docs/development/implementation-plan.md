@@ -3,7 +3,7 @@
 The five milestones below now have an initial implementation.
 [Verification notes](verification.md) record exercised behavior and remaining
 platform/protocol validation limits. Each milestone ends with observable behavior before adding
-the next layer. The [ADRs](../README.md#design-and-api) define the architecture;
+the next layer. The [ADRs](../adr/) define the architecture;
 [contracts](contracts.md) define the operational details.
 
 ## 1. Resolve and explain configuration
