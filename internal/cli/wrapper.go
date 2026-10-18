@@ -138,6 +138,12 @@ func runHarness(
 	if err != nil {
 		return err
 	}
+	// The daemon cannot tell a directory missing here from one it cannot resolve.
+	if info, err := os.Stat(directory); err != nil {
+		return statError("directory", directory, err)
+	} else if !info.IsDir() {
+		return codedf(codeInvalidRequest, "not a directory: %s", directory)
+	}
 	c, err := daemonClient(ctx, paths, autostart(harnesses.config))
 	if err != nil {
 		return err

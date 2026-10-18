@@ -816,7 +816,10 @@ func (s *Server) Resolve(
 	}
 	snapshot, err := c.Resolve(req.Msg.Directory, req.Msg.Harness)
 	if err != nil {
-		return nil, rpcError(connect.CodeFailedPrecondition, "cannot resolve directory; run agx explain locally")
+		return nil, rpcError(
+			connect.CodeFailedPrecondition,
+			fmt.Sprintf("cannot resolve directory %s: %v", req.Msg.Directory, err),
+		)
 	}
 	return connect.NewResponse(resolveMessage(snapshot)), nil
 }
