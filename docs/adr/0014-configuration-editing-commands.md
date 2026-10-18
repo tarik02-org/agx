@@ -1,6 +1,6 @@
 # Edit configuration from the CLI
 
-Status: proposed.
+Status: accepted.
 
 Configuration stays hand-written YAML; commands edit it for the common cases.
 
@@ -55,3 +55,42 @@ changes go to the file that holds the matching rule, otherwise with the
 definition. The result must validate before anything is written, and the write
 is atomic. Files that are read-only or inside `/nix/store` are refused with the
 reason.
+
+## Decisions made in implementation
+
+- **Engine.** An edit changes the parsed node tree, which is encoded with the
+  file's detected indentation; a line diff between the encodings before and
+  after the change (`go-udiff`) is applied to the original text, aligned to it
+  line by line, so untouched lines, blank lines, and comment spacing stay byte
+  for byte. When the result would not parse back to the edited tree, the whole
+  tree is re-encoded instead. New lists use flow style unless their siblings are
+  block lists; an empty `{}` grows in block style. Lists, `add`/`remove`
+  mappings, and rules an edit empties are pruned; untouched empty rules stay.
+- **Validation.** Edited fragments, and the lockfiles a Git skill source needs,
+  are passed to the loader as an in-memory overlay; nothing is written unless
+  the whole configuration loads, and a fragment outside the imports is also
+  loaded on its own. Writes keep the file's mode, land at a symlink's target,
+  and replace the file atomically; lockfiles are written private.
+- **Placement.** Matching rules in files that cannot be written are skipped, so a
+  read-only or generated fragment does not block enabling elsewhere; only the
+  chosen target is refused. `use`/`unuse` create a missing rule beside the
+  definition when that fragment is writable, else in the root. New directory
+  rules spell paths under the home directory as `~/…`; new resource paths are
+  relative when inside the fragment's directory.
+- **Login and test.** The probe is the unauthenticated request on-demand OAuth
+  already uses: a 401 that leads to protected resource metadata. Logging in
+  needs the daemon, which owns credentials; without it agx names the commands to
+  run later. `mcp test` is a daemon RPC (`TestMcpServer`) serving the server
+  through a launch-less endpoint on a private loopback listener, so credentials,
+  tags, and diagnostics behave as in a launch and no value leaves the daemon.
+- **Skills from Git.** The source becomes a package, not anonymous Git skills,
+  so one checkout and one lock entry serve every chosen skill. A package root
+  without `agx.package.yaml` declares the skills found in it. The repository is
+  installed with its lock staged in memory before the picker opens, so the
+  picker lists what loading will define. Branch refs resolve against the
+  clone's remote branches.
+- **Prompts.** Bubble Tea and Bubbles, as in the launcher, rather than `huh`:
+  text input, a yes/no confirmation, and a multi-select, drawn inline on stderr
+  with the launcher's styling and `--color`.
+- **Hidden testing aid.** `skill add --github-base` replaces
+  `https://github.com` for `owner/repo` sources.

@@ -7,7 +7,9 @@ The default root is `$XDG_CONFIG_HOME/agx/agx.yaml`. When it is unset, that is
 `~/.config` on Linux, `~/Library/Application Support` on macOS, and
 `%LOCALAPPDATA%` on Windows; `daemon start --config` selects another root.
 Generated artifacts and installed packages live under `$XDG_CACHE_HOME/agx`
-(`~/.cache`, `~/Library/Caches`, or `%LOCALAPPDATA%\cache` when unset).
+(`~/.cache`, `~/Library/Caches`, or `%LOCALAPPDATA%\cache` when unset). Launch
+records live under `$XDG_STATE_HOME/agx` (`~/.local/state`, `~/Library/Application
+Support`, or `%LOCALAPPDATA%` when unset), which wiping the cache keeps.
 Root selection is explicit, not automatic discovery of project-local files.
 
 ## Harness entry points
@@ -85,7 +87,8 @@ without agx appear too; subagent sessions do not. Only a title and the first use
 message are shown, shortened; stores are never written. Unreadable session files
 are skipped and counted. The index is cached under the cache directory and
 re-read per file when its size or modification time changes; launch records live
-in the runtime state directory ([ADR 0013](adr/0013-launcher-and-session-search.md)).
+in the state directory, so wiping the cache keeps them
+([ADR 0013](adr/0013-launcher-and-session-search.md)).
 
 `agx sessions` lists the sessions of this directory and below, or of every
 directory with `--all`, newest first; a query keeps those matching every word
@@ -153,6 +156,98 @@ need no lock entry, so a fragment declaring only pinned ones gets no lockfile.
 (an anonymous one by its lock key, such as `skill:review-strict`), or all packages
 when none are named. Running a harness requires a complete, matching
 lock/cache; it never silently updates dependencies.
+
+## Editing configuration
+
+```text
+agx mcp add <id> <url> | add <id> -- <command> [args...]
+agx mcp list [--json] | remove <id> [--force] | login <id> | test <id>
+agx skill add <source> [--skill <name>]... [--all] [--ref <ref>] [--path <dir>] [--package <id>]
+agx skill list [--json] | remove <id> [--force]
+agx instructions add <path> [--id <id>] | add --id <id> --text <text>
+agx instructions list [--json] | remove <id> [--force]
+agx harness add <name> --base <harness> [--executable <path>] [--env K=V]... [-- args...]
+agx harness list [--json] | remove <name> [--force]
+agx use <id> [--kind <kind>]
+agx unuse <id> [--kind <kind>]
+```
+
+These commands edit the YAML fragments for the common cases
+([ADR 0014](adr/0014-configuration-editing-commands.md)); everything else stays
+hand-written. Commands that write share these flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--scope user\|here\|<dir>` | where to enable: everywhere (the default), the current directory, or a directory |
+| `--harness <name>` | only for launches of these harnesses (repeatable) |
+| `--file <path>` | the fragment new definitions go to (default: the root configuration) |
+| `--define-only` | define without enabling (`add` commands) |
+| `-y`, `--yes` | write without confirming |
+
+`add` defines a resource and enables it in the scope. Enabling appends the ID to
+the first rule with the same directory and harness filter (`--scope user` is a
+rule without `directory`), in load order, or creates one in the file holding the
+definition. `use` enables an existing definition and drops it from that rule's
+`remove`; `unuse` removes it from the rule's `add`, or, when another rule added
+it, appends it to `remove`. `--kind skills|instructions|mcp|bundles` picks one when
+an ID names several. `remove` refuses while other entries reference the
+definition, listing them; `--force` removes those entries too, and rules left
+empty. Definitions inside packages cannot be removed this way.
+
+```sh
+agx mcp add github https://api.githubcopilot.com/mcp
+agx mcp add fs --scope here -- npx -y @modelcontextprotocol/server-filesystem .
+agx mcp add docs https://docs.example/mcp --header 'X-Key=!secret docs' --auth none
+agx unuse docs --scope ~/work/oss          # docs stays enabled elsewhere
+agx skill add anthropics/skills --skill pdf --skill docx
+agx skill add ./skills/deploy --harness claude
+agx instructions add --id pnpm --text 'Use pnpm, not npm.' --scope ~/work
+agx harness add codex-cpa --base codex --env 'CPA_KEY=!secret cpa-key' -- -c 'model_provider="cpa"'
+```
+
+`mcp add` takes a URL for an HTTP server or a command after `--` for a stdio
+one. `--header` (HTTP) and `--env` (stdio) take `KEY=VALUE`; a value written
+`!secret <id>`, `!env NAME`, or `!file PATH` becomes that
+[tag](configuration.md#injected-values). `--auth` is `none`, `oauth`,
+`keychain`, or `!secret <id>`; omitted, the server uses OAuth on demand. After
+adding an HTTP server, agx asks it for an authorization challenge. When it wants
+an OAuth login, a terminal offers to log in now through the running daemon,
+exactly as `mcp login`, which runs `secret login` for the server's secret
+(`--no-browser` prints the URL instead of opening it); otherwise agx prints the
+command for later. `mcp test` connects to the server through the daemon outside
+any launch, with its credentials and the caller's environment variables its
+values name, and lists its tools; failures report the endpoint's diagnosis, never
+values.
+
+`skill add` takes a directory, a Git URL, or GitHub's `owner/repo[@ref][/path]`
+(`--ref` and `--path` set them for URLs); a relative path without `./` is read as
+a path only when it exists. It finds every `SKILL.md` below the source and asks
+which to add unless `--skill` or `--all` decides; without a terminal, a source
+with several skills needs one of them. A directory becomes path skills named
+after their folders. A Git source becomes a package, named after the repository
+unless `--package` says otherwise, that agx installs and locks before anything
+is written; the chosen skills are enabled by their package-qualified IDs
+(`skills/pdf`). A repository without `agx.package.yaml` declares every skill it
+holds ([packages](configuration.md#packages-and-locks)).
+
+`list` prints a table, or `{version, data}` with `--json`; values appear as
+configured, and headers and environments are left out. `harness list` includes
+the built-ins.
+
+On a terminal, missing arguments are asked for, and the change is shown as a
+unified diff and confirmed before it is written; Esc or answering no writes
+nothing (exit 1), Ctrl-C exits 130. Without a terminal, a missing argument is a
+usage error and `--yes` is implied. Prompts draw on stderr; the diff goes to
+stdout, styled per `--color`.
+
+Edits keep every line they do not change, including comments, blank lines, key
+order, quoting, flow style, and tags; a new list is written in flow style unless
+its siblings use block style. The edited configuration, and any lockfile an
+install would write, is loaded and validated in memory first; only a valid result
+is written, each file atomically with its mode kept. A file that is read-only,
+or resolves into `/nix/store`, is refused with the reason; pass `--file` to
+write elsewhere. A fragment outside the configuration's imports is written with a
+warning.
 
 ## Daemon and launches
 

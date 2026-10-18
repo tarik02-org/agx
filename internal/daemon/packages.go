@@ -73,7 +73,13 @@ func (s *Server) packageOperation(
 	s.operationRequests[requestID] = op
 	s.operations[id] = op
 	go func() {
-		result, err := packages.Install(s.ctx, s.paths.Config, s.paths.Cache, s.builtins, frozen, ids, all)
+		result, err := packages.Install(
+			s.ctx,
+			s.paths.Config,
+			s.paths.Cache,
+			s.builtins,
+			packages.Options{Frozen: frozen, Updates: ids, UpdateAll: all},
+		)
 		if err == nil && !frozen {
 			var c *config.Config
 			c, err = config.Load(s.paths.Config, s.paths.Cache, s.builtins)

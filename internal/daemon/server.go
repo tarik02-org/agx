@@ -97,10 +97,10 @@ type Server struct {
 
 // Serve runs the daemon until ctx ends; builtins must describe the adapters in registry.
 func Serve(ctx context.Context, paths platform.Paths, registry adapters.Registry, builtins config.Builtins) error {
-	if err := securefs.EnsureDir(paths.State); err != nil {
+	if err := securefs.EnsureDir(paths.Runtime); err != nil {
 		return err
 	}
-	lock := flock.New(filepath.Join(paths.State, "daemon.lock"))
+	lock := flock.New(filepath.Join(paths.Runtime, "daemon.lock"))
 	ok, err := lock.TryLock()
 	if err != nil {
 		return err
@@ -109,7 +109,7 @@ func Serve(ctx context.Context, paths platform.Paths, registry adapters.Registry
 		return fmt.Errorf("daemon is already running")
 	}
 	defer func() { _ = lock.Unlock() }()
-	discoveryPath := filepath.Join(paths.State, "daemon.json")
+	discoveryPath := filepath.Join(paths.Runtime, "daemon.json")
 	// The startup lock makes stale discovery replacement safe.
 	if err := os.Remove(discoveryPath); err != nil && !os.IsNotExist(err) {
 		return err
@@ -569,7 +569,7 @@ func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 // ErrVersionMismatch, so callers such as daemon stop can still reach the daemon.
 func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 	var d Discovery
-	b, err := os.ReadFile(filepath.Join(paths.State, "daemon.json"))
+	b, err := os.ReadFile(filepath.Join(paths.Runtime, "daemon.json"))
 	if err != nil {
 		return d, fmt.Errorf("daemon unavailable; run agx daemon start")
 	}

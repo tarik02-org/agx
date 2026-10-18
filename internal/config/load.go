@@ -44,10 +44,52 @@ type Lock struct {
 const DefaultConfig = "imports:\n  - glob: agx.d/*.yaml\n"
 
 func Read(root string, builtins Builtins) (*Config, error) {
-	return read(root, builtins, &Inputs{})
+	return read(root, builtins, &Inputs{}, nil)
 }
 
-func read(root string, builtins Builtins, inputs *Inputs) (*Config, error) {
+// ReadWith reads configuration fragments as Read does, with overlay replacing files.
+func ReadWith(root string, builtins Builtins, overlay Overlay) (*Config, error) {
+	return read(root, builtins, &Inputs{}, overlay)
+}
+
+// Overlay maps canonical paths to contents that replace those files while loading, so an edit
+// can be validated before anything is written.
+type Overlay map[string][]byte
+
+func (o Overlay) readFile(path string) ([]byte, error) {
+	if b, ok := o[path]; ok {
+		return b, nil
+	}
+	return os.ReadFile(path)
+}
+
+func (o Overlay) exists(path string) (bool, error) {
+	if _, ok := o[path]; ok {
+		return true, nil
+	}
+	_, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// glob adds overlay files matching pattern, such as a new drop-in fragment, to the files on disk.
+func (o Overlay) glob(pattern string) ([]string, error) {
+	files, err := globFiles(pattern)
+	if err != nil {
+		return nil, err
+	}
+	for path := range o {
+		if matched, _ := filepath.Match(pattern, path); matched && !slices.Contains(files, path) {
+			files = append(files, path)
+		}
+	}
+	slices.Sort(files)
+	return files, nil
+}
+
+func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Config, error) {
 	root, err := Canonical(root)
 	if err != nil {
 		return nil, err
@@ -81,7 +123,7 @@ func read(root string, builtins Builtins, inputs *Inputs) (*Config, error) {
 		active[path] = true
 		defer delete(active, path)
 		inputs.file(path)
-		d, node, err := decode(path)
+		d, node, err := decode(path, overlay)
 		if path == root && errors.Is(err, fs.ErrNotExist) {
 			d, node, err = decodeBytes(path, []byte(DefaultConfig))
 		}
@@ -100,12 +142,12 @@ func read(root string, builtins Builtins, inputs *Inputs) (*Config, error) {
 						imp.Glob,
 					)
 				}
-				glob, err := expandHome(imp.Glob)
+				glob, err := ExpandHome(imp.Glob)
 				if err != nil {
 					return fmt.Errorf("%s: import %w", path, err)
 				}
 				pattern := relative(filepath.Dir(path), glob)
-				files, err := globFiles(pattern)
+				files, err := overlay.glob(pattern)
 				if err != nil {
 					return fmt.Errorf("%s: import %s: %w", path, imp.Glob, err)
 				}
@@ -117,17 +159,17 @@ func read(root string, builtins Builtins, inputs *Inputs) (*Config, error) {
 				}
 				continue
 			}
-			p, err := expandHome(imp.Path)
+			p, err := ExpandHome(imp.Path)
 			if err != nil {
 				return fmt.Errorf("%s: import %w", path, err)
 			}
 			p = relative(filepath.Dir(path), p)
 			if imp.Optional {
 				inputs.file(p)
-				if _, err := os.Stat(p); errors.Is(err, fs.ErrNotExist) {
-					continue
-				} else if err != nil {
+				if found, err := overlay.exists(p); err != nil {
 					return fmt.Errorf("%s: import %s: %w", path, imp.Path, err)
+				} else if !found {
+					continue
 				}
 			}
 			if err := load(p); err != nil {
@@ -159,12 +201,18 @@ func Load(root, cache string, builtins Builtins) (*Config, error) {
 // reloading until one of them changes.
 func LoadTracked(root, cache string, builtins Builtins) (*Config, *Inputs, error) {
 	inputs := &Inputs{}
-	c, err := loadConfig(root, cache, builtins, inputs)
+	c, err := loadConfig(root, cache, builtins, inputs, nil)
 	return c, inputs, err
 }
 
-func loadConfig(root, cache string, builtins Builtins, inputs *Inputs) (*Config, error) {
-	c, err := read(root, builtins, inputs)
+// LoadWith loads and validates configuration as Load does, with overlay replacing fragments and
+// lockfiles.
+func LoadWith(root, cache string, builtins Builtins, overlay Overlay) (*Config, error) {
+	return loadConfig(root, cache, builtins, &Inputs{}, overlay)
+}
+
+func loadConfig(root, cache string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Config, error) {
+	c, err := read(root, builtins, inputs, overlay)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +242,7 @@ func loadConfig(root, cache string, builtins Builtins, inputs *Inputs) (*Config,
 			}
 		case !p.Pinned():
 			inputs.file(p.Lockfile)
-			lock, err := ReadLock(p.Lockfile)
+			lock, err := ReadLock(p.Lockfile, overlay)
 			if err != nil {
 				return fmt.Errorf("%s: %w; run agx install", p.Lockfile, err)
 			}
@@ -230,11 +278,8 @@ func loadConfig(root, cache string, builtins Builtins, inputs *Inputs) (*Config,
 			loaded[id] = true
 			return nil
 		}
-		d, node, err := decode(filepath.Join(dir, "agx.package.yaml"))
+		d, err := c.AddPackage(id, dir)
 		if err != nil {
-			return err
-		}
-		if err := c.merge(d, node, filepath.Join(dir, "agx.package.yaml"), string(id), true); err != nil {
 			return err
 		}
 		deps := c.Dependencies(id, d)
@@ -269,9 +314,53 @@ func loadConfig(root, cache string, builtins Builtins, inputs *Inputs) (*Config,
 	return c, nil
 }
 
-func DecodeManifest(path string) (Document, *yaml.Node, error) { return decode(path) }
-func (c *Config) AddManifest(d Document, node *yaml.Node, path string, namespace ID) error {
-	return c.merge(d, node, path, string(namespace), true)
+// AddPackage merges an installed package under its ID and returns its manifest. A package
+// without agx.package.yaml declares each directory holding SKILL.md as a skill named after its
+// folder, located at that SKILL.md.
+func (c *Config) AddPackage(id ID, dir string) (Document, error) {
+	d, node, manifest, err := decodePackage(dir)
+	if err != nil {
+		return d, err
+	}
+	if err := c.merge(d, node, manifest, string(id), true); err != nil {
+		return d, err
+	}
+	if len(node.Content) > 0 {
+		return d, nil
+	}
+	for name := range d.Skills {
+		qualified := qualify(string(id), name)
+		if s := c.Skills[qualified]; s.Source.Path == manifest {
+			s.Source = Source{Path: filepath.Join(s.Path, "SKILL.md"), Line: 1, Column: 1}
+			c.Skills[qualified] = s
+		}
+	}
+	return d, nil
+}
+
+// decodePackage decodes a package's manifest, or discovers its skills when it has none. It
+// returns the manifest path, which anchors the package's paths.
+func decodePackage(dir string) (Document, *yaml.Node, string, error) {
+	manifest := filepath.Join(dir, "agx.package.yaml")
+	d, node, err := decode(manifest, nil)
+	if !errors.Is(err, fs.ErrNotExist) {
+		return d, node, manifest, err
+	}
+	d = Document{Skills: map[ID]Skill{}}
+	skills, err := FindSkills(dir)
+	if err != nil {
+		return d, nil, manifest, err
+	}
+	for _, found := range skills {
+		if previous, taken := d.Skills[found.ID]; taken {
+			return d, nil, manifest, fmt.Errorf(
+				"package %s: skills %s and %s share the ID %s; add agx.package.yaml to name them",
+				dir, previous.Path, found.Path, found.ID,
+			)
+		}
+		d.Skills[found.ID] = Skill{Path: found.Path}
+	}
+	return d, &yaml.Node{}, manifest, nil
 }
 
 // AddContent points the resources of an anonymous package at its installed checkout.
@@ -353,8 +442,8 @@ func WritePin(path, hash string) error {
 	return securefs.WriteJSON(path, pin{Hash: hash})
 }
 
-func decode(path string) (Document, *yaml.Node, error) {
-	b, err := os.ReadFile(path)
+func decode(path string, overlay Overlay) (Document, *yaml.Node, error) {
+	b, err := overlay.readFile(path)
 	if err != nil {
 		return Document{}, nil, err
 	}
@@ -419,7 +508,7 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 		lockfile: filepath.Join(base, "agx.lock.json"),
 	}
 	if d.Lockfile != "" {
-		lockfile, err := expandHome(d.Lockfile)
+		lockfile, err := ExpandHome(d.Lockfile)
 		if err != nil {
 			return fmt.Errorf("%s: lockfile %w", path, err)
 		}
@@ -528,16 +617,12 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 				}
 			}
 		}
-		if s.Directory == "" {
-			return fmt.Errorf("%s: scope directory is required", locate(at))
-		}
-		directory, err := expandHome(s.Directory)
-		if err != nil {
-			return fmt.Errorf("%s: scope directory %w", locate(at), err)
-		}
-		directory, err = Canonical(relative(base, directory))
-		if err != nil {
-			return err
+		directory := ""
+		if s.Directory != "" {
+			var err error
+			if directory, err = ScopeDirectory(path, s.Directory); err != nil {
+				return fmt.Errorf("%s: scope directory %w", locate(at), err)
+			}
 		}
 		add, err := m.selection(s.Add)
 		if err != nil {
@@ -576,6 +661,15 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 		c.daemonSet[field.name] = true
 	}
 	return nil
+}
+
+// ScopeDirectory canonicalizes a scope directory as written in file.
+func ScopeDirectory(file, written string) (string, error) {
+	directory, err := ExpandHome(written)
+	if err != nil {
+		return "", err
+	}
+	return Canonical(relative(filepath.Dir(file), directory))
 }
 
 // source locates a top-level definition.
@@ -648,7 +742,7 @@ func (m *merger) file(path string) (string, error) {
 		}
 		return securefs.Contained(m.base, path)
 	}
-	expanded, err := expandHome(path)
+	expanded, err := ExpandHome(path)
 	if err != nil {
 		return "", err
 	}
@@ -660,7 +754,7 @@ func (m *merger) expand(path string) (string, error) {
 	if m.manifest && strings.HasPrefix(path, "~") {
 		return "", fmt.Errorf("%s: package manifests cannot use home-relative paths", path)
 	}
-	return expandHome(path)
+	return ExpandHome(path)
 }
 
 // place qualifies a value's secret like other references and anchors a !file path to this file;
@@ -718,7 +812,7 @@ func (m *merger) placePackage(name ID, p *Package, at Source) error {
 			return fmt.Errorf("%s: package %s must use an https, ssh, or scp-style Git source", locate(at), name)
 		}
 		if transport == "file" && !strings.HasPrefix(strings.ToLower(p.Git), "file:") {
-			git, err := expandHome(p.Git)
+			git, err := ExpandHome(p.Git)
 			if err != nil {
 				return fmt.Errorf("%s: package %s: %w", locate(at), name, err)
 			}
@@ -1220,9 +1314,10 @@ func relative(base, path string) string {
 	return filepath.Join(base, path)
 }
 
-func ReadLock(path string) (Lock, error) {
+// ReadLock reads a lockfile, or its replacement in overlay.
+func ReadLock(path string, overlay Overlay) (Lock, error) {
 	var lock Lock
-	b, err := os.ReadFile(path)
+	b, err := overlay.readFile(path)
 	if err != nil {
 		return lock, err
 	}

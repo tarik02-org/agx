@@ -237,7 +237,7 @@ func compactStep(out *ui.Printer, short pathShortener, directory string, step co
 	if step.Harness != "" {
 		parts = append(parts, out.Muted("harness ")+out.ID(step.Harness))
 	} else if step.Directory != directory {
-		parts = append(parts, out.Muted("from ")+out.Path(short.path(step.Directory)))
+		parts = append(parts, out.Muted("from ")+scopeLabel(out, short.path(step.Directory)))
 	}
 	parts = append(parts, out.Muted(short.location(step.Source.Path, step.Source.Line)))
 	return strings.Join(parts, " ")
@@ -284,10 +284,18 @@ func (s pathShortener) path(path string) string {
 	return path
 }
 
+// scopeLabel names a rule's directory, or "everywhere" for a rule without one.
+func scopeLabel(out *ui.Printer, directory string) string {
+	if directory == "" {
+		return out.Muted("everywhere")
+	}
+	return out.Path(directory)
+}
+
 func explainStep(out *ui.Printer, step config.Step, changeWidth int) string {
 	location := fmt.Sprintf("%s:%d", step.Source.Path, step.Source.Line)
 	if !out.Styled() {
-		origin := "scope=" + step.Directory
+		origin := "scope=" + scopeLabel(out, step.Directory)
 		if step.Harness != "" {
 			origin = "harness=" + step.Harness
 		}
@@ -298,7 +306,7 @@ func explainStep(out *ui.Printer, step config.Step, changeWidth int) string {
 		level = ui.Error
 	}
 	change := out.Badge(level, step.Change+strings.Repeat(" ", changeWidth-len(step.Change)))
-	origin := out.Muted("scope ") + out.Path(step.Directory)
+	origin := out.Muted("scope ") + scopeLabel(out, step.Directory)
 	if step.Harness != "" {
 		origin = out.Muted("harness ") + out.ID(step.Harness)
 	}

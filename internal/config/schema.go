@@ -13,7 +13,7 @@ const schemaBase = "https://raw.githubusercontent.com/tarik02-org/agx/master/sch
 
 var (
 	idPattern          = `^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$`
-	environmentPattern = `^(?![Ww][Ee][Ff][Tt]_)[a-zA-Z_][a-zA-Z0-9_]*$`
+	environmentPattern = `^(?![Aa][Gg][Xx]_)[a-zA-Z_][a-zA-Z0-9_]*$`
 	// pathPattern matches selection entries read as paths: ., /, ~, or an absolute Windows path.
 	pathPattern = `^([./~]|[A-Za-z]:[\\/]|\\\\)`
 	// skillFileKey rejects absolute keys, . and .. segments, backslashes, and SKILL.md.

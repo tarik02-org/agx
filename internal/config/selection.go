@@ -121,7 +121,7 @@ func (m *merger) selection(spec SelectionSpec) (Selection, error) {
 
 // reference qualifies an ID entry, or reports that the entry is a path or inline definition.
 func (m *merger) reference(i item, kind string) (ID, bool, error) {
-	if i.inline || isPath(i.scalar) {
+	if i.inline || IsPath(i.scalar) {
 		return "", false, nil
 	}
 	if !validID(ID(i.scalar)) {
@@ -150,7 +150,7 @@ func (m *merger) skillItem(entry SkillItem) (ID, error) {
 		case s.Generated():
 			return "", fmt.Errorf("%s: an inline skill with content needs an id", locate(at))
 		case s.Git != "" && s.Path == "":
-			id, err = deriveID(at, repositoryName(s.Git))
+			id, err = deriveID(at, RepositoryName(s.Git))
 		default:
 			id, err = deriveID(at, path.Base(filepath.ToSlash(filepath.Clean(s.Path))))
 		}
@@ -193,7 +193,7 @@ func (m *merger) instructionsItem(entry InstructionsItem) (ID, error) {
 
 func (m *merger) mcpItem(entry MCPItem) (ID, error) {
 	at := m.at(entry.item)
-	if !entry.item.inline && isPath(entry.item.scalar) {
+	if !entry.item.inline && IsPath(entry.item.scalar) {
 		return "", fmt.Errorf(
 			"%s: MCP servers are referenced by ID or defined inline with an id, not by path",
 			locate(at),
@@ -221,8 +221,8 @@ func deriveID(at Source, name string) (ID, error) {
 	return ID(name), nil
 }
 
-// repositoryName is the last segment of a Git URL or path, without .git.
-func repositoryName(source string) string {
+// RepositoryName is the last segment of a Git URL or path, without .git.
+func RepositoryName(source string) string {
 	source = strings.TrimRight(filepath.ToSlash(source), "/")
 	if i := strings.LastIndexAny(source, "/:"); i >= 0 {
 		source = source[i+1:]

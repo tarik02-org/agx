@@ -8,8 +8,9 @@ harness runs.
 **Fragment**: An importable portion of configuration, such as personal, work,
 or machine-local settings.
 
-**Scope**: A directory rule that adds resources to, or removes resources from,
-the configuration inherited by that directory and its descendants.
+**Scope**: A rule that adds resources to, or removes resources from, the
+configuration inherited by a directory and its descendants; a scope without a
+directory applies everywhere, before every directory scope.
 _Avoid_: Environment, profile
 
 **Skill**: A reusable workflow described by `SKILL.md`, together with its

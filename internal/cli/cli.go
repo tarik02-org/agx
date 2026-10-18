@@ -61,8 +61,10 @@ func Main() int {
 			return err
 		}
 		paths.Cache, err = filepath.Abs(paths.Cache)
-		paths.State = filepath.Join(paths.Cache, "runtime")
-		return err
+		if err != nil {
+			return err
+		}
+		return paths.Derive()
 	}
 	registry := builtin.Registry()
 	// builtins is complete once the command tree is, as definitions cannot shadow its commands.
@@ -207,7 +209,12 @@ func Main() int {
 		launchCommand(&paths),
 		secretCommand(&paths),
 		shimsCommand(&paths, registry, &builtins),
+		mcpCommand(&paths, &builtins),
+		skillCommand(&paths, &builtins),
+		instructionsCommand(&paths, &builtins),
+		harnessCommand(&paths, &builtins),
 	)
+	root.AddCommand(useCommands(&paths, &builtins)...)
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error { return &usageError{err} })
 	var wrapArgs func(*cobra.Command)
 	wrapArgs = func(cmd *cobra.Command) {
@@ -349,7 +356,13 @@ func installPackages(
 	} else {
 		progress("Installing packages")
 	}
-	result, err := packages.Install(ctx, paths.Config, paths.Cache, builtins, frozen, ids, all)
+	result, err := packages.Install(
+		ctx,
+		paths.Config,
+		paths.Cache,
+		builtins,
+		packages.Options{Frozen: frozen, Updates: ids, UpdateAll: all},
+	)
 	if err != nil {
 		return err
 	}
@@ -398,10 +411,10 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			if err != nil {
 				return err
 			}
-			if err := os.MkdirAll(paths.State, 0o700); err != nil {
+			if err := os.MkdirAll(paths.Runtime, 0o700); err != nil {
 				return err
 			}
-			logPath := filepath.Join(paths.State, "daemon.log")
+			logPath := filepath.Join(paths.Runtime, "daemon.log")
 			log, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 			if err != nil {
 				return err
@@ -514,7 +527,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			case http.StatusUnauthorized:
 				return fmt.Errorf(
 					"daemon rejected the discovery token; its discovery file in %s is stale or replaced",
-					paths.State,
+					paths.Runtime,
 				)
 			default:
 				body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))

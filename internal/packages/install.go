@@ -21,16 +21,25 @@ import (
 type Result struct {
 	PackageIDs []config.ID `json:"package_ids"`
 	Lockfiles  []string    `json:"lockfiles"`
+	// Locks holds the encoded lockfiles by path when Options.Stage leaves them unwritten.
+	Locks map[string][]byte `json:"-"`
 }
 
-func Install(
-	ctx context.Context,
-	root, cache string,
-	builtins config.Builtins,
-	frozen bool,
-	updates []config.ID,
-	updateAll bool,
-) (Result, error) {
+type Options struct {
+	// Frozen permits no lockfile changes.
+	Frozen bool
+	// Updates advances these packages; UpdateAll advances every one.
+	Updates   []config.ID
+	UpdateAll bool
+	// Overlay replaces configuration fragments and lockfiles, so an edit can be installed
+	// before it is written.
+	Overlay config.Overlay
+	// Stage returns the lockfiles in Result.Locks instead of writing them.
+	Stage bool
+}
+
+func Install(ctx context.Context, root, cache string, builtins config.Builtins, opts Options) (Result, error) {
+	frozen, updates, updateAll := opts.Frozen, opts.Updates, opts.UpdateAll
 	result := Result{PackageIDs: []config.ID{}, Lockfiles: []string{}}
 	if err := os.MkdirAll(filepath.Join(cache, "packages"), 0o700); err != nil {
 		return result, err
@@ -44,7 +53,7 @@ func Install(
 		return result, fmt.Errorf("package installer is busy")
 	}
 	defer func() { _ = lock.Unlock() }()
-	c, err := config.Read(root, builtins)
+	c, err := config.ReadWith(root, builtins, opts.Overlay)
 	if err != nil {
 		return result, err
 	}
@@ -74,7 +83,7 @@ func Install(
 		pinned := p.Pinned()
 		l, ok := locks[p.Lockfile]
 		if !ok {
-			l, err = config.ReadLock(p.Lockfile)
+			l, err = config.ReadLock(p.Lockfile, opts.Overlay)
 			switch {
 			case err == nil:
 				locks[p.Lockfile] = l
@@ -150,7 +159,7 @@ func Install(
 					ref = previous.Revision
 				}
 				resolve := func() ([]byte, error) {
-					return git(
+					out, err := git(
 						ctx,
 						protocols,
 						true,
@@ -161,6 +170,16 @@ func Install(
 						"--end-of-options",
 						ref+"^{commit}",
 					)
+					// A clone checks out only the default branch; other branches are remote refs.
+					if err != nil && p.Rev == "" && ref != "HEAD" {
+						if remote, remoteErr := git(
+							ctx, protocols, true, "-C", gitDir, "rev-parse", "--verify", "--end-of-options",
+							"refs/remotes/origin/"+ref+"^{commit}",
+						); remoteErr == nil {
+							return remote, nil
+						}
+					}
+					return out, err
 				}
 				out, err := resolve()
 				// A pinned commit may be reachable only by its hash, which a clone does not fetch.
@@ -238,12 +257,8 @@ func Install(
 				return err
 			}
 		} else {
-			manifest := filepath.Join(dest, "agx.package.yaml")
-			d, node, err := config.DecodeManifest(manifest)
+			d, err := c.AddPackage(id, dest)
 			if err != nil {
-				return err
-			}
-			if err := c.AddManifest(d, node, manifest, id); err != nil {
 				return err
 			}
 			deps = c.Dependencies(id, d)
@@ -289,7 +304,17 @@ func Install(
 		}
 		result.Lockfiles = append(result.Lockfiles, path)
 	}
-	if !frozen {
+	switch {
+	case opts.Stage:
+		result.Locks = map[string][]byte{}
+		for path, l := range locks {
+			b, err := encodeLock(l)
+			if err != nil {
+				return result, err
+			}
+			result.Locks[path] = b
+		}
+	case !frozen:
 		if err := writeLocks(locks); err != nil {
 			return result, err
 		}
@@ -309,7 +334,7 @@ func writeLocks(locks map[string]config.Lock) error {
 		}
 	}()
 	for path, l := range locks {
-		b, err := json.MarshalIndent(l, "", "  ")
+		b, err := encodeLock(l)
 		if err != nil {
 			return err
 		}
@@ -325,7 +350,7 @@ func writeLocks(locks map[string]config.Lock) error {
 			err = securefs.Private(f.Name())
 		}
 		if err == nil {
-			_, err = f.Write(append(b, '\n'))
+			_, err = f.Write(b)
 		}
 		if err == nil {
 			err = f.Sync()
@@ -345,6 +370,11 @@ func writeLocks(locks map[string]config.Lock) error {
 		delete(staged, path)
 	}
 	return nil
+}
+
+func encodeLock(l config.Lock) ([]byte, error) {
+	b, err := json.MarshalIndent(l, "", "  ")
+	return append(b, '\n'), err
 }
 
 // git runs with allowed transports restricted. Isolated invocations shape checked-out

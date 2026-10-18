@@ -39,6 +39,24 @@ select explicit absolute paths; `--config` and `--cache` work before the command
 The daemon and wrapper must select the same root and cache. Daemon startup is
 explicit. `daemon start --foreground` stays attached to the terminal.
 
+## Quick start
+
+```sh
+agx daemon start
+agx mcp add github https://api.githubcopilot.com/mcp    # offers the OAuth login
+agx mcp add fs --scope ~/work -- npx -y @modelcontextprotocol/server-filesystem .
+agx skill add anthropics/skills --skill pdf --skill docx
+agx instructions add --id pnpm --text 'Use pnpm, not npm.' --scope ~/work
+agx explain ~/work
+agx codex
+```
+
+Each command shows its change to the configuration as a diff and writes it
+after validating the result; comments and layout are kept. `--scope` defaults
+to everywhere, `agx use` and `agx unuse` toggle a definition per directory, and
+`agx skill add` without `--skill` lets you pick from the repository's skills
+([editing commands](docs/cli.md#editing-configuration)).
+
 ## Launch and inspect
 
 ```sh
@@ -101,8 +119,10 @@ Architecture records: [directory scopes](docs/adr/0001-additive-directory-config
 [harness definitions](docs/adr/0007-harness-definitions-and-modes.md),
 [injected values and secrets](docs/adr/0008-injected-values-and-secrets.md),
 [inline MCP auth and interactive login](docs/adr/0009-inline-mcp-auth-and-interactive-login.md),
-[straightforward configuration](docs/adr/0011-straightforward-configuration.md), and
-[harness adapters and shims](docs/adr/0012-harness-adapters-and-shims.md).
+[straightforward configuration](docs/adr/0011-straightforward-configuration.md),
+[harness adapters and shims](docs/adr/0012-harness-adapters-and-shims.md),
+[launcher and sessions](docs/adr/0013-launcher-and-session-search.md), and
+[configuration editing](docs/adr/0014-configuration-editing-commands.md).
 
 Go messages and Connect handlers live in `gen/agx/v1`; TypeScript Protobuf
 messages and service descriptors live in `gen/typescript`. Regenerate with

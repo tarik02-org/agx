@@ -72,6 +72,9 @@ const (
 	// RuntimeServiceWatchRuntimeProcedure is the fully-qualified name of the RuntimeService's
 	// WatchRuntime RPC.
 	RuntimeServiceWatchRuntimeProcedure = "/agx.v1.RuntimeService/WatchRuntime"
+	// RuntimeServiceTestMcpServerProcedure is the fully-qualified name of the RuntimeService's
+	// TestMcpServer RPC.
+	RuntimeServiceTestMcpServerProcedure = "/agx.v1.RuntimeService/TestMcpServer"
 	// SecretServiceLoginProcedure is the fully-qualified name of the SecretService's Login RPC.
 	SecretServiceLoginProcedure = "/agx.v1.SecretService/Login"
 	// SecretServiceSetSecretProcedure is the fully-qualified name of the SecretService's SetSecret RPC.
@@ -453,6 +456,8 @@ func (UnimplementedLaunchServiceHandler) RevokeLaunch(context.Context, *connect.
 type RuntimeServiceClient interface {
 	GetRuntime(context.Context, *connect.Request[v1.GetRuntimeRequest]) (*connect.Response[v1.GetRuntimeResponse], error)
 	WatchRuntime(context.Context, *connect.Request[v1.WatchRuntimeRequest]) (*connect.ServerStreamForClient[v1.WatchRuntimeResponse], error)
+	// Connects to one MCP server outside any launch and lists its tools.
+	TestMcpServer(context.Context, *connect.Request[v1.TestMcpServerRequest]) (*connect.Response[v1.TestMcpServerResponse], error)
 }
 
 // NewRuntimeServiceClient constructs a client for the agx.v1.RuntimeService service. By default, it
@@ -478,13 +483,20 @@ func NewRuntimeServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(runtimeServiceMethods.ByName("WatchRuntime")),
 			connect.WithClientOptions(opts...),
 		),
+		testMcpServer: connect.NewClient[v1.TestMcpServerRequest, v1.TestMcpServerResponse](
+			httpClient,
+			baseURL+RuntimeServiceTestMcpServerProcedure,
+			connect.WithSchema(runtimeServiceMethods.ByName("TestMcpServer")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // runtimeServiceClient implements RuntimeServiceClient.
 type runtimeServiceClient struct {
-	getRuntime   *connect.Client[v1.GetRuntimeRequest, v1.GetRuntimeResponse]
-	watchRuntime *connect.Client[v1.WatchRuntimeRequest, v1.WatchRuntimeResponse]
+	getRuntime    *connect.Client[v1.GetRuntimeRequest, v1.GetRuntimeResponse]
+	watchRuntime  *connect.Client[v1.WatchRuntimeRequest, v1.WatchRuntimeResponse]
+	testMcpServer *connect.Client[v1.TestMcpServerRequest, v1.TestMcpServerResponse]
 }
 
 // GetRuntime calls agx.v1.RuntimeService.GetRuntime.
@@ -497,10 +509,17 @@ func (c *runtimeServiceClient) WatchRuntime(ctx context.Context, req *connect.Re
 	return c.watchRuntime.CallServerStream(ctx, req)
 }
 
+// TestMcpServer calls agx.v1.RuntimeService.TestMcpServer.
+func (c *runtimeServiceClient) TestMcpServer(ctx context.Context, req *connect.Request[v1.TestMcpServerRequest]) (*connect.Response[v1.TestMcpServerResponse], error) {
+	return c.testMcpServer.CallUnary(ctx, req)
+}
+
 // RuntimeServiceHandler is an implementation of the agx.v1.RuntimeService service.
 type RuntimeServiceHandler interface {
 	GetRuntime(context.Context, *connect.Request[v1.GetRuntimeRequest]) (*connect.Response[v1.GetRuntimeResponse], error)
 	WatchRuntime(context.Context, *connect.Request[v1.WatchRuntimeRequest], *connect.ServerStream[v1.WatchRuntimeResponse]) error
+	// Connects to one MCP server outside any launch and lists its tools.
+	TestMcpServer(context.Context, *connect.Request[v1.TestMcpServerRequest]) (*connect.Response[v1.TestMcpServerResponse], error)
 }
 
 // NewRuntimeServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -522,12 +541,20 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 		connect.WithSchema(runtimeServiceMethods.ByName("WatchRuntime")),
 		connect.WithHandlerOptions(opts...),
 	)
+	runtimeServiceTestMcpServerHandler := connect.NewUnaryHandler(
+		RuntimeServiceTestMcpServerProcedure,
+		svc.TestMcpServer,
+		connect.WithSchema(runtimeServiceMethods.ByName("TestMcpServer")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.RuntimeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RuntimeServiceGetRuntimeProcedure:
 			runtimeServiceGetRuntimeHandler.ServeHTTP(w, r)
 		case RuntimeServiceWatchRuntimeProcedure:
 			runtimeServiceWatchRuntimeHandler.ServeHTTP(w, r)
+		case RuntimeServiceTestMcpServerProcedure:
+			runtimeServiceTestMcpServerHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -543,6 +570,10 @@ func (UnimplementedRuntimeServiceHandler) GetRuntime(context.Context, *connect.R
 
 func (UnimplementedRuntimeServiceHandler) WatchRuntime(context.Context, *connect.Request[v1.WatchRuntimeRequest], *connect.ServerStream[v1.WatchRuntimeResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.WatchRuntime is not implemented"))
+}
+
+func (UnimplementedRuntimeServiceHandler) TestMcpServer(context.Context, *connect.Request[v1.TestMcpServerRequest]) (*connect.Response[v1.TestMcpServerResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.TestMcpServer is not implemented"))
 }
 
 // SecretServiceClient is a client for the agx.v1.SecretService service.

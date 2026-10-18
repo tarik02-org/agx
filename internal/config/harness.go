@@ -221,7 +221,7 @@ func (m *merger) harnesses(d Document) error {
 			return position(node, path, append([]string{"harnesses", name}, keys...)...)
 		}
 		if h.Executable != "" {
-			executable, err := expandHome(h.Executable)
+			executable, err := ExpandHome(h.Executable)
 			if err != nil {
 				return fmt.Errorf("%s: harness %s: executable %w", locate(at("executable")), name, err)
 			}

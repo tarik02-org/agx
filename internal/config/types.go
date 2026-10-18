@@ -65,7 +65,7 @@ func (p Package) LockSource() Package {
 // Pinned reports whether the source determines its content without a lock entry: a full commit,
 // a content hash, or a directory inside the read-only Nix store.
 func (p Package) Pinned() bool {
-	return p.Rev != "" || p.Hash != "" || p.Path != "" && inNixStore(p.Path)
+	return p.Rev != "" || p.Hash != "" || p.Path != "" && InNixStore(p.Path)
 }
 
 // GitSource fetches a skill or instructions file from a repository as an anonymous package.
@@ -177,6 +177,7 @@ type BundleSpec struct {
 }
 
 type Scope struct {
+	// Directory is canonical, or empty for a rule that applies everywhere.
 	Directory string `json:"directory"`
 	// Harnesses limits the rule to launches of these harnesses or definitions based on them.
 	Harnesses []string  `json:"harnesses,omitempty"`
@@ -186,10 +187,10 @@ type Scope struct {
 }
 
 type ScopeSpec struct {
-	Directory string        `yaml:"directory" jsonschema:"required" jsonschema_description:"Directory the rule applies to, with its descendants."`
-	Harnesses []string      `yaml:"harnesses"                       jsonschema_description:"Apply only to launches of these harnesses or definitions based on them."`
-	Add       SelectionSpec `yaml:"add"                             jsonschema_description:"Resources to select."`
-	Remove    SelectionSpec `yaml:"remove"                          jsonschema_description:"Resources to deselect."`
+	Directory string        `yaml:"directory" jsonschema_description:"Directory the rule applies to, with its descendants; omitted, the rule applies everywhere, before every directory rule."`
+	Harnesses []string      `yaml:"harnesses" jsonschema_description:"Apply only to launches of these harnesses or definitions based on them."`
+	Add       SelectionSpec `yaml:"add"       jsonschema_description:"Resources to select."`
+	Remove    SelectionSpec `yaml:"remove"    jsonschema_description:"Resources to deselect."`
 }
 
 type Daemon struct {
@@ -354,12 +355,9 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 		return nil
 	}
 	scopes := append([]Scope(nil), c.Scopes...)
-	sort.SliceStable(
-		scopes,
-		func(i, j int) bool { return pathDepth(scopes[i].Directory) < pathDepth(scopes[j].Directory) },
-	)
+	sort.SliceStable(scopes, func(i, j int) bool { return scopes[i].depth() < scopes[j].depth() })
 	for _, scope := range scopes {
-		if !Contains(scope.Directory, dir) {
+		if scope.Directory != "" && !Contains(scope.Directory, dir) {
 			continue
 		}
 		if len(scope.Harnesses) > 0 && !slices.ContainsFunc(scope.Harnesses, func(name string) bool {
@@ -506,6 +504,15 @@ func (s *Snapshot) MCPEnvironment() []string {
 func Contains(root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+}
+
+// depth orders rules from shallowest to deepest; a rule without a directory applies everywhere
+// and comes before every directory rule.
+func (s Scope) depth() int {
+	if s.Directory == "" {
+		return -1
+	}
+	return pathDepth(s.Directory)
 }
 
 func pathDepth(path string) int {

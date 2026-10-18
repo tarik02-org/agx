@@ -61,6 +61,8 @@ bundles:
     instructions: [conventions]
     mcp: [work, local-tools]
 scopes:
+  - add:                                # no directory: everywhere
+      instructions: [conventions]
   - directory: ~/work
     add:
       bundles: [development]
@@ -113,7 +115,10 @@ credentials with [tags](#injected-values). HTTP MCP servers authenticate with
 entry as a `agx-<id>` MCP server (`team/github` becomes `agx-team-github`);
 long or colliding names get a short hash suffix.
 
-Rules match canonical directory roots and descendants by path components. Rules
+Rules match canonical directory roots and descendants by path components. A rule
+without `directory` applies everywhere and runs before every directory rule,
+wherever it is written, so a deeper rule can still remove what it adds; a
+filesystem root is not used for this because Windows has one per drive. Rules
 run from shallowest to deepest, preserving import/rule order at equal depth.
 Within each rule, additions precede removals. Bundle removals remove all
 expanded leaves, even if another bundle also added them. A deeper rule can add
@@ -345,6 +350,12 @@ packages:
     path: ./shared
 ```
 
+A package root without `agx.package.yaml` declares each directory holding
+`SKILL.md` as a skill named after its folder (a `SKILL.md` at the root takes its
+`name`), skipping hidden directories, `node_modules`, and directories inside
+other skills, so a plain skills repository such as the one `agx skill add`
+records needs no manifest.
+
 Package manifests may declare resources, MCP servers, secrets, bundles, and
 dependencies, including inline definitions in bundles. They cannot declare directory scopes, imports, daemon settings,
 harnesses, or lockfile destinations. Their Git sources must be
@@ -479,6 +490,8 @@ the reason in its runtime diagnostics.
 lease. Wrappers follow the renewal interval granted by the daemon. Discovery and logs live
 under the cache's `runtime` directory, protected for the current user.
 
-`AGX_CONFIG` and `AGX_CACHE` select absolute paths. Management commands also
+`AGX_CONFIG`, `AGX_CACHE`, and `AGX_STATE` select absolute paths. State, which holds
+launch records, defaults to `<cache>/state` when the cache is not the default one, so
+an isolated cache isolates everything. Management commands also
 accept `--config` and `--cache` before the command. Native harness arguments pass
 through their dedicated entry points; put agx flags before the harness name.

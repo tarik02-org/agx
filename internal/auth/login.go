@@ -294,6 +294,29 @@ func (m *Manager) challenge(ctx context.Context, serverURL string) string {
 	return resourceMetadataURL(strings.Join(resp.Header.Values("WWW-Authenticate"), ", "))
 }
 
+// NeedsLogin reports whether serverURL asks for an OAuth login the way on-demand OAuth
+// recognizes one: it answers a request without a credential with 401 and advertises protected
+// resource metadata. Only reaching the server is an error; any other answer means no login.
+func NeedsLogin(ctx context.Context, serverURL string) (bool, error) {
+	m := New("")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL, nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("cannot reach %s", serverURL)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		return false, nil
+	}
+	hint := resourceMetadataURL(strings.Join(resp.Header.Values("WWW-Authenticate"), ", "))
+	_, err = m.protectedResource(ctx, serverURL, hint)
+	return err == nil, nil
+}
+
 // resourceMetadataURL returns the resource_metadata parameter of a WWW-Authenticate Bearer
 // challenge (RFC 9728 section 5.1), or "".
 func resourceMetadataURL(challenge string) string {

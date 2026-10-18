@@ -48,7 +48,7 @@ func (f *SkillFile) UnmarshalYAML(node *yaml.Node) error {
 			return errors.New("skill file must be text, a path to copy, or {content, executable}")
 		}
 		// A one-line string written like a path copies that path; other text is file content.
-		if !strings.Contains(node.Value, "\n") && isPath(node.Value) {
+		if !strings.Contains(node.Value, "\n") && IsPath(node.Value) {
 			f.Path = node.Value
 		} else {
 			f.Content = node.Value
@@ -201,15 +201,15 @@ func (i Instructions) Read() ([]byte, error) {
 	return os.ReadFile(i.Path)
 }
 
-// isPath reports whether a selection entry or file value names a path rather than an ID or text.
+// IsPath reports whether a selection entry or file value names a path rather than an ID or text.
 // IDs cannot contain ':' or '\', so absolute Windows paths never read as IDs.
-func isPath(value string) bool {
+func IsPath(value string) bool {
 	return strings.HasPrefix(value, ".") || strings.HasPrefix(value, "/") || strings.HasPrefix(value, "~") ||
 		filepath.IsAbs(value)
 }
 
-// expandHome expands a leading ~ or ~/ to the home directory of the user running agx.
-func expandHome(path string) (string, error) {
+// ExpandHome expands a leading ~ or ~/ to the home directory of the user running agx.
+func ExpandHome(path string) (string, error) {
 	rest, ok := strings.CutPrefix(path, "~")
 	if !ok {
 		return path, nil
@@ -224,9 +224,9 @@ func expandHome(path string) (string, error) {
 	return filepath.Join(home, rest), nil
 }
 
-// inNixStore reports whether an absolute path lies inside the read-only Nix store. Symlinks
+// InNixStore reports whether an absolute path lies inside the read-only Nix store. Symlinks
 // into the store, such as profiles, can be repointed, so only literal store paths count.
-func inNixStore(path string) bool {
+func InNixStore(path string) bool {
 	return runtime.GOOS != "windows" && strings.HasPrefix(filepath.ToSlash(path), "/nix/store/")
 }
 

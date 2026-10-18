@@ -28,6 +28,8 @@ service LaunchService {
 service RuntimeService {
   rpc GetRuntime(GetRuntimeRequest) returns (GetRuntimeResponse);
   rpc WatchRuntime(WatchRuntimeRequest) returns (stream WatchRuntimeResponse);
+  // Connects to one MCP server outside any launch and lists its tools.
+  rpc TestMcpServer(TestMcpServerRequest) returns (TestMcpServerResponse);
 }
 
 service SecretService {
@@ -246,6 +248,19 @@ message GetRuntimeResponse {
 message WatchRuntimeRequest {}
 message WatchRuntimeResponse {
   RuntimeView runtime = 1;
+}
+message TestMcpServerRequest {
+  string mcp_id = 1;
+  // Directory a stdio server without cwd runs in.
+  string directory = 2;
+  // Sensitive: only names the server's injected values need are accepted.
+  map<string, string> environment_inputs = 3;
+}
+message TestMcpServerResponse {
+  string server_name = 1;
+  string server_version = 2;
+  // Names of the tools the server lists.
+  repeated string tools = 3;
 }
 
 message LoginRequest {
