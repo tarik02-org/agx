@@ -607,7 +607,7 @@ func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 
 	if d.Version != Version || d.Build != Build() {
 		return d, fmt.Errorf(
-			"%w: it runs a different agx build; run agx daemon stop, then agx daemon start",
+			"%w: it runs a different agx build; run agx daemon stop (with --force if launches are active), then retry",
 			ErrVersionMismatch,
 		)
 	}

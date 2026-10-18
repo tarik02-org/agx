@@ -3,6 +3,9 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/tarik02-org/agx/internal/config"
@@ -60,5 +63,24 @@ func TestAutostart(t *testing.T) {
 				t.Fatalf("autostart = %v, want %v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestStopBusyDaemon(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("force") == "true" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusConflict)
+	}))
+	t.Cleanup(server.Close)
+	c := dial(daemon.Discovery{URL: server.URL, Token: "token"})
+	err := stopDaemon(t.Context(), c, false)
+	if errorCode(err) != codeConflict || !strings.Contains(err.Error(), "agx daemon stop --force") {
+		t.Fatalf("busy stop = %v (%s)", err, errorCode(err))
+	}
+	if err := stopDaemon(t.Context(), c, true); err != nil {
+		t.Fatalf("forced stop = %v", err)
 	}
 }

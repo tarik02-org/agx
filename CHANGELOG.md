@@ -28,6 +28,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - Stdio MCP servers that send notifications while the harness holds no event
   stream no longer lose their session; undeliverable server requests get an
   error reply instead of waiting forever.
+- `daemon stop` with active launches reports error code `conflict`, and its
+  message, like the other-build hint, names `agx daemon stop --force`.
 - `--json` before the command (`agx --json config validate`) works as after it.
 - Skills appear under their native names (`agx-managed:review` instead of
   `agx-managed:resource-…`; Codex plugins are `review-<hash>`).

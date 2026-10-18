@@ -113,6 +113,18 @@ func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*cli
 	case useDaemon:
 		return current, nil
 	case refuseDaemon:
+		if state.activeLaunches > 0 && state.sameConfig {
+			launches := fmt.Sprintf("%d active launches", state.activeLaunches)
+			if state.activeLaunches == 1 {
+				launches = "an active launch"
+			}
+			return nil, fmt.Errorf(
+				"%w: it runs a different agx build and has %s; "+
+					"run agx daemon stop --force, which revokes their MCP access, then retry",
+				daemon.ErrVersionMismatch,
+				launches,
+			)
+		}
 		return nil, err
 	case replaceDaemon:
 		ui.Diagnose(ui.Info, "restarting daemon %s, which runs another agx build", d.Version)
@@ -244,7 +256,10 @@ func stopDaemon(ctx context.Context, c *client, force bool) error {
 	case http.StatusNoContent:
 		return nil
 	case http.StatusConflict:
-		return fmt.Errorf("daemon has active launches; rerun with --force to revoke their MCP access")
+		return codedf(
+			codeConflict,
+			"daemon has active launches; run agx daemon stop --force to stop it and revoke their MCP access",
+		)
 	case http.StatusUnauthorized:
 		return fmt.Errorf("daemon rejected the discovery token; its discovery file is stale or replaced")
 	default:

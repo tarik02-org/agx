@@ -281,7 +281,9 @@ harness commands never need it. `daemon.autostart: false`, or `AGX_NO_AUTOSTART=
 in the environment, turns automatic startup off. The daemon inherits the
 environment of the command that starts it and runs in the cache's `runtime`
 directory, where `daemon.log` collects its output. Stopping refuses active launches unless
-forced. Revocation closes MCP access and upstream sessions; it does not kill the
+forced: `daemon stop` then fails with error code `conflict` and points to
+`daemon stop --force`, as does a command that finds a busy daemon of another
+build. Revocation closes MCP access and upstream sessions; it does not kill the
 harness. Launch inspection excludes secrets. A graceful wrapper exit releases
 its launch; abrupt exits are recovered through lease expiry.
 
