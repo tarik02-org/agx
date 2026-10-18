@@ -606,7 +606,10 @@ func TestDaemonJSON(t *testing.T) {
 	if !started.Started || started.Version != version || started.Log == "" {
 		t.Fatalf("daemon start = %+v", started)
 	}
-	e.jsonFail("conflict", "daemon", "start")
+	e.jsonOK(&started, "daemon", "start")
+	if started.Started || started.Version != version || started.Log == "" {
+		t.Fatalf("daemon start with one running = %+v", started)
+	}
 	var stopped struct {
 		Stopping bool `json:"stopping"`
 		Forced   bool `json:"forced"`

@@ -21,8 +21,9 @@ func TestDaemonAction(t *testing.T) {
 		want  daemonAction
 	}{
 		{"running", daemonState{reachable: true, sameConfig: true}, useDaemon},
+		{"idle with another configuration", daemonState{reachable: true}, replaceDaemon},
 		// The configuration check happens later, with its own actionable error.
-		{"running another configuration", daemonState{reachable: true}, useDaemon},
+		{"busy with another configuration", daemonState{reachable: true, activeLaunches: 1}, useDaemon},
 		{"no discovery", daemonState{discovery: missing}, startNewDaemon},
 		{"stale discovery", daemonState{}, startNewDaemon},
 		{"stale discovery of another build", daemonState{discovery: mismatch, sameConfig: true}, startNewDaemon},
@@ -38,11 +39,11 @@ func TestDaemonAction(t *testing.T) {
 			replaceDaemon,
 		},
 		{
-			"other build with another configuration that restores its launches",
-			daemonState{discovery: mismatch, reachable: true, restores: true},
+			"busy other build with another configuration that restores its launches",
+			daemonState{discovery: mismatch, reachable: true, activeLaunches: 1, restores: true},
 			refuseDaemon,
 		},
-		{"other build with another configuration", daemonState{discovery: mismatch, reachable: true}, refuseDaemon},
+		{"idle other build with another configuration", daemonState{discovery: mismatch, reachable: true}, replaceDaemon},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if got := test.state.action(); got != test.want {

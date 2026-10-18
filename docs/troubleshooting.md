@@ -69,8 +69,8 @@ selects, so check with `agx explain` that the skill is selected.
 
 **"daemon of another build" or "version mismatch".**
 A daemon from another agx version is running and cannot be replaced
-automatically, usually because it serves another configuration or is too old to
-hand over its running launches. Run `agx daemon stop` (or `agx daemon stop
+automatically, usually because it has active launches of another configuration
+or is too old to hand over its running launches. Run `agx daemon stop` (or `agx daemon stop
 --force` if it says so), then try again.
 
 **"upgrade agx".**
@@ -89,9 +89,11 @@ Automatic starting is off (`daemon.autostart: false` or `AGX_NO_AUTOSTART=1`).
 Run `agx daemon start`, or check the [log](#logs) if it does not stay up.
 
 **The daemon serves another configuration.**
-You used a different `AGX_CONFIG` or `--config` with the same cache. Run `agx
-daemon stop`, then use the configuration you want, or give the other setup its
-own `AGX_CACHE`.
+You used a different `AGX_CONFIG` or `--config` with the same cache while a
+harness launched with the other configuration still runs. agx replaces a daemon
+of another configuration only when it has no active launches (`agx launch
+list`), so their MCP servers keep working. Exit those harnesses, rerun with the
+configuration the message names, or give the other setup its own `AGX_CACHE`.
 
 **A shim is not found.**
 Add `~/.local/share/agx/shims` to your `PATH`, and run `agx shims install`

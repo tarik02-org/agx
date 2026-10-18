@@ -72,17 +72,21 @@ type daemonState struct {
 	restores bool
 }
 
-// action decides how to reach a daemon of this build. A daemon of another build is replaced
-// when its launches survive that, because it restores them or has none, and it serves the same
-// configuration: one serving another configuration belongs to someone who chose it.
+// action decides how to reach a daemon of this build. A daemon is replaced when no launch loses
+// MCP access by that: it has no active launches, or it runs another build that restores them for
+// a successor serving the same configuration. A daemon of this build serving another
+// configuration with active launches stays; the launch check reports it.
 func (s daemonState) action() daemonAction {
 	switch {
 	case s.discovery == nil && s.reachable:
+		if !s.sameConfig && s.activeLaunches == 0 {
+			return replaceDaemon
+		}
 		return useDaemon
 	case errors.Is(s.discovery, daemon.ErrNewerDiscovery):
 		return refuseDaemon
 	case errors.Is(s.discovery, daemon.ErrVersionMismatch) && s.reachable:
-		if s.sameConfig && (s.activeLaunches == 0 || s.restores) {
+		if s.activeLaunches == 0 || s.sameConfig && s.restores {
 			return replaceDaemon
 		}
 		return refuseDaemon
@@ -115,11 +119,7 @@ func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*cli
 		cancel()
 		if probeErr == nil {
 			state.reachable = true
-			for _, l := range view.Msg.GetRuntime().GetLaunches() {
-				if l.State == v1.Launch_STATE_PREPARED || l.State == v1.Launch_STATE_RUNNING {
-					state.activeLaunches++
-				}
-			}
+			state.activeLaunches = activeLaunches(view.Msg.GetRuntime())
 		}
 	}
 	switch state.action() {
@@ -141,7 +141,15 @@ func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*cli
 		}
 		return nil, err
 	case replaceDaemon:
-		ui.Diagnose(ui.Info, "restarting daemon %s, which runs another agx build", d.Version)
+		if state.sameConfig {
+			ui.Diagnose(ui.Info, "restarting daemon %s, which runs another agx build", d.Version)
+		} else {
+			ui.Diagnose(
+				ui.Info,
+				"restarting the daemon, which served configuration %s and had no active launches",
+				d.Config,
+			)
+		}
 		if _, err := stopDaemon(ctx, current, false, 0); err != nil {
 			return nil, fmt.Errorf("cannot replace daemon %s: %w", d.Version, err)
 		}
@@ -348,4 +356,15 @@ func lastLine(path string) string {
 		}
 	}
 	return last
+}
+
+// activeLaunches counts the launches of view that still hold MCP access.
+func activeLaunches(view *v1.RuntimeView) int {
+	n := 0
+	for _, l := range view.GetLaunches() {
+		if l.State == v1.Launch_STATE_PREPARED || l.State == v1.Launch_STATE_RUNNING {
+			n++
+		}
+	}
+	return n
 }

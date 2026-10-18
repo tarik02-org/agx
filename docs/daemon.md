@@ -74,10 +74,11 @@ daemon:
 `AGX_NO_AUTOSTART=1` in the environment does the same for one shell.
 
 There is one daemon per cache directory, and it serves the configuration it was
-started with. Commands find it through files in the cache directory, so use the
-same `AGX_CONFIG` and `AGX_CACHE` for the daemon and the commands that use it.
-For a separate setup with another configuration, also use another cache;
-`agx doctor` fails when the running daemon serves a different configuration.
+started with. Commands find it through files in the cache directory. A command
+using another configuration replaces the daemon when it has no active launches;
+while it has some, harness launches with the other configuration are refused, so
+the running harnesses keep their MCP servers. For a separate setup with another
+configuration used at the same time, also use another cache.
 
 ## Launches
 

@@ -439,6 +439,7 @@ func doctorDocument(report doctorReport) doctorJSON {
 
 // daemon
 
+// daemonStartJSON reports daemon start; started is false when a daemon of this version already ran.
 type daemonStartJSON struct {
 	Started bool   `json:"started"`
 	Version string `json:"version"`

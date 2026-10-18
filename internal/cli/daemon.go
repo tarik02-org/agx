@@ -164,3 +164,21 @@ func printDaemonAbsent(paths platform.Paths) error {
 	}
 	return nil
 }
+
+// printDaemonStarted reports daemon start; started is false when a daemon already ran.
+func printDaemonStarted(started bool, logPath string) error {
+	if scripting.enabled {
+		return printJSON(daemonStartJSON{Started: started, Version: daemon.Version, Log: logPath})
+	}
+	out := ui.Stdout
+	message := "Daemon started."
+	if !started {
+		message = "Daemon is already running."
+	}
+	_, err := fmt.Fprint(
+		out,
+		out.Status(ui.OK, message)+"\n",
+		out.Fields([2]string{"log", out.Path(logPath)}),
+	)
+	return err
+}

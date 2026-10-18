@@ -31,7 +31,9 @@ agx --config examples/agx.yaml codex       # or claude, or pi
 
 `explain` shows that the `repository` instructions are selected here, and
 the harness starts with them. `--config` points agx at that file for one command
-without touching your own configuration; the file must exist.
+without touching your own configuration; the file must exist. The harness
+command also starts the agx daemon for that file; once the harness exits, the
+next command that uses your own configuration replaces that daemon on its own.
 
 ## 3. Add instructions
 

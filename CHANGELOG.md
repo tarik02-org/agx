@@ -26,6 +26,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - `agx daemon status` succeeds without a running daemon: it prints that none runs
   (`{"running":false,…}` with `--json`) and says why none can start, such as saved
   launches of a newer agx.
+- `agx daemon start` succeeds when a daemon of this version already runs
+  (`"started": false` with `--json`).
+- A command using another root configuration replaces a daemon that has no
+  active launches, as one of another agx build is replaced, instead of refusing
+  to launch; `agx daemon start` does the same.
 - The daemon shuts down gracefully on `daemon stop`, `daemon restart`, replacement,
   and SIGTERM or SIGINT (Windows console close events included): it refuses new
   launches and MCP sessions with a retryable error, lets MCP requests and tool

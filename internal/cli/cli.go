@@ -536,34 +536,47 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			}
 			if c, err := newAnyVersionClient(*paths); err == nil {
 				ctx, cancel := boundedContext()
-				_, err = c.runtime.GetRuntime(ctx, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
+				view, err := c.runtime.GetRuntime(ctx, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
 				cancel()
-				if err == nil && c.discovery.Version != daemon.Version {
+				switch {
+				case err != nil:
+				case c.discovery.Version != daemon.Version:
 					return codedf(
 						codeVersionMismatch,
 						"daemon %s is already running (agx is %s); run agx daemon stop first",
 						c.discovery.Version,
 						daemon.Version,
 					)
-				}
-				if err == nil {
-					return codedf(codeConflict, "daemon is already running")
+				case c.discovery.Config == paths.Config:
+					return printDaemonStarted(false, filepath.Join(paths.Runtime, "daemon.log"))
+				case activeLaunches(view.Msg.GetRuntime()) > 0:
+					return codedf(
+						codeConflict,
+						"daemon is already running with configuration %s, not %s, and has active launches; "+
+							"run agx daemon stop first, which ends their MCP access",
+						c.discovery.Config,
+						paths.Config,
+					)
+				default:
+					// An idle daemon of another configuration costs nothing to replace.
+					ui.Diagnose(
+						ui.Info,
+						"stopping the daemon, which served configuration %s and had no active launches",
+						c.discovery.Config,
+					)
+					if _, err := stopDaemon(cmd.Context(), c, false, 0); err != nil {
+						return err
+					}
+					if err := awaitExit(cmd.Context(), *paths, replaceTimeout); err != nil {
+						return err
+					}
 				}
 			}
 			logPath, err := startDaemon(cmd.Context(), *paths)
 			if err != nil {
 				return err
 			}
-			if scripting.enabled {
-				return printJSON(daemonStartJSON{Started: true, Version: daemon.Version, Log: logPath})
-			}
-			out := ui.Stdout
-			_, err = fmt.Fprint(
-				out,
-				out.Status(ui.OK, "Daemon started.")+"\n",
-				out.Fields([2]string{"log", out.Path(logPath)}),
-			)
-			return err
+			return printDaemonStarted(true, logPath)
 		},
 	}
 	start.Flags().BoolVar(&foreground, "foreground", false, "serve in the foreground")
