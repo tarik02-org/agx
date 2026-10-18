@@ -30,7 +30,9 @@ such as `agx mcp remove <TAB>`; load it with `source <(agx completion zsh)`
 ([setup](docs/cli.md#shell-completion)).
 
 Git is required for Git package sources. Install the native harnesses
-separately; agx does not download or update them.
+separately; agx does not download or update them. `agx doctor` checks the
+setup: configuration, packages, harness versions, Codex plugins, the daemon, MCP
+servers, secrets, and shims, each with a fix.
 
 ## Try it
 

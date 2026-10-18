@@ -649,3 +649,83 @@ func TestAutostart(t *testing.T) {
 		}
 	})
 }
+
+func TestDoctor(t *testing.T) {
+	e := newEnv(t)
+	type report struct {
+		Checks []struct {
+			Group  string `json:"group"`
+			Name   string `json:"name"`
+			Status string `json:"status"`
+			Detail string `json:"detail"`
+			Hint   string `json:"hint"`
+		} `json:"checks"`
+		Summary struct{ Pass, Warn, Fail int } `json:"summary"`
+	}
+	doctor := func(args ...string) (report, result) {
+		t.Helper()
+		r := e.agx(nil, append([]string{"doctor", "--json"}, args...)...)
+		var doc struct {
+			Data report `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(r.stdout), &doc); err != nil {
+			t.Fatalf("doctor printed %q (exit %d): %v\n%s", r.stdout, r.code, err, r.stderr)
+		}
+		return doc.Data, r
+	}
+	status := func(rep report, group, name string) string {
+		for _, c := range rep.Checks {
+			if c.Group == group && c.Name == name {
+				return c.Status + ": " + c.Detail
+			}
+		}
+		return "missing"
+	}
+
+	rep, r := doctor()
+	t.Cleanup(func() { e.stopDaemon(true) })
+	if r.code != 0 || rep.Summary.Fail != 0 {
+		t.Fatalf("doctor exited %d with %+v", r.code, rep)
+	}
+	for _, want := range [][3]string{
+		{"config", "configuration", "pass"},
+		{"config", "packages", "pass"},
+		// The fake harness reports no version number.
+		{"harness", "claude", "warn"},
+		{"daemon", "daemon", "pass"},
+		{"mcp", "echo", "pass"},
+		{"secret", "token", "pass"},
+		{"secret", "sealed", "pass"},
+		{"secret", "sops", "pass"},
+		{"shims", "shims", "warn"},
+	} {
+		if got := status(rep, want[0], want[1]); !strings.HasPrefix(got, want[2]+":") {
+			t.Errorf("%s %s = %s, want %s", want[0], want[1], got, want[2])
+		}
+	}
+
+	// A server outside the directory's selection is tested with --all, and its failure fails doctor.
+	e.write(
+		"config/broken.yaml",
+		"mcp:\n  broken:\n    command: ['"+filepath.ToSlash(filepath.Join(e.dir, "missing"))+"']\n",
+	)
+	config, err := os.ReadFile(filepath.Join(e.dir, "config", "agx.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.write("config/agx.yaml", "imports:\n  - path: broken.yaml\n"+string(config))
+	rep, r = doctor()
+	if r.code != 0 || status(rep, "mcp", "broken") != "missing" {
+		t.Fatalf("doctor without --all exited %d: %+v", r.code, rep)
+	}
+	rep, r = doctor("--all")
+	if r.code != 1 || !strings.HasPrefix(status(rep, "mcp", "broken"), "fail:") || rep.Summary.Fail != 1 {
+		t.Fatalf("doctor --all exited %d: %s", r.code, status(rep, "mcp", "broken"))
+	}
+
+	human := e.agx(nil, "doctor", "--all")
+	if human.code != 1 || !strings.Contains(human.stdout, "CHECK") || !strings.Contains(human.stdout, "mcp broken") ||
+		!strings.Contains(human.stdout, "agx mcp test broken") {
+		t.Fatalf("doctor --all printed (exit %d):\n%s", human.code, human.stdout)
+	}
+}

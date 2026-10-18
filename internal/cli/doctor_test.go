@@ -1,0 +1,249 @@
+package cli
+
+import (
+	"errors"
+	"os/exec"
+	"strings"
+	"testing"
+
+	"connectrpc.com/connect"
+
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/internal/adapters/codex"
+	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/shims"
+)
+
+func TestHarnessCheck(t *testing.T) {
+	notFound := errors.New("native codex executable not found")
+	for _, test := range []struct {
+		name, configured, output string
+		findErr, runErr          error
+		status                   checkStatus
+		detail                   string
+	}{
+		{"codex", "", "codex-cli 0.162.1\n", nil, nil, checkPass, "codex 0.162.1"},
+		{"codex", "", "codex-cli 0.159.9\n", nil, nil, checkWarn, "older than 0.160.0"},
+		{"claude", "", "2.1.300 (Claude Code)\n", nil, nil, checkPass, "claude 2.1.300"},
+		{"claude", "", "2.1.30 (Claude Code)\n", nil, nil, checkWarn, "older than 2.1.290"},
+		{"pi", "", "0.99.0\n", nil, nil, checkPass, "pi 0.99.0"},
+		{"pi", "", "0.87.1\n", nil, nil, checkWarn, "older than 0.99.0"},
+		{"pi", "", "", notFound, nil, checkWarn, "not found on PATH"},
+		{"pi", "/opt/pi", "", notFound, nil, checkFail, "not found"},
+		{"pi", "", "", nil, errors.New("exit status 1"), checkWarn, "--version failed"},
+		{"pi", "", "pi dev build\n", nil, nil, checkWarn, "version not recognized"},
+	} {
+		got := harnessCheck(test.name, test.configured, "/bin/"+test.name, test.findErr, test.output, test.runErr)
+		if got.Status != test.status || !strings.Contains(got.Detail, test.detail) {
+			t.Errorf("%s %q: got %s %q, want %s containing %q", test.name, test.output, got.Status, got.Detail,
+				test.status, test.detail)
+		}
+		if got.Status != checkPass && got.Hint == "" && test.runErr == nil && !strings.Contains(test.output, "dev") {
+			t.Errorf("%s %q: %s without a hint", test.name, test.output, got.Status)
+		}
+	}
+	if compareVersions("0.160.0", "0.99.0") != 1 || compareVersions("2.1.29", "2.1.290") != -1 ||
+		compareVersions("1.2.0", "1.2.0") != 0 {
+		t.Error("compareVersions misorders versions")
+	}
+}
+
+func TestPackageChecks(t *testing.T) {
+	read := &config.Config{Root: "/c/agx.yaml"}
+	loaded := &config.Config{Root: "/c/agx.yaml", Packages: map[config.ID]config.Package{"team": {}}}
+	_, ok, rows := packageChecks(read, loaded, nil, "1 file")
+	if !ok || len(rows) != 2 || rows[1].Status != checkPass ||
+		rows[1].Detail != "1 package installed; lockfiles current" {
+		t.Errorf("loaded = %v %+v", ok, rows)
+	}
+	_, ok, rows = packageChecks(read, nil, errors.New("package team is not installed; run agx install"), "1 file")
+	if ok || len(rows) != 2 || rows[0].Status != checkPass || rows[1].Status != checkFail ||
+		rows[1].Hint != "run agx install" {
+		t.Errorf("missing package = %v %+v", ok, rows)
+	}
+	_, ok, rows = packageChecks(read, nil, errors.New("/c/agx.yaml:3: unknown skill x"), "1 file")
+	if ok || len(rows) != 1 || rows[0].Status != checkFail || !strings.Contains(rows[0].Detail, "unknown skill") {
+		t.Errorf("invalid = %v %+v", ok, rows)
+	}
+}
+
+func TestCodexChecks(t *testing.T) {
+	rows := codexChecks(codex.PluginState{Disabled: "Codex plugins are disabled (features.plugins = false in x)"}, nil)
+	if len(rows) != 1 || rows[0].Status != checkWarn || !strings.Contains(rows[0].Detail, "features.plugins = false") {
+		t.Errorf("disabled = %+v", rows)
+	}
+	rows = codexChecks(codex.PluginState{Registered: true, Installed: []string{"review"}}, nil)
+	if len(rows) != 3 || rows[1].Status != checkPass || rows[2].Status != checkPass {
+		t.Errorf("installed = %+v", rows)
+	}
+	rows = codexChecks(codex.PluginState{Missing: []string{"review"}}, nil)
+	if rows[1].Status != checkWarn || rows[2].Status != checkWarn || rows[2].Detail != "not installed: review" {
+		t.Errorf("missing = %+v", rows)
+	}
+}
+
+func TestDaemonCheck(t *testing.T) {
+	base := daemonFacts{version: "1", config: "/c", wantConfig: "/c", instance: "a", previous: "a"}
+	if got := daemonCheck(base); got.Status != checkPass || !strings.Contains(got.Detail, "running") {
+		t.Errorf("running = %+v", got)
+	}
+	started := base
+	started.mayHaveStarted, started.previous = true, ""
+	if got := daemonCheck(started); got.Status != checkPass || !strings.HasPrefix(got.Detail, "started") {
+		t.Errorf("started = %+v", got)
+	}
+	replaced := base
+	replaced.mayHaveStarted, replaced.previous, replaced.otherBuild = true, "old", true
+	if got := daemonCheck(replaced); !strings.HasPrefix(got.Detail, "replaced") {
+		t.Errorf("replaced = %+v", got)
+	}
+	other := base
+	other.config = "/other"
+	if got := daemonCheck(other); got.Status != checkFail || !strings.Contains(got.Hint, "daemon stop") {
+		t.Errorf("other configuration = %+v", got)
+	}
+}
+
+func TestMCPCheck(t *testing.T) {
+	server := config.MCPServer{Auth: config.MCPAuth{Secret: "github"}}
+	got := mcpCheck("docs", server, &v1.TestMcpServerResponse{Tools: []string{"a", "b"}, ServerName: "docs"}, nil)
+	if got.Status != checkPass || got.Detail != "2 tools from docs" {
+		t.Errorf("ready = %+v", got)
+	}
+	needsAuth := connect.NewError(
+		connect.CodeFailedPrecondition,
+		errors.New("needs-auth: MCP server github requires login"),
+	)
+	got = mcpCheck("github", server, nil, needsAuth)
+	if got.Status != checkWarn || got.Hint != "run agx secret login github" ||
+		strings.Contains(got.Detail, "needs-auth:") {
+		t.Errorf("needs auth = %+v", got)
+	}
+	got = mcpCheck("slow", config.MCPServer{}, nil, connect.NewError(connect.CodeDeadlineExceeded, errors.New("late")))
+	if got.Status != checkFail || !strings.Contains(got.Detail, "no answer within") {
+		t.Errorf("timeout = %+v", got)
+	}
+	failed := connect.NewError(connect.CodeFailedPrecondition, errors.New("upstream process exited during startup"))
+	got = mcpCheck("broken", config.MCPServer{}, nil, failed)
+	if got.Status != checkFail || got.Detail != "upstream process exited during startup" {
+		t.Errorf("failed = %+v", got)
+	}
+}
+
+func TestSecretCheck(t *testing.T) {
+	env := func(values map[string]string) func(string) (string, bool) {
+		return func(name string) (string, bool) {
+			value, ok := values[name]
+			return value, ok
+		}
+	}
+	none := env(nil)
+	for _, test := range []struct {
+		status *v1.SecretStatus
+		secret config.Secret
+		lookup func(string) (string, bool)
+		want   checkStatus
+		hint   string
+	}{
+		{&v1.SecretStatus{SecretId: "a", Kind: "keychain", State: v1.SecretStatus_STATE_READY}, config.Secret{}, none, checkPass, ""},
+		{
+			&v1.SecretStatus{SecretId: "gh", Kind: "oauth", State: v1.SecretStatus_STATE_NEEDS_LOGIN},
+			config.Secret{},
+			none, checkWarn, "run agx secret login gh",
+		},
+		{
+			&v1.SecretStatus{SecretId: "key", Kind: "keychain", State: v1.SecretStatus_STATE_NEEDS_LOGIN},
+			config.Secret{},
+			none, checkWarn, "run agx secret set key --stdin",
+		},
+		{
+			&v1.SecretStatus{
+				SecretId: "s", Kind: "sops", State: v1.SecretStatus_STATE_UNAVAILABLE,
+				Diagnostics: []*v1.Diagnostic{{Summary: "sops cannot decrypt"}},
+			},
+			config.Secret{},
+			none, checkFail, "",
+		},
+		{
+			&v1.SecretStatus{SecretId: "t", Kind: "environment", State: v1.SecretStatus_STATE_UNCONFIGURED},
+			config.Secret{Kind: "environment", Variable: "TOKEN"},
+			env(map[string]string{"TOKEN": "x"}), checkPass, "",
+		},
+		{
+			&v1.SecretStatus{SecretId: "t", Kind: "environment", State: v1.SecretStatus_STATE_UNCONFIGURED},
+			config.Secret{Kind: "environment", Variable: "TOKEN"},
+			none, checkWarn, "set TOKEN in the shell that launches harnesses",
+		},
+	} {
+		got := secretCheck(test.status, test.secret, test.lookup)
+		if got.Status != test.want || got.Hint != test.hint {
+			t.Errorf(
+				"%s (%s): got %+v, want %s with hint %q",
+				test.status.SecretId,
+				test.status.State,
+				got,
+				test.want,
+				test.hint,
+			)
+		}
+	}
+}
+
+func TestSopsChecks(t *testing.T) {
+	c := &config.Config{Secrets: map[config.ID]config.Secret{"s": {Kind: "sops"}}}
+	missing := func(string) (string, error) { return "", exec.ErrNotFound }
+	if rows := sopsChecks(c, missing); len(rows) != 1 || rows[0].Status != checkFail {
+		t.Errorf("missing sops = %+v", rows)
+	}
+	found := func(string) (string, error) { return "/bin/sops", nil }
+	if rows := sopsChecks(c, found); len(rows) != 1 || rows[0].Status != checkPass {
+		t.Errorf("found sops = %+v", rows)
+	}
+	if rows := sopsChecks(&config.Config{}, missing); len(rows) != 0 {
+		t.Errorf("without sops secrets = %+v", rows)
+	}
+}
+
+func TestShimRows(t *testing.T) {
+	entry := func(name string, state shims.State) shims.Entry {
+		return shims.Entry{Shim: shims.Shim{Name: name}, State: state}
+	}
+	rows := shimRows("/s", []shims.Entry{entry("work", shims.Missing)}, false, nil)
+	if len(rows) != 1 || rows[0].Status != checkWarn || !strings.Contains(rows[0].Hint, "agx shims install") {
+		t.Errorf("none installed = %+v", rows)
+	}
+	rows = shimRows("/s", []shims.Entry{entry("work", shims.Current)}, true, nil)
+	if len(rows) != 2 || rows[0].Status != checkPass || rows[1].Status != checkPass {
+		t.Errorf("current = %+v", rows)
+	}
+	rows = shimRows(
+		"/s",
+		[]shims.Entry{entry("work", shims.Current), entry("old", shims.Stale)},
+		false,
+		[]shims.Collision{{Name: "work", Path: "/usr/bin/work", First: true}},
+	)
+	if len(rows) != 3 || rows[0].Status != checkWarn || rows[1].Status != checkWarn ||
+		rows[2].Detail != "runs /usr/bin/work, not the agx shim" {
+		t.Errorf("stale, off PATH, shadowed = %+v", rows)
+	}
+}
+
+func TestDoctorJSONFailsWithoutConfiguration(t *testing.T) {
+	isolate(t, "harnesses: [broken\n")
+	t.Setenv("AGX_NO_AUTOSTART", "1")
+	t.Setenv("PATH", t.TempDir())
+	code, docs := runJSON(t, "doctor", "--json", t.TempDir())
+	if code != 1 || len(docs) != 1 || docs[0].Data == nil {
+		t.Fatalf("doctor exited %d: %+v", code, docs)
+	}
+	text := string(docs[0].Data)
+	for _, want := range []string{
+		`"name":"configuration","status":"fail"`,
+		`"name":"daemon","status":"warn"`,
+		`"fail":1`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("doctor document lacks %s:\n%s", want, text)
+		}
+	}
+}

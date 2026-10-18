@@ -393,6 +393,7 @@ func (k *completer) registerCompletions(root *cobra.Command) {
 	set(firstArg(k.launches), "launch", "revoke")
 	set(firstArgThen(directories), "resolve")
 	set(firstArgThen(directories), "explain")
+	set(firstArgThen(directories), "doctor")
 	set(firstArgThen(files), "skill", "add")
 	set(firstArgThen(files), "instructions", "add")
 	set(afterDash(files), "mcp", "add")

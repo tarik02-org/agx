@@ -301,6 +301,30 @@ build. Revocation closes MCP access and upstream sessions; it does not kill the
 harness. Launch inspection excludes secrets. A graceful wrapper exit releases
 its launch; abrupt exits are recovered through lease expiry.
 
+## Doctor
+
+```text
+agx doctor [directory] [--all] [--json]
+```
+
+`doctor` checks the setup and prints one row per check, `ok`, `warn`, or `fail`,
+followed by the next steps for every warning and failure; it exits 1 when any
+check fails. It checks that the configuration loads (and from which files),
+that packages are installed with current lockfiles, each built-in harness's
+executable and version against the [minimum](#harness-versions), Codex's
+plugins feature, agx's marketplace and installed skill plugins (when skills are
+configured and Codex is found), and the daemon: running, of this build, and
+serving this root. It starts the daemon as other commands do. Through the
+daemon it tests the MCP servers selected for the directory (default: the
+current one), or every server with `--all`, in parallel with a 20-second limit
+each, as `mcp test` does; a server that needs authorization is a warning naming
+`agx secret login`. It then lists secret states (environment secrets are checked
+against this shell), whether `sops` is on PATH when sops secrets exist, and, for
+harness definitions, whether shims are installed in the default directory, on
+PATH, and not shadowed. A missing harness is a warning unless its executable is
+configured; an older harness is a warning. `doctor` changes nothing besides
+starting the daemon.
+
 ## Secrets
 
 ```text
@@ -409,6 +433,7 @@ data below.
 | `mcp`, `skill`, `instructions`, `harness` `add` and `remove`; `use`, `unuse` | `{files, defined, enabled, disabled, removed, scope}`; `mcp add` adds `needs_login` |
 | `mcp test` | `{id, transport, server: {name, version}, tools: [{name, description}], state}`; a server that does not answer exits 1 with `state` `needs_auth` or `failed`, `server: null`, and `message` |
 | `shims install`, `shims remove` | `{directory, on_path, target, changes}`; each change is a shim (`name`, `file`, `kind`, `target`) with its `action` (`created`, `updated`, `removed`, `unchanged`, `kept`); a kept shim has its `state` |
+| `doctor` | `{directory, root, files, checks, summary}`: each check is `{group, name, status, detail, hint?}` with `status` `pass`, `warn`, or `fail`; `group` is `config`, `harness`, `codex`, `daemon`, `mcp`, `secret`, or `shims`; `summary` counts `pass`, `warn`, and `fail`. A failing check exits 1 after the document. |
 | `daemon start` | `{started, version, log}` |
 | `daemon stop` | `{stopping, forced, version}` |
 | `daemon status`, `launch list`, `launch show`, `secret status` | the Connect message as protobuf JSON (`GetRuntimeResponse`, `RuntimeView`, `Launch`, `GetSecretStatusResponse`) |

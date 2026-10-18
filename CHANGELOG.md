@@ -12,6 +12,9 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   `mcp login` stream `started` and `finished` events, one per line. Errors become
   `{"version":1,"error":{…}}` documents with stable codes, usage errors included, and
   `--json` implies `--yes` and never prompts. `TestMcpServer` returns tool descriptions.
+- `agx doctor [directory] [--all] [--json]` checks configuration, packages,
+  harness versions, Codex plugins, the daemon, MCP servers, secrets, sops, and
+  shims, with a fix for each problem.
 - `sops` secrets take an optional `age_key` (`!secret`, `!env`, or `!file`) passed
   to sops as `SOPS_AGE_KEY`, so the age identity can live in the OS keychain.
 

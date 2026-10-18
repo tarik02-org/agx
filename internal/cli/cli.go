@@ -221,6 +221,7 @@ func run(osArgs []string, stdout io.Writer) int {
 	root.AddCommand(
 		sessionsCommand(&paths, registry, &harnesses),
 		daemonCommand(&paths, registry, &builtins),
+		doctorCommand(&paths, registry, &builtins),
 		launchCommand(&paths, &builtins),
 		secretCommand(&paths, &builtins),
 		shimsCommand(&paths, registry, &builtins),

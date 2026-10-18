@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -96,6 +98,56 @@ func effectivelyDisabled(ctx context.Context, executable string) bool {
 		}
 	}
 	return false
+}
+
+// PluginState describes agx's Codex skill plugins for diagnostics.
+type PluginState struct {
+	// Disabled explains how Codex's configuration disables plugins; "" when it does not.
+	Disabled string
+	// Marketplace is the local marketplace directory, and Registered whether Codex lists it.
+	Marketplace string
+	Registered  bool
+	// Installed and Missing name the configured skills whose plugins are or are not installed.
+	Installed, Missing []string
+}
+
+// Plugins reports the state of the skill plugins of c without changing anything.
+func Plugins(ctx context.Context, executable string, c *config.Config, cache string) (PluginState, error) {
+	disabled, err := PluginsDisabled()
+	if err != nil {
+		return PluginState{}, err
+	}
+	state := PluginState{Disabled: disabled, Marketplace: filepath.Join(cache, "native", "marketplace")}
+	if disabled != "" {
+		return state, nil
+	}
+	registry, err := readCatalog(cache)
+	if err != nil {
+		return state, err
+	}
+	for _, id := range slices.Sorted(maps.Keys(c.Skills)) {
+		name, err := pluginName(c.Skills[id])
+		if err != nil {
+			return state, err
+		}
+		if slices.Contains(registry.Names, name) {
+			state.Installed = append(state.Installed, string(id))
+		} else {
+			state.Missing = append(state.Missing, string(id))
+		}
+	}
+	state.Registered = registered(ctx, executable, state.Marketplace)
+	return state, nil
+}
+
+// registered reports whether Codex lists the marketplace directory, by its path or real path.
+func registered(ctx context.Context, executable, marketplace string) bool {
+	listed, err := exec.CommandContext(ctx, executable, "plugin", "marketplace", "list").Output()
+	if err != nil {
+		return false
+	}
+	real, realErr := filepath.EvalSymlinks(marketplace)
+	return strings.Contains(string(listed), marketplace) || realErr == nil && strings.Contains(string(listed), real)
 }
 
 func readCatalog(cache string) (catalog, error) {
@@ -226,11 +278,7 @@ func (a Adapter) Install(ctx context.Context, c *config.Config, cache string) er
 	}
 	if err := invoke("plugin", "marketplace", "add", marketplace); err != nil {
 		// A marketplace registered by an earlier installation is fine; anything else is not.
-		listed, listErr := exec.CommandContext(ctx, executable, "plugin", "marketplace", "list").Output()
-		real, realErr := filepath.EvalSymlinks(marketplace)
-		registered := strings.Contains(string(listed), marketplace) ||
-			realErr == nil && strings.Contains(string(listed), real)
-		if listErr != nil || !registered {
+		if !registered(ctx, executable, marketplace) {
 			return err
 		}
 	}
