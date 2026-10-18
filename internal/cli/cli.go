@@ -473,6 +473,14 @@ func installPackages(
 	return printInstalled(result, update)
 }
 
+// daemonStopped is the daemon stop document; with no daemon running, every field is zero.
+type daemonStopped struct {
+	Running  bool   `json:"running"`
+	Stopping bool   `json:"stopping"`
+	Forced   bool   `json:"forced"`
+	Version  string `json:"version"`
+}
+
 func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *config.Builtins) *cobra.Command {
 	command := &cobra.Command{Use: "daemon", Short: "Manage the background daemon", GroupID: "runtime"}
 	foreground := false
@@ -562,9 +570,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			var dial *net.OpError
 			if errors.Is(err, daemon.ErrUnavailable) || errors.As(err, &dial) && dial.Op == "dial" {
 				if scripting.enabled {
-					return printJSON(struct {
-						Running bool `json:"running"`
-					}{false})
+					return printJSON(daemonStopped{})
 				}
 				_, err = fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, "Daemon is not running."))
 				return err
@@ -573,12 +579,9 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 				return err
 			}
 			if scripting.enabled {
-				return printJSON(struct {
-					Running  bool   `json:"running"`
-					Stopping bool   `json:"stopping"`
-					Forced   bool   `json:"forced"`
-					Version  string `json:"version"`
-				}{true, true, force, c.discovery.Version})
+				return printJSON(
+					daemonStopped{Running: true, Stopping: true, Forced: force, Version: c.discovery.Version},
+				)
 			}
 			_, err = fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, "Daemon stopping."))
 			return err

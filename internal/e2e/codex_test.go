@@ -114,12 +114,31 @@ harnesses:
 			t.Errorf("%s: second launch installed again: %q (%s)", test.name, installs(test.home), r.stderr)
 		}
 	}
+	// A plugin the user removed from Codex is installed again by the next launch.
+	caller := []string{"CODEX_HOME=" + home("caller-codex")}
+	plugin := installs(home("caller-codex"))[0]
+	if r := e.run(binaries.harness, caller, "plugin", "remove", plugin[len(plugin)-1]); r.code != 0 {
+		t.Fatalf("plugin remove: %s", r.stderr)
+	}
+	if d, r := launch("codex", caller...); r.code != 0 || len(installs(home("caller-codex"))) != 2 || !enabled(d) {
+		t.Errorf("after plugin remove: %q, %q (%s)", installs(home("caller-codex")), d.Args, r.stderr)
+	}
+	// A changed skill installs its new version alone; the superseded one stays for running sessions.
+	e.write("config/skills/review/SKILL.md", "---\nname: review\ndescription: Review changes.\n---\nReview again.\n")
+	d, r := launch("codex", caller...)
+	added := installs(home("caller-codex"))
+	if r.code != 0 || len(added) != 3 || slices.Equal(added[2], added[1]) || !enabled(d) {
+		t.Errorf("after changing the skill: %q, %q (%s)", added, d.Args, r.stderr)
+	}
+	if n := strings.Count(strings.Join(d.Args, " "), "@agx-managed.enabled="); n != 2 {
+		t.Errorf("after changing the skill, plugin overrides = %q, want the new enabled and the old disabled", d.Args)
+	}
 	// The daemon's own CODEX_HOME saw no launch.
 	if added := installs(filepath.Join(e.dir, "home", "codex")); len(added) != 0 {
 		t.Errorf("installed in the daemon's CODEX_HOME: %q", added)
 	}
 
-	d, r := launch("codex-disabled")
+	d, r = launch("codex-disabled")
 	want := "Codex plugins are disabled (features.plugins = false in " + filepath.Join(
 		home("disabled-codex"),
 		"config.toml",

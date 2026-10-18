@@ -49,9 +49,22 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   arguments enable plugins install and enable their skills again. Definitions
   with their own `executable` try the installation and report plugins disabled
   only when Codex refuses it.
+- Codex launches check that Codex still has their skill plugins (its
+  `config.toml` entry and plugin cache) instead of trusting agx's record, so a
+  plugin removed with `codex plugin remove` is installed again.
+- Codex installation adds only the skill versions the configuration has, instead
+  of every version ever published, and removes agx's plugins the configuration
+  no longer has from that `CODEX_HOME` once superseded for 7 days.
+- `agx use` writes a selection list that `unuse` emptied back in its usual place
+  (`skills`, `instructions`, `mcp`, `bundles`), so use after unuse restores the
+  text exactly.
+- `agx doctor` reads a harness version printed to stderr, as Pi 0.73 does, and
+  reports "pi 0.73.1 is older than the supported 0.99.0": a warning, or a
+  failure when the configuration defines a harness based on it.
 - `agx daemon stop` (with or without `--force`) exits 0 with "Daemon is not
-  running." (JSON `{"running": false}`) when no daemon runs; the stop document of a
-  running daemon adds `running: true`.
+  running." when no daemon runs. Its JSON document has one shape either way,
+  `{running, stopping, forced, version}`, with `running: false`, `stopping: false`,
+  `forced: false`, and `version: ""` when no daemon runs.
 - `agx use` after `agx unuse` in the same rule deletes the `remove` entry
   instead of also adding the ID to `add`, so the fragment returns to its earlier text.
 

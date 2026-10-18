@@ -127,8 +127,8 @@ func subcommand(args []string) string {
 	return ""
 }
 
-// plugins answers Codex's plugin and features commands, keeping marketplaces and plugins as
-// lines of files in $CODEX_HOME. Like Codex, it lists no marketplace and finds no plugin while
+// plugins answers Codex's plugin and features commands, keeping marketplaces as lines of a file
+// in $CODEX_HOME and installing plugins as Codex does: an entry in config.toml and a cached version. Like Codex, it lists no marketplace and finds no plugin while
 // plugins are off: when $CODEX_HOME/config.toml sets plugins = false, unless --enable plugins
 // or -c features.plugins=true says otherwise. It appends the arguments of each invocation as a
 // JSON line to $CODEX_HOME/fake-plugin-log.jsonl.
@@ -174,7 +174,27 @@ func plugins(args []string) {
 				fmt.Fprintf(os.Stderr, "Error: plugin `%s` was not found in marketplace\n", rest[2])
 				os.Exit(1)
 			}
-			add("fake-plugins", rest[2])
+			// Like Codex, enable the plugin in config.toml and cache a version of it.
+			name, marketplace, _ := strings.Cut(rest[2], "@")
+			add("config.toml", "\n[plugins.\""+rest[2]+"\"]\nenabled = true")
+			if err := os.MkdirAll(filepath.Join(home, "plugins", "cache", marketplace, name, "1.0.0"), 0o700); err != nil {
+				fail(err)
+			}
+			return
+		}
+		if len(rest) == 3 && rest[0] == "plugin" && rest[1] == "remove" {
+			name, marketplace, _ := strings.Cut(rest[2], "@")
+			header := "[plugins.\"" + rest[2] + "\"]"
+			lines := strings.Split(string(config), "\n")
+			if i := slices.Index(lines, header); i >= 0 {
+				lines = slices.Delete(lines, i, min(i+2, len(lines)))
+			}
+			if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte(strings.Join(lines, "\n")), 0o600); err != nil {
+				fail(err)
+			}
+			if err := os.RemoveAll(filepath.Join(home, "plugins", "cache", marketplace, name)); err != nil {
+				fail(err)
+			}
 			return
 		}
 		fail(fmt.Errorf("unexpected plugin command %q", args))

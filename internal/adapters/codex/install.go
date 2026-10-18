@@ -12,8 +12,10 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gofrs/flock"
+	"github.com/pelletier/go-toml/v2"
 
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/config"
@@ -22,12 +24,67 @@ import (
 
 const marketplaceName = "agx-managed"
 
-// catalog lists the skill plugins published in the marketplace, and those installed in each
-// CODEX_HOME; launches disable the installed ones their snapshot does not select.
+// supersededGrace is how long a plugin no installation configures stays installed. A running
+// Codex session reads skill files from its plugin cache, so the version its launch selected stays
+// in place for sessions that outlive a configuration change; a launch that needs a removed
+// version installs it again.
+const supersededGrace = 7 * 24 * time.Hour
+
+// catalog lists the skill plugins published in the marketplace. Which of them a CODEX_HOME has
+// installed is read from that home (see installedPlugins), since users may remove them.
 type catalog struct {
 	Names []string `json:"names"`
-	// Installed maps a CODEX_HOME to the plugins installed there.
-	Installed map[string][]string `json:"installed,omitempty"`
+	// Superseded records when each published plugin was first found missing from the
+	// configuration being installed; installing a configuration that has it clears the mark.
+	Superseded map[string]time.Time `json:"superseded,omitempty"`
+}
+
+// installedPlugins lists the agx plugins Codex has installed in home: those config.toml enables
+// an entry for and whose plugin cache holds a version. `codex plugin remove` drops both.
+func installedPlugins(home string) ([]string, error) {
+	path := filepath.Join(home, "config.toml")
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var d struct {
+		Plugins map[string]any `toml:"plugins"`
+	}
+	if err := toml.Unmarshal(b, &d); err != nil {
+		return nil, fmt.Errorf("reading Codex configuration %s: %w", path, err)
+	}
+	names := []string{}
+	for id := range d.Plugins {
+		name, ok := strings.CutSuffix(id, "@"+marketplaceName)
+		if !ok {
+			continue
+		}
+		versions, err := os.ReadDir(filepath.Join(home, "plugins", "cache", marketplaceName, name))
+		if err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		if len(versions) > 0 {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return names, nil
+}
+
+// stale lists the installed plugins to remove: those current does not configure, superseded
+// longer than supersededGrace ago.
+func stale(installed, current []string, superseded map[string]time.Time, now time.Time) []string {
+	out := []string{}
+	for _, name := range installed {
+		since, ok := superseded[name]
+		if !slices.Contains(current, name) && ok && now.Sub(since) > supersededGrace {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // pluginName leads with the skill's native name, which Codex shows as the skill's namespace, and
@@ -89,7 +146,7 @@ func Plugins(
 	if state.Disabled != "" {
 		return state, nil
 	}
-	registry, err := readCatalog(cache)
+	installed, err := installedPlugins(state.Home)
 	if err != nil {
 		return state, err
 	}
@@ -98,7 +155,7 @@ func Plugins(
 		if err != nil {
 			return state, err
 		}
-		if slices.Contains(registry.Installed[state.Home], name) {
+		if slices.Contains(installed, name) {
 			state.Installed = append(state.Installed, string(id))
 		} else {
 			state.Missing = append(state.Missing, string(id))
@@ -219,7 +276,7 @@ func (a Adapter) Install(ctx context.Context, c *config.Config, cache string, ta
 		return fmt.Errorf("native installation is busy")
 	}
 	defer func() { _ = lock.Unlock() }()
-	registry, err := publish(c, cache)
+	registry, current, err := publish(c, cache, time.Now())
 	if err != nil {
 		return err
 	}
@@ -244,16 +301,33 @@ func (a Adapter) Install(ctx context.Context, c *config.Config, cache string, ta
 			}
 			return nil
 		}
-		err := invoke("plugin", "marketplace", "add", marketplace)
-		// A marketplace registered by an earlier installation is fine; anything else is not.
-		if err != nil && registered(ctx, in.codex, marketplace) {
-			err = nil
+		installed, err := installedPlugins(home)
+		if err == nil {
+			err = invoke("plugin", "marketplace", "add", marketplace)
+			// A marketplace registered by an earlier installation is fine; anything else is not.
+			if err != nil && registered(ctx, in.codex, marketplace) {
+				err = nil
+			}
 		}
-		for _, name := range registry.Names {
+		for _, name := range current {
 			if err != nil {
 				break
 			}
-			err = invoke("plugin", "add", name+"@"+marketplaceName)
+			if !slices.Contains(installed, name) {
+				err = invoke("plugin", "add", name+"@"+marketplaceName)
+			}
+		}
+		for _, name := range installed {
+			// A plugin agx no longer knows of was published before supersession was recorded.
+			if _, ok := registry.Superseded[name]; !ok && !slices.Contains(current, name) {
+				registry.Superseded[name] = time.Now()
+			}
+		}
+		for _, name := range stale(installed, current, registry.Superseded, time.Now()) {
+			if err != nil {
+				break
+			}
+			err = invoke("plugin", "remove", name+"@"+marketplaceName)
 		}
 		var skip adapters.Skipped
 		switch {
@@ -261,14 +335,11 @@ func (a Adapter) Install(ctx context.Context, c *config.Config, cache string, ta
 			skipped = append(skipped, skip.Reason)
 		case err != nil:
 			failed = err
-		default:
-			registry.Installed[home] = slices.Clone(registry.Names)
 		}
 		if failed != nil {
 			break
 		}
 	}
-	// Homes installed before a failure stay recorded.
 	if err := securefs.WriteJSON(filepath.Join(parent, "catalog.json"), registry); err != nil {
 		return err
 	}
@@ -282,26 +353,29 @@ func (a Adapter) Install(ctx context.Context, c *config.Config, cache string, ta
 }
 
 // publish writes every configured skill as a plugin of the marketplace, and returns the catalog
-// with them.
-func publish(c *config.Config, cache string) (catalog, error) {
+// with them and their plugin names. Published plugins c does not configure are marked superseded
+// at now.
+func publish(c *config.Config, cache string, now time.Time) (catalog, []string, error) {
 	parent := filepath.Join(cache, "native")
 	registry, err := readCatalog(cache)
 	if err != nil {
-		return registry, err
+		return registry, nil, err
 	}
-	if registry.Installed == nil {
-		registry.Installed = map[string][]string{}
+	if registry.Superseded == nil {
+		registry.Superseded = map[string]time.Time{}
 	}
+	current := []string{}
 	for _, r := range c.Skills {
 		name, err := pluginName(r)
 		if err != nil {
-			return registry, err
+			return registry, nil, err
 		}
+		current = append(current, name)
 		dest := filepath.Join(parent, "marketplace", "plugins", name)
 		if _, err := os.Stat(dest); os.IsNotExist(err) {
 			tmp, err := os.MkdirTemp(parent, ".plugin-*")
 			if err != nil {
-				return registry, err
+				return registry, nil, err
 			}
 			err = r.Materialize(filepath.Join(tmp, "skills", r.NativeName()))
 			if err == nil {
@@ -323,7 +397,7 @@ func publish(c *config.Config, cache string) (catalog, error) {
 			}
 			_ = os.RemoveAll(tmp)
 			if err != nil {
-				return registry, err
+				return registry, nil, err
 			}
 		}
 		if !slices.Contains(registry.Names, name) {
@@ -331,6 +405,14 @@ func publish(c *config.Config, cache string) (catalog, error) {
 		}
 	}
 	sort.Strings(registry.Names)
+	slices.Sort(current)
+	for _, name := range registry.Names {
+		if slices.Contains(current, name) {
+			delete(registry.Superseded, name)
+		} else if _, ok := registry.Superseded[name]; !ok {
+			registry.Superseded[name] = now
+		}
+	}
 	entries := []any{}
 	for _, name := range registry.Names {
 		entries = append(
@@ -343,7 +425,7 @@ func publish(c *config.Config, cache string) (catalog, error) {
 			},
 		)
 	}
-	return registry, securefs.WriteJSON(
+	return registry, current, securefs.WriteJSON(
 		filepath.Join(parent, "marketplace", ".agents", "plugins", "marketplace.json"),
 		map[string]any{"name": marketplaceName, "plugins": entries},
 	)

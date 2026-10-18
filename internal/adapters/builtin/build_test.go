@@ -271,6 +271,13 @@ func TestBuildCodex(t *testing.T) {
 		"exec",
 		"hi",
 	})
+
+	// A selected plugin removed with codex plugin remove is installed again.
+	write(t, filepath.Join(home, "config.toml"), "[plugins.\""+other+"@agx-managed\"]\nenabled = true\n")
+	if _, _, err := f.build(t, "codex", "exec", "hi"); err == nil ||
+		!strings.Contains(err.Error(), "installing native codex plugins") {
+		t.Errorf("after codex plugin remove: %v", err)
+	}
 }
 
 func TestBuildCodexAppServer(t *testing.T) {
@@ -377,13 +384,21 @@ func TestBuildCodexPluginsDisabled(t *testing.T) {
 	}
 }
 
-// writeCatalog records plugins as published and installed in home.
+// writeCatalog records plugins as published, and installs them in home as Codex does.
 func writeCatalog(t *testing.T, f fixture, home string, names ...string) {
 	t.Helper()
-	catalog := map[string]any{"names": names, "installed": map[string][]string{home: names}}
-	if err := securefs.WriteJSON(filepath.Join(f.cache, "native", "catalog.json"), catalog); err != nil {
+	if err := securefs.WriteJSON(
+		filepath.Join(f.cache, "native", "catalog.json"),
+		map[string]any{"names": names},
+	); err != nil {
 		t.Fatal(err)
 	}
+	config := ""
+	for _, name := range names {
+		config += "[plugins.\"" + name + "@agx-managed\"]\nenabled = true\n"
+		write(t, filepath.Join(home, "plugins", "cache", "agx-managed", name, "1.0.0", "README"), "")
+	}
+	write(t, filepath.Join(home, "config.toml"), config)
 }
 
 func TestSkillNames(t *testing.T) {

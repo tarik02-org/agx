@@ -356,10 +356,11 @@ func TestJSONCommands(t *testing.T) {
 	}
 	for _, args := range [][]string{{"daemon", "stop"}, {"daemon", "stop", "--force"}} {
 		var stopped struct {
-			Running *bool `json:"running"`
+			Running  *bool `json:"running"`
+			Stopping *bool `json:"stopping"`
 		}
 		okJSON(t, &stopped, append(args, "--json")...)
-		if stopped.Running == nil || *stopped.Running {
+		if stopped.Running == nil || *stopped.Running || stopped.Stopping == nil || *stopped.Stopping {
 			t.Fatalf("%q without a daemon = %+v", args, stopped)
 		}
 	}

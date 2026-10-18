@@ -185,13 +185,23 @@ lock/cache; it never silently updates dependencies.
 plugins of a registered marketplace, so each configured skill becomes a plugin
 of agx's local marketplace, installed into the `CODEX_HOME` of every Codex-based
 harness definition. A Codex launch whose skill plugin is missing from its
-`CODEX_HOME` runs that step itself, once, under the same lock.
+`CODEX_HOME` runs that step itself, once, under the same lock. A plugin counts
+as installed when Codex has it: an entry in that home's `config.toml` and a
+version in its plugin cache, so one removed with `codex plugin remove` is
+installed again.
+
+Each version of a skill is its own plugin. Installation adds only the versions
+the configuration has, and removes from that `CODEX_HOME` the agx plugins it no
+longer configures once they have been superseded for 7 days, so Codex sessions
+that outlive a configuration change keep their skills; a launch that needs a
+removed version installs it again. Plugins of other marketplaces are never
+touched.
 
 A launch's `CODEX_HOME` is the one its Codex process gets: the definition's `env`,
 else the caller's environment (the wrapper forwards `CODEX_HOME` to the daemon,
 set or not), else `~/.codex`. `install` and `doctor` use the definition's `env`,
 else their own environment. Plugin commands agx runs (`codex plugin marketplace
-add`, `codex plugin add`) run with that `CODEX_HOME` and the definition's `env`.
+add`, `codex plugin add`, `codex plugin remove`) run with that `CODEX_HOME` and the definition's `env`.
 
 agx never changes `features.plugins`; it reads its effective value the way Codex
 layers configuration: `config.toml` in `CODEX_HOME`, then the selected profile
@@ -346,7 +356,9 @@ agx doctor [directory] [--all] [--json]
 followed by the next steps for every warning and failure; it exits 1 when any
 check fails. It checks that the configuration loads (and from which files),
 that packages are installed with current lockfiles, each built-in harness's
-executable and version against the [minimum](#harness-versions), Codex's
+executable and version (read from `--version`, bare like `0.73.1` or within
+text) against the [minimum](#harness-versions), warning about an older version,
+or failing when the configuration defines a harness based on it, Codex's
 plugins feature, agx's marketplace and installed skill plugins (when skills are
 configured and Codex is found) for each Codex-based harness definition, with the
 `CODEX_HOME` and arguments its launches from this shell would use (rows of a
@@ -472,7 +484,7 @@ data below.
 | `shims install`, `shims remove` | `{directory, on_path, target, changes}`; each change is a shim (`name`, `file`, `kind`, `target`) with its `action` (`created`, `updated`, `removed`, `unchanged`, `kept`); a kept shim has its `state` |
 | `doctor` | `{directory, root, files, checks, summary}`: each check is `{group, name, status, detail, hint?}` with `status` `pass`, `warn`, or `fail`; `group` is `config`, `harness`, `codex`, `daemon`, `mcp`, `secret`, or `shims`; `summary` counts `pass`, `warn`, and `fail`. A failing check exits 1 after the document. |
 | `daemon start` | `{started, version, log}` |
-| `daemon stop` | `{running, stopping, forced, version}`; `{running: false}` when no daemon was running |
+| `daemon stop` | `{running, stopping, forced, version}`: `running` says whether a daemon was running; with none, `stopping` and `forced` are `false` and `version` is `""` |
 | `daemon status`, `launch list`, `launch show`, `secret status` | the Connect message as protobuf JSON (`GetRuntimeResponse`, `RuntimeView`, `Launch`, `GetSecretStatusResponse`) |
 | `launch revoke` | `{launch_id, revoked}` |
 | `secret set` | `{secret_id, stored}` |

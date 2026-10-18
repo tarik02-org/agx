@@ -240,14 +240,44 @@ func (f *File) List(selection *yaml.Node, kind string, create bool) *yaml.Node {
 		}
 	}
 	list := Sequence(flow)
-	Set(selection, kind, list)
+	setOrdered(selection, kind, list, selectionKinds)
 	return list
+}
+
+// selectionKinds is the order of a selection's lists as configuration documents write them.
+var selectionKinds = []string{"skills", "instructions", "mcp", "bundles"}
+
+// setOrdered sets key like Set, but places a new key before the first sibling that order puts
+// after it, so a list recreated after its last entry was removed returns to its usual place.
+func setOrdered(m *yaml.Node, key string, value *yaml.Node, order []string) {
+	rank := slices.Index(order, key)
+	if index(m, key) >= 0 || rank < 0 {
+		Set(m, key, value)
+		return
+	}
+	block(m)
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if slices.Index(order, m.Content[i].Value) > rank {
+			m.Content = slices.Insert(m.Content, i, Scalar(key), value)
+			return
+		}
+	}
+	m.Content = append(m.Content, Scalar(key), value)
 }
 
 // Selection returns the add or remove mapping of a rule or harness, creating it when create is set.
 func (f *File) Selection(owner *yaml.Node, change string, create bool) *yaml.Node {
 	f.touched[owner] = true
-	return child(owner, change, create)
+	v := Get(owner, change)
+	if v != nil && v.Kind == yaml.MappingNode {
+		return v
+	}
+	if !create || v != nil && !null(v) {
+		return nil
+	}
+	v = mapping()
+	setOrdered(owner, change, v, []string{"add", "remove"})
+	return v
 }
 
 // Find returns the position of the entry for id in list, or -1.

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -21,22 +22,33 @@ func TestHarnessCheck(t *testing.T) {
 	notFound := errors.New("native codex executable not found")
 	for _, test := range []struct {
 		name, configured, output string
+		defined                  bool
 		findErr, runErr          error
 		status                   checkStatus
 		detail                   string
 	}{
-		{"codex", "", "codex-cli 0.162.1\n", nil, nil, checkPass, "codex 0.162.1"},
-		{"codex", "", "codex-cli 0.159.9\n", nil, nil, checkWarn, "older than 0.160.0"},
-		{"claude", "", "2.1.300 (Claude Code)\n", nil, nil, checkPass, "claude 2.1.300"},
-		{"claude", "", "2.1.30 (Claude Code)\n", nil, nil, checkWarn, "older than 2.1.290"},
-		{"pi", "", "0.99.0\n", nil, nil, checkPass, "pi 0.99.0"},
-		{"pi", "", "0.87.1\n", nil, nil, checkWarn, "older than 0.99.0"},
-		{"pi", "", "", notFound, nil, checkWarn, "not found on PATH"},
-		{"pi", "/opt/pi", "", notFound, nil, checkFail, "not found"},
-		{"pi", "", "", nil, errors.New("exit status 1"), checkWarn, "--version failed"},
-		{"pi", "", "pi dev build\n", nil, nil, checkWarn, "version not recognized"},
+		{"codex", "", "codex-cli 0.162.1\n", false, nil, nil, checkPass, "codex 0.162.1"},
+		{"codex", "", "codex-cli 0.159.9\n", false, nil, nil, checkWarn, "older than the supported 0.160.0"},
+		{"claude", "", "2.1.300 (Claude Code)\n", false, nil, nil, checkPass, "claude 2.1.300"},
+		{"claude", "", "2.1.30 (Claude Code)\n", false, nil, nil, checkWarn, "older than the supported 2.1.290"},
+		{"pi", "", "0.99.0\n", false, nil, nil, checkPass, "pi 0.99.0"},
+		{"pi", "", "0.87.1\n", false, nil, nil, checkWarn, "pi 0.87.1 is older than the supported 0.99.0"},
+		{"pi", "", "0.73.1\n", true, nil, nil, checkFail, "pi 0.73.1 is older than the supported 0.99.0"},
+		{"pi", "", "v1.2.0\n", false, nil, nil, checkPass, "pi 1.2.0"},
+		{"pi", "", "", false, notFound, nil, checkWarn, "not found on PATH"},
+		{"pi", "/opt/pi", "", false, notFound, nil, checkFail, "not found"},
+		{"pi", "", "", false, nil, errors.New("exit status 1"), checkWarn, "--version failed"},
+		{"pi", "", "pi dev build\n", false, nil, nil, checkWarn, "version not recognized"},
 	} {
-		got := harnessCheck(test.name, test.configured, "/bin/"+test.name, test.findErr, test.output, test.runErr)
+		got := harnessCheck(
+			test.name,
+			test.configured,
+			test.defined,
+			"/bin/"+test.name,
+			test.findErr,
+			test.output,
+			test.runErr,
+		)
 		if got.Status != test.status || !strings.Contains(got.Detail, test.detail) {
 			t.Errorf("%s %q: got %s %q, want %s containing %q", test.name, test.output, got.Status, got.Detail,
 				test.status, test.detail)
@@ -302,5 +314,20 @@ func TestDoctorJSONFailsWithoutConfiguration(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Errorf("doctor document lacks %s:\n%s", want, text)
 		}
+	}
+}
+
+// A version printed only to standard error, as some Pi releases do, is still read.
+func TestHarnessVersionStderr(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("needs a shell script")
+	}
+	path := filepath.Join(t.TempDir(), "pi")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho 0.73.1 >&2\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	output, err := harnessVersion(t.Context(), path)
+	if err != nil || strings.TrimSpace(output) != "0.73.1" {
+		t.Errorf("harnessVersion = %q, %v", output, err)
 	}
 }

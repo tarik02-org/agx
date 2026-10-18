@@ -578,10 +578,11 @@ func TestDaemonJSON(t *testing.T) {
 	e.jsonFail("daemon_unavailable", "daemon", "status")
 	for _, args := range [][]string{{"daemon", "stop"}, {"daemon", "stop", "--force"}} {
 		var absent struct {
-			Running *bool `json:"running"`
+			Running  *bool `json:"running"`
+			Stopping *bool `json:"stopping"`
 		}
 		e.jsonOK(&absent, args...)
-		if absent.Running == nil || *absent.Running {
+		if absent.Running == nil || *absent.Running || absent.Stopping == nil || *absent.Stopping {
 			t.Fatalf("%q without a daemon = %+v", args, absent)
 		}
 		if r := e.ok(args...); !strings.Contains(r.stdout, "Daemon is not running.") {

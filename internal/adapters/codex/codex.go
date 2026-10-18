@@ -207,7 +207,8 @@ type server struct{ name, url string }
 // overrides brings a launch's resources to Codex.
 type overrides struct {
 	instructions string
-	// plugins lists every installed agx skill plugin, enabled when the snapshot selects it.
+	// plugins lists every agx skill plugin installed in CODEX_HOME, enabled when the snapshot
+	// selects it.
 	plugins []plugin
 	servers []server
 }
@@ -232,11 +233,6 @@ func resources(l adapters.Launch) (overrides, error) {
 	if err != nil {
 		return o, err
 	}
-	registry, err := readCatalog(l.Cache)
-	if err != nil {
-		return o, err
-	}
-	installed := registry.Installed[home]
 	switch {
 	case l.Uninstalled:
 		// The skipped installation said why; MCP servers and instructions go on without skills.
@@ -246,6 +242,10 @@ func resources(l adapters.Launch) (overrides, error) {
 		}
 	default:
 		// A configured executable may enable plugins itself, so its installation lets Codex decide.
+		installed, err := installedPlugins(home)
+		if err != nil {
+			return o, err
+		}
 		for name := range selected {
 			if !slices.Contains(installed, name) {
 				return o, fmt.Errorf("selected skill plugin %s: %w", name, adapters.ErrNotInstalled)

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -144,6 +145,12 @@ func runDoctor(
 		if h, err := c.Harness(name); err == nil {
 			configured = h.Executable
 		}
+		defined := false
+		for definition := range c.Harnesses {
+			if h, err := c.Harness(definition); err == nil && h.Builtin == name {
+				defined = true
+			}
+		}
 		executable, findErr := adapter.Executable(configured)
 		if findErr == nil {
 			executables[name] = executable
@@ -154,7 +161,7 @@ func runDoctor(
 			if findErr == nil {
 				output, runErr = harnessVersion(ctx, executable)
 			}
-			harnessRows[i] = harnessCheck(name, configured, executable, findErr, output, runErr)
+			harnessRows[i] = harnessCheck(name, configured, defined, executable, findErr, output, runErr)
 		})
 	}
 	wg.Wait()
@@ -233,18 +240,36 @@ func packageChecks(read, c *config.Config, loadErr error, files string) (*config
 	return read, false, []check{configRow}
 }
 
+// harnessVersion runs executable --version and returns its standard output, or its standard
+// error when only that names a version: some Pi releases print the bare version there.
 func harnessVersion(ctx context.Context, executable string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, doctorVersionTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, executable, "--version").Output()
-	return string(out), err
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, executable, "--version")
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	if !versionPattern.Match(stdout.Bytes()) && versionPattern.Match(stderr.Bytes()) {
+		return stderr.String(), err
+	}
+	return stdout.String(), err
 }
 
+// versionPattern finds a version in --version output, bare (0.73.1) or within text
+// (codex-cli 0.162.1, v1.2.3).
 var versionPattern = regexp.MustCompile(`\d+\.\d+\.\d+`)
 
 // harnessCheck judges a built-in harness by its executable and --version output. A harness that
-// is missing is only a warning unless an executable was configured for it.
-func harnessCheck(name, configured, executable string, findErr error, output string, runErr error) check {
+// is missing is only a warning unless an executable was configured for it; one older than the
+// supported version fails when the configuration defines a harness based on it.
+func harnessCheck(
+	name, configured string,
+	defined bool,
+	executable string,
+	findErr error,
+	output string,
+	runErr error,
+) check {
 	row := check{Group: "harness", Name: name}
 	minimum := minimumVersions[name]
 	switch {
@@ -268,7 +293,10 @@ func harnessCheck(name, configured, executable string, findErr error, output str
 	row.Detail = fmt.Sprintf("%s %s (%s)", name, version, executable)
 	if minimum != "" && compareVersions(version, minimum) < 0 {
 		row.Status = checkWarn
-		row.Detail += "; older than " + minimum
+		if defined {
+			row.Status = checkFail
+		}
+		row.Detail = fmt.Sprintf("%s %s is older than the supported %s (%s)", name, version, minimum, executable)
 		row.Hint = fmt.Sprintf(
 			"update %s to %s or later; older versions lose skills, instructions, or MCP servers",
 			name,
