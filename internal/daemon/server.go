@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,8 +36,18 @@ import (
 	"github.com/tarik02-org/agx/internal/securefs"
 )
 
-// Version is set at build time with -ldflags "-X agx/internal/daemon.Version=...".
+// Version is set at build time with -ldflags "-X agx/internal/daemon.Version=..."; otherwise it
+// is the main module's version, which go install module@version records.
 var Version = "dev"
+
+func init() {
+	if Version != "dev" {
+		return
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		Version = strings.TrimPrefix(info.Main.Version, "v")
+	}
+}
 
 // ErrVersionMismatch is returned by ReadDiscovery together with the decoded
 // discovery when the running daemon has a different version.
