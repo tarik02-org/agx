@@ -1,4 +1,4 @@
-module github.com/tarik02/agx
+module github.com/tarik02-org/agx
 
 go 1.26.0
 

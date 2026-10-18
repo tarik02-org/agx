@@ -16,8 +16,8 @@ import (
 	"github.com/zalando/go-keyring"
 	"golang.org/x/oauth2"
 
-	"github.com/tarik02/agx/internal/config"
-	"github.com/tarik02/agx/internal/securefs"
+	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/securefs"
 )
 
 var (

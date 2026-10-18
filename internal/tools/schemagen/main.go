@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/tarik02/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/config"
 )
 
 //go:generate go run . ../../../schema

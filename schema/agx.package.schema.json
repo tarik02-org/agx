@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/tarik02/agx/main/schema/agx.package.schema.json",
+  "$id": "https://raw.githubusercontent.com/tarik02-org/agx/master/schema/agx.package.schema.json",
   "$defs": {
     "Bundle": {
       "properties": {

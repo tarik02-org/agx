@@ -14,9 +14,9 @@ import (
 
 	"connectrpc.com/connect"
 
-	v1 "github.com/tarik02/agx/gen/agx/v1"
-	"github.com/tarik02/agx/internal/cli/ui"
-	"github.com/tarik02/agx/internal/platform"
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/internal/cli/ui"
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 // login waits for the daemon's login stream without a deadline of its own: the attempt's

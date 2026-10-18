@@ -13,8 +13,8 @@ import (
 
 	"github.com/gofrs/flock"
 
-	"github.com/tarik02/agx/internal/config"
-	"github.com/tarik02/agx/internal/securefs"
+	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/securefs"
 )
 
 type Result struct {

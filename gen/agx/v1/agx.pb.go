@@ -3206,7 +3206,7 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x05Login\x12\x14.agx.v1.LoginRequest\x1a\x15.agx.v1.LoginResponse0\x01\x12@\n" +
 	"\tSetSecret\x12\x18.agx.v1.SetSecretRequest\x1a\x19.agx.v1.SetSecretResponse\x12R\n" +
 	"\x0fGetSecretStatus\x12\x1e.agx.v1.GetSecretStatusRequest\x1a\x1f.agx.v1.GetSecretStatusResponse\x127\n" +
-	"\x06Logout\x12\x15.agx.v1.LogoutRequest\x1a\x16.agx.v1.LogoutResponseB)Z'github.com/tarik02/agx/gen/agx/v1;agxv1b\x06proto3"
+	"\x06Logout\x12\x15.agx.v1.LogoutRequest\x1a\x16.agx.v1.LogoutResponseB-Z+github.com/tarik02-org/agx/gen/agx/v1;agxv1b\x06proto3"
 
 var (
 	file_agx_v1_agx_proto_rawDescOnce sync.Once

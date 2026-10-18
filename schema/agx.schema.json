@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/tarik02/agx/main/schema/agx.schema.json",
+  "$id": "https://raw.githubusercontent.com/tarik02-org/agx/master/schema/agx.schema.json",
   "$defs": {
     "ArgGroup": {
       "oneOf": [

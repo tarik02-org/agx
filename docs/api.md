@@ -4,7 +4,7 @@ The contract is [agx.v1](../api/agx/v1/agx.proto), exposed through Connect over
 authenticated loopback HTTP. Generated Go/Connect and TypeScript bindings are included; `buf generate`
 regenerates them. The MCP
 endpoints are separate native MCP interfaces, not methods on these services.
-The Go module path is `github.com/tarik02/agx`.
+The Go module path is `github.com/tarik02-org/agx`.
 
 ## Services
 

@@ -19,13 +19,13 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	v1 "github.com/tarik02/agx/gen/agx/v1"
-	"github.com/tarik02/agx/internal/adapters"
-	"github.com/tarik02/agx/internal/cli/ui"
-	"github.com/tarik02/agx/internal/config"
-	"github.com/tarik02/agx/internal/daemon"
-	"github.com/tarik02/agx/internal/packages"
-	"github.com/tarik02/agx/internal/platform"
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/internal/adapters"
+	"github.com/tarik02-org/agx/internal/cli/ui"
+	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/daemon"
+	"github.com/tarik02-org/agx/internal/packages"
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 func Main() int {

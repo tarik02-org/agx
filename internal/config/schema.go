@@ -8,7 +8,7 @@ import (
 	"github.com/invopop/jsonschema"
 )
 
-const schemaBase = "https://raw.githubusercontent.com/tarik02/agx/main/schema/"
+const schemaBase = "https://raw.githubusercontent.com/tarik02-org/agx/master/schema/"
 
 var (
 	idPattern          = `^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$`

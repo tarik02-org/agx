@@ -19,7 +19,7 @@ import (
 
 	"go.yaml.in/yaml/v4"
 
-	"github.com/tarik02/agx/internal/securefs"
+	"github.com/tarik02-org/agx/internal/securefs"
 )
 
 var (

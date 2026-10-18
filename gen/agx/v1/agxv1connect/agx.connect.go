@@ -8,7 +8,7 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	v1 "github.com/tarik02/agx/gen/agx/v1"
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	http "net/http"
 	strings "strings"
 )

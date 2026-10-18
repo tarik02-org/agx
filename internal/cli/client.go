@@ -8,9 +8,9 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/tarik02/agx/gen/agx/v1/agxv1connect"
-	"github.com/tarik02/agx/internal/daemon"
-	"github.com/tarik02/agx/internal/platform"
+	"github.com/tarik02-org/agx/gen/agx/v1/agxv1connect"
+	"github.com/tarik02-org/agx/internal/daemon"
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 const (

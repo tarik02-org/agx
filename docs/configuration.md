@@ -109,7 +109,7 @@ the installed version. Editors using yaml-language-server pick a schema from a
 modeline at the top of the file:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/tarik02/agx/main/schema/agx.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/tarik02-org/agx/master/schema/agx.schema.json
 version: 1
 ```
 

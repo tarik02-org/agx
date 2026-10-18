@@ -18,13 +18,13 @@ import (
 
 	"connectrpc.com/connect"
 
-	v1 "github.com/tarik02/agx/gen/agx/v1"
-	"github.com/tarik02/agx/internal/adapters"
-	"github.com/tarik02/agx/internal/auth"
-	"github.com/tarik02/agx/internal/cli/ui"
-	"github.com/tarik02/agx/internal/config"
-	"github.com/tarik02/agx/internal/platform"
-	"github.com/tarik02/agx/internal/securefs"
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/internal/adapters"
+	"github.com/tarik02-org/agx/internal/auth"
+	"github.com/tarik02-org/agx/internal/cli/ui"
+	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/securefs"
 )
 
 type ExitError struct{ Code int }

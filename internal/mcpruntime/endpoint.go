@@ -18,10 +18,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/tarik02/agx/internal/auth"
-	"github.com/tarik02/agx/internal/config"
-	"github.com/tarik02/agx/internal/platform"
-	"github.com/tarik02/agx/internal/securefs"
+	"github.com/tarik02-org/agx/internal/auth"
+	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/securefs"
 )
 
 const (

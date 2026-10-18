@@ -23,7 +23,7 @@ With Nix, `nix build` produces `result/bin/agx` and `nix develop` provides Go,
 Buf, golangci-lint, and gopls. Lint with `golangci-lint run`.
 
 Release builds set the version reported to wrappers, which must match the
-daemon: `go build -ldflags "-X github.com/tarik02/agx/internal/daemon.Version=0.1.0" ./cmd/agx`.
+daemon: `go build -ldflags "-X github.com/tarik02-org/agx/internal/daemon.Version=0.1.0" ./cmd/agx`.
 
 Licensed under the [MIT License](LICENSE).
 

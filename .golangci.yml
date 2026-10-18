@@ -35,7 +35,7 @@ formatters:
       max-len: 120
     goimports:
       local-prefixes:
-        - github.com/tarik02/agx
+        - github.com/tarik02-org/agx
   exclusions:
     generated: strict
     paths:

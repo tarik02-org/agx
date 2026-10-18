@@ -10,9 +10,9 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/tarik02/agx/gen/agx/v1"
-	"github.com/tarik02/agx/internal/auth"
-	"github.com/tarik02/agx/internal/config"
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/internal/auth"
+	"github.com/tarik02-org/agx/internal/config"
 )
 
 // lookupSecret finds a top-level secret, or an MCP server's inline one, by the ID the CLI uses.

@@ -21,13 +21,13 @@ import (
 	"github.com/gofrs/flock"
 	"google.golang.org/protobuf/proto"
 
-	v1 "github.com/tarik02/agx/gen/agx/v1"
-	"github.com/tarik02/agx/gen/agx/v1/agxv1connect"
-	"github.com/tarik02/agx/internal/auth"
-	"github.com/tarik02/agx/internal/config"
-	"github.com/tarik02/agx/internal/mcpruntime"
-	"github.com/tarik02/agx/internal/platform"
-	"github.com/tarik02/agx/internal/securefs"
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/gen/agx/v1/agxv1connect"
+	"github.com/tarik02-org/agx/internal/auth"
+	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/mcpruntime"
+	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/securefs"
 )
 
 // Version is set at build time with -ldflags "-X agx/internal/daemon.Version=...".

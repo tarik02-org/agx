@@ -11,10 +11,10 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/tarik02/agx/gen/agx/v1"
-	"github.com/tarik02/agx/internal/cli/ui"
-	"github.com/tarik02/agx/internal/config"
-	"github.com/tarik02/agx/internal/packages"
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/internal/cli/ui"
+	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/packages"
 )
 
 // progress reports a long step on stderr, only for a person watching a terminal.

@@ -25,7 +25,7 @@ buildGoModule (finalAttrs: {
   ldflags = [
     "-s"
     "-w"
-    "-X github.com/tarik02/agx/internal/daemon.Version=${finalAttrs.version}"
+    "-X github.com/tarik02-org/agx/internal/daemon.Version=${finalAttrs.version}"
   ];
 
   doInstallCheck = true;
