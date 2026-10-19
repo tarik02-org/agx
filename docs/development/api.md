@@ -16,15 +16,47 @@ The Go module path is `github.com/tarik02-org/agx`.
 - `LaunchService`: prepare, renew, finish, and administratively revoke a launch;
   resolve and prepare thread launches of a process serving many threads; restore
   a launch a restarted daemon brought back.
-- `RuntimeService`: inspect/watch redacted daemon, launch, and MCP server state,
-  and `TestMcpServer`, which connects to one MCP server outside any launch and
-  lists its tools with their descriptions (`agx mcp test`). It accepts only the environment variables the
-  server's values name and reports failures with the endpoint's diagnostics.
+- `RuntimeService`: inspect/watch redacted daemon, launch, and MCP server state;
+  `TestMcpServer`, which connects to one MCP server outside any launch and
+  lists its tools with their descriptions (`agx mcp test`), accepting only the
+  environment variables the server's values name and reporting failures with the
+  endpoint's diagnostics; and `ListTools` and `CallTool`, which list and call the
+  tools of the MCP servers in a call scope (`agx mcp tools`, `agx mcp call`, and
+  the client of `agx mcp types`).
 - `SecretService`: log in with OAuth, set a keychain secret, inspect secret
   state, and log out.
 
-There is deliberately no client-facing `GetCredential` or `CallTool` RPC.
-Upstream credentials and tool execution remain inside the daemon.
+There is deliberately no client-facing `GetCredential` RPC. Upstream
+credentials and tool execution remain inside the daemon: `CallTool` returns only
+the tool's result ([ADR 0022](../adr/0022-on-demand-mcp-calls.md)).
+
+## Tool calls
+
+`ListTools` and `CallTool` take an `McpCallScope`. With `launch_id`, the request
+carries that launch's grant (`AGX_MCP_GRANT`) or management authorization and
+reaches the servers of the launch's snapshot, native and on-demand, through the
+endpoints the launch holds, with its own values and environment inputs. Without
+it, the request carries management authorization and reaches the servers
+selected for `directory`, or every configured server with `all`; only the
+environment inputs those servers' values read are accepted. A grant for an
+ended, expired, or unknown launch is `Unauthenticated`.
+
+`ListTools` with `mcp_id` describes one server and fails with its error;
+without, it describes every server in scope, each with its state and a message
+instead of failing. Tools carry their input and output JSON Schemas as JSON
+text. `CallTool` returns the result's content items as a JSON array, binary data
+in base64, and its structured content as JSON. An unknown server is `NotFound`,
+one outside the scope `NotFound` naming the scope; an unknown tool, or arguments
+the server rejects as invalid params, `InvalidArgument` with the closest tool
+names; a server needing a login `REASON_NEEDS_LOGIN` with the `agx secret login`
+command; and other failures of the server `REASON_MCP_FAILED`. A request without
+a deadline gets one: 45 seconds for listing, 10 minutes for a call.
+
+The daemon keeps one client session per launch, or per CLI scope, and server
+(`clientPool`), opened over in-memory connections to the endpoint so nothing
+else can reach it. Sessions close after five idle minutes, when their launch
+ends, and when the daemon stops; a call whose session broke, as after a login
+reset the endpoint, opens a new one once.
 
 ## Launch flow
 

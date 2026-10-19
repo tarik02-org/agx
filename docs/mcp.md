@@ -2,7 +2,10 @@
 
 agx runs your MCP servers once, in its [daemon](daemon.md), and gives each
 launch access to the servers selected for its directory. Credentials stay in
-the daemon; the harness only gets a short-lived grant for its own launch.
+the daemon; the harness only gets a short-lived grant for its own launch. The
+same servers can be [called from the shell](#calling-servers-from-the-shell),
+and [on-demand servers](#on-demand-servers) stay out of the harness's tool list
+until an agent calls them that way.
 
 ## Adding a server
 
@@ -144,6 +147,153 @@ directory (`--all` for every server).
 `agx mcp list` shows all configured servers, and `agx launch show <id>` the
 state of each server in a running launch.
 
+## Calling servers from the shell
+
+`agx mcp tools` and `agx mcp call` reach the same servers a harness does, through
+the daemon, so you can try a tool without a harness and agents can call one from
+their shell:
+
+```sh
+agx mcp tools                     # servers selected here, their state and tools
+agx mcp tools tracker             # one server's tool signatures
+agx mcp call tracker.search_issues query='login bug' status=open limit=5
+```
+
+`agx mcp tools tracker` prints each tool as a compact, TypeScript-like signature
+with the first line of its description:
+
+```
+search_issues(query: string, limit?: number, status?: "open" | "closed")
+  Search issues by text.
+```
+
+Required arguments come first; `?` marks optional ones. A tool that declares a
+structured result ends with its type, as in `): { total: number }`. `--schema`
+adds the raw input and output JSON Schemas.
+
+Arguments are `key=value` pairs, converted by the tool's schema:
+
+| You write | The tool receives |
+| --- | --- |
+| `limit=5` | `5` when `limit` is a number or integer, `"5"` when it is a string |
+| `exact=true` | `true` for a boolean |
+| `note=null` | `null` when the schema allows it |
+| `status=open` | `"open"`, checked against the enum |
+| `tags=a tags=b` | `["a", "b"]`; a single `tags=a` becomes `["a"]` |
+| `filter='{"owner":"me"}'` | an object or array, written as JSON |
+| `body=@notes.md` | the file's content |
+| `handle=@@me` | `"@me"`: `@@` escapes a leading `@` |
+
+`--raw-strings` passes every value as a string, and `--args '<json>'` (or
+`--args -` to read standard input) gives the whole arguments object; `key=value`
+pairs then override its members. An unknown tool or argument, a value the schema
+rejects, or a missing required argument fails before the call, naming the
+closest matches and the tool's signature.
+
+Text content is printed. Binary content (images, audio, binary resources) is
+always written to files, into `--save-dir <dir>` or otherwise a new temporary
+directory per call, and printed as one line per file:
+
+```
+[image/png, 34 KB] /tmp/agx-mcp-123/1.png
+```
+
+`--json` prints the result, with file content as `{type, mime_type, path,
+size}` instead of base64:
+
+```json
+{"version":1,"data":{"mcp_id":"tracker","tool":"search_issues","is_error":false,"content":[{"type":"text","text":"…"}],"structured_content":null}}
+```
+
+`call` exits 0 on success, 1 when the call fails or the tool reports an error
+(the result still prints), and 2 for malformed arguments. Errors inside the
+server have the code `mcp_failed`; a server that needs a login fails with
+`needs_login` and the `agx secret login` command to run. `--timeout` (default
+`60s`) bounds the wait.
+
+Which servers a call reaches:
+
+- Inside a launch, the servers selected for that launch, native and on-demand,
+  through the launch's own endpoints: the harness environment carries
+  `AGX_LAUNCH_ID` and the launch grant `AGX_MCP_GRANT`, so values and
+  environment inputs are the launch's.
+- Outside a launch, the servers selected for the current directory, with the
+  variables their values read taken from your shell, as `agx mcp test` does.
+- With `--all`, every configured server, also inside a launch.
+
+The daemon keeps its client session to each server for about five idle
+minutes, per launch or directory, so repeated calls reuse a running local server
+instead of starting it again.
+
+## On-demand servers
+
+Every server a launch selects normally sits in the harness's tool list, and its
+tool definitions cost context in every request. A server you need now and then
+can stay out of it:
+
+```yaml
+mcp:
+  jira:
+    url: https://mcp.atlassian.example/v1
+    description: Jira issues and Confluence pages for the platform team
+    load: on_demand
+```
+
+`load: on_demand` keeps the server out of every harness's configuration, while
+launches still select it as usual: `agx mcp tools` lists it, with its
+description, and `agx mcp call jira.<tool> …` calls it. `agx mcp add` takes
+`--load on_demand` and `--description <text>`; `agx mcp list`, `agx resolve`,
+and `agx explain` show the load mode.
+
+agx does not tell agents about on-demand servers itself. Add an instruction that
+does, worded for your setup, for example:
+
+```yaml
+instructions:
+  on-demand-mcp:
+    text: |
+      More MCP servers are available on demand. Run `agx mcp tools` to list them,
+      `agx mcp tools <server>` for a server's tool signatures, and
+      `agx mcp call <server>.<tool> key=value … --json` to call a tool.
+scopes:
+  - add:
+      instructions: [on-demand-mcp]
+```
+
+## Code mode
+
+When a task chains several calls or filters large results, a script is cheaper
+than one call per step. `agx mcp types` generates a typed client for the servers
+you reach:
+
+```sh
+agx mcp types --out .agx          # writes .agx/agx-mcp.d.mts and .agx/agx-mcp.mjs
+agx mcp types tracker             # prints the declarations only
+```
+
+`agx-mcp.d.mts` declares a typed function per tool, from its input and output
+schemas. `agx-mcp.mjs` is a dependency-free ES module for node, bun, or deno
+that calls the daemon directly, with the same `CallTool` request as
+`agx mcp call`: inside a launch with `AGX_LAUNCH_ID` and `AGX_MCP_GRANT`,
+outside one with the daemon's management token and the current directory's
+servers. Credentials never reach the script.
+
+```js
+import { tracker, call } from "./.agx/agx-mcp.mjs";
+
+const { structuredContent } = await tracker.search_issues({ query: "login bug", limit: 50 });
+const open = structuredContent.issues.filter((issue) => issue.status === "open");
+console.log(open.map((issue) => issue.key).join("\n"));
+await call("tracker", "add_comment", { key: open[0].key, body: "Investigating." });
+```
+
+Each call resolves to `{isError, content, structuredContent, text}` and throws
+an `AgxError` with one of the JSON error codes (`invalid_request`,
+`mcp_failed`, `needs_login`, …) when it fails. A server whose ID is not a
+JavaScript identifier is under `servers["team/docs"]`. Generated with `--all`,
+the client reaches every configured server, also inside a launch. Regenerate it
+when servers or their tools change.
+
 ## Configuration reference
 
 ```yaml
@@ -171,6 +321,8 @@ mcp:
 | `command` | local | the program and its arguments |
 | `cwd` | local | working directory; relative to the configuration file |
 | `environment` | local | environment variables; values may use `!secret`, `!env`, `!file` |
+| `description` | both | what the server offers, shown by `agx mcp tools` |
+| `load` | both | `native` (default): in the harness's tool list; `on_demand`: reached with `agx mcp call` only |
 
 A server has either `url` or `command`. agx manages the `Authorization`,
 `Cookie`, `Host`, and `Mcp-Session-Id` headers itself.

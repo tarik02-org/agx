@@ -22,6 +22,7 @@ Put these before the command.
 | `AGX_CACHE` | cache directory, absolute |
 | `AGX_STATE` | state directory, absolute; defaults to `<cache>/state` when the cache is not the default |
 | `AGX_NO_AUTOSTART=1` | never start the daemon automatically |
+| `AGX_LAUNCH_ID`, `AGX_MCP_GRANT` | set by agx in a harness's environment: the launch and its grant, which `agx mcp tools`, `agx mcp call`, and generated clients use to reach the launch's MCP servers |
 | `NO_COLOR`, `CLICOLOR_FORCE`, `FORCE_COLOR` | turn styling off, or force it on |
 
 See [Where files live](configuration.md#where-files-live) for the defaults.
@@ -92,7 +93,7 @@ Command-specific flags:
 
 | Command | Flags |
 | --- | --- |
-| `mcp add` | `--header KEY=VALUE` (remote), `--env KEY=VALUE` (local), `--auth none\|oauth\|keychain\|'!secret <id>'`, `--client-id <id>` (OAuth public client), `--no-browser` |
+| `mcp add` | `--header KEY=VALUE` (remote), `--env KEY=VALUE` (local), `--auth none\|oauth\|keychain\|'!secret <id>'`, `--client-id <id>` (OAuth public client), `--description <text>`, `--load native\|on_demand`, `--no-browser` |
 | `skill add` | `--skill <name>` (repeatable), `--all`, `--ref <ref>`, `--path <dir>`, `--package <id>` |
 | `instructions add` | `--id <id>`, `--text <text>` |
 | `harness add` | `--base <harness>`, `--executable <path>`, `--env KEY=VALUE` (repeatable) |
@@ -118,6 +119,30 @@ In `--header` and `--env`, a value written `!secret <id>`, `!env NAME`, or
 | `agx secret logout <secret-id> [--json]` | delete a stored secret or OAuth login |
 
 See [The daemon](daemon.md) and [Secrets](secrets.md).
+
+## Calling MCP servers
+
+| Command | Description |
+| --- | --- |
+| `agx mcp tools [<server>] [--schema] [--all] [--json]` | list the servers you can call with their state, load mode, description, and tools; with a server, its tool signatures |
+| `agx mcp call <server>.<tool> [key=value ...]` | call a tool and print its result |
+| `agx mcp types [<server> ...] [--out <dir>] [--all] [--json]` | print TypeScript declarations for the tools; with `--out`, write them with an ES module client |
+
+`mcp call` flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `key=value` | an argument, converted by the tool's schema; `key=@file` reads a file, `@@` escapes a leading `@` |
+| `--args <json\|->` | the arguments as a JSON object, or `-` to read it from standard input; `key=value` pairs override its members |
+| `--raw-strings` | pass `key=value` values as strings, without conversion |
+| `--save-dir <dir>` | where binary content goes (default: a new temporary directory per call) |
+| `--timeout <duration>` | how long to wait for the result (default `60s`) |
+| `--all` | reach every configured server, not only those of this directory or launch |
+
+Inside a launch, these commands reach that launch's servers; elsewhere, the
+servers selected for the current directory. `call` exits 1 when the tool
+reports an error, after printing the result. See
+[Calling servers from the shell](mcp.md#calling-servers-from-the-shell).
 
 ## Shell completion
 
@@ -190,6 +215,7 @@ Conventions:
   | `invalid_request` | the request was rejected as invalid |
   | `failed_precondition` | the command can't run in the current state |
   | `needs_login` | a secret needs `agx secret login` first |
+  | `mcp_failed` | an MCP server failed the request, or could not be reached or started |
   | `daemon_unavailable` | the daemon isn't running and couldn't start |
   | `version_mismatch` | the CLI and the daemon are different versions |
   | `network` | a network request failed |

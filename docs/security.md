@@ -39,6 +39,11 @@ plaintext fallback.
 OAuth tokens of remote MCP servers; they talk to the daemon, which adds them.
 Each harness gets a grant that works only for its own launch's MCP servers and
 expires when the launch ends or is revoked (`agx launch revoke <id>`).
+`agx mcp call` and the client `agx mcp types` generates receive only tool
+results; the daemon runs the calls. Since the management token is readable by
+your processes, an agent can reach every configured server with
+`agx mcp call --all`; the grant scopes what a launch reaches by default, not
+what your account can do.
 
 Some values necessarily reach the harness or a server: whatever you put in a
 harness's `environment`, and a local MCP server's `environment`. Those are

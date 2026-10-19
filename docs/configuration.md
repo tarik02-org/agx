@@ -70,6 +70,10 @@ scopes:
 - `scopes` decide where they are used. Each rule adds or removes resources for
   a directory and everything below it; a rule without `directory` applies
   everywhere.
+- A selected MCP server is in the harness's tool list, unless it sets
+  `load: on_demand`: then agents reach it with `agx mcp call` instead, and its
+  tools cost no context until used. See
+  [On-demand servers](mcp.md#on-demand-servers).
 
 Check what a directory ends up with:
 
@@ -78,7 +82,7 @@ agx explain ~/work/legacy
 ```
 
 `explain` lists every selected and removed resource with the file and line that
-decided it. `agx resolve` prints just the result, and `agx config validate`
+decided it, and marks on-demand MCP servers. `agx resolve` prints just the result, and `agx config validate`
 checks the whole configuration.
 
 ## Scopes

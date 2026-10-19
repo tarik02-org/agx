@@ -41,6 +41,15 @@ together with the account and settings used to reach it, so `github-work` and
 `github-personal` may point at the same server.
 _Avoid_: Connection
 
+**On-demand MCP server**: An MCP server with `load: on_demand`: launches select
+it as usual, but harnesses do not get it in their tool list; agents reach it
+with `agx mcp call`. The opposite is a native server.
+_Avoid_: Lazy server
+
+**Call scope**: The MCP servers `agx mcp tools` and `agx mcp call` reach: a
+launch's, through its grant, or the servers selected for a directory, or every
+configured server with `--all`.
+
 **Snapshot**: The resolved selection of resources and settings for a working
 directory at launch time.
 

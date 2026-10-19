@@ -6,6 +6,24 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Added
 
+- `agx mcp tools [<server>] [--schema] [--all]` lists the MCP servers you can call, with
+  their state, load mode, description, and tools, or one server's tools as compact
+  TypeScript-like signatures. `agx mcp call <server>.<tool> [key=value ...]` calls a tool
+  through the daemon: values are converted by the tool's schema, `key=@file` reads a file,
+  `--args` takes a JSON object, binary content is written to files (`--save-dir`), and
+  `--json` prints `{mcp_id, tool, is_error, content, structured_content}`. Inside a launch
+  they reach that launch's servers with its grant; elsewhere the current directory's, or
+  every server with `--all`. Client sessions are pooled in the daemon.
+- `agx mcp types [<server> ...] [--out <dir>]` generates TypeScript declarations and a
+  dependency-free ES module client, so node, bun, or deno scripts can chain tool calls.
+- MCP servers take `description` and `load: native | on_demand`. On-demand servers stay out
+  of every harness's tool list and are reached with `agx mcp call`; `mcp list`, `resolve`,
+  `explain`, and `mcp tools` show the load mode, and `agx mcp add` takes `--description`
+  and `--load`.
+- Harnesses get `AGX_LAUNCH_ID` next to `AGX_MCP_GRANT`; Codex app-server threads get
+  their own in their shell environment.
+- `RuntimeService.ListTools` and `CallTool`, and the JSON error code `mcp_failed`
+  (`REASON_MCP_FAILED`) for failures inside an MCP server.
 - `agx daemon restart [--force] [--timeout <duration>] [--json]` stops the daemon,
   waits for it to exit, starts one of this build with the same root, and reports
   how many launches it restored (`{stopped, started, version, restored}`).
