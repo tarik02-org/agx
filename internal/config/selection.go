@@ -221,11 +221,19 @@ func deriveID(at Source, name string) (ID, error) {
 	return ID(name), nil
 }
 
-// RepositoryName is the last segment of a Git URL or path, without .git.
+// RepositoryName is the last segment of a Git URL or path, without .git. A repository named just
+// "skills" is named after its owner instead, so anthropics/skills and mattpocock/skills don't
+// collide.
 func RepositoryName(source string) string {
-	source = strings.TrimRight(filepath.ToSlash(source), "/")
-	if i := strings.LastIndexAny(source, "/:"); i >= 0 {
-		source = source[i+1:]
+	segments := strings.FieldsFunc(strings.TrimSuffix(filepath.ToSlash(source), ".git"), func(r rune) bool {
+		return r == '/' || r == ':'
+	})
+	if len(segments) == 0 {
+		return ""
 	}
-	return strings.TrimSuffix(source, ".git")
+	name := strings.TrimSuffix(segments[len(segments)-1], ".git")
+	if name == "skills" && len(segments) > 1 {
+		return segments[len(segments)-2]
+	}
+	return name
 }

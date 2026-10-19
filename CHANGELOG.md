@@ -23,6 +23,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Changed
 
+- `agx skill add owner/skills` names the package after the owner (`anthropics`, `mattpocock`) instead of `skills`, so such repositories no longer collide.
+
 - `agx daemon status` succeeds without a running daemon: it prints that none runs
   (`{"running":false,…}` with `--json`) and says why none can start, such as saved
   launches of a newer agx.

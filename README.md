@@ -1,79 +1,150 @@
+<div align="center">
+
 # agx
+
+**One config for every coding agent.**<br>
+Skills, MCP servers, and instructions — scoped to the directory you're in.
+
+Codex · Claude Code · Pi
 
 [![CI](https://github.com/tarik02-org/agx/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/tarik02-org/agx/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/tarik02-org/agx?sort=semver)](https://github.com/tarik02-org/agx/releases)
 
-agx launches coding agents (Codex, Claude Code, and Pi) with the instructions,
-skills, and MCP servers that fit the directory you are in. You describe once
-which projects get what; `agx codex` or `agx claude` then starts the agent with
-exactly that. A small background daemon runs the MCP servers and holds their
-credentials, so tokens never sit in config files or in the agents' settings.
+<img src="docs/assets/explain.png" alt="agx explain: what ~/work/acme-web gets, and why" width="760">
 
-One configuration serves every harness, so you stop copying the same MCP
-servers and prompts into three tools' settings, and a work repository never
-gets your personal servers by accident.
+</div>
+
+## What it looks like
+
+```yaml
+# ~/.config/agx/agx.yaml
+packages:
+  mattpocock:
+    git: https://github.com/mattpocock/skills.git
+
+mcp:
+  context7:   { url: https://mcp.context7.com/mcp, auth: none }
+  github:     { url: https://api.githubcopilot.com/mcp/, auth: keychain }
+  playwright: { command: [npx, -y, '@playwright/mcp@latest'] }
+
+instructions:
+  house-rules:
+    text: Use pnpm, not npm. Write conventional commits.
+
+scopes:
+  - add:                                  # everywhere
+      skills: [mattpocock/tdd, mattpocock/grill-me, mattpocock/diagnosing-bugs]
+      instructions: [house-rules]
+      mcp: [context7, github]
+  - directory: ~/work                     # work projects only
+    add:
+      skills: [mattpocock/pr]
+  - directory: ~/work/acme-web            # just this repo
+    add:
+      mcp: [playwright]
+```
+
+```console
+$ cd ~/work/acme-web
+$ agx claude   # 4 skills, house rules, context7 + github + playwright
+$ agx codex    # same
+$ agx pi       # same — MCP included
+
+$ cd ~/oss/blog
+$ agx claude   # no pr skill, no playwright
+```
+
+## Features
+
+<table>
+<tr>
+<td width="33%" valign="top">
+
+**📁 Directory scopes**<br>
+Add or remove anything for a folder and everything below it. Work repos get work tools; personal ones stay clean.
+
+</td>
+<td width="33%" valign="top">
+
+**📦 Skills from Git**<br>
+`agx skill add mattpocock/skills` — pick skills, lock the commit, `agx update` later.
+
+</td>
+<td width="33%" valign="top">
+
+**🔌 MCP for every harness**<br>
+HTTP and stdio servers, served to Codex, Claude Code, and Pi — which has no MCP built in.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**🔐 No tokens in files**<br>
+Keychain secrets and OAuth logins, held by a local daemon. Agents never see them.
+
+</td>
+<td valign="top">
+
+**🔍 Explainable**<br>
+`agx explain` shows every resource a directory gets and the line that decided it.
+
+</td>
+<td valign="top">
+
+**⏯ Launcher**<br>
+Run `agx` to start an agent or resume any past session, from any harness.
+
+</td>
+</tr>
+</table>
 
 ## Install
 
-**Release archive.** Download the archive for your platform (Linux, macOS, or
-Windows; amd64 or arm64) from the
-[releases page](https://github.com/tarik02-org/agx/releases), check it against
-`checksums.txt`, and put `agx` (`agx.exe` on Windows) on your `PATH`. The
-[nightly prerelease](https://github.com/tarik02-org/agx/releases/tag/nightly)
-is rebuilt from every `master` commit that passes CI.
+Download the archive for your platform (Linux, macOS, or Windows; amd64 or arm64) from the [releases page](https://github.com/tarik02-org/agx/releases), check it against `checksums.txt`, and put `agx` on your `PATH`. On macOS, clear the quarantine flag once: `xattr -d com.apple.quarantine ./agx`.
 
-On macOS, binaries downloaded with a browser are quarantined and Gatekeeper
-refuses to run them because they are not notarized. Clear the flag once:
+<details>
+<summary><b>mise</b></summary>
 
 ```sh
-xattr -d com.apple.quarantine ./agx
+mise use -g github:tarik02-org/agx
 ```
+</details>
 
-**Nix.** Run `nix run github:tarik02-org/agx`, install it with `nix profile
-install github:tarik02-org/agx`, or add the flake's `packages.<system>.agx` to
-your system or Home Manager configuration.
+<details>
+<summary><b>Nix</b></summary>
 
-**Go.** With Go 1.26 or newer:
+```sh
+nix profile install github:tarik02-org/agx
+```
+</details>
+
+<details>
+<summary><b>Go 1.26+</b></summary>
 
 ```sh
 go install github.com/tarik02-org/agx/cmd/agx@latest
 ```
+</details>
 
-Install the harnesses you use separately; agx does not install or update them.
-Git is needed for skills and packages from Git.
+agx wraps the agents you already have; install Codex, Claude Code, or Pi separately.
 
-## Quick start
+## Get started
 
 ```sh
-agx instructions add --id pnpm --text 'Use pnpm, not npm.'
-agx skill add anthropics/skills --skill pdf
-cd ~/work/my-project
-agx mcp add fs --scope here -- npx -y @modelcontextprotocol/server-filesystem .
-agx mcp add github https://api.githubcopilot.com/mcp/ --auth keychain
-agx secret set github --stdin < github-token.txt   # a GitHub personal access token
-agx explain        # what this directory gets, and why
-agx codex          # or: agx claude, agx pi, or just agx for the launcher
+agx skill add mattpocock/skills --skill tdd --skill grill-me
+agx mcp add context7 https://mcp.context7.com/mcp --auth none
+agx mcp add playwright --scope here -- npx -y @playwright/mcp@latest
+agx explain
+agx claude
 ```
 
-Each command shows its change as a diff before writing your configuration.
-The GitHub token goes to the OS keychain, not into a file.
-`agx doctor` checks the whole setup and tells you how to fix what it finds.
+Every command shows a diff before it writes. Continue with the [getting started guide](docs/getting-started.md).
 
-## Documentation
+## Docs
 
-- [Getting started](docs/getting-started.md)
-- [Configuration](docs/configuration.md)
-- [Harnesses and shims](docs/harnesses.md)
-- [MCP servers and logins](docs/mcp.md)
-- [Skills, instructions, and packages](docs/skills-and-packages.md)
-- [Secrets](docs/secrets.md)
-- [Launcher and sessions](docs/sessions.md)
-- [The daemon](docs/daemon.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Security model](docs/security.md)
-- [CLI reference](docs/cli-reference.md)
+[Getting started](docs/getting-started.md) · [Configuration](docs/configuration.md) · [Harnesses](docs/harnesses.md) · [MCP servers](docs/mcp.md) · [Skills & packages](docs/skills-and-packages.md) · [Secrets](docs/secrets.md) · [Sessions](docs/sessions.md) · [Daemon](docs/daemon.md) · [Troubleshooting](docs/troubleshooting.md) · [Security](docs/security.md) · [CLI reference](docs/cli-reference.md)
 
-Working on agx itself? See the [development notes](docs/development/README.md).
-Changes are listed in the [changelog](CHANGELOG.md).
+Working on agx itself? See the [development notes](docs/development/README.md) and the [changelog](CHANGELOG.md).
 
-Licensed under the [MIT License](LICENSE).
+<sub>MIT licensed</sub>

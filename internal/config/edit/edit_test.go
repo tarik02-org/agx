@@ -194,7 +194,7 @@ func TestEntryID(t *testing.T) {
 	}{
 		{edit.Skills, 0, "review", false},
 		{edit.Skills, 1, "local-thing", true},
-		{edit.Skills, 2, "skills", true},
+		{edit.Skills, 2, "team", true},
 		{edit.Skills, 3, "strict", true},
 		{edit.Skills, 4, "deploy", true},
 		{edit.Instructions, 0, "AGENTS", true},

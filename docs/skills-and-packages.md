@@ -49,8 +49,9 @@ agx skill add owner/repo@v2/skills --skill review     # a ref and a subdirectory
 
 `skill add` finds every `SKILL.md` in the source and asks which to add, unless
 `--skill` or `--all` decides. A Git source becomes a [package](#packages) named
-after the repository (`--package` picks another name); its skills get IDs like
-`skills/pdf`. `--ref` and `--path` set the branch, tag, or commit and the
+after the repository, or after its owner when the repository is just called
+`skills` (`--package` picks another name). Its skills get IDs like
+`anthropics/pdf`. `--ref` and `--path` set the branch, tag, or commit and the
 subdirectory for full Git URLs.
 
 agx clones with your own git setup and never prompts for a password. For a
@@ -62,7 +63,7 @@ package ID:
 
 ```sh
 agx skill remove deploy
-agx skill remove skills  # the package for anthropics/skills, with its lock entries
+agx skill remove anthropics  # the package for anthropics/skills, with its lock entries
 ```
 
 Removing a package also drops the rule entries that enable its skills, as

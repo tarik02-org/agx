@@ -30,7 +30,7 @@ func skillCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comma
 	remove.Use = "remove <id | package-id>"
 	remove.Short = "Remove a skill definition, or a package that skill add declared with its skills"
 	remove.Example = "  agx skill remove deploy\n" +
-		"  agx skill remove skills          # the package agx skill add anthropics/skills declared"
+		"  agx skill remove anthropics      # the package agx skill add anthropics/skills declared"
 	command.AddCommand(
 		skillAddCommand(paths, builtins),
 		listCommand(paths, builtins, edit.Skills),
@@ -179,11 +179,12 @@ func parseSkillSource(arg, githubBase string) (skillSource, error) {
 			return skillSource{}, &usageError{fmt.Errorf(
 				"%s is not a path, a Git URL, or owner/repo[@ref][/path]", arg)}
 		}
+		git := strings.TrimRight(githubBase, "/") + "/" + m[1] + "/" + m[2] + ".git"
 		return skillSource{
-			git:    strings.TrimRight(githubBase, "/") + "/" + m[1] + "/" + m[2] + ".git",
+			git:    git,
 			ref:    m[3],
 			subdir: m[4],
-			name:   m[2],
+			name:   config.RepositoryName(git),
 		}, nil
 	}
 	return skillSource{git: arg, name: config.RepositoryName(arg)}, nil
@@ -321,7 +322,8 @@ func skillAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 	cmd.Flags().BoolVar(&choice.all, "all", false, "add every skill found")
 	cmd.Flags().StringVar(&ref, "ref", "", "Git branch, tag, or commit to lock")
 	cmd.Flags().StringVar(&subdir, "path", "", "directory within the repository to search")
-	cmd.Flags().StringVar(&packageID, "package", "", "package ID (default: the repository name)")
+	cmd.Flags().
+		StringVar(&packageID, "package", "", "package ID (default: the repository name, or its owner for a repository named skills)")
 	githubBase = "https://github.com"
 	addGitHubBaseFlag(cmd, &githubBase)
 	return cmd
