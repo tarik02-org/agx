@@ -450,6 +450,14 @@ type otherContentJSON struct {
 	Value json.RawMessage `json:"value"`
 }
 
+// mcp types
+
+// mcpTypesJSON names the servers mcp types covered and the files it wrote.
+type mcpTypesJSON struct {
+	MCP   []string `json:"mcp"`
+	Files []string `json:"files"`
+}
+
 // shims
 
 type shimListJSON struct {

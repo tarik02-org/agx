@@ -386,6 +386,15 @@ func (k *completer) registerCompletions(root *cobra.Command) {
 	set(firstArg(k.loginServers), "mcp", "login")
 	set(firstArg(func() []candidate { return k.definitions(edit.MCP, false) }), "mcp", "tools")
 	set(k.toolServers, "mcp", "call")
+	set(func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		candidates := []candidate{}
+		for _, c := range k.definitions(edit.MCP, false) {
+			if !slices.Contains(args, c.value) {
+				candidates = append(candidates, c)
+			}
+		}
+		return offer(candidates, toComplete)
+	}, "mcp", "types")
 	set(firstArg(func() []candidate { return k.definitions(edit.Skills, true) }), "skill", "remove")
 	set(firstArg(func() []candidate { return k.definitions(edit.Instructions, true) }), "instructions", "remove")
 	set(firstArg(func() []candidate { return k.definitions("harnesses", true) }), "harness", "remove")

@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// TestMCPCalls covers agx mcp tools and call from a shell and from inside a launch.
+// TestMCPCalls covers agx mcp tools, call, and types from a shell and from inside a launch.
 func TestMCPCalls(t *testing.T) {
 	e := newEnv(t)
 	starts := filepath.Join(e.dir, "starts")
@@ -273,4 +273,23 @@ harnesses:
 		}
 	})
 
+	t.Run("types", func(t *testing.T) {
+		out := filepath.Join(e.dir, "generated")
+		var written struct {
+			MCP   []string `json:"mcp"`
+			Files []string `json:"files"`
+		}
+		e.jsonOK(&written, "mcp", "types", "--out", out)
+		if !slices.Equal(written.MCP, []string{"echo", "tracker"}) || len(written.Files) != 2 {
+			t.Fatalf("types = %+v", written)
+		}
+		declarations, err := os.ReadFile(filepath.Join(out, "agx-mcp.d.mts"))
+		if err != nil || !strings.Contains(string(declarations), "export declare const tracker:") {
+			t.Fatalf("declarations: %v\n%s", err, declarations)
+		}
+		r := e.ok("mcp", "types", "echo")
+		if !strings.Contains(r.stdout, "shape(args: {") {
+			t.Fatalf("types echo printed %q", r.stdout)
+		}
+	})
 }

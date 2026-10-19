@@ -47,6 +47,7 @@ func mcpCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command
 		test,
 		mcpToolsCommand(paths, builtins),
 		mcpCallCommand(paths, builtins),
+		mcpTypesCommand(paths, builtins),
 	)
 	return command
 }
