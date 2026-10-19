@@ -499,7 +499,7 @@ func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind string
 	force := false
 	cmd := &cobra.Command{
 		Use:   "remove <id>",
-		Short: "Remove a " + kindLabel(kind) + " definition",
+		Short: removeShort(kindLabel(kind)),
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := newSession(cmd.Context(), *paths, *builtins, flags.yes)
@@ -550,4 +550,17 @@ func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind string
 	jsonFlag(cmd)
 	cmd.Flags().BoolVar(&force, "force", false, "also remove the entries that reference it")
 	return cmd
+}
+
+// removeShort reads "Remove an MCP server definition", "Remove a skill definition", and
+// "Remove instructions", which is plural.
+func removeShort(label string) string {
+	switch {
+	case label == "instructions":
+		return "Remove instructions"
+	case strings.HasPrefix(label, "MCP") || strings.ContainsRune("aeiou", rune(label[0])):
+		return "Remove an " + label + " definition"
+	default:
+		return "Remove a " + label + " definition"
+	}
 }
