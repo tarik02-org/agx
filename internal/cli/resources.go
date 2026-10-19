@@ -24,7 +24,7 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 	var flags editFlags
 	id, text := "", ""
 	add := &cobra.Command{
-		Use:         "add <path> | add --id <id> --text <text>",
+		Use:         "add <path | --id id --text text>",
 		Annotations: map[string]string{createsConfig: ""},
 		Short:       "Define instructions from a file or text and enable them",
 		Example: "  agx instructions add ./AGENTS.md\n" +

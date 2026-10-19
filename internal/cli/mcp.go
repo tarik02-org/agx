@@ -110,7 +110,7 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 	authValue, clientID, description, load := "", "", "", ""
 	noBrowser := false
 	cmd := &cobra.Command{
-		Use:         "add <id> <url> | add <id> -- <command> [args...]",
+		Use:         "add <id> <url | -- command...>",
 		Annotations: map[string]string{createsConfig: ""},
 		Short:       "Define an MCP server and enable it",
 		Example: "  agx mcp add github https://api.githubcopilot.com/mcp/ --auth keychain\n" +
