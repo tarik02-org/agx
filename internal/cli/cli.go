@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/fang/v2"
 	"connectrpc.com/connect"
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
@@ -53,11 +54,21 @@ func run(osArgs []string, stdout io.Writer) int {
 	color := ui.ColorAuto
 	root.PersistentFlags().Var(&color, "color", "style output: auto (terminals without NO_COLOR), always, never")
 	root.AddGroup(
-		&cobra.Group{ID: "harness", Title: "Harnesses:"},
-		&cobra.Group{ID: "config", Title: "Configuration:"},
-		&cobra.Group{ID: "runtime", Title: "Runtime:"},
+		&cobra.Group{ID: "harness", Title: "Harnesses"},
+		&cobra.Group{ID: "config", Title: "Configuration"},
+		&cobra.Group{ID: "runtime", Title: "Runtime"},
+		&cobra.Group{ID: "other", Title: "Additional Commands"},
 	)
+	root.SetHelpCommandGroupID("other")
+	root.SetCompletionCommandGroupID("other")
+	// Help is rendered before any hook runs; commands run in the environment agx was started with.
+	restoreEnvironment := func() {}
+	showHelp := func(cmd *cobra.Command) error {
+		defer helpEnvironment(ui.Stdout.Styled())()
+		return cmd.Help()
+	}
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		restoreEnvironment()
 		ui.Configure(color)
 		if flag := cmd.Flags().Lookup("json"); flag != nil {
 			scripting.enabled = flag.Value.String() == "true"
@@ -219,7 +230,7 @@ func run(osArgs []string, stdout io.Writer) int {
 	root.AddCommand(update)
 	root.RunE = func(cmd *cobra.Command, args []string) error {
 		if !ui.Stdout.Terminal() || !term.IsTerminal(os.Stdin.Fd()) {
-			return cmd.Help()
+			return showHelp(cmd)
 		}
 		return runLauncher(cmd.Context(), paths, registry, harnesses)
 	}
@@ -256,6 +267,18 @@ func run(osArgs []string, stdout io.Writer) int {
 	completion.registerCompletions(root)
 	root.InitDefaultHelpCmd()
 	root.InitDefaultCompletionCmd()
+	if help, _, err := root.Find([]string{"help"}); err == nil {
+		showTopic := help.Run
+		help.Run = func(cmd *cobra.Command, args []string) {
+			defer helpEnvironment(ui.Stdout.Styled())()
+			showTopic(cmd, args)
+		}
+	}
+	// Cobra prints usage only after an unknown help topic; it is the help, styled the same way.
+	root.SetUsageFunc(func(cmd *cobra.Command) error {
+		cmd.HelpFunc()(cmd, nil)
+		return nil
+	})
 	reserved := []string{root.Name()}
 	for _, cmd := range root.Commands() {
 		reserved = append(reserved, cmd.Name())
@@ -362,6 +385,8 @@ func run(osArgs []string, stdout io.Writer) int {
 			},
 		)
 	}
+	// Added after the harness commands, so a harness definition named man keeps its name.
+	root.AddCommand(manCommand())
 	root.SetArgs(args)
 	found, _, err := root.Find(args)
 	if !completing {
@@ -378,11 +403,73 @@ func run(osArgs []string, stdout io.Writer) int {
 		}
 		return exitCode(&usageError{err})
 	}
-	cmd, err := root.ExecuteC()
-	if cmd != nil {
-		usageCommand = cmd.CommandPath()
+	restoreEnvironment = helpEnvironment(ui.Stdout.Styled())
+	defer restoreEnvironment()
+	failed, err := execute(root)
+	if failed == nil {
+		failed = found
+	}
+	if failed != nil {
+		usageCommand = failed.CommandPath()
 	}
 	return exitCode(err)
+}
+
+// execute runs the command line with fang's help. Errors reach exitCode instead of fang, whose
+// error path queries the terminal's background color, which must not follow a harness run.
+// Harness commands keep their own signal handling, so fang installs none.
+func execute(root *cobra.Command) (*cobra.Command, error) {
+	var failed *cobra.Command
+	var failure error
+	// The first error stops the command; cobra goes on as if there was none.
+	record := func(cmd *cobra.Command, err error) {
+		if err != nil && failure == nil {
+			failed, failure = cmd, err
+		}
+	}
+	var adapt func(*cobra.Command)
+	adapt = func(cmd *cobra.Command) {
+		if validate := cmd.Args; validate != nil {
+			cmd.Args = func(cmd *cobra.Command, args []string) error {
+				record(cmd, validate(cmd, args))
+				return nil
+			}
+		}
+		for _, hook := range []*func(*cobra.Command, []string) error{&cmd.PersistentPreRunE, &cmd.RunE} {
+			if run := *hook; run != nil {
+				*hook = func(cmd *cobra.Command, args []string) error {
+					if failed != nil {
+						return nil
+					}
+					record(cmd, run(cmd, args))
+					return nil
+				}
+			}
+		}
+		for _, child := range cmd.Commands() {
+			adapt(child)
+		}
+	}
+	adapt(root)
+	flagError := root.FlagErrorFunc()
+	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		record(cmd, flagError(cmd, err))
+		return nil
+	})
+	err := fang.Execute(
+		context.Background(),
+		root,
+		fang.WithoutVersion(),
+		fang.WithoutCompletions(),
+		// agx adds its own man command, as fang's would be missing from the command tree until now.
+		fang.WithoutManpage(),
+		fang.WithColorSchemeFunc(helpColors),
+		fang.WithErrorHandler(func(io.Writer, fang.Styles, error) {}),
+	)
+	if failure != nil {
+		return failed, failure
+	}
+	return nil, err
 }
 
 // invokedName is the command name agx runs as, which names a harness when agx is invoked
