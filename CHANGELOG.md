@@ -39,6 +39,9 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - `sops` secrets take an optional `age_key` (`!secret`, `!env`, or `!file`) passed
   to sops as `SOPS_AGE_KEY`, so the age identity can live in the OS keychain.
 - `agx man` prints a man page of every command.
+- A link to agx named after a built-in harness, such as `codex`, runs it like `agx codex`,
+  as shims do for definitions; the native executable is the pinned `executable` or the
+  next one on `PATH` that is not agx.
 
 ### Changed
 

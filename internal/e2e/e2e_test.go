@@ -362,6 +362,47 @@ func TestEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("links named after harnesses", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("shims are hard links or copies on Windows")
+		}
+		links, native := filepath.Join(e.dir, "links"), filepath.Join(e.dir, "native")
+		for _, d := range []string{links, native} {
+			if err := os.MkdirAll(d, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, name := range []string{"claude", "claude-e2e", "codex"} {
+			if err := os.Symlink(binaries.agx, filepath.Join(links, name)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// codex has no pinned executable: lookup skips the link to agx earlier on PATH.
+		if err := os.Symlink(binaries.harness, filepath.Join(native, "codex")); err != nil {
+			t.Fatal(err)
+		}
+		path := "PATH=" + links + string(os.PathListSeparator) + native + string(os.PathListSeparator) +
+			binaries.tools + string(os.PathListSeparator) + os.Getenv("PATH")
+		for _, name := range []string{"claude", "claude-e2e", "codex"} {
+			dumped := filepath.Join(e.dir, "dump-"+name+".json")
+			r := e.run(filepath.Join(links, name), []string{path, "FAKE_DUMP=" + dumped}, "--version")
+			if r.code != 0 || !strings.Contains(r.stdout, "fakeharness 1") {
+				t.Fatalf("%s --version: exit %d, stdout %q, stderr %q", name, r.code, r.stdout, r.stderr)
+			}
+			b, err := os.ReadFile(dumped)
+			if err != nil {
+				t.Fatalf("%s did not run the native harness: %v", name, err)
+			}
+			var d dump
+			if err := json.Unmarshal(b, &d); err != nil {
+				t.Fatal(err)
+			}
+			if want := name == "claude-e2e"; (d.Env["DEFINED"] == "yes") != want {
+				t.Errorf("%s: definition environment applied = %v, want %v", name, !want, want)
+			}
+		}
+	})
+
 	if e.daemonRunning() {
 		t.Fatal("a passthrough command started the daemon")
 	}

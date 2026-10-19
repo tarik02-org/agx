@@ -164,6 +164,12 @@ and `list` warn when it is missing or when another program with the same name
 comes first. Run `agx shims install` again after adding or removing definitions.
 Built-in harnesses get no shim. agx only touches shims it created.
 
+Any link to agx named after a harness works the same way, built-ins included:
+a `codex` link to agx, earlier on `PATH` than Codex itself, runs `agx codex`.
+agx then finds the native executable by skipping every path to agx itself, or
+uses `harnesses.codex.executable` when set. Package managers such as Nix can
+install these links themselves instead of running `agx shims install`.
+
 On Unix shims are symlinks; on Windows they are hard links or copies named
 `<name>.exe`.
 
