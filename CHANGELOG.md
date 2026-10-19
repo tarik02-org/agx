@@ -90,6 +90,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - Help is laid out and styled with fang in the terminal's ANSI colors. It follows
   `--color` and `NO_COLOR` like other output and is plain text when piped.
 
+### Added
+
+- The Nix package installs bash, fish, and zsh completions.
+
 ### Fixed
 
 - Without a root configuration file, harness launches and other commands that

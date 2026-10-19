@@ -1,6 +1,8 @@
 {
   buildGoModule,
+  installShellFiles,
   lib,
+  stdenv,
 }:
 
 buildGoModule (finalAttrs: {
@@ -21,6 +23,16 @@ buildGoModule (finalAttrs: {
   vendorHash = "sha256-xv+hnHwNrafoZDxbLRjPL/DFyXVeIjOrzZyaaXzx/04=";
 
   subPackages = [ "cmd/agx" ];
+
+  nativeBuildInputs = [ installShellFiles ];
+
+  # Completions come from the built binary, so they need one that runs here.
+  postInstall = lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
+    installShellCompletion --cmd agx \
+      --bash <("$out/bin/agx" completion bash) \
+      --fish <("$out/bin/agx" completion fish) \
+      --zsh <("$out/bin/agx" completion zsh)
+  '';
 
   ldflags = [
     "-s"
