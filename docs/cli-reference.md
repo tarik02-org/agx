@@ -65,7 +65,7 @@ go before it.
 | `agx mcp test <id>` | connect to an MCP server and list its tools |
 | `agx skill add <source>` | add skills from a folder, Git URL, or `owner/repo[@ref][/path]` |
 | `agx skill list` | list skills |
-| `agx skill remove <id \| package-id>` | remove a skill definition, or a Git package `skill add` declared |
+| `agx skill remove <id \| package-id>` | remove a skill definition, or a Git package `skill add` declared with the rule entries enabling its skills |
 | `agx instructions add <path>` | add instructions from a file |
 | `agx instructions add --id <id> --text <text>` | add instructions from text |
 | `agx instructions list` | list instructions |
@@ -85,7 +85,7 @@ All of them take `--json`. Commands that write take:
 | `--file <path>` | fragment to write new definitions to (default: the root configuration) |
 | `--define-only` | define without enabling (`add` only) |
 | `-y`, `--yes` | write without confirming; implied without a terminal |
-| `--force` | `remove`: also remove the entries that refer to the definition |
+| `--force` | `remove`: also remove the entries that refer to the definition (a package's enabling rule entries go without it) |
 | `--kind skills\|instructions\|mcp\|bundles` | `use`/`unuse`: which kind, when an ID names several |
 
 Command-specific flags:

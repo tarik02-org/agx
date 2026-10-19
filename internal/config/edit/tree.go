@@ -342,6 +342,8 @@ type Reference struct {
 	// Where describes the list, such as "scope ~/work add" or "bundle dev".
 	Where   string
 	Defines bool
+	// Enables marks a plain ID in a scope rule's add list, the entry use and skill add write.
+	Enables bool
 	list    *yaml.Node
 	entry   *yaml.Node
 	owner   *yaml.Node
@@ -351,14 +353,21 @@ type Reference struct {
 // selections.
 func (f *File) References(kind, id string) []Reference {
 	out := []Reference{}
-	collect := func(where string, owner, selection *yaml.Node) {
+	collect := func(where string, owner, selection *yaml.Node, enables bool) {
 		list := f.List(selection, kind, false)
 		if list == nil {
 			return
 		}
 		for _, entry := range list.Content {
 			if found, defines := EntryID(kind, entry); found == id {
-				out = append(out, Reference{Where: where, Defines: defines, list: list, entry: entry, owner: owner})
+				out = append(out, Reference{
+					Where:   where,
+					Defines: defines,
+					Enables: enables && !defines,
+					list:    list,
+					entry:   entry,
+					owner:   owner,
+				})
 			}
 		}
 	}
@@ -371,19 +380,19 @@ func (f *File) References(kind, id string) []Reference {
 			where += " (" + strings.Join(r.Harnesses, ", ") + ")"
 		}
 		for _, change := range []string{"add", "remove"} {
-			collect(where+" "+change, r.Node, Get(r.Node, change))
+			collect(where+" "+change, r.Node, Get(r.Node, change), change == "add")
 		}
 	}
 	if bundles := f.Section(Bundles, false); bundles != nil {
 		for i := 0; i+1 < len(bundles.Content); i += 2 {
-			collect("bundle "+bundles.Content[i].Value, nil, bundles.Content[i+1])
+			collect("bundle "+bundles.Content[i].Value, nil, bundles.Content[i+1], false)
 		}
 	}
 	if harnesses := f.Section("harnesses", false); harnesses != nil {
 		for i := 0; i+1 < len(harnesses.Content); i += 2 {
 			h := harnesses.Content[i+1]
 			for _, change := range []string{"add", "remove"} {
-				collect("harness "+harnesses.Content[i].Value+" "+change, h, Get(h, change))
+				collect("harness "+harnesses.Content[i].Value+" "+change, h, Get(h, change), false)
 			}
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -54,14 +55,12 @@ func TestRemoveSkillPackage(t *testing.T) {
 	if !strings.Contains(d.Error.Message, "agx skill remove kit") {
 		t.Fatalf("removing a package skill: %s", d.Error.Message)
 	}
-	d = failJSON(t, 1, codeConflict, "skill", "remove", "kit", "--json")
-	if !strings.Contains(d.Error.Message, "still referenced") {
-		t.Fatalf("removing a referenced package: %s", d.Error.Message)
-	}
 
+	// The rule entry skill add wrote goes with the package.
 	var removed editDocument
-	okJSON(t, &removed, "skill", "remove", "kit", "--force")
-	if len(removed.Removed) != 1 || removed.Removed[0] != (definitionJSON{"packages", "kit"}) {
+	okJSON(t, &removed, "skill", "remove", "kit")
+	if len(removed.Removed) != 1 || removed.Removed[0] != (definitionJSON{"packages", "kit"}) ||
+		len(removed.Disabled) != 1 || removed.Disabled[0] != (definitionJSON{"skills", "kit/alpha"}) {
 		t.Fatalf("skill remove = %+v", removed)
 	}
 	content, err := os.ReadFile(path)
@@ -73,6 +72,31 @@ func TestRemoveSkillPackage(t *testing.T) {
 	}
 	if lock, err := os.ReadFile(lockfile); err != nil || strings.Contains(string(lock), `"kit"`) {
 		t.Fatalf("lockfile after removal: %v\n%s", err, lock)
+	}
+	okJSON(t, nil, "config", "validate")
+
+	// A reference skill add did not write still needs --force.
+	okJSON(t, nil, "skill", "add", "file://"+filepath.ToSlash(repo), "--all")
+	content, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := string(content) + "bundles:\n  dev:\n    skills: [kit/beta]\n"
+	if err := os.WriteFile(path, []byte(bundle), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d = failJSON(t, 1, codeConflict, "skill", "remove", "kit", "--json")
+	if !strings.Contains(d.Error.Message, "bundle dev") || strings.Contains(d.Error.Message, "scope") {
+		t.Fatalf("removing a package referenced by a bundle: %s", d.Error.Message)
+	}
+	removed = editDocument{}
+	okJSON(t, &removed, "skill", "remove", "kit", "--force")
+	want := []definitionJSON{{"skills", "kit/alpha"}, {"skills", "kit/beta"}}
+	if !slices.Equal(removed.Disabled, want) {
+		t.Fatalf("skill remove --force disabled %+v, want %+v", removed.Disabled, want)
+	}
+	if content, err = os.ReadFile(path); err != nil || strings.Contains(string(content), "kit") {
+		t.Fatalf("configuration after forced removal: %v\n%s", err, content)
 	}
 	okJSON(t, nil, "config", "validate")
 }

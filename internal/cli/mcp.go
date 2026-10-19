@@ -497,10 +497,11 @@ func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind string
 				}
 			}
 			_, isSkill := s.config.Skills[config.ID(id)]
+			isPackage := kind == edit.Skills && !isSkill && s.skillPackage(config.ID(id))
 			switch {
 			case kind == "harnesses":
 				err = s.removeHarness(id, force)
-			case kind == edit.Skills && !isSkill && s.skillPackage(config.ID(id)):
+			case isPackage:
 				err = s.removePackage(config.ID(id), force)
 			default:
 				err = s.removeDefinition(kind, id, force)
@@ -508,8 +509,20 @@ func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind string
 			if err != nil {
 				return err
 			}
-			if _, err := s.commit(); err != nil {
+			written, err := s.commit()
+			if err != nil {
 				return err
+			}
+			if written && isPackage && !scripting.enabled {
+				disabled := []string{}
+				for _, d := range s.result.Disabled {
+					disabled = append(disabled, d.ID)
+				}
+				text := "Removed package " + ui.Stderr.ID(id)
+				if len(disabled) > 0 {
+					text += " and its references to " + strings.Join(disabled, ", ")
+				}
+				_, _ = fmt.Fprintln(ui.Stderr, ui.Stderr.Status(ui.OK, text+"."))
 			}
 			return s.report()
 		},

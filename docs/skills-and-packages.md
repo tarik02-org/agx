@@ -62,12 +62,15 @@ package ID:
 
 ```sh
 agx skill remove deploy
-agx skill remove skills --force  # the package for anthropics/skills, with its lock entries
+agx skill remove skills  # the package for anthropics/skills, with its lock entries
 ```
 
-`remove` refuses while rules or bundles still use the skill or the package's
-skills, and lists them; `--force` removes those entries too. Since `skill add`
-enabled the skills it added, removing a whole package usually needs `--force`.
+Removing a package also drops the rule entries that enable its skills, as
+`skill add` and `use` write them, so it works right after `skill add`. Other
+references, such as a bundle listing one of its skills, a rule's `remove` list,
+or a harness selection, make `remove` refuse and list them; `--force` removes
+those entries too. Removing a single skill refuses while rules or bundles still
+use it, and `--force` works the same way.
 
 In YAML, a skill comes from a folder, a folder in a Git repository, or is
 written inline:

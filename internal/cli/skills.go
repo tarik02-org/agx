@@ -54,8 +54,9 @@ func (s *session) skillPackage(id config.ID) bool {
 	return false
 }
 
-// removePackage deletes a package definition and its lock entries. References to the resources
-// it provides block the removal unless force removes them too.
+// removePackage deletes a package definition, its lock entries, and the rule entries enabling its
+// skills. Other references to the resources it provides block the removal unless force removes
+// them too.
 func (s *session) removePackage(id config.ID, force bool) error {
 	p := s.config.Packages[id]
 	f, err := s.file(p.Source.Path)
@@ -94,22 +95,38 @@ func (s *session) removePackage(id config.ID, force bool) error {
 			resources = append(resources, provided{edit.Bundles, name})
 		}
 	}
-	refs := []string{}
+	// Rule entries enabling the package's skills are what skill add writes, so they go with the
+	// package; any other reference blocks the removal unless force removes it too.
+	blocking := []string{}
 	for _, r := range resources {
-		found, err := s.references(r.kind, string(r.id))
+		for _, path := range s.fragments() {
+			f, err := s.file(path)
+			if err != nil {
+				return err
+			}
+			for _, ref := range f.References(r.kind, string(r.id)) {
+				if r.kind != edit.Skills || !ref.Enables {
+					blocking = append(blocking, fmt.Sprintf("%s: %s", ui.ShortPath(path, ""), ref.Where))
+				}
+			}
+		}
+	}
+	if len(blocking) > 0 && !force {
+		return codedf(codeConflict, "package %s provides resources that are still referenced; "+
+			"pass --force to remove the references too:\n  %s", id, strings.Join(blocking, "\n  "))
+	}
+	for _, r := range resources {
+		refs, err := s.references(r.kind, string(r.id))
 		if err != nil {
 			return err
 		}
-		refs = append(refs, found...)
-	}
-	if len(refs) > 0 && !force {
-		return codedf(codeConflict, "package %s provides resources that are still referenced; "+
-			"pass --force to remove the references too:\n  %s", id, strings.Join(refs, "\n  "))
-	}
-	for _, r := range resources {
+		if len(refs) == 0 {
+			continue
+		}
 		if err := s.removeReferences(r.kind, string(r.id)); err != nil {
 			return err
 		}
+		s.result.Disabled = append(s.result.Disabled, definitionJSON{Kind: r.kind, ID: string(r.id)})
 	}
 	if p.Pinned() {
 		return nil

@@ -51,6 +51,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   file's permissions.
 - Codex launches install a missing skill plugin themselves instead of failing
   with "run agx install".
+- `agx skill remove <package-id>` also removes the rule `add` entries that enable
+  the package's skills, as `skill add` writes them, so it no longer needs
+  `--force` right after `skill add`. It lists those skills under `disabled` with
+  `--json`. Other references, such as bundles, still need `--force`.
 
 ### Fixed
 

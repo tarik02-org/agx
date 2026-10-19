@@ -258,7 +258,8 @@ A few things worth knowing:
   to write somewhere else.
 - Definitions that come from packages cannot be removed one by one. `agx skill
   remove <package-id>` removes a whole package of skills, such as one `skill
-  add` declared, with its lock entries.
+  add` declared, with its lock entries and the rule `add` entries that enable
+  its skills; other references to them still need `--force`.
 
 Anything the commands do not cover, such as bundles or `order`, you write by
 hand.
