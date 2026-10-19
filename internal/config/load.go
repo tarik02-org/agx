@@ -1055,6 +1055,13 @@ func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
 		return fmt.Errorf("%s: MCP server %s: transport %s contradicts its %s", where, name, server.Transport, field)
 	}
 	server.Transport = transport
+	switch server.Load {
+	case "":
+		server.Load = LoadNative
+	case LoadNative, LoadOnDemand:
+	default:
+		return fmt.Errorf("%s: MCP server %s: load must be native or on_demand", where, name)
+	}
 	if server.Cwd != "" {
 		cwd, err := m.expand(server.Cwd)
 		if err != nil {

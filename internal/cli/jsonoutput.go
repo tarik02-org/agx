@@ -95,10 +95,20 @@ type definitionCounts struct {
 
 // resolve and explain
 
-// resourceJSON names a selected definition: kind is skill, instructions, or mcp.
+// resourceJSON names a selected definition: kind is skill, instructions, or mcp. load is an MCP
+// server's load mode, native or on_demand, and null for other kinds.
 type resourceJSON struct {
-	Kind string `json:"kind"`
-	ID   string `json:"id"`
+	Kind string  `json:"kind"`
+	ID   string  `json:"id"`
+	Load *string `json:"load"`
+}
+
+func resourceDocument(c *config.Config, r config.Resource) resourceJSON {
+	out := resourceJSON{Kind: r.Kind, ID: string(r.ID)}
+	if r.Kind == "mcp" {
+		out.Load = jsonString(c.MCP[r.ID].Load)
+	}
+	return out
 }
 
 type resolveJSON struct {
@@ -145,7 +155,7 @@ type injectionJSON struct {
 func resolveDocument(snapshot *config.Snapshot) resolveJSON {
 	resources := []resourceJSON{}
 	for _, r := range snapshot.Resources {
-		resources = append(resources, resourceJSON{Kind: r.Kind, ID: string(r.ID)})
+		resources = append(resources, resourceDocument(snapshot.Config, r))
 	}
 	return resolveJSON{
 		ID:                  snapshot.ID,
@@ -174,7 +184,7 @@ func explainDocument(snapshot *config.Snapshot) explainJSON {
 			})
 		}
 		traces = append(traces, traceJSON{
-			Resource: resourceJSON{Kind: t.Resource.Kind, ID: string(t.Resource.ID)},
+			Resource: resourceDocument(snapshot.Config, t.Resource),
 			Selected: t.Selected,
 			Order:    jsonInt(t.Order),
 			Steps:    steps,
@@ -243,9 +253,12 @@ type mcpServerJSON struct {
 	URL       *string  `json:"url"`
 	Command   []string `json:"command"`
 	// Auth is null for stdio servers, which take credentials through their environment.
-	Auth   *mcpAuthJSON `json:"auth"`
-	Inline bool         `json:"inline"`
-	Source sourceJSON   `json:"source"`
+	Auth *mcpAuthJSON `json:"auth"`
+	// Load is native or on_demand.
+	Load        string     `json:"load"`
+	Description *string    `json:"description"`
+	Inline      bool       `json:"inline"`
+	Source      sourceJSON `json:"source"`
 }
 
 // mcpAuthJSON is how an HTTP server authenticates: kind is none or the kind of its secret

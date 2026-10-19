@@ -561,3 +561,27 @@ func TestFormatVersions(t *testing.T) {
 	_, err := config.ReadLock(lock, nil)
 	wantError(t, err, "uses format version 2, but this agx reads only version 1")
 }
+
+func TestMCPLoad(t *testing.T) {
+	dir := t.TempDir()
+	root := write(t, filepath.Join(dir, "agx.yaml"), `mcp:
+  plain: {command: [plain]}
+  tracker:
+    url: https://tracker.example/mcp
+    description: Issues of the platform team
+    load: on_demand
+`)
+	c := read(t, root)
+	if got := c.MCP["plain"].Load; got != config.LoadNative {
+		t.Fatalf("default load = %q", got)
+	}
+	if tracker := c.MCP["tracker"]; tracker.Load != config.LoadOnDemand ||
+		tracker.Description != "Issues of the platform team" {
+		t.Fatalf("tracker = %+v", tracker)
+	}
+	bad := write(t, filepath.Join(t.TempDir(), "agx.yaml"), "mcp:\n  x: {command: [x], load: lazy}\n")
+	if _, err := config.Read(bad, builtins); err == nil ||
+		!strings.Contains(err.Error(), "load must be native or on_demand") {
+		t.Fatalf("invalid load: %v", err)
+	}
+}

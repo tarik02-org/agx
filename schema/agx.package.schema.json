@@ -360,6 +360,18 @@
             },
             "auth": {
               "$ref": "#/$defs/MCPAuth"
+            },
+            "description": {
+              "type": "string",
+              "description": "What the server offers, shown by agx mcp tools."
+            },
+            "load": {
+              "type": "string",
+              "enum": [
+                "native",
+                "on_demand"
+              ],
+              "description": "native puts the server in the harness's tool list; on_demand leaves it out and keeps it reachable with agx mcp call. Default native."
             }
           },
           "additionalProperties": false,
@@ -463,6 +475,18 @@
         },
         "auth": {
           "$ref": "#/$defs/MCPAuth"
+        },
+        "description": {
+          "type": "string",
+          "description": "What the server offers, shown by agx mcp tools."
+        },
+        "load": {
+          "type": "string",
+          "enum": [
+            "native",
+            "on_demand"
+          ],
+          "description": "native puts the server in the harness's tool list; on_demand leaves it out and keeps it reachable with agx mcp call. Default native."
         },
         "override": {
           "type": "boolean",

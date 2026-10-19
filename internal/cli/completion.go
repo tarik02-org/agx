@@ -374,6 +374,10 @@ func (k *completer) registerCompletions(root *cobra.Command) {
 		"oauth\tOAuth login",
 		"keychain\tsecret stored with agx secret set",
 	))
+	_ = find("mcp", "add").RegisterFlagCompletionFunc("load", fixed(
+		"native\tin the harness's tool list",
+		"on_demand\treached with agx mcp call",
+	))
 	set := func(complete cobra.CompletionFunc, path ...string) {
 		find(path...).ValidArgsFunction = complete
 	}

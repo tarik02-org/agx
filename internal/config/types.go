@@ -119,10 +119,20 @@ type MCPServer struct {
 	Environment map[string]Value `yaml:"environment" json:"environment,omitempty"                                   jsonschema_description:"stdio: environment variables for the server."`
 	Headers     map[string]Value `yaml:"headers"     json:"headers,omitempty"                                       jsonschema_description:"http: extra request headers."`
 	Auth        MCPAuth          `yaml:"auth"        json:"auth"`
-	Override    bool             `yaml:"override"    json:"-"                                                       jsonschema_description:"Replace an existing definition."`
-	Inline      bool             `yaml:"-"           json:"-"`
-	Source      Source           `yaml:"-"           json:"source"`
+	Description string           `yaml:"description" json:"description,omitempty"                                   jsonschema_description:"What the server offers, shown by agx mcp tools."`
+	// Load is native or on_demand once merged.
+	Load     string `yaml:"load"     json:"load"         jsonschema:"enum=native,enum=on_demand" jsonschema_description:"native puts the server in the harness's tool list; on_demand leaves it out and keeps it reachable with agx mcp call. Default native."`
+	Override bool   `yaml:"override" json:"-"                                                    jsonschema_description:"Replace an existing definition."`
+	Inline   bool   `yaml:"-"           json:"-"`
+	Source   Source `yaml:"-"           json:"source"`
 }
+
+// Load modes of an MCP server: a native server is in the harness's tool list; an on-demand
+// one is left out of it and reached with agx mcp call.
+const (
+	LoadNative   = "native"
+	LoadOnDemand = "on_demand"
+)
 
 // MCPAuth is the credential an HTTP MCP server sends as its bearer token: a top-level secret
 // referenced with !secret, an inline secret owned by the entry, or none. Merging stores an

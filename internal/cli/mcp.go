@@ -104,7 +104,7 @@ func loginSecret(c *config.Config, id string) (string, error) {
 func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
 	var flags editFlags
 	var headers, env []string
-	authValue, clientID := "", ""
+	authValue, clientID, description, load := "", "", "", ""
 	noBrowser := false
 	cmd := &cobra.Command{
 		Use:         "add <id> <url> | add <id> -- <command> [args...]",
@@ -158,6 +158,11 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 				}
 			}
 			definition := edit.Mapping()
+			switch load {
+			case "", config.LoadNative, config.LoadOnDemand:
+			default:
+				return &usageError{fmt.Errorf("--load must be native or on_demand")}
+			}
 			if command != nil {
 				items := []any{}
 				for _, arg := range command {
@@ -203,6 +208,12 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 					return &usageError{fmt.Errorf("--auth must be none, oauth, keychain, or '!secret <id>'")}
 				}
 			}
+			if description != "" {
+				edit.Set(definition, "description", edit.Scalar(description))
+			}
+			if load != "" {
+				edit.Set(definition, "load", edit.Scalar(load))
+			}
 			file, err := s.definitionFile(flags.file)
 			if err != nil {
 				return err
@@ -238,6 +249,9 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 	cmd.Flags().StringVar(&clientID, "client-id", "",
 		"OAuth public client ID, for servers that do not register clients automatically")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the login URL without opening a browser")
+	cmd.Flags().StringVar(&description, "description", "", "what the server offers, shown by agx mcp tools")
+	cmd.Flags().StringVar(&load, "load", "",
+		"native (in the harness's tool list) or on_demand (reached with agx mcp call); default native")
 	return cmd
 }
 
@@ -405,19 +419,21 @@ func mcpRows(c *config.Config) ([]string, [][]string, any) {
 			auth = &mcpAuthJSON{Kind: secret.Kind, SecretID: jsonString(string(server.Auth.Secret))}
 		}
 		rows = append(rows, []string{
-			out.ID(string(id)), server.Transport, target, authText, out.Path(location(c, server.Source)),
+			out.ID(string(id)), server.Transport, target, authText, server.Load, out.Path(location(c, server.Source)),
 		})
 		items = append(items, mcpServerJSON{
-			ID:        string(id),
-			Transport: server.Transport,
-			URL:       jsonString(server.URL),
-			Command:   server.Command,
-			Auth:      auth,
-			Inline:    server.Inline,
-			Source:    configSource(server.Source),
+			ID:          string(id),
+			Transport:   server.Transport,
+			URL:         jsonString(server.URL),
+			Command:     server.Command,
+			Auth:        auth,
+			Load:        server.Load,
+			Description: jsonString(server.Description),
+			Inline:      server.Inline,
+			Source:      configSource(server.Source),
 		})
 	}
-	return []string{"ID", "TRANSPORT", "TARGET", "AUTH", "SOURCE"}, rows, mcpListJSON{MCP: items}
+	return []string{"ID", "TRANSPORT", "TARGET", "AUTH", "LOAD", "SOURCE"}, rows, mcpListJSON{MCP: items}
 }
 
 func location(c *config.Config, source config.Source) string {

@@ -87,18 +87,18 @@ func TestJSONShapes(t *testing.T) {
 		},
 		{
 			[]string{"resolve"},
-			"{directory:string,harness:null,id:string,required_environment:[],resources:[{id:string,kind:string}]}",
+			"{directory:string,harness:null,id:string,required_environment:[],resources:[{id:string,kind:string,load:null}]}",
 		},
 		{
 			[]string{"explain", "--harness", "codex-work"},
 			"{directory:string,harness:string,id:string,injections:[],required_environment:[]," +
-				"resources:[{id:string,kind:string}],traces:[{order:null,resource:{id:string,kind:string},selected:bool," +
+				"resources:[{id:string,kind:string,load:null}],traces:[{order:null,resource:{id:string,kind:string,load:null},selected:bool," +
 				"steps:[{bundle_chain:[],change:string,harness:null,scope_directory:null,source:" + source + "}]}]}",
 		},
 		{
 			[]string{"mcp", "list"},
-			"{mcp:[{auth:{kind:string,on_demand:bool,secret_id:null},command:null,id:string,inline:bool," +
-				"source:" + source + ",transport:string,url:string}]}",
+			"{mcp:[{auth:{kind:string,on_demand:bool,secret_id:null},command:null,description:null,id:string," +
+				"inline:bool,load:string,source:" + source + ",transport:string,url:string}]}",
 		},
 		{
 			[]string{"skill", "list"},
