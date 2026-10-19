@@ -8,6 +8,10 @@ neither sees nor scopes. agx therefore offers its own management surface to
 agents, opt-in and gated, built on the editing commands of
 [ADR 0014](0014-configuration-editing-commands.md).
 
+Agents can also run the `agx` CLI from their shell like any other command; the
+modes and limits below govern the built-in server, which suits harnesses
+without a shell and users who want writes staged for review.
+
 ## The built-in server
 
 A built-in MCP server, `agx`, is served by the daemon like any other entry and
@@ -71,6 +75,5 @@ agents to use these tools for MCP servers, skills, and instructions instead of
 editing harness-native configuration, and that changes are proposed until the user
 approves.
 
-Rejected: letting agents run the `agx` CLI through their shell, which bypasses
-modes and file limits; applying writes by default; a separate approval UI outside
-the CLI and launcher.
+Rejected: applying writes by default; a separate approval UI outside the CLI
+and launcher.
