@@ -348,6 +348,10 @@ var taggedFields = func() [][]string {
 	return out
 }()
 
+// misplacedTagError is a known tag outside taggedFields. A decoding error of the same file takes
+// precedence, since a tag under a misspelled key is misplaced only because of the misspelling.
+type misplacedTagError struct{ error }
+
 // checkTags rejects unknown tags and tags outside taggedFields, which YAML decoding would
 // otherwise silently ignore.
 func checkTags(file string, node *yaml.Node, path []string) error {
@@ -365,12 +369,14 @@ func checkTags(file string, node *yaml.Node, path []string) error {
 			return fmt.Errorf("%s:%d: unknown tag %s; use !env, !file, or !secret", file, node.Line, tag)
 		}
 		if !slices.ContainsFunc(taggedFields, func(pattern []string) bool { return matchPath(pattern, path) }) {
-			return fmt.Errorf(
-				"%s:%d: %s is allowed only in harness environment and args, mcp environment, headers, and auth, and sops age_key",
-				file,
-				node.Line,
-				tag,
-			)
+			return misplacedTagError{
+				fmt.Errorf(
+					"%s:%d: %s is allowed only in harness environment and args, mcp environment, headers, and auth, and sops age_key",
+					file,
+					node.Line,
+					tag,
+				),
+			}
 		}
 		if node.Kind != yaml.ScalarNode {
 			return fmt.Errorf("%s:%d: %s needs a scalar argument", file, node.Line, tag)

@@ -479,8 +479,9 @@ func decodeBytes(path string, b []byte) (Document, *yaml.Node, error) {
 		return d, nil, yamlError(path, b, nil, err)
 	}
 	// Decoding ignores tags on plain strings, so they are checked first.
-	if err := checkTags(path, &n, nil); err != nil {
-		return d, nil, err
+	tagErr := checkTags(path, &n, nil)
+	if tagErr != nil && !errors.As(tagErr, new(misplacedTagError)) {
+		return d, nil, tagErr
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	dec.KnownFields(true)
@@ -488,6 +489,9 @@ func decodeBytes(path string, b []byte) (Document, *yaml.Node, error) {
 		return d, nil, fmt.Errorf("%s: file is empty; write {} for a fragment that declares nothing", path)
 	} else if err != nil {
 		return d, nil, yamlError(path, b, &n, err)
+	}
+	if tagErr != nil {
+		return d, nil, tagErr
 	}
 	var extra any
 	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
