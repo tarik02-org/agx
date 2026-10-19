@@ -48,7 +48,7 @@ scopes:
 $ cd ~/work/acme-web
 $ agx claude   # 4 skills, house rules, context7 + github + playwright
 $ agx codex    # same
-$ agx pi       # same — MCP included
+$ agx pi       # same
 
 $ cd ~/oss/blog
 $ agx claude   # no pr skill, no playwright
@@ -73,7 +73,7 @@ Add or remove anything for a folder and everything below it. Work repos get work
 <td width="33%" valign="top">
 
 **🔌 MCP for every harness**<br>
-HTTP and stdio servers, served to Codex, Claude Code, and Pi — which has no MCP built in.
+HTTP and stdio servers, defined once and served to Codex, Claude Code, and Pi.
 
 </td>
 </tr>
