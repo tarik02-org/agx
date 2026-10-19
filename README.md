@@ -120,6 +120,31 @@ nix profile install github:tarik02-org/agx
 </details>
 
 <details>
+<summary><b>Home Manager</b></summary>
+
+The flake's `homeManagerModules.default` installs agx and writes `programs.agx.settings`
+to the drop-in `agx.d/10-home-manager.yaml`, validated at build time:
+
+```nix
+{ config, pkgs, ... }: {
+  imports = [ inputs.agx.homeManagerModules.default ];
+  programs.agx = {
+    enable = true;
+    settings.mcp.docs = {
+      url = "https://docs.example.com/mcp";
+      headers.X-Api-Key = config.lib.agx.secret "docs-key"; # !secret docs-key
+    };
+    harnesses.codex.package = pkgs.codex; # `codex` runs through agx
+  };
+}
+```
+
+`config.lib.agx` also has `env`, `file`, and `tag`. Activation runs `agx shims install`
+and the shims directory goes on `PATH` (`shims.enable`). Each `harnesses.<name>` entry
+installs a `<name>` link to agx (`link`) and pins its `executable` to the package.
+</details>
+
+<details>
 <summary><b>Go 1.26+</b></summary>
 
 ```sh

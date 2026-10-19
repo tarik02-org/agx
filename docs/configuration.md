@@ -186,6 +186,11 @@ When there is no root file at all, agx behaves as if it contained just
 The editing commands create the root file with that import when they first
 write.
 
+Generated configuration belongs in a drop-in too, so the root file stays yours.
+The Home Manager module (`programs.agx.settings`, see the README) writes
+`agx.d/10-home-manager.yaml` and warns at activation when an existing root file
+does not import `agx.d/*.yaml`.
+
 Defining the same ID twice is an error, unless the later definition says
 `override: true`. Harness definitions and `daemon` settings are the exception:
 they merge field by field across files.

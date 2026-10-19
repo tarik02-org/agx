@@ -6,6 +6,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Added
 
+- A Home Manager module, `homeManagerModules.default` (`programs.agx`): installs agx,
+  writes `settings` to the drop-in `agx.d/10-home-manager.yaml` with `!secret`, `!env`,
+  and `!file` values from `config.lib.agx`, validates it at build time, runs
+  `agx shims install` at activation with the shims directory on `PATH`, and links
+  built-in harnesses to agx with their native executable pinned.
 - `agx mcp tools [<server>] [--schema] [--all]` lists the MCP servers you can call, with
   their state, load mode, description, and tools, or one server's tools as compact
   TypeScript-like signatures. `agx mcp call <server>.<tool> [key=value ...]` calls a tool
