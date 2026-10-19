@@ -309,7 +309,7 @@ func (MCPAuth) JSONSchema() *jsonschema.Schema {
 
 func (Secret) JSONSchemaExtend(s *jsonschema.Schema) {
 	kind, _ := s.Properties.Get("kind")
-	kind.Enum = []any{"environment", "daemon_environment", "command", "keychain", "oauth", "sops"}
+	kind.Enum = []any{"environment", "daemon_environment", "command", "file", "keychain", "oauth", "sops"}
 	kind.Description = "How the secret is obtained."
 	s.AllOf = []*jsonschema.Schema{
 		{
@@ -317,7 +317,7 @@ func (Secret) JSONSchemaExtend(s *jsonschema.Schema) {
 			Then: requires("variable"),
 		},
 		{If: when("kind", &jsonschema.Schema{Const: "command"}), Then: requires("command")},
-		{If: when("kind", &jsonschema.Schema{Const: "sops"}), Then: requires("file")},
+		{If: when("kind", &jsonschema.Schema{Enum: []any{"file", "sops"}}), Then: requires("file")},
 	}
 }
 

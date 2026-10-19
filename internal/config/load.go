@@ -799,7 +799,7 @@ func (m *merger) file(path string) (string, error) {
 	return relative(m.base, expanded), nil
 }
 
-// placeSecret anchors a sops secret's file to this file, like a !file path, and places its
+// placeSecret anchors a file or sops secret's file to this file, like a !file path, and places its
 // age key like any injected value.
 func (m *merger) placeSecret(secret *Secret) error {
 	if secret.AgeKey != (Value{}) {
@@ -1160,8 +1160,11 @@ func (c *Config) Validate() error {
 			label = "MCP server " + string(secret.Owner) + " auth"
 		}
 		at := locate(secret.Source)
-		if secret.Kind != "sops" && (secret.File != "" || len(secret.Key) > 0) {
-			return fmt.Errorf("%s: %s: file and key apply only to sops secrets", at, label)
+		if secret.Kind != "sops" && len(secret.Key) > 0 {
+			return fmt.Errorf("%s: %s: key applies only to sops secrets", at, label)
+		}
+		if secret.Kind != "sops" && secret.Kind != "file" && secret.File != "" {
+			return fmt.Errorf("%s: %s: file applies only to file and sops secrets", at, label)
 		}
 		if secret.Kind != "sops" && secret.AgeKey != (Value{}) {
 			return fmt.Errorf("%s: %s: age_key applies only to sops secrets", at, label)
@@ -1174,6 +1177,12 @@ func (c *Config) Validate() error {
 		case "command":
 			if len(secret.Command) == 0 || secret.Command[0] == "" {
 				return fmt.Errorf("%s: %s needs a command", at, label)
+			}
+		case "file":
+			// The file is runtime state, such as a decrypted secret under /run, so a missing one
+			// fails the launch that needs it rather than the configuration.
+			if secret.File == "" {
+				return fmt.Errorf("%s: %s needs a file", at, label)
 			}
 		case "keychain":
 		case "sops":

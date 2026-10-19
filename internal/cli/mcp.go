@@ -94,6 +94,12 @@ func loginSecret(c *config.Config, id string) (string, error) {
 			"MCP server %s authenticates with sops secret %s; edit it with sops %s",
 			id, server.Auth.Secret, secret.File,
 		)
+	case secret.Kind == "file":
+		return "", codedf(
+			codeFailedPrecondition,
+			"MCP server %s authenticates with file secret %s; write the token to %s",
+			id, server.Auth.Secret, secret.File,
+		)
 	case secret.Kind != "oauth":
 		return "", codedf(
 			codeFailedPrecondition,

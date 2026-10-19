@@ -803,7 +803,10 @@
           "if": {
             "properties": {
               "kind": {
-                "const": "sops"
+                "enum": [
+                  "file",
+                  "sops"
+                ]
               }
             },
             "required": [
@@ -824,6 +827,7 @@
             "environment",
             "daemon_environment",
             "command",
+            "file",
             "keychain",
             "oauth",
             "sops"
@@ -843,7 +847,7 @@
         },
         "file": {
           "type": "string",
-          "description": "sops: encrypted file, relative to the declaring fragment."
+          "description": "sops: encrypted file; file: file holding the secret. Relative to the declaring fragment."
         },
         "key": {
           "$ref": "#/$defs/SecretKey",

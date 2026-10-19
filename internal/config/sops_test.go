@@ -43,6 +43,28 @@ mcp:
 		}
 	})
 
+	t.Run("file secrets resolve like !file and may be missing", func(t *testing.T) {
+		home := isolateHome(t)
+		dir := t.TempDir()
+		root := write(t, filepath.Join(dir, "agx.yaml"), `secrets:
+  local: {kind: file, file: ./run/token}
+  home: {kind: file, file: ~/token}
+mcp:
+  remote:
+    url: https://example.com/mcp
+    auth: !secret local
+`)
+		c := load(t, root)
+		for id, want := range map[config.ID]string{
+			"local": filepath.Join(dir, "run", "token"),
+			"home":  filepath.Join(home, "token"),
+		} {
+			if got := c.Secrets[id].File; canonical(t, got) != canonical(t, want) {
+				t.Errorf("%s file = %s, want %s", id, got, want)
+			}
+		}
+	})
+
 	t.Run("package files stay inside the package", func(t *testing.T) {
 		root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), "{}\n")
 		dir := mkdir(t, filepath.Join(t.TempDir(), "pkg"))
@@ -107,7 +129,9 @@ mcp:
 		{"missing file", "secrets:\n  s: {kind: sops, file: ./nope.yaml}\n", "secret s: cannot read sops file"},
 		{"no file", "secrets:\n  s: {kind: sops}\n", "secret s needs a file"},
 		{"inline without file", "mcp:\n  c:\n    url: https://example.com/mcp\n    auth: sops\n", "MCP server c auth needs a file"},
-		{"key on another kind", "secrets:\n  s: {kind: keychain, key: a}\n", "file and key apply only to sops secrets"},
+		{"key on another kind", "secrets:\n  s: {kind: file, file: ./agx.yaml, key: a}\n", "key applies only to sops secrets"},
+		{"file on another kind", "secrets:\n  s: {kind: keychain, file: ./agx.yaml}\n", "file applies only to file and sops secrets"},
+		{"file secret without file", "secrets:\n  s: {kind: file}\n", "secret s needs a file"},
 		{"empty segment", "secrets:\n  s: {kind: sops, file: ./agx.yaml, key: a..b}\n", "key has an empty segment"},
 		{"number segment", "secrets:\n  s: {kind: sops, file: ./agx.yaml, key: [a, 0]}\n", "key segments must be strings"},
 		{"unsplittable segment", "secrets:\n  s: {kind: sops, file: ./agx.yaml, key: ['a][b']}\n", "cannot contain ]["},

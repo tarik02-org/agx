@@ -58,6 +58,7 @@ secrets:
   work-token: {kind: environment, variable: WORK_TOKEN}
   ci-token:   {kind: daemon_environment, variable: CI_TOKEN}
   cpa-key:    {kind: command, command: [pass, show, cpa]}
+  gw-key:     {kind: file, file: /run/secrets/gateway-key}
   docs-key:   {kind: keychain}
   github:     {kind: sops, file: ./secrets.yaml, key: github.token}
   team-login: {kind: oauth, scopes: [read]}
@@ -68,6 +69,7 @@ secrets:
 | `environment` | `variable` in the shell you launch from |
 | `daemon_environment` | `variable` in the daemon's environment (from the shell that started it) |
 | `command` | the trimmed output of a command, run with a minimal environment and a time limit |
+| `file` | a file's contents without trailing newlines, up to 1 MiB, read at each use |
 | `keychain` | the OS keychain; store it with `agx secret set <id> --stdin` |
 | `sops` | a value in a [sops](https://getsops.io)-encrypted file; see [below](#sops-encrypted-files) |
 | `oauth` | an OAuth login; only for an MCP server's `auth`, see [MCP servers](mcp.md#logging-in) |
@@ -79,6 +81,12 @@ history or process list:
 pbpaste | agx secret set docs-key --stdin
 agx secret set docs-key --stdin < ~/Downloads/token.txt
 ```
+
+A `file` secret suits files another tool keeps up to date, such as one decrypted
+by sops-nix or agenix under `/run`. Unlike `!file`, it is a secret: it works as
+an MCP server's `auth`, shows in `agx secret status`, and may be missing until
+it is used; a relative path is relative to the configuration file. Write the
+file itself to change it; `agx secret set` does not apply.
 
 An MCP server with `auth: keychain` stores its token the same way, under the
 server's ID. That is how the GitHub MCP server is set up, with a personal

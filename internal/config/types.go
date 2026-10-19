@@ -150,7 +150,7 @@ type Secret struct {
 	Kind     string    `yaml:"kind"      json:"kind"                jsonschema:"required"`
 	Variable string    `yaml:"variable"  json:"variable,omitempty"                        jsonschema_description:"Environment variable holding the secret."`
 	Command  []string  `yaml:"command"   json:"command,omitempty"                         jsonschema_description:"Command whose trimmed stdout is the secret."`
-	File     string    `yaml:"file"      json:"file,omitempty"                            jsonschema_description:"sops: encrypted file, relative to the declaring fragment."`
+	File     string    `yaml:"file"      json:"file,omitempty"                            jsonschema_description:"sops: encrypted file; file: file holding the secret. Relative to the declaring fragment."`
 	Key      SecretKey `yaml:"key"       json:"key,omitempty"                             jsonschema_description:"sops: dotted key path or list of segments to extract; omit to read the whole file."`
 	AgeKey   Value     `yaml:"age_key"   json:"age_key,omitzero"                          jsonschema_description:"sops: age identity passed to sops as SOPS_AGE_KEY: !secret ID, !env NAME, or !file PATH."`
 	Issuer   string    `yaml:"issuer"    json:"issuer,omitempty"                          jsonschema_description:"OAuth issuer URL; discovered when omitted."`
