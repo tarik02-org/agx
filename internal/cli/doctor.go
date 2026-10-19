@@ -745,6 +745,15 @@ func shimChecks(c *config.Config, registry adapters.Registry) []check {
 	if err != nil {
 		return []check{{Group: "shims", Name: "shims", Status: checkWarn, Detail: err.Error()}}
 	}
+	linked, names := linkedOnPath(names)
+	if len(names) == 0 {
+		return []check{{
+			Group:  "shims",
+			Name:   "links",
+			Status: checkPass,
+			Detail: plural(len(linked), "definition") + " run agx through links on PATH",
+		}}
+	}
 	target, err := shims.Target(os.Args[0])
 	if err != nil {
 		return []check{{Group: "shims", Name: "shims", Status: checkWarn, Detail: err.Error()}}
@@ -754,6 +763,30 @@ func shimChecks(c *config.Config, registry adapters.Registry) []check {
 		return []check{{Group: "shims", Name: "shims", Status: checkWarn, Detail: err.Error()}}
 	}
 	return shimRows(dir, entries, shims.OnPath(dir), shims.Collisions(dir, target, names))
+}
+
+// linkedOnPath splits names into those PATH already runs as agx, through links outside the shim
+// directory that something else, such as a package manager, installed, and the rest.
+func linkedOnPath(names []string) (linked, rest []string) {
+	self, err := os.Executable()
+	if err != nil {
+		return nil, names
+	}
+	selfInfo, err := os.Stat(self)
+	if err != nil {
+		return nil, names
+	}
+	for _, name := range names {
+		path, err := exec.LookPath(name)
+		if err == nil && !shims.IsShim(path) {
+			if info, err := os.Stat(path); err == nil && os.SameFile(selfInfo, info) {
+				linked = append(linked, name)
+				continue
+			}
+		}
+		rest = append(rest, name)
+	}
+	return linked, rest
 }
 
 func shimRows(dir string, entries []shims.Entry, onPath bool, collisions []shims.Collision) []check {

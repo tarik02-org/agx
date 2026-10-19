@@ -18,7 +18,7 @@ for every problem. It checks:
 - the daemon: running, the same agx version, serving this configuration;
 - every MCP server selected here, by connecting to it;
 - secrets, and `sops` when you use it;
-- shims: installed and on `PATH`.
+- shims: installed and on `PATH`, or definitions already linked to agx on `PATH`.
 
 It changes nothing, except starting the daemon if needed. It exits with status
 1 when a check fails.

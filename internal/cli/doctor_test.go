@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -281,6 +282,29 @@ func TestSopsChecks(t *testing.T) {
 	}
 	if rows := sopsChecks(&config.Config{}, missing); len(rows) != 0 {
 		t.Errorf("without sops secrets = %+v", rows)
+	}
+}
+
+func TestLinkedOnPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("links on PATH are symlinks")
+	}
+	isolate(t, "{}\n")
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.Symlink(self, filepath.Join(dir, "codex-cpa")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "codex-other"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	linked, rest := linkedOnPath([]string{"codex-cpa", "codex-other", "codex-none"})
+	if !slices.Equal(linked, []string{"codex-cpa"}) || !slices.Equal(rest, []string{"codex-other", "codex-none"}) {
+		t.Errorf("linked = %v, rest = %v", linked, rest)
 	}
 }
 

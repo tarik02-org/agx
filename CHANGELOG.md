@@ -41,6 +41,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - `agx man` prints a man page of every command.
 - Harnesses take `hidden: true` to stay out of the launcher's new-session list, built-ins
   included; they still run by name, and definitions based on them stay listed.
+- `agx doctor` passes the shims check for definitions that `PATH` already runs as agx
+  through links outside the shim directory, such as ones a package manager installs.
 - `kind: file` secrets read a file at each use, without trailing newlines, such as one
   sops-nix or agenix decrypts under `/run`; unlike `!file` they work as an MCP server's
   `auth` and show in `agx secret status`.

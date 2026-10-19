@@ -185,7 +185,8 @@ Any link to agx named after a harness works the same way, built-ins included:
 a `codex` link to agx, earlier on `PATH` than Codex itself, runs `agx codex`.
 agx then finds the native executable by skipping every path to agx itself, or
 uses `harnesses.codex.executable` when set. Package managers such as Nix can
-install these links themselves instead of running `agx shims install`.
+install these links themselves instead of running `agx shims install`;
+`agx doctor` accepts definitions that `PATH` already runs as agx this way.
 
 On Unix shims are symlinks; on Windows they are hard links or copies named
 `<name>.exe`.
