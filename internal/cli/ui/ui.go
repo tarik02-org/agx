@@ -181,6 +181,34 @@ func (p *Printer) Value(text string) string {
 	return p.render(lipgloss.NewStyle().Foreground(magenta), text)
 }
 
+// Syntax is the role of a token in highlighted code: tool signatures and JSON.
+type Syntax int
+
+const (
+	SyntaxName Syntax = iota
+	SyntaxKey
+	SyntaxType
+	SyntaxString
+	SyntaxNumber
+	SyntaxLiteral
+	SyntaxPunctuation
+)
+
+var syntaxStyles = map[Syntax]lipgloss.Style{
+	SyntaxName:        lipgloss.NewStyle().Bold(true).Foreground(cyan),
+	SyntaxKey:         lipgloss.NewStyle().Foreground(blue),
+	SyntaxType:        lipgloss.NewStyle().Foreground(yellow),
+	SyntaxString:      lipgloss.NewStyle().Foreground(green),
+	SyntaxNumber:      lipgloss.NewStyle().Foreground(magenta),
+	SyntaxLiteral:     lipgloss.NewStyle().Foreground(magenta),
+	SyntaxPunctuation: lipgloss.NewStyle().Faint(true),
+}
+
+// Code styles one token of highlighted code.
+func (p *Printer) Code(role Syntax, text string) string {
+	return p.render(syntaxStyles[role], text)
+}
+
 // Link makes a URL stand out and clickable; it stays one unwrapped line so it can be copied.
 func (p *Printer) Link(url string) string {
 	return p.render(lipgloss.NewStyle().Bold(true).Foreground(cyan).Hyperlink(url), url)
