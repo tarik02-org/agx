@@ -39,6 +39,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - `sops` secrets take an optional `age_key` (`!secret`, `!env`, or `!file`) passed
   to sops as `SOPS_AGE_KEY`, so the age identity can live in the OS keychain.
 - `agx man` prints a man page of every command.
+- Harnesses take `hidden: true` to stay out of the launcher's new-session list, built-ins
+  included; they still run by name, and definitions based on them stay listed.
 - `kind: file` secrets read a file at each use, without trailing newlines, such as one
   sops-nix or agenix decrypts under `/run`; unlike `!file` they work as an MCP server's
   `auth` and show in `agx secret status`.

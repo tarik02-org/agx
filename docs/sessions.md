@@ -10,8 +10,9 @@ agx
 
 A full-screen picker opens with one search field and two lists:
 
-- **New session**: the built-in harnesses and your harness definitions. Enter
-  starts one in the current directory.
+- **New session**: the built-in harnesses and your harness definitions, except
+  [hidden](harnesses.md#hiding-harnesses-from-the-launcher) ones. Enter starts
+  one in the current directory.
 - **Sessions**: earlier Codex, Claude Code, and Pi conversations, with their
   harness, age, title or first message, and directory. Enter resumes one.
 

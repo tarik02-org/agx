@@ -159,6 +159,10 @@
           "$ref": "#/$defs/SelectionSpec",
           "description": "Resources deselected for this harness."
         },
+        "hidden": {
+          "type": "boolean",
+          "description": "Leave this harness out of the launcher's new-session list; it still runs by name. Not inherited."
+        },
         "override": {
           "type": "boolean",
           "description": "Replace the definition from earlier fragments."

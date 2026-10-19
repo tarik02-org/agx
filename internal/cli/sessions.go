@@ -200,18 +200,8 @@ func runLauncher(ctx context.Context, paths platform.Paths, registry adapters.Re
 	if harnesses.err != nil {
 		opts.Notes = append(opts.Notes, fmt.Sprintf("Only built-ins: configuration did not load: %v", harnesses.err))
 	}
-	// Built-ins first, then definitions, each in name order.
-	names := harnesses.config.HarnessNames()
-	for _, builtin := range []bool{true, false} {
-		for _, name := range names {
-			h, err := harnesses.config.Harness(name)
-			if err != nil {
-				return err
-			}
-			if (h.Builtin == name) == builtin {
-				opts.Harnesses = append(opts.Harnesses, launcher.Harness{Name: name, Builtin: h.Builtin})
-			}
-		}
+	if opts.Harnesses, err = launcherHarnesses(harnesses.config); err != nil {
+		return err
 	}
 	choice, err := launcher.Run(ctx, opts)
 	if err != nil {
@@ -228,6 +218,25 @@ func runLauncher(ctx context.Context, paths platform.Paths, registry adapters.Re
 		return resumeSession(ctx, paths, registry, harnesses, choice.Session, choice.Harness)
 	}
 	return nil
+}
+
+// launcherHarnesses lists the harnesses the launcher offers: built-ins first, then definitions,
+// each in name order. Hidden ones still run by name.
+func launcherHarnesses(c *config.Config) ([]launcher.Harness, error) {
+	out := []launcher.Harness{}
+	names := c.HarnessNames()
+	for _, builtin := range []bool{true, false} {
+		for _, name := range names {
+			h, err := c.Harness(name)
+			if err != nil {
+				return nil, err
+			}
+			if (h.Builtin == name) == builtin && !h.Hidden {
+				out = append(out, launcher.Harness{Name: name, Builtin: h.Builtin})
+			}
+		}
+	}
+	return out, nil
 }
 
 // resumeSession runs `agx <name> <resume arguments>` in the session's directory, so the

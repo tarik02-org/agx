@@ -105,6 +105,7 @@ type Harness struct {
 	Environment map[string]Value `yaml:"environment" jsonschema_description:"Environment variables for the harness."`
 	Add         SelectionSpec    `yaml:"add"         jsonschema_description:"Resources selected for this harness."`
 	Remove      SelectionSpec    `yaml:"remove"      jsonschema_description:"Resources deselected for this harness."`
+	Hidden      *bool            `yaml:"hidden"      jsonschema_description:"Leave this harness out of the launcher's new-session list; it still runs by name. Not inherited."`
 	Override    bool             `yaml:"override"    jsonschema_description:"Replace the definition from earlier fragments."`
 }
 
@@ -115,6 +116,7 @@ type HarnessDefinition struct {
 	Args        []ArgGroup         `json:"args,omitempty"`
 	Environment map[string]Value   `json:"environment,omitempty"`
 	Selections  []HarnessSelection `json:"selections,omitempty"`
+	Hidden      bool               `json:"hidden,omitempty"`
 	Source      Source             `json:"source"`
 	// sources locates set-once fields (base, executable, environment.<name>) for conflict errors.
 	sources map[string]Source
@@ -136,6 +138,9 @@ type ResolvedHarness struct {
 	Executable  string
 	Args        []ArgGroup
 	Environment map[string]Value
+	// Hidden keeps the harness out of the launcher's new-session list. Definitions based on it do
+	// not inherit it, so hiding a built-in leaves its variants offered.
+	Hidden bool
 }
 
 // Arguments returns the argument groups that apply to mode, in order.
@@ -176,7 +181,13 @@ func (c *Config) Harness(name string) (ResolvedHarness, error) {
 		current = def.Base
 	}
 	slices.Reverse(chain)
-	h := ResolvedHarness{Name: name, Builtin: chain[0], Chain: chain, Environment: map[string]Value{}}
+	h := ResolvedHarness{
+		Name:        name,
+		Builtin:     chain[0],
+		Chain:       chain,
+		Environment: map[string]Value{},
+		Hidden:      c.Harnesses[name].Hidden,
+	}
 	for _, n := range chain {
 		def := c.Harnesses[n]
 		if def.Executable != "" {
@@ -255,6 +266,11 @@ func (m *merger) harnesses(d Document) error {
 		}
 		if h.Executable != "" {
 			if err := set("executable", at("executable"), func() { def.Executable = h.Executable }); err != nil {
+				return err
+			}
+		}
+		if h.Hidden != nil {
+			if err := set("hidden", at("hidden"), func() { def.Hidden = *h.Hidden }); err != nil {
 				return err
 			}
 		}

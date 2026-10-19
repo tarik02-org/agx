@@ -119,6 +119,36 @@ func TestHarnessBaseChain(t *testing.T) {
 	}
 }
 
+func TestHarnessHidden(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "more.yaml"), "harnesses:\n  claude: {hidden: false}\n")
+	root := write(t, filepath.Join(dir, "agx.yaml"), `imports: [{path: more.yaml}]
+harnesses:
+  codex: {hidden: true}
+  codex-cpa: {base: codex}
+  codex-old: {base: codex, hidden: true}
+`)
+	c := read(t, root)
+	for name, want := range map[string]bool{
+		"codex":     true,
+		"codex-cpa": false, // hiding a base does not hide definitions based on it
+		"codex-old": true,
+		"claude":    false,
+		"pi":        false,
+	} {
+		h, err := c.Harness(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if h.Hidden != want {
+			t.Errorf("%s hidden = %v, want %v", name, h.Hidden, want)
+		}
+	}
+	if got := c.HarnessNames(); !slices.Contains(got, "codex") {
+		t.Errorf("hidden harness left the harness names: %v", got)
+	}
+}
+
 func TestHarnessOverride(t *testing.T) {
 	dir := t.TempDir()
 	write(
@@ -162,6 +192,14 @@ func TestHarnessErrors(t *testing.T) {
 				"agx.yaml": "imports: [{path: one.yaml}]\nharnesses:\n  codex:\n    environment: {A: '2'}\n",
 			},
 			want: []string{"environment.A already set at", "one.yaml"},
+		},
+		{
+			name: "hidden set in two fragments",
+			files: map[string]string{
+				"one.yaml": "harnesses:\n  codex: {hidden: true}\n",
+				"agx.yaml": "imports: [{path: one.yaml}]\nharnesses:\n  codex: {hidden: false}\n",
+			},
+			want: []string{"harness codex: hidden already set at", "one.yaml"},
 		},
 		{"base cycle", map[string]string{"agx.yaml": "harnesses:\n  a: {base: b}\n  b: {base: a}\n"}, []string{"harness base cycle: a -> b -> a"}},
 		{"unknown base", map[string]string{"agx.yaml": "harnesses:\n  a: {base: nope}\n"}, []string{`harness a: unknown base "nope"`}},

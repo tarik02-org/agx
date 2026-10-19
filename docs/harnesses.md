@@ -94,10 +94,11 @@ agx harness add codex-work --base codex --env 'OPENAI_API_KEY=!env WORK_OPENAI_K
 | `args` | arguments placed before the ones you type |
 | `environment` | environment variables for the harness |
 | `add`, `remove` | resources for every launch of this harness, applied after directory rules |
+| `hidden` | `true` leaves the harness out of the [launcher](sessions.md)'s new-session list |
 
 A definition inherits from its base: arguments add up (base first),
-`environment` merges key by key, and `executable` is replaced. Names cannot
-clash with agx commands such as `install`.
+`environment` merges key by key, and `executable` is replaced; `hidden` is not
+inherited. Names cannot clash with agx commands such as `install`.
 
 ### Arguments per mode
 
@@ -145,6 +146,22 @@ command lines are visible to other processes.
 agx does not expand `~` or `$VAR` in `args` or `environment` values; the
 harness gets them exactly as written. Names starting with `AGX_` are reserved.
 See [Secrets](secrets.md) for the tags and secret kinds.
+
+### Hiding harnesses from the launcher
+
+When you only use a harness through definitions, such as Codex through a
+gateway, hide the built-in so the launcher offers just the definitions:
+
+```yaml
+harnesses:
+  codex: {hidden: true}
+  codex-cpa:
+    base: codex
+    args: [[-c, 'model_provider="cpa"']]
+```
+
+A hidden harness still runs by name (`agx codex`, or a `codex` link), and its
+sessions still appear in the launcher and resume with it.
 
 ## Shims
 
