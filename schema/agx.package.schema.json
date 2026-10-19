@@ -371,7 +371,7 @@
                 "native",
                 "on_demand"
               ],
-              "description": "native puts the server in the harness's tool list; on_demand leaves it out and keeps it reachable with agx mcp call. Default native."
+              "description": "native: in the harness's tool list (default); on_demand: reached with agx mcp call."
             }
           },
           "additionalProperties": false,
@@ -486,7 +486,7 @@
             "native",
             "on_demand"
           ],
-          "description": "native puts the server in the harness's tool list; on_demand leaves it out and keeps it reachable with agx mcp call. Default native."
+          "description": "native: in the harness's tool list (default); on_demand: reached with agx mcp call."
         },
         "override": {
           "type": "boolean",

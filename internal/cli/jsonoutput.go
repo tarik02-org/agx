@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -365,6 +366,88 @@ type mcpTestServerJSON struct {
 type mcpToolJSON struct {
 	Name        string  `json:"name"`
 	Description *string `json:"description"`
+}
+
+// mcp tools
+
+type mcpToolsListJSON struct {
+	MCP []mcpToolsJSON `json:"mcp"`
+}
+
+// mcpToolsJSON is an MCP server a call reaches: load is native or on_demand; state is ready,
+// needs_auth, or failed, with message saying why; server is null when it did not answer.
+type mcpToolsJSON struct {
+	ID          string              `json:"id"`
+	Description *string             `json:"description"`
+	Load        string              `json:"load"`
+	State       string              `json:"state"`
+	Message     *string             `json:"message"`
+	Server      *mcpTestServerJSON  `json:"server"`
+	Tools       []mcpToolDetailJSON `json:"tools"`
+}
+
+// mcpToolDetailJSON is a tool: signature is TypeScript-like; the schemas are null unless
+// --schema asks for them, and output_schema when the tool declares none.
+type mcpToolDetailJSON struct {
+	Name         string          `json:"name"`
+	Title        *string         `json:"title"`
+	Description  *string         `json:"description"`
+	Signature    string          `json:"signature"`
+	InputSchema  json.RawMessage `json:"input_schema"`
+	OutputSchema json.RawMessage `json:"output_schema"`
+}
+
+// mcp call
+
+// mcpCallJSON is a tool's result. Content items are textContentJSON, fileContentJSON,
+// linkContentJSON, resourceContentJSON, or otherContentJSON, told apart by type;
+// structured_content is the tool's structured result, or null.
+type mcpCallJSON struct {
+	MCPID             string          `json:"mcp_id"`
+	Tool              string          `json:"tool"`
+	IsError           bool            `json:"is_error"`
+	Content           []any           `json:"content"`
+	StructuredContent json.RawMessage `json:"structured_content"`
+}
+
+type textContentJSON struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+// fileContentJSON is image or audio content, written to path; size is in bytes.
+type fileContentJSON struct {
+	Type     string `json:"type"`
+	MIMEType string `json:"mime_type"`
+	Path     string `json:"path"`
+	Size     int64  `json:"size"`
+}
+
+type linkContentJSON struct {
+	Type        string  `json:"type"`
+	URI         string  `json:"uri"`
+	Name        string  `json:"name"`
+	Title       *string `json:"title"`
+	Description *string `json:"description"`
+	MIMEType    *string `json:"mime_type"`
+	Size        *int64  `json:"size"`
+}
+
+// resourceContentJSON is an embedded resource: text for a text resource, otherwise path and
+// size of the file its binary content was written to.
+type resourceContentJSON struct {
+	Type     string  `json:"type"`
+	URI      string  `json:"uri"`
+	MIMEType *string `json:"mime_type"`
+	Text     *string `json:"text"`
+	Path     *string `json:"path"`
+	Size     *int64  `json:"size"`
+}
+
+// otherContentJSON is content of a type this build does not know, as the server sent it.
+type otherContentJSON struct {
+	Type  string          `json:"type"`
+	Value json.RawMessage `json:"value"`
 }
 
 // shims

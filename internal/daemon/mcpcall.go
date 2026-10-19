@@ -34,7 +34,8 @@ type callScope struct {
 	// launch is set for a launch's scope; its endpoints serve the calls.
 	launch    *launch
 	endpoints map[config.ID]*mcpruntime.Endpoint
-	// config, directory, and inputs describe a CLI scope, whose endpoints the pool owns.
+	// config holds the definitions; with directory and inputs it describes a CLI scope, whose
+	// endpoints the pool owns.
 	config    *config.Config
 	directory string
 	inputs    map[string]string
@@ -107,7 +108,12 @@ func scopeSnapshot(c *config.Config, ids []config.ID) *config.Snapshot {
 	return snapshot
 }
 
-func (s *Server) launchScope(ctx context.Context, authorization string, management bool, id string) (*callScope, error) {
+func (s *Server) launchScope(
+	ctx context.Context,
+	authorization string,
+	management bool,
+	id string,
+) (*callScope, error) {
 	s.mu.Lock()
 	l := s.launches[id]
 	token, bearer := strings.CutPrefix(authorization, "Bearer ")
@@ -120,7 +126,10 @@ func (s *Server) launchScope(ctx context.Context, authorization string, manageme
 	s.mu.Unlock()
 	if pending {
 		if err := s.revive(ctx, l, nil, false); err != nil {
-			return nil, rpcError(connect.CodeUnavailable, "the launch is restored after a daemon restart; retry shortly")
+			return nil, rpcError(
+				connect.CodeUnavailable,
+				"the launch is restored after a daemon restart; retry shortly",
+			)
 		}
 	}
 	s.mu.Lock()
@@ -135,8 +144,9 @@ func (s *Server) launchScope(ctx context.Context, authorization string, manageme
 		servers:   map[config.ID]config.MCPServer{},
 		outside:   "not selected for this launch; --all reaches every configured server",
 	}
-	for id := range endpoints {
-		if snapshot != nil {
+	if snapshot != nil {
+		scope.config = snapshot.Config
+		for id := range endpoints {
 			scope.servers[id] = snapshot.Config.MCP[id]
 		}
 	}
@@ -230,15 +240,14 @@ func (s *Server) withSession(
 		}
 		err = use(c.session)
 		s.clients.release(c)
-		var wire *jsonrpc.Error
 		var unknown unknownTool
 		switch {
 		case err == nil:
 			return nil
 		case errors.As(err, &unknown):
 			return err
-		case errors.As(err, &wire):
-			// The server answered; the session works.
+		case serverAnswered(err):
+			// The session works.
 			return mcpFailure(ctx, id, definition, c.endpoint, err)
 		}
 		s.clients.discard(c)
@@ -262,6 +271,7 @@ func mcpFailure(
 		state, problem = endpoint.State()
 	}
 	var wire *jsonrpc.Error
+	answered := serverAnswered(err)
 	switch {
 	case state == "needs_auth":
 		message := fmt.Sprintf("MCP server %s needs a login: %s", id, problem)
@@ -273,9 +283,9 @@ func mcpFailure(
 		return rpcError(connect.CodeDeadlineExceeded, fmt.Sprintf("MCP server %s did not answer in time", id))
 	case errors.Is(ctx.Err(), context.Canceled):
 		return connect.NewError(connect.CodeCanceled, ctx.Err())
-	case errors.As(err, &wire) && wire.Code == jsonrpc.CodeInvalidParams:
+	case answered && errors.As(err, &wire) && wire.Code == jsonrpc.CodeInvalidParams:
 		return rpcError(connect.CodeInvalidArgument, fmt.Sprintf("MCP server %s: %s", id, wire.Message))
-	case errors.As(err, &wire):
+	case answered && errors.As(err, &wire):
 		return reasonError(
 			connect.CodeFailedPrecondition,
 			v1.ErrorDetail_REASON_MCP_FAILED,
@@ -293,6 +303,21 @@ func mcpFailure(
 		v1.ErrorDetail_REASON_MCP_FAILED,
 		fmt.Sprintf("MCP server %s: %v", id, err),
 	)
+}
+
+// serverAnswered reports whether err is a JSON-RPC error the server sent, rather than one the
+// client's transport reports for a failed exchange.
+func serverAnswered(err error) bool {
+	var wire *jsonrpc.Error
+	if !errors.As(err, &wire) {
+		return false
+	}
+	switch wire.Code {
+	// The SDK's own codes: unknown error, client or server closing, and rejected by transport.
+	case -32001, -32003, -32004, -32005:
+		return false
+	}
+	return true
 }
 
 func withDefaultTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {

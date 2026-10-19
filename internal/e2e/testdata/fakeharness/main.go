@@ -4,7 +4,9 @@
 // selected environment variables, and launch artifacts as JSON in $FAKE_DUMP, and calls the echo
 // tool on every MCP server passed with --mcp-config. --exit=N sets its exit status. With
 // $FAKE_STDIN set, it copies its standard input there until EOF. With $FAKE_HOLD set, it then
-// keeps running and calls the tools again on request (see hold).
+// keeps running and calls the tools again on request (see hold). $FAKE_EXEC, a JSON list of
+// commands that are each a JSON list of arguments, runs those commands as the harness's shell
+// would and records their output.
 package main
 
 import (
@@ -16,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -31,6 +34,14 @@ type record struct {
 	Instructions string            `json:"instructions"`
 	Endpoints    map[string]string `json:"endpoints"`
 	Tools        map[string]string `json:"tools"`
+	Exec         []execResult      `json:"exec"`
+}
+
+type execResult struct {
+	Args   []string `json:"args"`
+	Code   int      `json:"code"`
+	Stdout string   `json:"stdout"`
+	Stderr string   `json:"stderr"`
 }
 
 func main() {
@@ -91,6 +102,27 @@ func main() {
 				clients[name] = &mcpClient{url: s.URL, authorization: os.ExpandEnv(s.Headers["Authorization"])}
 			}
 			r.Tools, _ = echoAll(clients, nil)
+		}
+	}
+	if commands := os.Getenv("FAKE_EXEC"); commands != "" {
+		var list [][]string
+		if err := json.Unmarshal([]byte(commands), &list); err != nil {
+			fail(err)
+		}
+		for _, args := range list {
+			cmd := exec.Command(args[0], args[1:]...)
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &stdout, &stderr
+			result := execResult{Args: args}
+			if err := cmd.Run(); err != nil {
+				result.Code = -1
+				var exit *exec.ExitError
+				if errors.As(err, &exit) {
+					result.Code = exit.ExitCode()
+				}
+			}
+			result.Stdout, result.Stderr = stdout.String(), stderr.String()
+			r.Exec = append(r.Exec, result)
 		}
 	}
 	if path := os.Getenv("FAKE_STDIN"); path != "" {

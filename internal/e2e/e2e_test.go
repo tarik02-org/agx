@@ -504,7 +504,7 @@ func TestEndToEnd(t *testing.T) {
 		}
 		e.jsonOK(&tested, "mcp", "test", "echo")
 		if tested.Transport != "stdio" || tested.Server.Name != "fakemcp" || tested.State != "ready" ||
-			len(tested.Tools) != 1 || tested.Tools[0].Name != "echo" || tested.Tools[0].Description != "Echo text." {
+			len(tested.Tools) != 5 || tested.Tools[0].Name != "echo" || tested.Tools[0].Description != "Echo text." {
 			t.Fatalf("mcp test = %+v", tested)
 		}
 		e.jsonFail("not_found", "mcp", "test", "missing")

@@ -109,22 +109,22 @@ type Instructions struct {
 	Source    Source `yaml:"-"        json:"source"`
 }
 
-// MCPServer is an MCP server together with the account and settings used to reach it.
+// MCPServer is an MCP server together with the account and settings used to reach it. Load is
+// LoadNative or LoadOnDemand once merged.
 type MCPServer struct {
 	// Transport follows from url (http) or command (stdio) once merged.
-	Transport   string           `yaml:"transport"   json:"transport"             jsonschema:"enum=stdio,enum=http" jsonschema_description:"How to reach the server; inferred from url (http) or command (stdio)."`
-	Command     []string         `yaml:"command"     json:"command,omitempty"                                       jsonschema_description:"stdio: server command and arguments."`
-	URL         string           `yaml:"url"         json:"url,omitempty"                                           jsonschema_description:"http: server URL; http or https."`
-	Cwd         string           `yaml:"cwd"         json:"cwd,omitempty"                                           jsonschema_description:"stdio: working directory; defaults to the launch directory."`
-	Environment map[string]Value `yaml:"environment" json:"environment,omitempty"                                   jsonschema_description:"stdio: environment variables for the server."`
-	Headers     map[string]Value `yaml:"headers"     json:"headers,omitempty"                                       jsonschema_description:"http: extra request headers."`
+	Transport   string           `yaml:"transport"   json:"transport"             jsonschema:"enum=stdio,enum=http"       jsonschema_description:"How to reach the server; inferred from url (http) or command (stdio)."`
+	Command     []string         `yaml:"command"     json:"command,omitempty"                                             jsonschema_description:"stdio: server command and arguments."`
+	URL         string           `yaml:"url"         json:"url,omitempty"                                                 jsonschema_description:"http: server URL; http or https."`
+	Cwd         string           `yaml:"cwd"         json:"cwd,omitempty"                                                 jsonschema_description:"stdio: working directory; defaults to the launch directory."`
+	Environment map[string]Value `yaml:"environment" json:"environment,omitempty"                                         jsonschema_description:"stdio: environment variables for the server."`
+	Headers     map[string]Value `yaml:"headers"     json:"headers,omitempty"                                             jsonschema_description:"http: extra request headers."`
 	Auth        MCPAuth          `yaml:"auth"        json:"auth"`
-	Description string           `yaml:"description" json:"description,omitempty"                                   jsonschema_description:"What the server offers, shown by agx mcp tools."`
-	// Load is native or on_demand once merged.
-	Load     string `yaml:"load"     json:"load"         jsonschema:"enum=native,enum=on_demand" jsonschema_description:"native puts the server in the harness's tool list; on_demand leaves it out and keeps it reachable with agx mcp call. Default native."`
-	Override bool   `yaml:"override" json:"-"                                                    jsonschema_description:"Replace an existing definition."`
-	Inline   bool   `yaml:"-"           json:"-"`
-	Source   Source `yaml:"-"           json:"source"`
+	Description string           `yaml:"description" json:"description,omitempty"                                         jsonschema_description:"What the server offers, shown by agx mcp tools."`
+	Load        string           `yaml:"load"        json:"load"                  jsonschema:"enum=native,enum=on_demand" jsonschema_description:"native: in the harness's tool list (default); on_demand: reached with agx mcp call."`
+	Override    bool             `yaml:"override"    json:"-"                                                             jsonschema_description:"Replace an existing definition."`
+	Inline      bool             `yaml:"-"           json:"-"`
+	Source      Source           `yaml:"-"           json:"source"`
 }
 
 // Load modes of an MCP server: a native server is in the harness's tool list; an on-demand

@@ -27,7 +27,7 @@ import (
 func mcpCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "mcp",
-		Short:   "Add, list, remove, log in to, and test MCP servers",
+		Short:   "Add, list, remove, log in to, test, and call MCP servers",
 		GroupID: "config",
 	}
 	test := &cobra.Command{
@@ -45,6 +45,8 @@ func mcpCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command
 		removeCommand(paths, builtins, edit.MCP),
 		mcpLoginCommand(paths, builtins),
 		test,
+		mcpToolsCommand(paths, builtins),
+		mcpCallCommand(paths, builtins),
 	)
 	return command
 }

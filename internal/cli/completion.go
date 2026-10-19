@@ -384,6 +384,8 @@ func (k *completer) registerCompletions(root *cobra.Command) {
 	set(firstArg(func() []candidate { return k.definitions(edit.MCP, true) }), "mcp", "remove")
 	set(firstArg(func() []candidate { return k.definitions(edit.MCP, false) }), "mcp", "test")
 	set(firstArg(k.loginServers), "mcp", "login")
+	set(firstArg(func() []candidate { return k.definitions(edit.MCP, false) }), "mcp", "tools")
+	set(k.toolServers, "mcp", "call")
 	set(firstArg(func() []candidate { return k.definitions(edit.Skills, true) }), "skill", "remove")
 	set(firstArg(func() []candidate { return k.definitions(edit.Instructions, true) }), "instructions", "remove")
 	set(firstArg(func() []candidate { return k.definitions("harnesses", true) }), "harness", "remove")
@@ -404,6 +406,24 @@ func (k *completer) registerCompletions(root *cobra.Command) {
 	set(afterDash(files), "mcp", "add")
 	set(afterDash(files), "harness", "add")
 	set(k.run, "run")
+}
+
+// toolServers completes the <server>. of mcp call; tools come from the server, which completion
+// does not reach.
+func (k *completer) toolServers(
+	cmd *cobra.Command,
+	args []string,
+	toComplete string,
+) ([]cobra.Completion, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	candidates := []candidate{}
+	for _, c := range k.definitions(edit.MCP, false) {
+		candidates = append(candidates, candidate{c.value + ".", c.description})
+	}
+	out, directive := offer(candidates, toComplete)
+	return out, directive | cobra.ShellCompDirectiveNoSpace
 }
 
 // run completes the harness name, then leaves native arguments to the shell.

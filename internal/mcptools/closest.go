@@ -24,7 +24,7 @@ func Closest(name string, candidates []string, n int) []string {
 		switch {
 		case lower == "" || other == "":
 		case strings.Contains(other, lower) || strings.Contains(lower, other):
-			found = append(found, scored{c, min(distance, limit)})
+			found = append(found, scored{c, distance - 1000})
 		case distance <= limit:
 			found = append(found, scored{c, distance})
 		}
