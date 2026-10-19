@@ -42,6 +42,7 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Changed
 
+- The skill picker of `agx skill add` filters with `/`, toggles with `x` or Space and all with Ctrl-A; prompts are drawn with `huh`.
 - `agx skill add owner/skills` names the package after the owner (`anthropics`, `mattpocock`) instead of `skills`, so such repositories no longer collide.
 
 - `agx daemon status` succeeds without a running daemon: it prints that none runs

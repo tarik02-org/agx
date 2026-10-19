@@ -10,7 +10,8 @@ Runtime dependencies are pinned in `go.mod`; schema generators are pinned in
 | Schema tooling | Buf, Protobuf, Connect generators | Generated from `api/agx/v1` into `gen/`. The Connect generator (v1.19.1) trails the runtime library because the registry has no matching release. |
 | CLI | `github.com/spf13/cobra` | Harness subcommands bypass flag parsing to forward native arguments unchanged. |
 | Terminal styling | `charm.land/lipgloss/v2` | Tables, trees, and lists; its `colorprofile` detects terminals and strips styling for pipes and `NO_COLOR`. |
-| Launcher TUI | `charm.land/bubbletea/v2`, `charm.land/bubbles/v2` | Full-screen launcher on the alternate screen; Bubbles' text input for the search field. The editing commands' inline prompts (text, confirmation, multi-select) use the same two rather than `huh`. |
+| Launcher TUI | `charm.land/bubbletea/v2`, `charm.land/bubbles/v2` | Full-screen launcher on the alternate screen; Bubbles' text input for the search field. |
+| Prompts | `charm.land/huh/v2` | The editing commands' inline prompts: text, confirmation, and a filterable multi-select, each run in a small Bubble Tea program that keeps the answer on screen and tells Esc from Ctrl-C. |
 | Diffs | `github.com/aymanbagabas/go-udiff` | Line diffs that place configuration edits in the original text, and unified previews. |
 | Fuzzy search | `github.com/sahilm/fuzzy` | Session and harness search, one term per field, ranked by its match score. |
 | YAML | `go.yaml.in/yaml/v4` | Typed decoding, unknown-field rejection, source positions, and the node trees configuration edits go through. Release candidate. |
