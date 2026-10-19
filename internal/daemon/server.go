@@ -172,6 +172,8 @@ type Server struct {
 	store      *stateStore
 	generation uint64
 	port       int
+	// clients pools the daemon's own MCP client sessions for ListTools and CallTool.
+	clients *clientPool
 }
 
 // Serve runs the daemon until stop closes or a stop request arrives, then shuts down gracefully:
@@ -265,6 +267,7 @@ func Serve(
 		operationRequests: map[string]*operation{},
 		store:             store,
 		port:              listener.Addr().(*net.TCPAddr).Port,
+		clients:           newClientPool(),
 	}
 	if port != 0 && port != s.port && len(restored) > 0 {
 		fmt.Fprintf(
@@ -280,8 +283,9 @@ func Serve(
 	mux := http.NewServeMux()
 	interceptor := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			if req.Spec().Procedure != agxv1connect.LaunchServiceRenewLaunchProcedure &&
-				req.Spec().Procedure != agxv1connect.LaunchServiceFinishLaunchProcedure {
+			// Lifecycle procedures check the lifecycle token, and tool procedures accept a launch
+			// grant instead of the management token; they authorize themselves.
+			if !selfAuthorized[req.Spec().Procedure] {
 				if !equalBearer(req.Header().Get("Authorization"), discovery.Token) {
 					return nil, rpcError(connect.CodeUnauthenticated, "management credential required")
 				}
@@ -385,6 +389,7 @@ loop:
 			break loop
 		case <-ticker.C:
 			s.expire()
+			s.clients.expire(time.Now())
 			if s.store.due(time.Now()) {
 				s.persist(false)
 			}
@@ -395,6 +400,7 @@ loop:
 		s.settle(ctx)
 	}
 	launches := s.flush()
+	s.clients.closeAll()
 	// Shutdown closes the listener at once; requests that outlasted the grace period end as
 	// their MCP sessions close.
 	shutdownCtx, stopShutdown := context.WithCancel(ctx)
@@ -424,6 +430,14 @@ loop:
 	return nil
 }
 
+// selfAuthorized are the procedures that check their own credentials.
+var selfAuthorized = map[string]bool{
+	agxv1connect.LaunchServiceRenewLaunchProcedure:  true,
+	agxv1connect.LaunchServiceFinishLaunchProcedure: true,
+	agxv1connect.RuntimeServiceListToolsProcedure:   true,
+	agxv1connect.RuntimeServiceCallToolProcedure:    true,
+}
+
 // startsWork are the procedures a stopping daemon refuses, so that callers retry them with the
 // next daemon.
 var startsWork = map[string]bool{
@@ -432,6 +446,8 @@ var startsWork = map[string]bool{
 	agxv1connect.PackageServiceInstallProcedure:            true,
 	agxv1connect.PackageServiceUpdateProcedure:             true,
 	agxv1connect.RuntimeServiceTestMcpServerProcedure:      true,
+	agxv1connect.RuntimeServiceListToolsProcedure:          true,
+	agxv1connect.RuntimeServiceCallToolProcedure:           true,
 }
 
 // settle waits for the grace period until requests in flight finished, or ctx ends.
@@ -521,6 +537,7 @@ func (s *Server) end(l *launch, state v1.Launch_State) {
 	l.view.State = state
 	l.ended = time.Now()
 	l.cancel()
+	s.clients.closeLaunch(l.view.Id)
 	go s.release(l.view.Id, l.endpoints)
 	for _, child := range s.children(l) {
 		s.end(child, state)

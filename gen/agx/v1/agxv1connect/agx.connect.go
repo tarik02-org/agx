@@ -84,6 +84,11 @@ const (
 	// RuntimeServiceTestMcpServerProcedure is the fully-qualified name of the RuntimeService's
 	// TestMcpServer RPC.
 	RuntimeServiceTestMcpServerProcedure = "/agx.v1.RuntimeService/TestMcpServer"
+	// RuntimeServiceListToolsProcedure is the fully-qualified name of the RuntimeService's ListTools
+	// RPC.
+	RuntimeServiceListToolsProcedure = "/agx.v1.RuntimeService/ListTools"
+	// RuntimeServiceCallToolProcedure is the fully-qualified name of the RuntimeService's CallTool RPC.
+	RuntimeServiceCallToolProcedure = "/agx.v1.RuntimeService/CallTool"
 	// SecretServiceLoginProcedure is the fully-qualified name of the SecretService's Login RPC.
 	SecretServiceLoginProcedure = "/agx.v1.SecretService/Login"
 	// SecretServiceSetSecretProcedure is the fully-qualified name of the SecretService's SetSecret RPC.
@@ -555,6 +560,12 @@ type RuntimeServiceClient interface {
 	WatchRuntime(context.Context, *connect.Request[v1.WatchRuntimeRequest]) (*connect.ServerStreamForClient[v1.WatchRuntimeResponse], error)
 	// Connects to one MCP server outside any launch and lists its tools.
 	TestMcpServer(context.Context, *connect.Request[v1.TestMcpServerRequest]) (*connect.Response[v1.TestMcpServerResponse], error)
+	// Lists the tools of the MCP servers in a call scope. Takes a launch grant for a launch's
+	// scope, or management authorization.
+	ListTools(context.Context, *connect.Request[v1.ListToolsRequest]) (*connect.Response[v1.ListToolsResponse], error)
+	// Calls one tool of an MCP server in a call scope. Credentials and tool execution stay in the
+	// daemon; the caller receives only the result. Authorized like ListTools.
+	CallTool(context.Context, *connect.Request[v1.CallToolRequest]) (*connect.Response[v1.CallToolResponse], error)
 }
 
 // NewRuntimeServiceClient constructs a client for the agx.v1.RuntimeService service. By default, it
@@ -586,6 +597,18 @@ func NewRuntimeServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(runtimeServiceMethods.ByName("TestMcpServer")),
 			connect.WithClientOptions(opts...),
 		),
+		listTools: connect.NewClient[v1.ListToolsRequest, v1.ListToolsResponse](
+			httpClient,
+			baseURL+RuntimeServiceListToolsProcedure,
+			connect.WithSchema(runtimeServiceMethods.ByName("ListTools")),
+			connect.WithClientOptions(opts...),
+		),
+		callTool: connect.NewClient[v1.CallToolRequest, v1.CallToolResponse](
+			httpClient,
+			baseURL+RuntimeServiceCallToolProcedure,
+			connect.WithSchema(runtimeServiceMethods.ByName("CallTool")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -594,6 +617,8 @@ type runtimeServiceClient struct {
 	getRuntime    *connect.Client[v1.GetRuntimeRequest, v1.GetRuntimeResponse]
 	watchRuntime  *connect.Client[v1.WatchRuntimeRequest, v1.WatchRuntimeResponse]
 	testMcpServer *connect.Client[v1.TestMcpServerRequest, v1.TestMcpServerResponse]
+	listTools     *connect.Client[v1.ListToolsRequest, v1.ListToolsResponse]
+	callTool      *connect.Client[v1.CallToolRequest, v1.CallToolResponse]
 }
 
 // GetRuntime calls agx.v1.RuntimeService.GetRuntime.
@@ -611,12 +636,28 @@ func (c *runtimeServiceClient) TestMcpServer(ctx context.Context, req *connect.R
 	return c.testMcpServer.CallUnary(ctx, req)
 }
 
+// ListTools calls agx.v1.RuntimeService.ListTools.
+func (c *runtimeServiceClient) ListTools(ctx context.Context, req *connect.Request[v1.ListToolsRequest]) (*connect.Response[v1.ListToolsResponse], error) {
+	return c.listTools.CallUnary(ctx, req)
+}
+
+// CallTool calls agx.v1.RuntimeService.CallTool.
+func (c *runtimeServiceClient) CallTool(ctx context.Context, req *connect.Request[v1.CallToolRequest]) (*connect.Response[v1.CallToolResponse], error) {
+	return c.callTool.CallUnary(ctx, req)
+}
+
 // RuntimeServiceHandler is an implementation of the agx.v1.RuntimeService service.
 type RuntimeServiceHandler interface {
 	GetRuntime(context.Context, *connect.Request[v1.GetRuntimeRequest]) (*connect.Response[v1.GetRuntimeResponse], error)
 	WatchRuntime(context.Context, *connect.Request[v1.WatchRuntimeRequest], *connect.ServerStream[v1.WatchRuntimeResponse]) error
 	// Connects to one MCP server outside any launch and lists its tools.
 	TestMcpServer(context.Context, *connect.Request[v1.TestMcpServerRequest]) (*connect.Response[v1.TestMcpServerResponse], error)
+	// Lists the tools of the MCP servers in a call scope. Takes a launch grant for a launch's
+	// scope, or management authorization.
+	ListTools(context.Context, *connect.Request[v1.ListToolsRequest]) (*connect.Response[v1.ListToolsResponse], error)
+	// Calls one tool of an MCP server in a call scope. Credentials and tool execution stay in the
+	// daemon; the caller receives only the result. Authorized like ListTools.
+	CallTool(context.Context, *connect.Request[v1.CallToolRequest]) (*connect.Response[v1.CallToolResponse], error)
 }
 
 // NewRuntimeServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -644,6 +685,18 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 		connect.WithSchema(runtimeServiceMethods.ByName("TestMcpServer")),
 		connect.WithHandlerOptions(opts...),
 	)
+	runtimeServiceListToolsHandler := connect.NewUnaryHandler(
+		RuntimeServiceListToolsProcedure,
+		svc.ListTools,
+		connect.WithSchema(runtimeServiceMethods.ByName("ListTools")),
+		connect.WithHandlerOptions(opts...),
+	)
+	runtimeServiceCallToolHandler := connect.NewUnaryHandler(
+		RuntimeServiceCallToolProcedure,
+		svc.CallTool,
+		connect.WithSchema(runtimeServiceMethods.ByName("CallTool")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.RuntimeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RuntimeServiceGetRuntimeProcedure:
@@ -652,6 +705,10 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 			runtimeServiceWatchRuntimeHandler.ServeHTTP(w, r)
 		case RuntimeServiceTestMcpServerProcedure:
 			runtimeServiceTestMcpServerHandler.ServeHTTP(w, r)
+		case RuntimeServiceListToolsProcedure:
+			runtimeServiceListToolsHandler.ServeHTTP(w, r)
+		case RuntimeServiceCallToolProcedure:
+			runtimeServiceCallToolHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -671,6 +728,14 @@ func (UnimplementedRuntimeServiceHandler) WatchRuntime(context.Context, *connect
 
 func (UnimplementedRuntimeServiceHandler) TestMcpServer(context.Context, *connect.Request[v1.TestMcpServerRequest]) (*connect.Response[v1.TestMcpServerResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.TestMcpServer is not implemented"))
+}
+
+func (UnimplementedRuntimeServiceHandler) ListTools(context.Context, *connect.Request[v1.ListToolsRequest]) (*connect.Response[v1.ListToolsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.ListTools is not implemented"))
+}
+
+func (UnimplementedRuntimeServiceHandler) CallTool(context.Context, *connect.Request[v1.CallToolRequest]) (*connect.Response[v1.CallToolResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.CallTool is not implemented"))
 }
 
 // SecretServiceClient is a client for the agx.v1.SecretService service.

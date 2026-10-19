@@ -24,6 +24,7 @@ func stateServer(t *testing.T) *Server {
 	return &Server{
 		paths:    paths,
 		launches: map[string]*launch{},
+		clients:  newClientPool(),
 		port:     4242,
 		store:    &stateStore{path: StatePath(paths), interval: renewalWriteInterval},
 	}

@@ -4,12 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	"net/http"
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/config"
@@ -18,7 +15,7 @@ import (
 
 const mcpTestTimeout = 30 * time.Second
 
-// TestMcpServer serves the server through a launch-less endpoint on a private loopback listener
+// TestMcpServer serves the server through a launch-less endpoint over in-memory connections
 // and lists its tools as a harness would, so credentials and injected values resolve exactly as
 // in a launch without leaving the daemon. Failures report the endpoint's diagnostics, which
 // never contain values.
@@ -54,23 +51,11 @@ func (s *Server) TestMcpServer(
 	defer cancel()
 	endpoint := mcpruntime.New(s.ctx, id, definition, c.Secrets, inputs, s.manager)
 	defer endpoint.Close()
-	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp4", "127.0.0.1:0")
-	if err != nil {
-		return nil, rpcError(connect.CodeInternal, "cannot listen for the test session")
-	}
-	server := &http.Server{Handler: endpoint, ReadHeaderTimeout: 10 * time.Second}
-	go func() { _ = server.Serve(listener) }()
-	defer func() { _ = server.Close() }()
-	client := mcp.NewClient(&mcp.Implementation{Name: "agx", Version: Version}, nil)
-	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
-		Endpoint:             "http://" + listener.Addr().String() + "/",
-		MaxRetries:           -1,
-		DisableStandaloneSSE: true,
-	}, nil)
+	session, closeSession, err := connectHandler(ctx, endpoint)
 	if err != nil {
 		return nil, testFailure(ctx, endpoint, err)
 	}
-	defer func() { _ = session.Close() }()
+	defer closeSession()
 	response := &v1.TestMcpServerResponse{Tools: []string{}, ToolDetails: []*v1.TestMcpServerResponse_Tool{}}
 	if info := session.InitializeResult().ServerInfo; info != nil {
 		response.ServerName, response.ServerVersion = info.Name, info.Version

@@ -38,6 +38,12 @@ service RuntimeService {
   rpc WatchRuntime(WatchRuntimeRequest) returns (stream WatchRuntimeResponse);
   // Connects to one MCP server outside any launch and lists its tools.
   rpc TestMcpServer(TestMcpServerRequest) returns (TestMcpServerResponse);
+  // Lists the tools of the MCP servers in a call scope. Takes a launch grant for a launch's
+  // scope, or management authorization.
+  rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
+  // Calls one tool of an MCP server in a call scope. Credentials and tool execution stay in the
+  // daemon; the caller receives only the result. Authorized like ListTools.
+  rpc CallTool(CallToolRequest) returns (CallToolResponse);
 }
 
 service SecretService {
@@ -100,6 +106,8 @@ message ErrorDetail {
     REASON_TIMEOUT = 9;
     // A defect.
     REASON_INTERNAL = 10;
+    // An MCP server failed the request, or could not be reached or started.
+    REASON_MCP_FAILED = 11;
   }
   Reason reason = 1;
 }
@@ -374,6 +382,74 @@ message TestMcpServerResponse {
     string name = 1;
     string description = 2;
   }
+}
+
+// The MCP servers a ListTools or CallTool caller reaches. With launch_id, the request carries
+// that launch's grant, or management authorization, and reaches the servers of the launch's
+// snapshot through its endpoints, native and on-demand alike. Without it, the request carries
+// management authorization and reaches the servers selected for directory, or every configured
+// server with all.
+message McpCallScope {
+  string launch_id = 1;
+  // Absolute directory whose scopes select the servers, and where a stdio server without cwd
+  // runs; required without launch_id.
+  string directory = 2;
+  bool all = 3;
+  // Sensitive: only names the reached servers' values read are accepted; ignored for a launch,
+  // which has its own.
+  map<string, string> environment_inputs = 4;
+}
+
+message ListToolsRequest {
+  McpCallScope scope = 1;
+  // One server, whose failure fails the request; empty lists every server in scope, each with
+  // its state.
+  string mcp_id = 2;
+}
+message ListToolsResponse {
+  repeated McpTools servers = 1;
+}
+message McpTools {
+  enum Load {
+    LOAD_UNSPECIFIED = 0;
+    LOAD_NATIVE = 1;
+    LOAD_ON_DEMAND = 2;
+  }
+  string mcp_id = 1;
+  string description = 2;
+  Load load = 3;
+  // READY, NEEDS_AUTH, or FAILED.
+  McpRuntime.State state = 4;
+  // Why the server is not ready; never contains values.
+  string message = 5;
+  string server_name = 6;
+  string server_version = 7;
+  repeated McpTool tools = 8;
+}
+message McpTool {
+  string name = 1;
+  string title = 2;
+  string description = 3;
+  // JSON Schema of the arguments object.
+  string input_schema_json = 4;
+  // JSON Schema of the structured result; empty when the tool declares none.
+  string output_schema_json = 5;
+}
+
+message CallToolRequest {
+  McpCallScope scope = 1;
+  string mcp_id = 2;
+  string tool = 3;
+  // Sensitive: the arguments as a JSON object; empty for none.
+  string arguments_json = 4;
+}
+message CallToolResponse {
+  // The tool reported an error; content describes it.
+  bool is_error = 1;
+  // The result's content as a JSON array of MCP content items; binary data is base64.
+  string content_json = 2;
+  // The result's structured content as JSON; empty when the tool returned none.
+  string structured_content_json = 3;
 }
 
 message LoginRequest {
