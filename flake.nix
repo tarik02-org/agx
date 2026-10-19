@@ -37,6 +37,19 @@
         };
       });
 
+      homeManagerModules = {
+        agx = import ./nix/home-manager.nix self;
+        default = self.homeManagerModules.agx;
+      };
+
+      checks = forAllSystems (pkgs: {
+        inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) agx;
+        home-manager-module = import ./nix/home-manager-check.nix {
+          inherit pkgs;
+          module = self.homeManagerModules.agx;
+        };
+      });
+
       formatter = forAllSystems (pkgs: pkgs.nixfmt);
     };
 }
