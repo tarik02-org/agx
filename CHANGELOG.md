@@ -163,6 +163,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - Skills appear under their native names (`agx-managed:review` instead of
   `agx-managed:resource-…`; Codex plugins are `review-<hash>`).
 
+### Fixed
+
+- A harness started through a link or shim named after it no longer starts the daemon under that name, which on macOS relaunched the harness in a loop and grew `daemon.log` without bound. The daemon log is now moved aside to `daemon.log.old` past 1 MiB.
+
 ## 0.1.0 - 2026-10-18
 
 First release.

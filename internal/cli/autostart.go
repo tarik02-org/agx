@@ -165,6 +165,9 @@ func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*cli
 	return newClient(paths)
 }
 
+// maxDaemonLog is the size past which a starting daemon moves its log aside.
+const maxDaemonLog = 1 << 20
+
 // startDaemon starts a detached daemon and waits until a daemon of this build answers. Concurrent
 // starters each spawn one; the startup lock lets one serve, and the others connect to it.
 func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
@@ -176,6 +179,10 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 		return "", err
 	}
 	logPath := filepath.Join(paths.Runtime, "daemon.log")
+	// The log only needs recent runs; keep one older generation instead of growing without bound.
+	if info, err := os.Stat(logPath); err == nil && info.Size() > maxDaemonLog {
+		_ = os.Rename(logPath, logPath+".old")
+	}
 	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return "", err
@@ -183,6 +190,10 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 	defer func() { _ = log.Close() }()
 	// The daemon must outlive this command, so its process is not tied to the command's cancellation.
 	child := exec.CommandContext(context.WithoutCancel(ctx), executable, "daemon", "start", "--foreground")
+	// On macOS the executable path is the link this command ran through, such as a shim named
+	// after a harness definition; with that name as argv[0] the child would launch the harness,
+	// which starts a daemon again, without end. The daemon always runs as agx.
+	child.Args[0] = "agx"
 	// The paths travel as environment rather than as --config, which must name an existing file:
 	// a root configuration that does not exist yet is an empty one, as it is for the caller.
 	child.Env = append(os.Environ(), "AGX_CONFIG="+paths.Config, "AGX_CACHE="+paths.Cache)

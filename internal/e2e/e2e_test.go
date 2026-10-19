@@ -401,6 +401,13 @@ func TestEndToEnd(t *testing.T) {
 				t.Errorf("%s: definition environment applied = %v, want %v", name, !want, want)
 			}
 		}
+
+		// A managed launch through a link starts the daemon as agx, not as the link's harness.
+		r := e.run(filepath.Join(links, "claude-e2e"), []string{path}, "-p", "hi")
+		if r.code != 0 || !e.daemonRunning() {
+			t.Fatalf("managed launch through a link: exit %d, stderr %q", r.code, r.stderr)
+		}
+		e.stopDaemon(true)
 	})
 
 	if e.daemonRunning() {
