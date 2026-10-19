@@ -254,7 +254,8 @@ func launchInputs(snapshot *config.Snapshot, given map[string]string, forwarded 
 	return inputs, nil
 }
 
-// endpoints starts the endpoints of the snapshot's MCP servers for launch id.
+// endpoints starts the endpoints of the snapshot's MCP servers for launch id and lists those the
+// harness gets natively; on-demand servers stay reachable only through agx mcp call.
 func (s *Server) endpoints(
 	ctx context.Context,
 	id string,
@@ -272,6 +273,9 @@ func (s *Server) endpoints(
 			definition.Cwd = snapshot.Directory
 		}
 		endpoints[r.ID] = mcpruntime.New(ctx, r.ID, definition, snapshot.Config.Secrets, inputs, s.manager)
+		if definition.Load == config.LoadOnDemand {
+			continue
+		}
 		native = append(
 			native,
 			adapters.Endpoint{

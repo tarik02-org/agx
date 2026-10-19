@@ -166,13 +166,17 @@ func (a Adapter) Arguments(l adapters.Launch) ([]string, error) {
 }
 
 // ThreadPlan carries the launch's resources as thread/start configuration overrides; the grant
-// travels in each server's headers.
+// travels in each server's headers, and with the launch ID in the thread's shell environment
+// for agx mcp call. Dotted keys set single variables without replacing the user's policy.
 func (Adapter) ThreadPlan(l adapters.Launch, grant string) (adapters.ThreadPlan, error) {
 	o, err := resources(l)
 	if err != nil {
 		return adapters.ThreadPlan{}, err
 	}
-	plan := adapters.ThreadPlan{Config: map[string]any{}, Instructions: o.instructions}
+	plan := adapters.ThreadPlan{Config: map[string]any{
+		"shell_environment_policy.set." + adapters.LaunchEnvironment: l.ID,
+		"shell_environment_policy.set." + adapters.GrantEnvironment:  grant,
+	}, Instructions: o.instructions}
 	if len(o.plugins) > 0 {
 		plugins := map[string]any{}
 		for _, p := range o.plugins {

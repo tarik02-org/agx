@@ -125,8 +125,9 @@ func checkPlan(t *testing.T, f fixture, plan adapters.Plan, s *config.Snapshot, 
 		t.Errorf("directory = %q, want %q", plan.Directory, s.Directory)
 	}
 	if want := map[string]string{
-		"DEFINITION":              "1",
-		adapters.GrantEnvironment: grant,
+		"DEFINITION":               "1",
+		adapters.GrantEnvironment:  grant,
+		adapters.LaunchEnvironment: "L",
 	}; !mapsEqual(
 		plan.Environment,
 		want,
@@ -332,7 +333,8 @@ func TestBuildCodexAppServer(t *testing.T) {
 	}
 	want := `{"mcp_servers":{"agx-up":{"http_headers":{"Authorization":"Bearer thread-grant"},` +
 		`"url":"http://127.0.0.1:9/launch/L/mcp/up"}},"plugins":{"` + other + `@agx-managed":{"enabled":false},"` +
-		selected + `":{"enabled":true}}}`
+		selected + `":{"enabled":true}},"shell_environment_policy.set.AGX_LAUNCH_ID":"T",` +
+		`"shell_environment_policy.set.AGX_MCP_GRANT":"thread-grant"}`
 	if string(config) != want {
 		t.Errorf("thread config:\n got %s\nwant %s", config, want)
 	}

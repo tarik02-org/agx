@@ -16,7 +16,13 @@ import (
 	"github.com/tarik02-org/agx/internal/config"
 )
 
-const GrantEnvironment = "AGX_MCP_GRANT"
+const (
+	// GrantEnvironment carries a launch's MCP grant in the harness environment.
+	GrantEnvironment = "AGX_MCP_GRANT"
+	// LaunchEnvironment carries the launch's ID next to its grant, so agx mcp call from the
+	// harness's shell reaches the launch's servers.
+	LaunchEnvironment = "AGX_LAUNCH_ID"
+)
 
 // Adapter carries everything specific to one built-in harness.
 type Adapter interface {
@@ -240,6 +246,7 @@ type Plan struct {
 	InitializeSystemPrompt string
 }
 
+// Endpoint is a native MCP server of a launch; on-demand servers have none in the harness.
 type Endpoint struct {
 	ID  config.ID
 	URL string
@@ -335,6 +342,7 @@ func Build(
 		plan.Environment[name] = value
 	}
 	plan.Environment[GrantEnvironment] = grant
+	plan.Environment[LaunchEnvironment] = l.ID
 	l.Native = args
 	resolved := l.Target.Resolved
 	l.Target = NewTarget(h, harnessArgs, harnessEnv, args, l.Target.Lookup)
