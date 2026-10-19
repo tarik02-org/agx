@@ -1,7 +1,7 @@
 # CLI reference
 
 Every command also accepts `-h`/`--help`, which is the authoritative list of
-flags for your version.
+flags for your version. `agx man` prints a man page of every command.
 
 ## Global options
 

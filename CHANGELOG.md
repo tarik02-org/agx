@@ -38,6 +38,7 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   shims, with a fix for each problem.
 - `sops` secrets take an optional `age_key` (`!secret`, `!env`, or `!file`) passed
   to sops as `SOPS_AGE_KEY`, so the age identity can live in the OS keychain.
+- `agx man` prints a man page of every command.
 
 ### Changed
 
@@ -75,6 +76,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   the package's skills, as `skill add` writes them, so it no longer needs
   `--force` right after `skill add`. It lists those skills under `disabled` with
   `--json`. Other references, such as bundles, still need `--force`.
+- Help is laid out and styled with fang in the terminal's ANSI colors. It follows
+  `--color` and `NO_COLOR` like other output and is plain text when piped.
 
 ### Fixed
 
