@@ -17,6 +17,8 @@ New to agx? Read [Getting started](getting-started.md) first.
   sops-encrypted files.
 - [Launcher and sessions](sessions.md): the interactive launcher and resuming
   earlier conversations.
+- [Integrations](integrations.md): running agents through agx from other
+  tools, such as T3 Code.
 - [The daemon](daemon.md): what runs in the background, and how to start, stop,
   and restart it.
 - [Troubleshooting](troubleshooting.md): `agx doctor` and common problems.

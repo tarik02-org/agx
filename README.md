@@ -101,7 +101,17 @@ Run `agx` to start an agent or resume any past session, from any harness.
 
 ## Install
 
-Download the archive for your platform (Linux, macOS, or Windows; amd64 or arm64) from the [releases page](https://github.com/tarik02-org/agx/releases), check it against `checksums.txt`, and put `agx` on your `PATH`. On macOS, clear the quarantine flag once: `xattr -d com.apple.quarantine ./agx`.
+Download `agx` from the [releases page](https://github.com/tarik02-org/agx/releases) and put it on your `PATH`.
+
+<details>
+<summary><b>macOS: first run</b></summary>
+
+Clear the quarantine flag once:
+
+```sh
+xattr -d com.apple.quarantine ./agx
+```
+</details>
 
 <details>
 <summary><b>mise</b></summary>
@@ -152,8 +162,6 @@ go install github.com/tarik02-org/agx/cmd/agx@latest
 ```
 </details>
 
-agx wraps the agents you already have; install Codex, Claude Code, or Pi separately.
-
 ## Get started
 
 ```sh
@@ -166,9 +174,13 @@ agx claude
 
 Every command shows a diff before it writes. Continue with the [getting started guide](docs/getting-started.md).
 
+## Integrations
+
+Any tool that starts Codex, Claude Code, or Pi can run them through agx: point it at a [shim](docs/harnesses.md#shims) instead of the agent's own binary. See [Integrations](docs/integrations.md) for [T3 Code](docs/integrations.md#t3-code).
+
 ## Docs
 
-[Getting started](docs/getting-started.md) · [Configuration](docs/configuration.md) · [Harnesses](docs/harnesses.md) · [MCP servers](docs/mcp.md) · [Skills & packages](docs/skills-and-packages.md) · [Secrets](docs/secrets.md) · [Sessions](docs/sessions.md) · [Daemon](docs/daemon.md) · [Troubleshooting](docs/troubleshooting.md) · [Security](docs/security.md) · [CLI reference](docs/cli-reference.md)
+[Getting started](docs/getting-started.md) · [Configuration](docs/configuration.md) · [Harnesses](docs/harnesses.md) · [MCP servers](docs/mcp.md) · [Skills & packages](docs/skills-and-packages.md) · [Secrets](docs/secrets.md) · [Sessions](docs/sessions.md) · [Integrations](docs/integrations.md) · [Daemon](docs/daemon.md) · [Troubleshooting](docs/troubleshooting.md) · [Security](docs/security.md) · [CLI reference](docs/cli-reference.md)
 
 Working on agx itself? See the [development notes](docs/development/README.md) and the [changelog](CHANGELOG.md).
 
