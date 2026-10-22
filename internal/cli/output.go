@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -221,6 +222,23 @@ func printExplain(snapshot *config.Snapshot) error {
 		}
 		b.WriteString(injections.String() + "\n")
 	}
+	if settings := explainSettings(snapshot); len(settings) > 0 {
+		if out.Styled() {
+			b.WriteString("\n" + out.Heading("Settings") + "\n")
+		} else {
+			b.WriteString("\n")
+		}
+		tree := out.Tree()
+		for _, setting := range settings {
+			location := out.Path(fmt.Sprintf("%s:%d", setting.Source.Path, setting.Source.Line))
+			if out.Styled() {
+				tree.Child(out.Node(settingLine(out, setting), location))
+			} else {
+				tree.Child(out.Node("setting "+settingLine(out, setting), location))
+			}
+		}
+		b.WriteString(tree.String() + "\n")
+	}
 	_, err := io.WriteString(out, b.String())
 	return err
 }
@@ -299,6 +317,15 @@ func printExplainCompact(snapshot *config.Snapshot) error {
 			b.WriteString(
 				out.Label(i.Target) + " = " + out.Value(i.Text) + "  " +
 					out.Muted(short.location(i.Source.Path, i.Source.Line)) + "\n",
+			)
+		}
+	}
+	if settings := explainSettings(snapshot); len(settings) > 0 {
+		b.WriteString("\n")
+		for _, setting := range settings {
+			b.WriteString(
+				settingLine(out, setting) + "  " +
+					out.Muted(short.location(setting.Source.Path, setting.Source.Line)) + "\n",
 			)
 		}
 	}
@@ -619,4 +646,41 @@ func printSecretStatuses(statuses []*v1.SecretStatus) error {
 		out.Table([]string{"SECRET", "KIND", "STATE", "EXPIRES"}, rows)+diagnosticLines(out, diagnostics),
 	)
 	return err
+}
+
+// explainedSetting is a resolved native setting of the explained harness and where it is set.
+type explainedSetting struct {
+	Path   []string
+	Value  any
+	Source config.Source
+}
+
+// explainSettings lists the native settings of the harness a snapshot was resolved for.
+func explainSettings(snapshot *config.Snapshot) []explainedSetting {
+	if snapshot.Harness == "" {
+		return nil
+	}
+	h, err := snapshot.Config.Harness(snapshot.Harness)
+	if err != nil {
+		return nil
+	}
+	sources := map[string]config.Source{}
+	for _, s := range h.SettingSources {
+		sources[config.FormatSettingPath(s.Path)] = s.Source
+	}
+	out := []explainedSetting{}
+	for _, leaf := range config.SettingLeaves(h.Settings) {
+		out = append(out, explainedSetting{
+			Path:   leaf.Path,
+			Value:  leaf.Value,
+			Source: sources[config.FormatSettingPath(leaf.Path)],
+		})
+	}
+	return out
+}
+
+// settingLine shows a setting as path = JSON value.
+func settingLine(out *ui.Printer, s explainedSetting) string {
+	b, _ := json.Marshal(s.Value)
+	return out.Label(config.FormatSettingPath(s.Path)) + " = " + out.Value(string(b))
 }

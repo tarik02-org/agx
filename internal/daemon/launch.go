@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -152,7 +153,13 @@ func (s *Server) PrepareLaunch(
 		Mode:       mode,
 		State:      v1.Launch_STATE_PREPARED,
 	}
-	target := adapters.NewTarget(harness, harnessArgs, harnessEnv, msg.NativeArguments, lookup)
+	target := adapters.NewTarget(
+		harness,
+		append(slices.Clone(plan.Settings), harnessArgs...),
+		harnessEnv,
+		msg.NativeArguments,
+		lookup,
+	)
 	target.Resolved = msg.Executable
 	l := &launch{
 		view:         view,

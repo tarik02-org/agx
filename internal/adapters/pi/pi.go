@@ -112,7 +112,7 @@ func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
 		}
 		script := fmt.Sprintf(extension, b, adapters.GrantEnvironment)
 		// Endpoint URLs belong to a launch, so this extension is never a shared artifact.
-		launchDir := filepath.Join(l.Cache, "launches", l.ID)
+		launchDir := l.LaunchDirectory()
 		if err := securefs.EnsureDir(launchDir); err != nil {
 			return nil, err
 		}

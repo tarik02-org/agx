@@ -32,9 +32,11 @@ type record struct {
 	Env          map[string]string `json:"env"`
 	Skills       map[string]string `json:"skills"`
 	Instructions string            `json:"instructions"`
-	Endpoints    map[string]string `json:"endpoints"`
-	Tools        map[string]string `json:"tools"`
-	Exec         []execResult      `json:"exec"`
+	// Settings is the content of the --settings file.
+	Settings  string            `json:"settings"`
+	Endpoints map[string]string `json:"endpoints"`
+	Tools     map[string]string `json:"tools"`
+	Exec      []execResult      `json:"exec"`
 }
 
 type execResult struct {
@@ -84,6 +86,9 @@ func main() {
 				b, _ := os.ReadFile(m)
 				r.Skills[filepath.Base(filepath.Dir(m))] = string(b)
 			}
+		case arg == "--settings":
+			b, _ := os.ReadFile(value())
+			r.Settings = string(b)
 		case arg == "--append-system-prompt-file":
 			b, _ := os.ReadFile(value())
 			r.Instructions = string(b)

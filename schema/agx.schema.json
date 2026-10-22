@@ -163,6 +163,10 @@
           "type": "boolean",
           "description": "Leave this harness out of the launcher's new-session list; it still runs by name. Not inherited."
         },
+        "settings": {
+          "$ref": "#/$defs/Settings",
+          "description": "Native settings in the harness's own schema: Codex config.toml keys, Claude Code settings.json keys."
+        },
         "override": {
           "type": "boolean",
           "description": "Replace the definition from earlier fragments."
@@ -980,6 +984,10 @@
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "Settings": {
+      "type": "object",
+      "description": "Native settings, in the harness's own configuration schema: Codex config.toml keys, Claude Code settings.json keys. null removes an inherited key. !file reads a file; !secret and !env are not allowed."
     },
     "Skill": {
       "allOf": [

@@ -388,8 +388,23 @@ func codexDefinitionChecks(ctx context.Context, c *config.Config, registry adapt
 		if err != nil {
 			continue
 		}
-		state, err := codex.Plugins(ctx, executable, c, cache, adapters.InstallTarget(h, os.LookupEnv))
-		for _, row := range codexChecks(state, err) {
+		target := adapters.InstallTarget(h, os.LookupEnv)
+		checks := []check{}
+		if len(h.Settings) > 0 {
+			settings, err := codex.Adapter{}.SettingsArguments(h.Settings, "")
+			if err == nil {
+				err = codex.CheckSettings(ctx, executable, target, settings)
+			}
+			row := check{Group: "codex", Name: "settings", Status: checkPass, Detail: "Codex loads them"}
+			if err != nil {
+				row.Status, row.Detail = checkFail, err.Error()
+				row.Hint = "fix the definition's settings; agx explain --harness " + name + " shows them"
+			}
+			checks = append(checks, row)
+			target.Arguments = append(settings, target.Arguments...)
+		}
+		state, err := codex.Plugins(ctx, executable, c, cache, target)
+		for _, row := range append(checks, codexChecks(state, err)...) {
 			if name != "codex" {
 				row.Name = name + " " + row.Name
 			}

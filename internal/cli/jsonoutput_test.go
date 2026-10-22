@@ -92,7 +92,7 @@ func TestJSONShapes(t *testing.T) {
 		{
 			[]string{"explain", "--harness", "codex-work"},
 			"{directory:string,harness:string,id:string,injections:[],required_environment:[]," +
-				"resources:[{id:string,kind:string,load:null,share:null}],traces:[{order:null,resource:{id:string,kind:string,load:null,share:null},selected:bool," +
+				"resources:[{id:string,kind:string,load:null,share:null}],settings:[],traces:[{order:null,resource:{id:string,kind:string,load:null,share:null},selected:bool," +
 				"steps:[{bundle_chain:[],change:string,harness:null,scope_directory:null,source:" + source + "}]}]}",
 		},
 		{
@@ -110,7 +110,7 @@ func TestJSONShapes(t *testing.T) {
 		},
 		{
 			[]string{"harness", "list"},
-			"{harnesses:[{base:null,builtin:string,executable:null,name:string,source:null}]}",
+			"{harnesses:[{base:null,builtin:string,executable:null,name:string,resolved_settings:{},settings:null,source:null}]}",
 		},
 		{
 			[]string{"sessions"},

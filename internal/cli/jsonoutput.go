@@ -129,6 +129,16 @@ type explainJSON struct {
 	Traces []traceJSON `json:"traces"`
 	// Injections are tagged values as configured, never resolved.
 	Injections []injectionJSON `json:"injections"`
+	// Settings are the native settings of the harness explained, one per leaf; empty without
+	// --harness.
+	Settings []settingJSON `json:"settings"`
+}
+
+// settingJSON is one resolved native setting and the definition line that set it.
+type settingJSON struct {
+	Path   []string   `json:"path"`
+	Value  any        `json:"value"`
+	Source sourceJSON `json:"source"`
 }
 
 type traceJSON struct {
@@ -198,7 +208,16 @@ func explainDocument(snapshot *config.Snapshot) explainJSON {
 	for _, i := range snapshot.Injections {
 		injections = append(injections, injectionJSON{Target: i.Target, Value: i.Text, Source: configSource(i.Source)})
 	}
-	return explainJSON{resolveJSON: resolveDocument(snapshot), Traces: traces, Injections: injections}
+	settings := []settingJSON{}
+	for _, leaf := range explainSettings(snapshot) {
+		settings = append(settings, settingJSON{Path: leaf.Path, Value: leaf.Value, Source: configSource(leaf.Source)})
+	}
+	return explainJSON{
+		resolveJSON: resolveDocument(snapshot),
+		Traces:      traces,
+		Injections:  injections,
+		Settings:    settings,
+	}
 }
 
 // install and update
@@ -311,11 +330,15 @@ type harnessListJSON struct {
 
 // harnessJSON is a harness: a built-in, with null base and source, or a definition.
 type harnessJSON struct {
-	Name       string      `json:"name"`
-	Base       *string     `json:"base"`
-	Builtin    string      `json:"builtin"`
-	Executable *string     `json:"executable"`
-	Source     *sourceJSON `json:"source"`
+	Name       string  `json:"name"`
+	Base       *string `json:"base"`
+	Builtin    string  `json:"builtin"`
+	Executable *string `json:"executable"`
+	// Settings are the definition's own native settings, null when it sets none; null values
+	// remove inherited keys. ResolvedSettings layer them over the base chain.
+	Settings         map[string]any `json:"settings"`
+	ResolvedSettings map[string]any `json:"resolved_settings"`
+	Source           *sourceJSON    `json:"source"`
 }
 
 // editJSON is the document of a command that edits configuration.

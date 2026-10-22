@@ -93,11 +93,12 @@ agx harness add codex-work --base codex --env 'OPENAI_API_KEY=!env WORK_OPENAI_K
 | `executable` | absolute path of the binary; default: found on `PATH` |
 | `args` | arguments placed before the ones you type |
 | `environment` | environment variables for the harness |
+| `settings` | the harness's own settings, see [Settings](#settings) |
 | `add`, `remove` | resources for every launch of this harness, applied after directory rules |
 | `hidden` | `true` leaves the harness out of the [launcher](sessions.md)'s new-session list |
 
 A definition inherits from its base: arguments add up (base first),
-`environment` merges key by key, and `executable` is replaced; `hidden` is not
+`environment` and `settings` merge key by key, and `executable` is replaced; `hidden` is not
 inherited. Names cannot clash with agx commands such as `install`.
 
 ### Arguments per mode
@@ -122,10 +123,64 @@ harnesses:
   codex-cpa:
     base: codex
     args:
-      - [-c, 'model_provider="cpa"']            # every mode except passthrough
+      - [--search]                               # every mode except passthrough
       - values: [--profile, cpa]
         modes: [interactive, exec, resume]       # only these modes
 ```
+
+### Settings
+
+`settings` holds the harness's own configuration, written in YAML with the keys
+of Codex's `config.toml` or Claude Code's `settings.json`. agx passes it to
+every launch of the definition without touching your files:
+
+```yaml
+harnesses:
+  codex-cpa:
+    base: codex
+    environment:
+      CPA_API_KEY: !secret cpa-key
+    settings:
+      model_provider: cpa
+      model_reasoning_effort: high
+      model_providers:
+        cpa:
+          name: CPA
+          base_url: http://127.0.0.1:8317/v1
+          env_key: CPA_API_KEY          # Codex reads the key from this variable
+          wire_api: responses
+
+  claude-work:
+    base: claude
+    settings:
+      model: opus
+      permissions:
+        allow: ["Bash(npm test:*)"]
+        deny: ["Read(./.env)"]
+```
+
+- **Codex** gets one `-c key.path=value` per setting, before agx's own
+  overrides and the definition's `args`. A setting merges with the table your
+  `config.toml` has at that path, so `model_providers.cpa` above keeps any
+  other keys you set there. Your own `-c` and the definition's `args` win
+  over a setting of the same key.
+- **Claude Code** gets the settings as a file passed with `--settings`, which
+  applies above your user and project settings for that session only. Lists
+  such as `permissions.allow` add to the ones in your files. Use `settings`
+  or `--settings` in `args`, not both.
+- **Pi** has no way to take settings per launch; use flags such as
+  `--provider`, `--model`, and `--thinking` in `args`.
+
+agx does not check the keys; the harness does when it starts. `agx doctor`
+runs Codex once with each definition's settings to report what Codex rejects,
+such as a model provider it cannot find. `agx explain --harness <name>` shows
+the settings a definition ends up with and the line that set each one.
+
+A definition's settings merge over its base's key by key; `null` removes an
+inherited key, and a list replaces the inherited one. `!file` reads a value
+from a file. `!secret` and `!env` are not allowed, because Codex gets settings
+as process arguments that other processes can read: put the secret in
+`environment` and name the variable in settings, as `env_key` does above.
 
 ### Environment and secrets
 
@@ -157,7 +212,7 @@ harnesses:
   codex: {hidden: true}
   codex-cpa:
     base: codex
-    args: [[-c, 'model_provider="cpa"']]
+    settings: {model_provider: cpa}
 ```
 
 A hidden harness still runs by name (`agx codex`, or a `codex` link), and its
