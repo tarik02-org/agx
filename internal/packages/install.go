@@ -426,6 +426,12 @@ func git(ctx context.Context, protocols string, isolated bool, args ...string) (
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = env
 	out, err := cmd.Output()
+	if errors.Is(err, exec.ErrNotFound) {
+		return nil, mark(ErrFetch, errors.New(
+			"git is not on PATH; agx needs git to install Git packages, so install git or add it to PATH "+
+				"(the daemon takes PATH from the shell that started it; agx daemon restart picks up a new one)",
+		))
+	}
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && len(exit.Stderr) > 0 {

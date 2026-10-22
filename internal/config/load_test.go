@@ -438,8 +438,14 @@ func TestPinnedSources(t *testing.T) {
 		root := write(t, filepath.Join(dir, "agx.yaml"), "packages:\n  p: {path: ./src, hash: "+hash+"}\n")
 		cache := filepath.Join(dir, "cache")
 
-		_, err = config.Load(root, cache, builtins)
-		wantError(t, err, "package p is not installed; run agx install")
+		missing, err := config.Load(root, cache, builtins)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := missing.MissingWarnings(missing.AllMissing()); len(got) != 1 ||
+			got[0] != "package p is not installed; run agx install" {
+			t.Fatalf("warnings = %q", got)
+		}
 
 		if err := securefs.CopyTree(src, filepath.Join(cache, "packages", hash)); err != nil {
 			t.Fatal(err)
@@ -457,9 +463,73 @@ func TestPinnedSources(t *testing.T) {
 		dir := t.TempDir()
 		mkdir(t, filepath.Join(dir, "src"))
 		root := write(t, filepath.Join(dir, "agx.yaml"), "packages:\n  p: {path: ./src}\n")
-		_, err := config.Load(root, filepath.Join(dir, "cache"), builtins)
+		c, err := config.Load(root, filepath.Join(dir, "cache"), builtins)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := c.AllMissing(); len(got) != 1 || got[0] != "p" {
+			t.Fatalf("missing = %v", got)
+		}
+		write(t, filepath.Join(dir, "agx.lock.json"), "{not json")
+		_, err = config.Load(root, filepath.Join(dir, "cache"), builtins)
 		wantError(t, err, "agx.lock.json", "run agx install")
 	})
+}
+
+func TestMissingPackagesAreSkipped(t *testing.T) {
+	dir := t.TempDir()
+	mkdir(t, filepath.Join(dir, "a"))
+	mkdir(t, filepath.Join(dir, "b"))
+	write(t, filepath.Join(dir, "note.md"), "kept")
+	root := write(t, filepath.Join(dir, "agx.yaml"), `packages:
+  a: {path: ./a}
+  b: {path: ./b}
+skills:
+  remote: {git: https://example.invalid/skills.git, path: remote}
+instructions:
+  note: {path: note.md}
+bundles:
+  team: {skills: [a/review], mcp: [b/search]}
+scopes:
+  - add:
+      skills: [a/review, a/lint, remote]
+      instructions: [note]
+      bundles: [team, b/defaults]
+`)
+	c, err := config.Load(root, filepath.Join(dir, "cache"), builtins)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.AllMissing(); !slices.Equal(got, []config.ID{"a", "b", "skill:remote"}) {
+		t.Fatalf("missing = %v", got)
+	}
+	if _, ok := c.Skills["remote"]; ok {
+		t.Fatal("a skill whose Git source is missing stayed defined")
+	}
+	snapshot, err := c.Resolve(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Resources) != 1 || snapshot.Resources[0].ID != "note" {
+		t.Fatalf("resources = %v", snapshot.Resources)
+	}
+	if got := c.MissingWarnings(snapshot.Missing); !slices.Equal(got, []string{
+		"package a is not installed; run agx install",
+		"package b is not installed; run agx install",
+		"skill remote: its Git source is not installed; run agx install",
+	}) {
+		t.Fatalf("warnings = %q", got)
+	}
+
+	// A reference no missing package explains is still an error.
+	bad := write(t, filepath.Join(dir, "agx.yaml"), `packages:
+  a: {path: ./a}
+scopes:
+  - add:
+      skills: [c/review]
+`)
+	_, err = config.Load(bad, filepath.Join(dir, "cache"), builtins)
+	wantError(t, err, `unknown skill "c/review"`)
 }
 
 func TestHomeExpansion(t *testing.T) {

@@ -398,3 +398,18 @@ func TestStateCheck(t *testing.T) {
 		t.Fatalf("readable state = %+v", got)
 	}
 }
+
+func TestPackageChecksWarnAboutMissingPackages(t *testing.T) {
+	loaded := &config.Config{
+		Root:     "/c/agx.yaml",
+		Packages: map[config.ID]config.Package{"team": {}},
+		Missing: map[config.ID]config.MissingPackage{
+			"team": {Root: "team", Reason: "package team is not installed; run agx install"},
+		},
+	}
+	_, ok, rows := packageChecks(loaded, loaded, nil, "1 file")
+	if !ok || len(rows) != 2 || rows[1].Status != checkWarn || rows[1].Hint != "run agx install" ||
+		rows[1].Detail != "package team is not installed; run agx install" {
+		t.Errorf("missing package = %v %+v", ok, rows)
+	}
+}

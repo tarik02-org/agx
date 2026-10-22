@@ -179,6 +179,7 @@ func runHarness(
 	if err != nil {
 		return err
 	}
+	warnDiagnostics(resolved.Msg.Diagnostics)
 	// The daemon reports a missing variable together with the configuration that needs it.
 	inputs := map[string]string{}
 	for _, name := range resolved.Msg.Snapshot.RequiredEnvironment {
@@ -500,6 +501,15 @@ func supervise(cmd *exec.Cmd, started func(), connect streams) error {
 				}
 			}
 			return &ExitError{Code: code}
+		}
+	}
+}
+
+// warnDiagnostics prints the daemon's warnings about a launch, such as packages it goes without.
+func warnDiagnostics(diagnostics []*v1.Diagnostic) {
+	for _, d := range diagnostics {
+		if d.Severity == v1.Diagnostic_SEVERITY_WARNING {
+			ui.Diagnose(ui.Warn, "%s", d.Summary)
 		}
 	}
 }

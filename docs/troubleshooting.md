@@ -30,10 +30,17 @@ Run `agx config validate`; it names the file and line. Edit commands never
 write an invalid configuration, so the message explains what the change would
 have broken.
 
-**A launch fails with "run agx install".**
-A package or Git skill is not installed yet, or its lockfile changed (for
-example after `git pull` in your configuration repository). Run `agx install`.
-Launches never download anything themselves.
+**A launch warns "package … is not installed; run agx install".**
+A package or Git skill is not installed yet, or changed since it was installed
+(for example after `git pull` in your configuration repository). The launch
+goes on without that package's skills, instructions, and MCP servers; run
+`agx install` to get them. Launches never download anything themselves.
+`agx config validate` and `agx doctor` list every missing package.
+
+**`agx install` says "git is not on PATH".**
+Git packages and Git skills are fetched with `git`. Install it, or add it to
+`PATH` for the shell that runs `agx install`. When the daemon installs, it uses
+the `PATH` of the shell that started it; `agx daemon restart` picks up a new one.
 
 **An MCP server is missing in the harness.**
 Run `agx explain` in that directory to see whether it is selected and which
