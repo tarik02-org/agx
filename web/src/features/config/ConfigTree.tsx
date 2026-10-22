@@ -1,11 +1,10 @@
 import { useQueries } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { FilterIcon } from "lucide-react";
 import { useState } from "react";
 
 import { NavTree } from "~/components/NavTree.tsx";
-import { Toggle } from "~/components/ui/toggle.tsx";
-import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
+import { Field, FieldLabel } from "~/components/ui/field.tsx";
+import { Switch } from "~/components/ui/switch.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { DaemonError } from "~/daemon/error.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
@@ -221,24 +220,20 @@ export function ConfigTree() {
       }}
       header={
         directory === "" ? undefined : (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Toggle
-                  size="sm"
-                  pressed={onlyHere}
-                  onPressedChange={setOnlyHere}
-                  aria-label="Only what the scope directory gets"
-                >
-                  <FilterIcon />
-                </Toggle>
-              }
+          <Field orientation="horizontal" className="px-4 py-1">
+            <Switch
+              id="tree-only-here"
+              size="sm"
+              checked={onlyHere}
+              onCheckedChange={setOnlyHere}
             />
-            <TooltipContent>
-              {onlyHere ? "Showing only what " : "Show only what "}
-              {shortPath(directory, home)} gets
-            </TooltipContent>
-          </Tooltip>
+            <FieldLabel
+              htmlFor="tree-only-here"
+              className="min-w-0 font-normal text-muted-foreground text-xs"
+            >
+              <span className="truncate">Only what {shortPath(directory, home)} gets</span>
+            </FieldLabel>
+          </Field>
         )
       }
     />
