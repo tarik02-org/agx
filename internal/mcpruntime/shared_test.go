@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -199,7 +200,12 @@ func TestSharedServerAnswersRootsWithItsRoot(t *testing.T) {
 	f := newSharedFixture(t, config.ShareDirectory)
 	root := t.TempDir()
 	session := connect(t, f.endpoint(root))
-	if got, want := call(t, session, tool("roots")), "file://"+root; got != want {
+	// file:///C:/… on Windows, file:///… elsewhere.
+	want := "file://" + filepath.ToSlash(root)
+	if filepath.VolumeName(root) != "" {
+		want = "file:///" + filepath.ToSlash(root)
+	}
+	if got := call(t, session, tool("roots")); got != want {
 		t.Fatalf("roots = %q, want %q", got, want)
 	}
 	global := newSharedFixture(t, config.ShareGlobal)
