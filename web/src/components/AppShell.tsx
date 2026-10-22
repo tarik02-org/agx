@@ -28,13 +28,13 @@ import { TooltipProvider } from "~/components/ui/tooltip.tsx";
 interface Section {
   readonly label: string;
   readonly icon: LucideIcon;
-  readonly to: "/" | null;
+  readonly to: "/" | "/explain" | null;
 }
 
 // Pages arrive in the order ADR 0026 lists them; those still to come show as such.
 const sections: ReadonlyArray<Section> = [
   { label: "Runtime", icon: ActivityIcon, to: "/" },
-  { label: "Explain", icon: ScanSearchIcon, to: null },
+  { label: "Explain", icon: ScanSearchIcon, to: "/explain" },
   { label: "MCP inspector", icon: WrenchIcon, to: null },
   { label: "Skills", icon: BlocksIcon, to: null },
   { label: "Configuration", icon: FileCode2Icon, to: null },

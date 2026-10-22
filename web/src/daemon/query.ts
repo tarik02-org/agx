@@ -8,7 +8,10 @@ import { type Services, useRunEffect } from "~/effect/react.tsx";
 export const queryKeys = {
   processes: ["mcp-processes"],
   secrets: ["secrets"],
-} as const satisfies Record<string, QueryKey>;
+  configuration: ["configuration"],
+  resolve: (directory: string, harness: string) => ["resolve", directory, harness],
+  completeDirectory: (prefix: string) => ["complete-directory", prefix],
+} as const satisfies Record<string, QueryKey | ((...args: ReadonlyArray<string>) => QueryKey)>;
 
 /**
  * A cached daemon read. The effect's failure becomes the query's error with its type, since
@@ -17,7 +20,7 @@ export const queryKeys = {
 export function useDaemonQuery<A>(
   key: QueryKey,
   effect: Effect.Effect<A, DaemonError, Services>,
-  options: { readonly refetchInterval?: number } = {},
+  options: { readonly refetchInterval?: number; readonly enabled?: boolean } = {},
 ) {
   const run = useRunEffect();
   return useQuery<A, DaemonError>({

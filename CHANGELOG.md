@@ -9,8 +9,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - `agx ui` opens a web UI the daemon serves on its own port, signed in with a one-time link
   that the browser trades for a session cookie (`--print` prints the link). Its runtime page
   shows launches live, MCP server processes, secrets, and package installation, with
-  revoke, restart, OAuth login and logout, and install actions. Release binaries and the
-  Nix package embed it.
+  revoke, restart, OAuth login and logout, and install actions; its explain page shows what a
+  directory gets for a harness and why. Release binaries and the Nix package embed it.
+- `ConfigurationService.GetConfiguration` and `CompleteDirectory`, and harness settings in
+  `ResolveResponse`.
 - `agx mcp stop <pid>` and `RuntimeService.StopMcpProcess` stop a local MCP server process;
   its sessions reconnect and the next one starts it again.
 

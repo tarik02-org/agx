@@ -65,6 +65,7 @@ export default defineConfig({
         rules: {
           "react/set-state-in-effect": "off",
           "react/no-object-type-as-default-prop": "off",
+          "react/no-array-index-key": "off",
         },
       },
     ],

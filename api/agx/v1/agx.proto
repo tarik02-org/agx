@@ -10,6 +10,10 @@ import "google/protobuf/timestamp.proto";
 service ConfigurationService {
   rpc Validate(ValidateRequest) returns (ValidateResponse);
   rpc Resolve(ResolveRequest) returns (ResolveResponse);
+  // The configuration as loaded, for browsing it: harnesses, scope directories, and files.
+  rpc GetConfiguration(GetConfigurationRequest) returns (GetConfigurationResponse);
+  // Directories whose path starts with a prefix, for directory pickers.
+  rpc CompleteDirectory(CompleteDirectoryRequest) returns (CompleteDirectoryResponse);
 }
 
 service PackageService {
@@ -166,6 +170,48 @@ message ResolveResponse {
   Snapshot snapshot = 1;
   repeated ResourceTrace traces = 2;
   repeated Diagnostic diagnostics = 3;
+  // The resolved native settings of the harness, one per leaf; empty without a harness.
+  repeated HarnessSetting settings = 4;
+}
+message HarnessSetting {
+  repeated string path = 1;
+  // The value as JSON.
+  string value_json = 2;
+  SourceLocation source = 3;
+}
+
+message GetConfigurationRequest {}
+message GetConfigurationResponse {
+  string root = 1;
+  repeated ConfiguredHarness harnesses = 2;
+  // Directories scope rules name, sorted, without duplicates.
+  repeated string scope_directories = 3;
+  repeated ConfigurationFile files = 4;
+  // The daemon user's home directory, for showing paths as ~/….
+  string home = 5;
+}
+message ConfiguredHarness {
+  string name = 1;
+  string builtin = 2;
+  // Empty for built-in harnesses.
+  string base = 3;
+  bool hidden = 4;
+}
+message ConfigurationFile {
+  string path = 1;
+  // A symlink, such as one Nix or Home Manager links from /nix/store, or a file agx cannot write.
+  bool read_only = 2;
+  // Where a symlink points; empty otherwise.
+  string link_target = 3;
+}
+
+message CompleteDirectoryRequest {
+  // An absolute path or one starting with ~/; the last segment is a name prefix.
+  string prefix = 1;
+}
+message CompleteDirectoryResponse {
+  // At most 50 absolute directories, sorted.
+  repeated string directories = 1;
 }
 
 message InstallRequest {

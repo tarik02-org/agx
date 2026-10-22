@@ -8,7 +8,12 @@ terminal. It starts with the runtime page:
 - secrets with their state, and OAuth login and logout;
 - installing the configuration's packages, with progress.
 
-Explain, the MCP inspector, skills, and the configuration editor follow
+The explain page answers what `agx explain` does: pick a directory (scope
+directories are suggested, and typed paths complete) and optionally a harness,
+and see every resource with the rules that added or removed it, the harness's
+resolved settings, and packages it goes without.
+
+The MCP inspector, skills, and the configuration editor follow
 ([ADR 0026](adr/0026-web-ui.md)).
 
 ```sh

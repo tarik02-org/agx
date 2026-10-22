@@ -49,6 +49,12 @@ const (
 	// ConfigurationServiceResolveProcedure is the fully-qualified name of the ConfigurationService's
 	// Resolve RPC.
 	ConfigurationServiceResolveProcedure = "/agx.v1.ConfigurationService/Resolve"
+	// ConfigurationServiceGetConfigurationProcedure is the fully-qualified name of the
+	// ConfigurationService's GetConfiguration RPC.
+	ConfigurationServiceGetConfigurationProcedure = "/agx.v1.ConfigurationService/GetConfiguration"
+	// ConfigurationServiceCompleteDirectoryProcedure is the fully-qualified name of the
+	// ConfigurationService's CompleteDirectory RPC.
+	ConfigurationServiceCompleteDirectoryProcedure = "/agx.v1.ConfigurationService/CompleteDirectory"
 	// PackageServiceInstallProcedure is the fully-qualified name of the PackageService's Install RPC.
 	PackageServiceInstallProcedure = "/agx.v1.PackageService/Install"
 	// PackageServiceUpdateProcedure is the fully-qualified name of the PackageService's Update RPC.
@@ -115,6 +121,10 @@ const (
 type ConfigurationServiceClient interface {
 	Validate(context.Context, *connect.Request[v1.ValidateRequest]) (*connect.Response[v1.ValidateResponse], error)
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
+	// The configuration as loaded, for browsing it: harnesses, scope directories, and files.
+	GetConfiguration(context.Context, *connect.Request[v1.GetConfigurationRequest]) (*connect.Response[v1.GetConfigurationResponse], error)
+	// Directories whose path starts with a prefix, for directory pickers.
+	CompleteDirectory(context.Context, *connect.Request[v1.CompleteDirectoryRequest]) (*connect.Response[v1.CompleteDirectoryResponse], error)
 }
 
 // NewConfigurationServiceClient constructs a client for the agx.v1.ConfigurationService service. By
@@ -140,13 +150,27 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(configurationServiceMethods.ByName("Resolve")),
 			connect.WithClientOptions(opts...),
 		),
+		getConfiguration: connect.NewClient[v1.GetConfigurationRequest, v1.GetConfigurationResponse](
+			httpClient,
+			baseURL+ConfigurationServiceGetConfigurationProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("GetConfiguration")),
+			connect.WithClientOptions(opts...),
+		),
+		completeDirectory: connect.NewClient[v1.CompleteDirectoryRequest, v1.CompleteDirectoryResponse](
+			httpClient,
+			baseURL+ConfigurationServiceCompleteDirectoryProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("CompleteDirectory")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // configurationServiceClient implements ConfigurationServiceClient.
 type configurationServiceClient struct {
-	validate *connect.Client[v1.ValidateRequest, v1.ValidateResponse]
-	resolve  *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
+	validate          *connect.Client[v1.ValidateRequest, v1.ValidateResponse]
+	resolve           *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
+	getConfiguration  *connect.Client[v1.GetConfigurationRequest, v1.GetConfigurationResponse]
+	completeDirectory *connect.Client[v1.CompleteDirectoryRequest, v1.CompleteDirectoryResponse]
 }
 
 // Validate calls agx.v1.ConfigurationService.Validate.
@@ -159,10 +183,24 @@ func (c *configurationServiceClient) Resolve(ctx context.Context, req *connect.R
 	return c.resolve.CallUnary(ctx, req)
 }
 
+// GetConfiguration calls agx.v1.ConfigurationService.GetConfiguration.
+func (c *configurationServiceClient) GetConfiguration(ctx context.Context, req *connect.Request[v1.GetConfigurationRequest]) (*connect.Response[v1.GetConfigurationResponse], error) {
+	return c.getConfiguration.CallUnary(ctx, req)
+}
+
+// CompleteDirectory calls agx.v1.ConfigurationService.CompleteDirectory.
+func (c *configurationServiceClient) CompleteDirectory(ctx context.Context, req *connect.Request[v1.CompleteDirectoryRequest]) (*connect.Response[v1.CompleteDirectoryResponse], error) {
+	return c.completeDirectory.CallUnary(ctx, req)
+}
+
 // ConfigurationServiceHandler is an implementation of the agx.v1.ConfigurationService service.
 type ConfigurationServiceHandler interface {
 	Validate(context.Context, *connect.Request[v1.ValidateRequest]) (*connect.Response[v1.ValidateResponse], error)
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
+	// The configuration as loaded, for browsing it: harnesses, scope directories, and files.
+	GetConfiguration(context.Context, *connect.Request[v1.GetConfigurationRequest]) (*connect.Response[v1.GetConfigurationResponse], error)
+	// Directories whose path starts with a prefix, for directory pickers.
+	CompleteDirectory(context.Context, *connect.Request[v1.CompleteDirectoryRequest]) (*connect.Response[v1.CompleteDirectoryResponse], error)
 }
 
 // NewConfigurationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -184,12 +222,28 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 		connect.WithSchema(configurationServiceMethods.ByName("Resolve")),
 		connect.WithHandlerOptions(opts...),
 	)
+	configurationServiceGetConfigurationHandler := connect.NewUnaryHandler(
+		ConfigurationServiceGetConfigurationProcedure,
+		svc.GetConfiguration,
+		connect.WithSchema(configurationServiceMethods.ByName("GetConfiguration")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceCompleteDirectoryHandler := connect.NewUnaryHandler(
+		ConfigurationServiceCompleteDirectoryProcedure,
+		svc.CompleteDirectory,
+		connect.WithSchema(configurationServiceMethods.ByName("CompleteDirectory")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.ConfigurationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ConfigurationServiceValidateProcedure:
 			configurationServiceValidateHandler.ServeHTTP(w, r)
 		case ConfigurationServiceResolveProcedure:
 			configurationServiceResolveHandler.ServeHTTP(w, r)
+		case ConfigurationServiceGetConfigurationProcedure:
+			configurationServiceGetConfigurationHandler.ServeHTTP(w, r)
+		case ConfigurationServiceCompleteDirectoryProcedure:
+			configurationServiceCompleteDirectoryHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -205,6 +259,14 @@ func (UnimplementedConfigurationServiceHandler) Validate(context.Context, *conne
 
 func (UnimplementedConfigurationServiceHandler) Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.Resolve is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) GetConfiguration(context.Context, *connect.Request[v1.GetConfigurationRequest]) (*connect.Response[v1.GetConfigurationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.GetConfiguration is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) CompleteDirectory(context.Context, *connect.Request[v1.CompleteDirectoryRequest]) (*connect.Response[v1.CompleteDirectoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.CompleteDirectory is not implemented"))
 }
 
 // PackageServiceClient is a client for the agx.v1.PackageService service.

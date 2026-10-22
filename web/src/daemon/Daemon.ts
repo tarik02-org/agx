@@ -9,10 +9,13 @@ import * as Stream from "effect/Stream";
 
 import { type DaemonError, daemonError } from "~/daemon/error.ts";
 import {
+  ConfigurationService,
+  type GetConfigurationResponse,
   LaunchService,
   type LoginResponse,
   type McpProcess,
   PackageService,
+  type ResolveResponse,
   RuntimeService,
   type RuntimeView,
   SecretService,
@@ -34,6 +37,15 @@ export class Daemon extends Context.Service<
     /** An OAuth login: the authorization URL to open, then its outcome. */
     readonly login: (secretId: string) => Stream.Stream<LoginResponse, DaemonError>;
     readonly logout: (secretId: string) => Effect.Effect<void, DaemonError>;
+    readonly configuration: Effect.Effect<GetConfigurationResponse, DaemonError>;
+    /** What a directory gets, and why; with a harness, its rules and settings too. */
+    readonly resolve: (
+      directory: string,
+      harness: string,
+    ) => Effect.Effect<ResolveResponse, DaemonError>;
+    readonly completeDirectory: (
+      prefix: string,
+    ) => Effect.Effect<ReadonlyArray<string>, DaemonError>;
     /** Installs the configuration's packages, reporting progress until the result. */
     readonly install: Stream.Stream<WatchOperationResponse, DaemonError>;
   }
@@ -75,6 +87,7 @@ export const makeDaemon = (): Daemon["Service"] => {
   const launches = createClient(LaunchService, transport);
   const secrets = createClient(SecretService, transport);
   const packages = createClient(PackageService, transport);
+  const configuration = createClient(ConfigurationService, transport);
 
   return Daemon.of({
     runtime: serverStream("watchRuntime", (signal) => runtime.watchRuntime({}, { signal })).pipe(
@@ -99,6 +112,15 @@ export const makeDaemon = (): Daemon["Service"] => {
     login: (secretId) => serverStream("login", (signal) => secrets.login({ secretId }, { signal })),
     logout: (secretId) =>
       Effect.asVoid(call("logout", (signal) => secrets.logout({ secretId }, { signal }))),
+    configuration: call("getConfiguration", (signal) =>
+      configuration.getConfiguration({}, { signal }),
+    ),
+    resolve: (directory, harness) =>
+      call("resolve", (signal) => configuration.resolve({ directory, harness }, { signal })),
+    completeDirectory: (prefix) =>
+      call("completeDirectory", (signal) =>
+        configuration.completeDirectory({ prefix }, { signal }),
+      ).pipe(Effect.map((response) => response.directories)),
     install: Stream.unwrap(
       call("install", (signal) =>
         packages.install({ requestId: crypto.randomUUID() }, { signal }),
