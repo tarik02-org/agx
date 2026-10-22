@@ -74,7 +74,7 @@ Connecting to a remote daemon directly is out of scope.
 | Routing | TanStack Router, file-based, with code splitting |
 | Components | shadcn on Base UI, Tailwind CSS 4, a compact dark theme (light as an option), lucide icons |
 | RPC | `@connectrpc/connect-web` over the generated `gen/typescript` messages |
-| State and effects | Effect 4 with `@effect/atom-react` (see below) |
+| State and effects | Effect 4 in a `ManagedRuntime` with `useFork`-style hooks, TanStack Query for cached queries (see below) |
 | Markdown | `react-markdown` 10 with `remark-gfm`, code blocks highlighted with Shiki, as T3 Code renders chat and pull request Markdown |
 | Diffs and file trees | `@pierre/diffs` (also Shiki highlighting) and `@pierre/trees` |
 | Editors | forms for definitions and scopes (below); CodeMirror 6 for skill files and for viewing YAML |
@@ -89,19 +89,24 @@ The UI uses Effect for its data layer, not for rendering:
   (`needs_login`, `mcp_failed`, `config_invalid`, …), and an unknown reason is
   a defect. Components then handle each reason exhaustively instead of
   catching `ConnectError`.
-- Streams (`WatchRuntime`, `WatchOperation`, `Login`) become Effect streams.
-  Their scope ends with the atom that subscribes, so leaving a page closes the
+- Streams (`WatchRuntime`, `WatchOperation`, `Login`) are Effect streams whose
+  scope ends with the component that runs them, so leaving a page closes the
   stream, and a reconnect after `agx daemon restart` is one retry schedule.
 - Data the UI reads outside generated messages, such as tool input schemas and
   `structured_content` of tool results, is decoded with `Schema` at the
   boundary.
-- `@effect/atom-react` holds query and stream state, so components read atoms
-  rather than managing `useEffect` lifetimes.
+- One `ManagedRuntime` built from the service layers lives as long as the page
+  and reaches components through React context, with hooks taken from
+  Aperture's `session-react`:
+  - `useFork` runs an effect while a component is mounted, for subscriptions
+    such as the runtime stream;
+  - `useEffectCallback` forks one from an event handler and interrupts it on
+    unmount, for actions;
+  - `useRunEffect` turns one into a promise for TanStack Query, which caches
+    queries and passes its abort signal on as interruption.
 
 The cost is bundle size and an API to learn. Both are acceptable for a local
-tool whose author already writes Effect, and T3 Code uses the same combination.
-Plain React Query with hand-written error mapping was the alternative; it would
-leave error handling and stream lifetimes unchecked.
+tool whose author already writes Effect, and Aperture uses the same model.
 
 ## Build and distribution
 
