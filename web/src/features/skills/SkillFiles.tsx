@@ -3,13 +3,16 @@ import { FileTree, useFileTree } from "@pierre/trees/react";
 interface SkillFilesProps {
   /** Relative, /-separated paths of the skill's files. */
   readonly files: ReadonlyArray<string>;
+  /** The file selected when the tree first shows. */
+  readonly selected?: string | undefined;
   readonly onSelect: (file: string) => void;
 }
 
 /** A skill's files as a tree; picking a file reports it, picking a directory does not. */
-export function SkillFiles({ files, onSelect }: SkillFilesProps) {
+export function SkillFiles({ files, selected, onSelect }: SkillFilesProps) {
   const { model } = useFileTree({
     paths: files,
+    initialSelectedPaths: selected === undefined ? [] : [selected],
     initialExpansion: "open",
     onSelectionChange: (selected) => {
       const file = selected.find((path) => files.includes(path));

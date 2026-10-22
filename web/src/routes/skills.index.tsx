@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
   BlocksIcon,
@@ -11,7 +11,9 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+import { ButtonLink } from "~/components/ButtonLink.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
+import { UnsavedChanges } from "~/components/UnsavedChanges.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
 import { Button } from "~/components/ui/button.tsx";
 import {
@@ -32,7 +34,7 @@ import {
 } from "~/components/ui/empty.tsx";
 import { Input } from "~/components/ui/input.tsx";
 import { ScrollArea } from "~/components/ui/scroll-area.tsx";
-import { Skeleton } from "~/components/ui/skeleton.tsx";
+import { Pending } from "~/components/Pending.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs.tsx";
 import { toast } from "~/components/ui/toast.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
@@ -44,9 +46,13 @@ import { FilePreview } from "~/features/skills/SkillDocument.tsx";
 import { SkillFiles } from "~/features/skills/SkillFiles.tsx";
 import type { Definition } from "~/gen/agx/v1/agx_pb.ts";
 import { shortPath } from "~/lib/path.ts";
+import { pageTitle } from "~/lib/title.ts";
 
 const SkillsSearch = Schema.Struct({
   skill: Schema.optional(Schema.String),
+  tab: Schema.optional(Schema.Literals(["skill", "files"])),
+  /** The open file, relative to the skill's directory. */
+  file: Schema.optional(Schema.String),
 });
 
 export const Route = createFileRoute("/skills/")({
@@ -67,19 +73,15 @@ function SkillsPage() {
   const skills = (definitions.data ?? []).filter((definition) => definition.kind === "skills");
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-4">
+      <title>{pageTitle(search.skill, "Skills")}</title>
       <div className="flex items-center gap-2">
         <h1 className="font-heading font-semibold text-sm">Skills</h1>
-        <Button
-          size="sm"
-          className="ml-auto"
-          nativeButton={false}
-          render={<Link to="/skills/add" />}
-        >
+        <ButtonLink size="sm" className="ml-auto" to="/skills/add">
           <GitBranchPlusIcon data-icon="inline-start" />
           Add from Git
-        </Button>
+        </ButtonLink>
       </div>
-      {definitions.isPending && <Skeleton className="h-64" />}
+      {definitions.isPending && <Pending className="h-64" />}
       {definitions.isError && <DaemonProblem error={definitions.error} />}
       {definitions.isSuccess && (
         <div className="grid min-h-0 flex-1 grid-cols-[18rem_minmax(0,1fr)] gap-4">
@@ -115,7 +117,6 @@ function SkillsPage() {
 
 function SkillList({ skills }: { readonly skills: ReadonlyArray<Definition> }) {
   const search = Route.useSearch();
-  const navigate = useNavigate({ from: Route.fullPath });
   const [filter, setFilter] = useState("");
   const shown = skills.filter(
     (skill) =>
@@ -126,7 +127,11 @@ function SkillList({ skills }: { readonly skills: ReadonlyArray<Definition> }) {
     <Card size="sm" className="min-h-0">
       <CardHeader>
         <Input
-          placeholder="Filter skills"
+          type="search"
+          aria-label="Filter skills"
+          placeholder="Filter skills…"
+          autoComplete="off"
+          spellCheck={false}
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
         />
@@ -135,15 +140,16 @@ function SkillList({ skills }: { readonly skills: ReadonlyArray<Definition> }) {
         <ul className="flex flex-col px-3 pb-3">
           {shown.map((skill) => (
             <li key={skill.id}>
-              <Button
+              <ButtonLink
                 variant={search.skill === skill.id ? "secondary" : "ghost"}
                 size="sm"
                 className="w-full justify-start font-mono"
-                onClick={() => void navigate({ search: { skill: skill.id } })}
+                to="/skills"
+                search={{ skill: skill.id }}
               >
                 <span className="truncate">{skill.id}</span>
                 {skill.package !== "" && <PackageIcon data-icon="inline-end" />}
-              </Button>
+              </ButtonLink>
             </li>
           ))}
         </ul>
@@ -153,12 +159,14 @@ function SkillList({ skills }: { readonly skills: ReadonlyArray<Definition> }) {
 }
 
 function SkillView({ skillId, home }: { readonly skillId: string; readonly home: string }) {
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
   const skill = useDaemonQuery(
     queryKeys.skill(skillId),
     Daemon.use((daemon) => daemon.skill(skillId)),
   );
   if (skill.isPending) {
-    return <Skeleton className="h-64" />;
+    return <Pending className="h-64" />;
   }
   if (skill.isError) {
     return <DaemonProblem error={skill.error} />;
@@ -183,15 +191,15 @@ function SkillView({ skillId, home }: { readonly skillId: string; readonly home:
           </CardTitle>
           <CardDescription>{definition?.description}</CardDescription>
           <CardAction className="flex gap-2">
-            <Button
+            <ButtonLink
               variant="outline"
               size="sm"
-              nativeButton={false}
-              render={<Link to="/config" search={{ kind: "skills", id: skillId }} />}
+              to="/config"
+              search={{ kind: "skills", id: skillId }}
             >
               <FileCode2Icon data-icon="inline-start" />
               Definition
-            </Button>
+            </ButtonLink>
             <ScopeDialog
               kind="skills"
               id={skillId}
@@ -211,7 +219,15 @@ function SkillView({ skillId, home }: { readonly skillId: string; readonly home:
           </CardContent>
         )}
       </Card>
-      <Tabs defaultValue="skill">
+      <Tabs
+        value={search.tab ?? "skill"}
+        onValueChange={(next) =>
+          void navigate({
+            search: (current) => ({ ...current, tab: next === "files" ? "files" : "skill" }),
+            replace: true,
+          })
+        }
+      >
         <TabsList>
           <TabsTrigger value="skill">SKILL.md</TabsTrigger>
           <TabsTrigger value="files" disabled={files.length === 0}>
@@ -245,15 +261,22 @@ function SkillFileBrowser({
   readonly editable: boolean;
   readonly home: string;
 }) {
-  const [file, setFile] = useState<string | null>(null);
+  const file = Route.useSearch({ select: (search) => search.file });
+  const navigate = useNavigate({ from: Route.fullPath });
   return (
     <div className="grid grid-cols-[16rem_minmax(0,1fr)] gap-4">
       <Card size="sm">
         <CardContent>
-          <SkillFiles files={files} onSelect={setFile} />
+          <SkillFiles
+            files={files}
+            selected={file}
+            onSelect={(next) =>
+              void navigate({ search: (current) => ({ ...current, file: next }) })
+            }
+          />
         </CardContent>
       </Card>
-      {file === null ? (
+      {file === undefined ? (
         <p className="text-muted-foreground text-xs">Pick a file.</p>
       ) : (
         <SkillFile key={file} path={`${directory}/${file}`} editable={editable} home={home} />
@@ -276,7 +299,7 @@ function SkillFile({
     Daemon.use((daemon) => daemon.readFile(path)),
   );
   if (content.isPending) {
-    return <Skeleton className="h-40" />;
+    return <Pending className="h-40" />;
   }
   if (content.isError) {
     return <DaemonProblem error={content.error} />;
@@ -314,6 +337,7 @@ function EditableFile({
   const name = path.slice(path.lastIndexOf("/") + 1);
   return (
     <Card size="sm">
+      <UnsavedChanges dirty={editing && text !== (staged ?? original)} />
       <CardHeader>
         <CardTitle className="flex items-center gap-2 font-mono">
           {name}

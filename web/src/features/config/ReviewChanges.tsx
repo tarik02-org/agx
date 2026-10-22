@@ -22,13 +22,14 @@ import {
   SheetHeader,
   SheetTitle,
 } from "~/components/ui/sheet.tsx";
-import { Skeleton } from "~/components/ui/skeleton.tsx";
+import { Pending } from "~/components/Pending.tsx";
 import { Spinner } from "~/components/ui/spinner.tsx";
 import { toast } from "~/components/ui/toast.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonMutation, useDaemonQuery } from "~/daemon/query.ts";
 import { useStaging } from "~/features/config/staging.ts";
 import { shortPath } from "~/lib/path.ts";
+import { ConfirmAction } from "~/components/ConfirmAction.tsx";
 
 const PlannedDiff = lazy(() => import("~/features/config/PlannedDiff.tsx"));
 
@@ -100,7 +101,7 @@ export function ReviewChanges() {
                 ))}
               </ItemGroup>
             )}
-            {plan.isPending && changes.length > 0 && <Skeleton className="h-40" />}
+            {plan.isPending && changes.length > 0 && <Pending className="h-40" />}
             {plan.isError && <DaemonProblem error={plan.error} />}
             {apply.isError && <DaemonProblem error={apply.error} />}
             {plan.isSuccess &&
@@ -111,7 +112,7 @@ export function ReviewChanges() {
                     <span className="truncate">{shortPath(file.path, home)}</span>
                     {file.beforeSha256 === "" && <Badge variant="secondary">new</Badge>}
                   </div>
-                  <Suspense fallback={<Skeleton className="h-24" />}>
+                  <Suspense fallback={<Pending className="h-24" />}>
                     <PlannedDiff diff={file.diff} />
                   </Suspense>
                 </div>
@@ -124,10 +125,18 @@ export function ReviewChanges() {
           </div>
         </ScrollArea>
         <SheetFooter className="flex-row justify-end">
-          <Button variant="outline" disabled={changes.length === 0} onClick={clear}>
-            <Trash2Icon data-icon="inline-start" />
-            Discard all
-          </Button>
+          <ConfirmAction
+            trigger={
+              <Button variant="outline" disabled={changes.length === 0}>
+                <Trash2Icon data-icon="inline-start" />
+                Discard all
+              </Button>
+            }
+            title="Discard every staged change?"
+            description="Nothing was written yet; the edits are lost."
+            action="Discard all"
+            onConfirm={clear}
+          />
           <Button
             disabled={!plan.isSuccess || changes.length === 0 || apply.isPending}
             onClick={() => {

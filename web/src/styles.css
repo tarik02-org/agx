@@ -130,10 +130,28 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    /* Counts, PIDs, and times line up in lists and tables. */
+    @apply bg-background text-foreground tabular-nums;
   }
   html {
     @apply font-sans;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+  /* Scrolling a list or panel to its end does not scroll the page behind it. */
+  [data-slot="scroll-area-viewport"] {
+    overscroll-behavior: contain;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 

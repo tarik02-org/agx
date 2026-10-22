@@ -18,7 +18,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "~/components/ui/empty.tsx";
-import { Skeleton } from "~/components/ui/skeleton.tsx";
+import { Pending } from "~/components/Pending.tsx";
 import {
   Table,
   TableBody,
@@ -50,7 +50,7 @@ export function ProcessesCard() {
         <CardDescription>Local servers running now, shared or for one session.</CardDescription>
       </CardHeader>
       <CardContent>
-        {processes.isPending && <Skeleton className="h-16" />}
+        {processes.isPending && <Pending className="h-16" />}
         {processes.isError && <DaemonProblem error={processes.error} />}
         {processes.isSuccess && <ProcessTable processes={processes.data} />}
       </CardContent>

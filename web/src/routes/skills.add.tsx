@@ -31,7 +31,7 @@ import {
   ItemTitle,
 } from "~/components/ui/item.tsx";
 import { ScrollArea } from "~/components/ui/scroll-area.tsx";
-import { Skeleton } from "~/components/ui/skeleton.tsx";
+import { Pending } from "~/components/Pending.tsx";
 import { Spinner } from "~/components/ui/spinner.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs.tsx";
 import { toast } from "~/components/ui/toast.tsx";
@@ -42,6 +42,7 @@ import { addPackage, type Scope, select, useStaging } from "~/features/config/st
 import { FilePreview, SkillDocument } from "~/features/skills/SkillDocument.tsx";
 import { SkillFiles } from "~/features/skills/SkillFiles.tsx";
 import type { PreviewSkill, PreviewSourceResponse } from "~/gen/agx/v1/agx_pb.ts";
+import { pageTitle } from "~/lib/title.ts";
 
 export const Route = createFileRoute("/skills/add")({
   component: AddSkillsPage,
@@ -55,6 +56,7 @@ function AddSkillsPage() {
   );
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-4">
+      <title>{pageTitle("Add skills")}</title>
       <h1 className="font-heading font-semibold text-sm">Add skills from Git</h1>
       <form
         className="flex flex-col gap-1"
@@ -67,7 +69,7 @@ function AddSkillsPage() {
           <InputGroupInput
             aria-label="Source"
             className="font-mono"
-            placeholder="owner/repo[@ref][/path] or a Git URL"
+            placeholder="owner/repo[@ref][/path] or a Git URL…"
             spellCheck={false}
             value={source}
             onChange={(event) => setSource(event.target.value)}
@@ -84,7 +86,7 @@ function AddSkillsPage() {
           and apply.
         </p>
       </form>
-      {preview.isPending && <Skeleton className="h-64" />}
+      {preview.isPending && <Pending className="h-64" />}
       {preview.isError && <DaemonProblem error={preview.error} />}
       {preview.isSuccess && <Preview key={preview.data.previewId} preview={preview.data} />}
     </div>
@@ -272,7 +274,7 @@ function PreviewFile({
     Daemon.use((daemon) => daemon.readPreviewFile(previewId, skill, file)),
   );
   if (content.isPending) {
-    return <Skeleton className="h-40" />;
+    return <Pending className="h-40" />;
   }
   if (content.isError) {
     return <DaemonProblem error={content.error} />;

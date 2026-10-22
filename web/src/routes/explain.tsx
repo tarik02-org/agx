@@ -27,7 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select.tsx";
-import { Skeleton } from "~/components/ui/skeleton.tsx";
+import { Pending } from "~/components/Pending.tsx";
 import {
   Table,
   TableBody,
@@ -40,6 +40,7 @@ import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
 import { DirectoryPicker } from "~/features/explain/DirectoryPicker.tsx";
 import { shortPath } from "~/lib/path.ts";
+import { pageTitle } from "~/lib/title.ts";
 import { resourceKey, Traces } from "~/features/explain/Traces.tsx";
 import {
   Diagnostic_Severity,
@@ -65,8 +66,9 @@ function ExplainPage() {
   );
   return (
     <div className="flex flex-col gap-4 p-4">
+      <title>{pageTitle("Explain")}</title>
       <h1 className="font-heading font-semibold text-sm">Explain</h1>
-      {configuration.isPending && <Skeleton className="h-8 w-[32rem]" />}
+      {configuration.isPending && <Pending className="h-8 w-[32rem]" />}
       {configuration.isError && <DaemonProblem error={configuration.error} />}
       {configuration.isSuccess && <Explain configuration={configuration.data} />}
     </div>
@@ -148,7 +150,7 @@ function Resolution({
     Daemon.use((daemon) => daemon.resolve(absolute, harness)),
   );
   if (resolved.isPending) {
-    return <Skeleton className="h-40" />;
+    return <Pending className="h-40" />;
   }
   if (resolved.isError) {
     return <DaemonProblem error={resolved.error} />;

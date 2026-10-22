@@ -17,6 +17,7 @@ import { Textarea } from "~/components/ui/textarea.tsx";
 import { toast } from "~/components/ui/toast.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonMutation } from "~/daemon/query.ts";
+import { submitOnModEnter } from "~/lib/keyboard.ts";
 
 /** Stores a keychain secret's value; the page never reads it back. */
 export function SetSecretDialog({ secretId }: { readonly secretId: string }) {
@@ -71,10 +72,11 @@ export function SetSecretDialog({ secretId }: { readonly secretId: string }) {
                 className="font-mono"
                 autoComplete="off"
                 spellCheck={false}
+                onKeyDown={submitOnModEnter}
                 value={value}
                 onChange={(event) => setValue(event.target.value)}
               />
-              <FieldDescription>Stored exactly as typed.</FieldDescription>
+              <FieldDescription>Stored exactly as typed. ⌘/Ctrl+Enter stores it.</FieldDescription>
             </Field>
           </FieldGroup>
           <DialogFooter>

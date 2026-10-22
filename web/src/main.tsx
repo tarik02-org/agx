@@ -9,7 +9,7 @@ import { RuntimeProvider } from "~/effect/react.tsx";
 import { makeAgxRuntime } from "~/effect/runtime.ts";
 import { routeTree } from "~/routeTree.gen.ts";
 
-const router = createRouter({ routeTree, basepath: "/ui" });
+const router = createRouter({ routeTree, basepath: "/ui", scrollRestoration: true });
 // Lives as long as the page; nothing to dispose.
 const runtime = makeAgxRuntime();
 // The daemon is local; failed reads show at once instead of retrying behind a spinner.

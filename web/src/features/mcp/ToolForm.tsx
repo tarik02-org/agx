@@ -17,6 +17,7 @@ import { Switch } from "~/components/ui/switch.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs.tsx";
 import { Textarea } from "~/components/ui/textarea.tsx";
 import { type JsonSchemaNode, schemaType } from "~/lib/jsonSchema.ts";
+import { submitOnModEnter } from "~/lib/keyboard.ts";
 
 /** A field's input as typed; converted to the argument's JSON type when the form submits. */
 type FieldValue =
@@ -186,6 +187,7 @@ export function ToolForm({ schema, pending, onCall }: ToolFormProps) {
               className="min-h-40 font-mono"
               spellCheck={false}
               aria-invalid={invalid === "arguments"}
+              onKeyDown={submitOnModEnter}
               value={raw}
               onChange={(event) => setRaw(event.target.value)}
             />
@@ -253,7 +255,8 @@ function ArgumentInput({ id, schema, value, invalid, onChange }: ArgumentInputPr
         className="font-mono"
         spellCheck={false}
         aria-invalid={invalid}
-        placeholder={type === "array" ? "one item per line" : "JSON"}
+        placeholder={type === "array" ? "One item per line…" : "JSON…"}
+        onKeyDown={submitOnModEnter}
         value={value.text}
         onChange={(event) => onChange({ _tag: "Text", text: event.target.value })}
       />

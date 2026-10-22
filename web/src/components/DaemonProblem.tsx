@@ -22,12 +22,27 @@ export function DaemonProblem({ error }: { readonly error: DaemonError }) {
         </Problem>
       );
     case "config_invalid":
-      return <Problem title="Configuration invalid">{error.message}</Problem>;
+      return (
+        <Problem title="Configuration invalid">
+          {error.message} Fix it in the Configuration page or in the file, then try again.
+        </Problem>
+      );
+    case "conflict":
+      return (
+        <Problem title="Changed meanwhile">
+          {error.message} Review the latest state and try again.
+        </Problem>
+      );
+    case "failed_precondition":
+      return <Problem title="Not possible here">{error.message}</Problem>;
+    case "needs_login":
+      return (
+        <Problem title="Sign-in needed">
+          {error.message} Sign in from the secrets on the Runtime page.
+        </Problem>
+      );
     case "invalid_request":
     case "not_found":
-    case "conflict":
-    case "failed_precondition":
-    case "needs_login":
     case "timeout":
     case "internal":
     case "mcp_failed":

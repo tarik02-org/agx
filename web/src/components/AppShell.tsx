@@ -8,7 +8,7 @@ import {
   ScanSearchIcon,
   WrenchIcon,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 
 import {
   Sidebar,
@@ -46,9 +46,24 @@ const sections: ReadonlyArray<Section> = [
 export function AppShell({ children }: { readonly children: ReactNode }) {
   const staged = useStaging((state) => state.changes.length);
   const review = useStaging((state) => state.review);
+  // Staged changes live only in this tab, so closing or reloading it asks first.
+  useEffect(() => {
+    if (staged === 0) {
+      return;
+    }
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [staged]);
   return (
     <Toaster>
       <TooltipProvider>
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-xs"
+        >
+          Skip to content
+        </a>
         <SidebarProvider>
           <Sidebar collapsible="icon">
             <SidebarHeader>
@@ -85,7 +100,9 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
               </SidebarMenu>
             </SidebarFooter>
           </Sidebar>
-          <SidebarInset>{children}</SidebarInset>
+          <SidebarInset id="main" tabIndex={-1} className="outline-none">
+            {children}
+          </SidebarInset>
           <ReviewChanges />
         </SidebarProvider>
       </TooltipProvider>

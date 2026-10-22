@@ -13,6 +13,8 @@ import {
 import { useState } from "react";
 
 import { ConfirmAction } from "~/components/ConfirmAction.tsx";
+import { UnsavedChanges } from "~/components/UnsavedChanges.tsx";
+import { ButtonLink } from "~/components/ButtonLink.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
@@ -44,7 +46,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select.tsx";
-import { Skeleton } from "~/components/ui/skeleton.tsx";
+import { Pending } from "~/components/Pending.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs.tsx";
 import { toast } from "~/components/ui/toast.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
@@ -64,6 +66,7 @@ import { yamlErrors } from "~/features/config/yamlDocument.ts";
 import type { ConfigurationFile, Definition } from "~/gen/agx/v1/agx_pb.ts";
 import { type ConfigSchema, definitionSchema, fieldDescription } from "~/lib/configSchema.ts";
 import { shortPath } from "~/lib/path.ts";
+import { pageTitle } from "~/lib/title.ts";
 
 const ConfigSearch = Schema.Struct({
   kind: Schema.optional(Schema.String),
@@ -71,6 +74,8 @@ const ConfigSearch = Schema.Struct({
   /** A new definition of kind is being written. */
   create: Schema.optional(Schema.Boolean),
   file: Schema.optional(Schema.String),
+  /** How the definition is edited, so a link opens the same editor. */
+  view: Schema.optional(Schema.Literals(["form", "yaml"])),
 });
 
 export const Route = createFileRoute("/config")({
@@ -108,8 +113,9 @@ function ConfigPage() {
   const search = Route.useSearch();
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-4">
+      <title>{pageTitle(search.id ?? search.file?.split("/").at(-1), "Configuration")}</title>
       <h1 className="font-heading font-semibold text-sm">Configuration</h1>
-      {(configuration.isPending || definitions.isPending) && <Skeleton className="h-64" />}
+      {(configuration.isPending || definitions.isPending) && <Pending className="h-64" />}
       {configuration.isError && <DaemonProblem error={configuration.error} />}
       {definitions.isError && <DaemonProblem error={definitions.error} />}
       {configuration.isSuccess && definitions.isSuccess && (
@@ -173,14 +179,17 @@ function Navigator({
   readonly home: string;
 }) {
   const search = Route.useSearch();
-  const navigate = useNavigate({ from: Route.fullPath });
   const [filter, setFilter] = useState("");
   const matches = (text: string) => text.toLowerCase().includes(filter.toLowerCase());
   return (
     <Card size="sm" className="min-h-0">
       <CardHeader>
         <Input
-          placeholder="Filter definitions"
+          type="search"
+          aria-label="Filter definitions"
+          placeholder="Filter definitions…"
+          autoComplete="off"
+          spellCheck={false}
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
         />
@@ -196,32 +205,34 @@ function Navigator({
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-muted-foreground text-xs">{label}</span>
                   <Badge variant="secondary">{own.length}</Badge>
-                  <Button
+                  <ButtonLink
                     variant="ghost"
-                    size="icon-xs"
+                    size="icon-sm"
                     className="ml-auto"
                     aria-label={`New ${label}`}
-                    onClick={() => void navigate({ search: { kind, create: true } })}
+                    to="/config"
+                    search={{ kind, create: true }}
                   >
                     <PlusIcon />
-                  </Button>
+                  </ButtonLink>
                 </div>
                 {own.map((definition) => (
-                  <Button
+                  <ButtonLink
                     key={definition.id}
                     variant={
                       search.kind === kind && search.id === definition.id ? "secondary" : "ghost"
                     }
                     size="sm"
                     className="w-full justify-start font-mono"
-                    onClick={() => void navigate({ search: { kind, id: definition.id } })}
+                    to="/config"
+                    search={{ kind, id: definition.id }}
                   >
                     <span className="truncate">{definition.id}</span>
                     {definition.package !== "" && <PackageIcon data-icon="inline-end" />}
                     {definition.readOnly && definition.package === "" && (
                       <LockIcon data-icon="inline-end" />
                     )}
-                  </Button>
+                  </ButtonLink>
                 ))}
               </section>
             );
@@ -229,16 +240,17 @@ function Navigator({
           <section className="flex flex-col gap-0.5">
             <span className="font-medium text-muted-foreground text-xs">Files</span>
             {files.map((file) => (
-              <Button
+              <ButtonLink
                 key={file.path}
                 variant={search.file === file.path ? "secondary" : "ghost"}
                 size="sm"
                 className="w-full justify-start font-mono"
-                onClick={() => void navigate({ search: { file: file.path } })}
+                to="/config"
+                search={{ file: file.path }}
               >
                 <span className="truncate">{shortPath(file.path, home)}</span>
                 {file.readOnly && <LockIcon data-icon="inline-end" />}
-              </Button>
+              </ButtonLink>
             ))}
           </section>
         </div>
@@ -281,10 +293,14 @@ function DefinitionEditor({
   const errors = yamlErrors(text);
   const removing = stagedChange?.case === "undefine";
   const formAvailable = hasForm(kind) && errors.length === 0;
-  const [tab, setTab] = useState(formAvailable ? "form" : "yaml");
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
+  const tab = formAvailable ? (search.view ?? "form") : "yaml";
+  const saved = stagedChange?.case === "define" ? (stagedChange.value.yaml ?? original) : original;
   const location = definition?.source;
   return (
     <Card size="sm">
+      <UnsavedChanges dirty={!readOnly && text !== saved} ignore={["view"]} />
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <span className="text-muted-foreground">{label}</span>
@@ -379,7 +395,15 @@ function DefinitionEditor({
           </Field>
         )}
         {!(readOnly && original === "") && (
-          <Tabs value={tab} onValueChange={(next) => setTab(String(next))}>
+          <Tabs
+            value={tab}
+            onValueChange={(next) =>
+              void navigate({
+                search: (current) => ({ ...current, view: next === "yaml" ? "yaml" : "form" }),
+                replace: true,
+              })
+            }
+          >
             <TabsList>
               <TabsTrigger value="form" disabled={!formAvailable}>
                 Form
@@ -483,7 +507,7 @@ function FileEditor({
       </CardHeader>
       {content.isPending && (
         <CardContent>
-          <Skeleton className="h-64" />
+          <Pending className="h-64" />
         </CardContent>
       )}
       {content.isError && (
@@ -524,6 +548,7 @@ function FileText({
   const errors = yamlErrors(text);
   return (
     <>
+      <UnsavedChanges dirty={!readOnly && text !== (staged ?? original)} />
       <CardContent className="flex flex-col gap-2">
         {readOnly && (
           <Alert>

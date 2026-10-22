@@ -1,11 +1,11 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { HistoryIcon, WrenchIcon } from "lucide-react";
 import { useState } from "react";
 
+import { ButtonLink } from "~/components/ButtonLink.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
-import { Button } from "~/components/ui/button.tsx";
 import {
   Card,
   CardContent,
@@ -22,7 +22,7 @@ import {
 } from "~/components/ui/empty.tsx";
 import { Input } from "~/components/ui/input.tsx";
 import { ScrollArea } from "~/components/ui/scroll-area.tsx";
-import { Skeleton } from "~/components/ui/skeleton.tsx";
+import { Pending } from "~/components/Pending.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import type { DaemonError } from "~/daemon/error.ts";
 import { queryKeys, useDaemonMutation, useDaemonQuery } from "~/daemon/query.ts";
@@ -38,6 +38,7 @@ import {
 } from "~/gen/agx/v1/agx_pb.ts";
 import { parseSchema } from "~/lib/jsonSchema.ts";
 import { Markdown } from "~/lib/markdown.tsx";
+import { pageTitle } from "~/lib/title.ts";
 
 const InspectorSearch = Schema.Struct({
   server: Schema.optional(Schema.String),
@@ -62,10 +63,17 @@ function InspectorPage() {
       enabled: configuration.isSuccess,
     },
   );
+  const search = Route.useSearch();
   return (
     <div className="flex h-full flex-col gap-4 p-4">
+      <title>
+        {pageTitle(
+          search.tool === undefined ? undefined : `${search.server ?? ""}.${search.tool}`,
+          "MCP inspector",
+        )}
+      </title>
       <h1 className="font-heading font-semibold text-sm">MCP inspector</h1>
-      {(configuration.isPending || tools.isPending) && <Skeleton className="h-64" />}
+      {(configuration.isPending || tools.isPending) && <Pending className="h-64" />}
       {configuration.isError && <DaemonProblem error={configuration.error} />}
       {tools.isError && <DaemonProblem error={tools.error} />}
       {tools.isSuccess && <Inspector servers={tools.data} home={home} />}
@@ -81,7 +89,6 @@ function Inspector({
   readonly home: string;
 }) {
   const search = Route.useSearch();
-  const navigate = useNavigate({ from: Route.fullPath });
   const [filter, setFilter] = useState("");
   const server = servers.find((s) => s.mcpId === search.server);
   const tool = server?.tools.find((t) => t.name === search.tool);
@@ -91,7 +98,11 @@ function Inspector({
       <Card size="sm" className="min-h-0">
         <CardHeader>
           <Input
-            placeholder="Filter tools"
+            type="search"
+            aria-label="Filter tools"
+            placeholder="Filter tools…"
+            autoComplete="off"
+            spellCheck={false}
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
           />
@@ -113,7 +124,7 @@ function Inspector({
                     .filter((t) => filter === "" || matches(t.name) || matches(s.mcpId))
                     .map((t) => (
                       <li key={t.name}>
-                        <Button
+                        <ButtonLink
                           variant={
                             s.mcpId === search.server && t.name === search.tool
                               ? "secondary"
@@ -121,12 +132,11 @@ function Inspector({
                           }
                           size="sm"
                           className="w-full justify-start font-mono"
-                          onClick={() =>
-                            void navigate({ search: { server: s.mcpId, tool: t.name } })
-                          }
+                          to="/mcp"
+                          search={{ server: s.mcpId, tool: t.name }}
                         >
                           {t.name}
-                        </Button>
+                        </ButtonLink>
                       </li>
                     ))}
                 </ul>

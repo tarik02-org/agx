@@ -15,7 +15,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "~/components/ui/empty.tsx";
-import { Skeleton } from "~/components/ui/skeleton.tsx";
+import { Pending } from "~/components/Pending.tsx";
 import {
   Table,
   TableBody,
@@ -47,7 +47,7 @@ export function SecretsCard() {
         <CardTitle>Secrets</CardTitle>
       </CardHeader>
       <CardContent>
-        {secrets.isPending && <Skeleton className="h-16" />}
+        {secrets.isPending && <Pending className="h-16" />}
         {secrets.isError && <DaemonProblem error={secrets.error} />}
         {secrets.isSuccess && <SecretTable secrets={secrets.data} />}
       </CardContent>
