@@ -80,7 +80,7 @@ function SkillsPage() {
   const search = Route.useSearch();
   const skills = (definitions.data ?? []).filter((definition) => definition.kind === "skills");
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 p-4">
+    <div className="flex h-full min-h-0 flex-col gap-2 px-4 py-3">
       <title>{pageTitle(search.skill, "Skills")}</title>
       <div className="flex items-center gap-2">
         <h1 className="font-heading font-semibold text-sm">Skills</h1>
@@ -186,7 +186,7 @@ function SkillView({ skillId, home }: { readonly skillId: string; readonly home:
   const directory = definition?.path ?? "";
   const editable = definition !== undefined && !definition.readOnly && directory !== "";
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-2">
       <Card size="sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 font-mono">

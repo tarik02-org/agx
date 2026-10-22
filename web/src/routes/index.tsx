@@ -16,7 +16,7 @@ export const Route = createFileRoute("/")({
 function RuntimePage() {
   const state = useRuntimeView();
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="flex flex-col gap-2 px-4 py-3">
       <title>{pageTitle("Runtime")}</title>
       <header className="flex items-center gap-3">
         <h1 className="font-heading font-semibold text-sm">Runtime</h1>

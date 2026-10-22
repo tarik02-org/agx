@@ -104,7 +104,7 @@ function AddSkillsPage() {
     [],
   );
   return (
-    <div className="flex max-w-6xl flex-col gap-4 p-4">
+    <div className="flex max-w-6xl flex-col gap-2 px-4 py-3">
       <title>{pageTitle("Add skills")}</title>
       <h1 className="font-heading font-semibold text-sm">Add skills from Git</h1>
       <Steps step={step} onStep={setStep} />

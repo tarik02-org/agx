@@ -97,7 +97,7 @@ function ConfigPage() {
   );
   const search = Route.useSearch();
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 p-4">
+    <div className="flex h-full min-h-0 flex-col gap-2 px-4 py-3">
       <title>{pageTitle(search.id ?? search.file?.split("/").at(-1), "Configuration")}</title>
       <h1 className="font-heading font-semibold text-sm">Configuration</h1>
       {(configuration.isPending || definitions.isPending) && <Pending className="h-64" />}
@@ -232,7 +232,7 @@ function DefinitionEditor({
           </CardAction>
         )}
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+      <CardContent className="flex flex-col gap-2">
         {readOnly && (
           <Alert>
             <LockIcon />

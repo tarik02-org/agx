@@ -68,7 +68,7 @@ function InspectorPage() {
   );
   const search = Route.useSearch();
   return (
-    <div className="flex h-full flex-col gap-4 p-4">
+    <div className="flex h-full flex-col gap-2 px-4 py-3">
       <title>
         {pageTitle(
           search.tool === undefined ? undefined : `${search.server ?? ""}.${search.tool}`,
@@ -204,7 +204,7 @@ function ToolPanel({
             </CardTitle>
             {tool.title !== "" && <CardDescription>{tool.title}</CardDescription>}
           </CardHeader>
-          <CardContent className="flex flex-col gap-4">
+          <CardContent className="flex flex-col gap-2">
             {tool.description !== "" && <Markdown>{tool.description}</Markdown>}
             <ToolForm
               schema={parseSchema(tool.inputSchemaJson)}

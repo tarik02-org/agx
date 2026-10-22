@@ -55,7 +55,7 @@ function ExplainPage() {
     Daemon.use((daemon) => daemon.configuration),
   );
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="flex flex-col gap-2 px-4 py-3">
       <title>{pageTitle("Explain")}</title>
       <h1 className="font-heading font-semibold text-sm">Explain</h1>
       {configuration.isPending && <Pending className="h-8 w-[32rem]" />}
