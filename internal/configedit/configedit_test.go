@@ -215,6 +215,8 @@ func TestEnableDisable(t *testing.T) {
 	if err := os.Mkdir(work, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Rules spell directories under the home directory with ~/, as on Windows runners' temp.
+	written := configedit.HomeRelative(work)
 	if _, err := s.Enable(edit.Skills, "alpha", configedit.NewScope("", nil), s.Root); err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +232,7 @@ func TestEnableDisable(t *testing.T) {
 	want := base + `scopes:
   - add:
       skills: [alpha]
-  - directory: ` + work + `
+  - directory: ` + written + `
     harnesses: [codex]
     add:
       instructions: [agents]
@@ -260,7 +262,7 @@ func TestEnableDisable(t *testing.T) {
 	want = base + `scopes:
   - add:
       skills: [alpha]
-  - directory: ` + work + `
+  - directory: ` + written + `
     remove:
       skills: [alpha]
 `
