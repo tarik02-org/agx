@@ -80,6 +80,7 @@ func (s *Server) PrepareLaunch(
 	if snapshot.ID != msg.SnapshotId {
 		return nil, rpcError(connect.CodeAborted, "snapshot changed; resolve again before forwarding credentials")
 	}
+	warnMissing(snapshot)
 	inputs, err := launchInputs(snapshot, msg.EnvironmentInputs, adapter.Forwarded())
 	if err != nil {
 		return nil, err

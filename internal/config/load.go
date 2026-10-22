@@ -226,6 +226,18 @@ func loadConfig(root, cache string, builtins Builtins, inputs *Inputs, overlay O
 		return nil, err
 	}
 	loaded := map[ID]bool{}
+	c.Missing = map[ID]MissingPackage{}
+	// skip leaves a package out because it is not installed; a launch goes on without it.
+	skip := func(id ID, format string) error {
+		reason := fmt.Sprintf(format, id) + "; run agx install"
+		if p := c.Packages[id]; p.Anonymous {
+			kind, resource, _ := strings.Cut(string(id), ":")
+			reason = fmt.Sprintf("%s %s: its Git source is not installed; run agx install", kind, resource)
+		}
+		c.Missing[id] = MissingPackage{Root: id, Reason: reason}
+		loaded[id] = true
+		return nil
+	}
 	var load func(ID, []ID) error
 	load = func(id ID, chain []ID) error {
 		for _, parent := range chain {
@@ -237,6 +249,12 @@ func loadConfig(root, cache string, builtins Builtins, inputs *Inputs, overlay O
 			return nil
 		}
 		p := c.Packages[id]
+		// What a missing package declares, its dependencies and Git sources, is missing with it.
+		if owner, ok := c.missingParent(id, p); ok {
+			c.Missing[id] = MissingPackage{Root: owner}
+			loaded[id] = true
+			return nil
+		}
 		var entry LockedPackage
 		hash := p.Hash
 		switch {
@@ -245,7 +263,7 @@ func loadConfig(root, cache string, builtins Builtins, inputs *Inputs, overlay O
 			inputs.file(pin)
 			var err error
 			if hash, err = ReadPin(pin); errors.Is(err, fs.ErrNotExist) {
-				return fmt.Errorf("package %s is not installed; run agx install", id)
+				return skip(id, "package %s is not installed")
 			} else if err != nil {
 				return fmt.Errorf("package %s: %w", id, err)
 			}
@@ -253,15 +271,21 @@ func loadConfig(root, cache string, builtins Builtins, inputs *Inputs, overlay O
 			inputs.file(p.Lockfile)
 			lock, err := ReadLock(p.Lockfile, overlay)
 			var newer *securefs.NewerFormatError
-			if errors.As(err, &newer) {
+			switch {
+			case errors.As(err, &newer):
 				return err
-			} else if err != nil {
+			case errors.Is(err, fs.ErrNotExist):
+				return skip(id, "package %s is not installed")
+			case err != nil:
 				return fmt.Errorf("%s: %w; run agx install", p.Lockfile, err)
 			}
 			var ok bool
 			entry, ok = lock.Packages[id]
-			if !ok || Digest(entry.Source) != Digest(p.LockSource()) {
-				return fmt.Errorf("package %s has a missing or stale lock; run agx install", id)
+			switch {
+			case !ok:
+				return skip(id, "package %s is not installed")
+			case Digest(entry.Source) != Digest(p.LockSource()):
+				return skip(id, "package %s changed since it was installed")
 			}
 			if !ValidHash(entry.Hash) {
 				return fmt.Errorf("invalid cache hash for %s", id)
@@ -271,7 +295,7 @@ func loadConfig(root, cache string, builtins Builtins, inputs *Inputs, overlay O
 		dir := filepath.Join(cache, "packages", hash)
 		inputs.file(dir)
 		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("package %s is not installed; run agx install", id)
+			return skip(id, "package %s is not installed")
 		} else if err != nil {
 			return fmt.Errorf("package %s cache: %w", id, err)
 		}
@@ -314,16 +338,57 @@ func loadConfig(root, cache string, builtins Builtins, inputs *Inputs, overlay O
 	for id := range c.Packages {
 		ids = append(ids, id)
 	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	// Parents load before what they declare, so a missing parent is known when its declarations
+	// come up: named packages by depth, then the Git sources of resources.
+	anonymous := func(id ID) int {
+		if strings.Contains(string(id), ":") {
+			return 1
+		}
+		return 0
+	}
+	slices.SortFunc(ids, func(a, b ID) int {
+		return cmp.Or(
+			cmp.Compare(anonymous(a), anonymous(b)),
+			cmp.Compare(strings.Count(string(a), "/"), strings.Count(string(b), "/")),
+			cmp.Compare(a, b),
+		)
+	})
 	for _, id := range ids {
 		if err := load(id, nil); err != nil {
 			return nil, err
+		}
+	}
+	// Definitions whose content is a missing Git source are left out, like a missing package's.
+	for name, s := range c.Skills {
+		if _, ok := c.Missing[s.Package]; ok && s.Package != "" {
+			delete(c.Skills, name)
+		}
+	}
+	for name, i := range c.Instructions {
+		if _, ok := c.Missing[i.Package]; ok && i.Package != "" {
+			delete(c.Instructions, name)
 		}
 	}
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+// missingParent reports the missing package that declared package id: the package of an
+// anonymous Git source, or the package whose namespace holds a dependency.
+func (c *Config) missingParent(id ID, p Package) (ID, bool) {
+	if p.Anonymous && p.Parent != "" {
+		if m, ok := c.Missing[p.Parent]; ok {
+			return m.Root, true
+		}
+	}
+	if i := strings.LastIndex(string(id), "/"); i > 0 {
+		if m, ok := c.Missing[id[:i]]; ok {
+			return m.Root, true
+		}
+	}
+	return "", false
 }
 
 // AddPackage merges an installed package under its ID and returns its manifest. A package

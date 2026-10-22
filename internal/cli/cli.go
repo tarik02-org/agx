@@ -123,6 +123,9 @@ func run(osArgs []string, stdout io.Writer) int {
 			if err != nil {
 				return coded(codeConfigInvalid, err)
 			}
+			for _, warning := range c.MissingWarnings(c.AllMissing()) {
+				ui.Diagnose(ui.Warn, "%s", warning)
+			}
 			return printValid(c)
 		},
 	}
@@ -177,6 +180,9 @@ func run(osArgs []string, stdout io.Writer) int {
 				snapshot, err := c.Resolve(directory, harness)
 				if err != nil {
 					return err
+				}
+				for _, warning := range c.MissingWarnings(snapshot.Missing) {
+					ui.Diagnose(ui.Warn, "%s", warning)
 				}
 				if name == "resolve" {
 					if scripting.enabled {

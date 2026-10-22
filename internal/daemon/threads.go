@@ -119,6 +119,7 @@ func (s *Server) PrepareThreadLaunch(
 	if snapshot.ID != msg.SnapshotId {
 		return nil, rpcError(connect.CodeAborted, "snapshot changed; resolve again before forwarding credentials")
 	}
+	warnMissing(snapshot)
 	inputs, err := launchInputs(snapshot, msg.EnvironmentInputs, nil)
 	if err != nil {
 		return nil, err

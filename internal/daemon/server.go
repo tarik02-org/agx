@@ -895,6 +895,13 @@ func (s *Server) WatchRuntime(
 	}
 }
 
+// warnMissing logs the missing packages a launch goes without, once per package.
+func warnMissing(snapshot *config.Snapshot) {
+	for _, warning := range snapshot.Config.MissingWarnings(snapshot.Missing) {
+		fmt.Fprintf(os.Stderr, "agx daemon: warning: %s\n", warning)
+	}
+}
+
 func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 	out := &v1.ResolveResponse{
 		Snapshot: &v1.Snapshot{
@@ -903,6 +910,13 @@ func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 			Harness:             s.Harness,
 			RequiredEnvironment: s.RequiredEnvironment,
 		},
+	}
+	for _, warning := range s.Config.MissingWarnings(s.Missing) {
+		out.Diagnostics = append(out.Diagnostics, &v1.Diagnostic{
+			Severity: v1.Diagnostic_SEVERITY_WARNING,
+			Code:     "package_not_installed",
+			Summary:  warning,
+		})
 	}
 	resource := func(r config.Resource) *v1.ResourceRef {
 		out := &v1.ResourceRef{}

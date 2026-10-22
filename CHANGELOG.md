@@ -67,6 +67,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Changed
 
+- A package that is not installed, or changed since it was installed, no longer fails
+  launches: they go on without its skills, instructions, and MCP servers, and warn once per
+  package to run `agx install`; the daemon logs the same warning. `agx config validate`,
+  `resolve`, `explain`, and `doctor` warn about it too. A malformed lockfile, a reference to
+  an undeclared package, and a broken cache entry are still errors.
+- `agx install` says when `git` is not on `PATH`.
 - The skill picker of `agx skill add` filters with `/`, toggles with `x` or Space and all with Ctrl-A; prompts are drawn with `huh`.
 - `agx skill add owner/skills` names the package after the owner (`anthropics`, `mattpocock`) instead of `skills`, so such repositories no longer collide.
 

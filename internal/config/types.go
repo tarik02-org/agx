@@ -276,12 +276,64 @@ type Config struct {
 	Daemon        Daemon                       `json:"daemon"`
 	Files         []string                     `json:"files"`
 	PackageHashes map[ID]string                `json:"package_hashes"`
+	// Missing holds the declared packages that are not installed, which loading skips along
+	// with every resource they would define.
+	Missing map[ID]MissingPackage `json:"missing,omitempty"`
 
 	// rootDefinitions maps definitions from configuration fragments to their override flag,
 	// so package manifests merged later cannot replace them.
 	rootDefinitions map[string]bool
 	daemonSet       map[string]bool
 	builtins        Builtins
+}
+
+// MissingPackage is a package that is not installed. Root is the declared package the warning
+// names: the package itself, or the missing package it belongs to.
+type MissingPackage struct {
+	Root   ID     `json:"root"`
+	Reason string `json:"reason"`
+}
+
+// missingOwner reports the missing package a reference of kind into id would have come from:
+// the package whose namespace holds it, or the Git source of a skill or instructions
+// definition left out because it is not installed.
+func (c *Config) missingOwner(kind string, id ID) (ID, bool) {
+	if m, ok := c.Missing[ID(kind+":"+string(id))]; ok {
+		return m.Root, true
+	}
+	for prefix := string(id); ; {
+		i := strings.LastIndex(prefix, "/")
+		if i <= 0 {
+			return "", false
+		}
+		prefix = prefix[:i]
+		if m, ok := c.Missing[ID(prefix)]; ok {
+			return m.Root, true
+		}
+	}
+}
+
+// MissingWarnings describes each missing package once, sorted.
+func (c *Config) MissingWarnings(ids []ID) []string {
+	warnings := []string{}
+	for _, id := range ids {
+		if m, ok := c.Missing[id]; ok && m.Root == id {
+			warnings = append(warnings, m.Reason)
+		}
+	}
+	return warnings
+}
+
+// AllMissing lists the missing packages warnings name, sorted.
+func (c *Config) AllMissing() []ID {
+	ids := []ID{}
+	for id, m := range c.Missing {
+		if m.Root == id {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	return ids
 }
 
 type Resource struct {
@@ -313,6 +365,8 @@ type Snapshot struct {
 	Resources           []Resource `json:"resources"`
 	RequiredEnvironment []string   `json:"required_environment"`
 	Traces              []Trace    `json:"traces,omitempty"`
+	// Missing lists the missing packages whose resources the selection would have added.
+	Missing []ID `json:"missing,omitempty"`
 	// Injections lists tagged values the launch resolves, as configured; never their values.
 	Injections []Injection `json:"injections,omitempty"`
 	Config     *Config     `json:"-"`
@@ -382,8 +436,9 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 	// shallower scopes first, harness rules last, and list order within a rule.
 	selectedAt := map[Resource]int{}
 	sequence := 0
+	missing := map[ID]bool{}
 	apply := func(change string, selection Selection, step Step) error {
-		err := c.expand(selection, nil, func(r Resource, bundles []ID) {
+		err := c.expandSkipping(selection, nil, func(r Resource, bundles []ID) {
 			t := traces[r]
 			if t == nil {
 				t = &Trace{Resource: r}
@@ -398,6 +453,10 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 			step.Change = change
 			step.BundleChain = append([]ID(nil), bundles...)
 			t.Steps = append(t.Steps, step)
+		}, func(pkg ID) {
+			if change == "add" {
+				missing[pkg] = true
+			}
 		})
 		if err != nil {
 			return fmt.Errorf("%s: %w", locate(step.Source), err)
@@ -444,6 +503,7 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 		Config:              c,
 		Resources:           []Resource{},
 		RequiredEnvironment: []string{},
+		Missing:             slices.Sorted(maps.Keys(missing)),
 	}
 	for r, t := range traces {
 		if t.Selected {
@@ -570,6 +630,17 @@ func pathDepth(path string) int {
 }
 
 func (c *Config) expand(s Selection, chain []ID, visit func(Resource, []ID)) error {
+	return c.expandSkipping(s, chain, visit, nil)
+}
+
+// expandSkipping expands like expand, leaving out references into missing packages and
+// reporting their package to skipped, when set.
+func (c *Config) expandSkipping(
+	s Selection,
+	chain []ID,
+	visit func(Resource, []ID),
+	skipped func(ID),
+) error {
 	for _, group := range []struct {
 		kind, label string
 		ids         []ID
@@ -585,6 +656,12 @@ func (c *Config) expand(s Selection, chain []ID, visit func(Resource, []ID)) err
 				_, exists = c.MCP[id]
 			}
 			if !exists {
+				if pkg, ok := c.missingOwner(group.kind, id); ok {
+					if skipped != nil {
+						skipped(pkg)
+					}
+					continue
+				}
 				return fmt.Errorf("unknown %s %q", group.label, id)
 			}
 			visit(Resource{Kind: group.kind, ID: id}, chain)
@@ -598,9 +675,15 @@ func (c *Config) expand(s Selection, chain []ID, visit func(Resource, []ID)) err
 		}
 		b, ok := c.Bundles[id]
 		if !ok {
+			if pkg, missing := c.missingOwner("bundle", id); missing {
+				if skipped != nil {
+					skipped(pkg)
+				}
+				continue
+			}
 			return fmt.Errorf("unknown bundle %q", id)
 		}
-		if err := c.expand(b.Selection, append(append([]ID{}, chain...), id), visit); err != nil {
+		if err := c.expandSkipping(b.Selection, append(append([]ID{}, chain...), id), visit, skipped); err != nil {
 			return err
 		}
 	}

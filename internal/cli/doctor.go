@@ -246,6 +246,15 @@ func configFiles(c *config.Config) []string {
 func packageChecks(read, c *config.Config, loadErr error, files string) (*config.Config, bool, []check) {
 	configRow := check{Group: "config", Name: "configuration", Status: checkPass, Detail: files}
 	switch {
+	case loadErr == nil && len(c.AllMissing()) > 0:
+		// Launches go on without missing packages, so they warn instead of failing the check.
+		return c, true, []check{configRow, {
+			Group:  "config",
+			Name:   "packages",
+			Status: checkWarn,
+			Detail: strings.Join(c.MissingWarnings(c.AllMissing()), "; "),
+			Hint:   "run agx install",
+		}}
 	case loadErr == nil:
 		detail := "no packages"
 		if len(c.Packages) > 0 {
