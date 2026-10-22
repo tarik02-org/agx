@@ -418,7 +418,7 @@ message McpProcess {
   int64 pid = 2;
   // The process's working directory.
   string directory = 3;
-  // none, directory, repository, or global.
+  // none, directory, repo, or global.
   string share = 4;
   // The launch directory or repository root a shared process is keyed on; empty otherwise.
   string root = 5;

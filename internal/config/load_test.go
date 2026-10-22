@@ -590,7 +590,7 @@ func TestMCPLoad(t *testing.T) {
 func TestMCPShare(t *testing.T) {
 	root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), `mcp:
   plain: {command: [plain]}
-  search: {command: [search], share: repository}
+  search: {command: [search], share: repo}
   index: {command: [index], share: {type: directory, idle: 30m}}
 `)
 	c := read(t, root)
@@ -608,7 +608,7 @@ func TestMCPShare(t *testing.T) {
 		"mcp:\n  x: {command: [x], share: {type: global, idle: soon}}\n": "share idle must be a duration",
 		"mcp:\n  x: {command: [x], share: {idle: 1m}}\n":                 "share needs a type",
 		"mcp:\n  x: {command: [x], share: {type: none, idle: 1m}}\n":     "share idle needs a share type other than none",
-		"mcp:\n  x: {command: [x], share: project}\n":                    "share must be none, directory, repository, or global",
+		"mcp:\n  x: {command: [x], share: project}\n":                    "share must be none, directory, repo, or global",
 		"mcp:\n  x: {url: https://x.example/mcp, share: global}\n":       "share applies to stdio servers",
 	} {
 		bad := write(t, filepath.Join(t.TempDir(), "agx.yaml"), content)

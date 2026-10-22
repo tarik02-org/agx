@@ -681,7 +681,7 @@
           "enum": [
             "none",
             "directory",
-            "repository",
+            "repo",
             "global"
           ]
         },
@@ -691,7 +691,7 @@
               "enum": [
                 "none",
                 "directory",
-                "repository",
+                "repo",
                 "global"
               ]
             },
@@ -707,7 +707,7 @@
           ]
         }
       ],
-      "description": "stdio: none gives each harness session its own process (default); directory, repository, or global share one process per launch directory, repository root, or everywhere. {type, idle} also sets how long it stays after its last session."
+      "description": "stdio: none gives each harness session its own process (default); directory, repo, or global share one process per launch directory, repository root, or everywhere. {type, idle} also sets how long it stays after its last session."
     },
     "Package": {
       "allOf": [

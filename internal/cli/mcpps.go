@@ -97,7 +97,7 @@ func printMCPProcesses(processes []*v1.McpProcess, now time.Time) error {
 }
 
 // mcpProcessesJSON lists running stdio MCP server processes. share is none, directory,
-// repository, or global; root is the directory a shared process is keyed on, null otherwise;
+// repo, or global; root is the directory a shared process is keyed on, null otherwise;
 // stops_at is when an idle shared process stops, null while sessions use it.
 type mcpProcessesJSON struct {
 	Processes []mcpProcessJSON `json:"processes"`

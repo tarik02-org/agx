@@ -41,14 +41,14 @@ least four copies of a stdio server.
 
 ## Decision
 
-An MCP server definition gains `share: none | directory | repository | global`
+An MCP server definition gains `share: none | directory | repo | global`
 (default `none`):
 
 ```yaml
 mcp:
   fff:
     command: [fff-mcp]
-    share: repository
+    share: repo
 ```
 
 - `none`: today's behaviour.
@@ -56,11 +56,11 @@ mcp:
   launch directory, digest of the resolved definition, the identities of the
   secrets it uses, and the values of the environment inputs it reads). Every
   launch, thread launch, and `agx mcp call` whose key matches uses that process.
-- `repository`: the same, keyed on the repository root instead: the closest
+- `repo`: the same, keyed on the repository root instead: the closest
   directory at or above the launch directory holding `.git`, so launches in
   subdirectories of one project share, and each worktree, whose `.git` is a
   file, is a root of its own. Outside a repository it keys on the launch
-  directory, as `directory` does. A `directory` or `repository` stdio server
+  directory, as `directory` does. A `directory` or `repo` stdio server
   without an explicit `cwd` runs in its root.
 - `global`: the same key without a root. Only for servers that do not
   depend on their working directory; a `global` stdio server without an explicit
@@ -104,7 +104,7 @@ session, and maps client sessions onto it.
   session, and choosing one (the caller of the request in flight, the oldest
   client) would leak one launch's model or user prompt into another's work.
   `ping` is answered by agx.
-- **Roots**: for `directory` and `repository`, agx declares the `roots`
+- **Roots**: for `directory` and `repo`, agx declares the `roots`
   capability and answers `roots/list` itself with the one root the key holds,
   `file://<root>`: every client of the server shares that root, so the answer
   is right for each of them, and servers that pick their workspace from roots

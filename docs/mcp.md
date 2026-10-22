@@ -271,14 +271,14 @@ better:
 mcp:
   fff:
     command: [fff-mcp]
-    share: repository
+    share: repo
 ```
 
 | `share` | One process for |
 | --- | --- |
 | `none` (default) | each harness session and each `agx mcp call` session |
 | `directory` | every launch in the same directory |
-| `repository` | every launch in the same repository, from any of its subdirectories; each worktree is a repository of its own, and outside a repository it acts like `directory` |
+| `repo` | every launch in the same repository, from any of its subdirectories; each worktree is a repository of its own, and outside a repository it acts like `directory` |
 | `global` | every launch, wherever it runs |
 
 A shared server runs in the directory or repository root it is shared for, or in
@@ -290,7 +290,7 @@ long with the mapping form:
 mcp:
   fff:
     command: [fff-mcp]
-    share: { type: repository, idle: 30m }   # idle: 0s stops it with its last session
+    share: { type: repo, idle: 30m }   # idle: 0s stops it with its last session
 ```
  Launches still
 reach only the servers they select. Sessions that differ in the server's command,
@@ -316,8 +316,8 @@ shared or not, with their sessions and launches, and when an idle one stops.
 ```console
 $ agx mcp ps --under ~/work
 ID   PID    SHARE       SESSIONS  LAUNCHES  STATE                  DIRECTORY
-fff  41822  repository  3         2         in use                 ~/work/acme-web
-fff  40310  repository  0         0         idle, stops in 4m12s   ~/work/blog
+fff  41822  repo        3         2         in use                 ~/work/acme-web
+fff  40310  repo        0         0         idle, stops in 4m12s   ~/work/blog
 ```
 
 ## Code mode
@@ -368,7 +368,7 @@ mcp:
   fs:                               # local (stdio)
     command: [npx, -y, '@modelcontextprotocol/server-filesystem', .]
     cwd: ~/work                     # default: the launch directory
-    share: repository               # one process per repository
+    share: repo                     # one process per repository
     environment:
       LOG_LEVEL: warning
       API_TOKEN: !secret fs-token
@@ -384,7 +384,7 @@ mcp:
 | `environment` | local | environment variables; values may use `!secret`, `!env`, `!file` |
 | `description` | both | what the server offers, shown by `agx mcp tools` |
 | `load` | both | `native` (default): in the harness's tool list; `on_demand`: reached with `agx mcp call` only |
-| `share` | local | `none` (default), `directory`, `repository`, or `global`, or `{type, idle}`: see [Sharing a local server](#sharing-a-local-server) |
+| `share` | local | `none` (default), `directory`, `repo`, or `global`, or `{type, idle}`: see [Sharing a local server](#sharing-a-local-server) |
 
 A server has either `url` or `command`. agx manages the `Authorization`,
 `Cookie`, `Host`, and `Mcp-Session-Id` headers itself.

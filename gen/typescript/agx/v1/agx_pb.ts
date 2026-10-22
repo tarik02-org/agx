@@ -1602,7 +1602,7 @@ export type McpProcess = Message<"agx.v1.McpProcess"> & {
   directory: string;
 
   /**
-   * none, directory, repository, or global.
+   * none, directory, repo, or global.
    *
    * @generated from field: string share = 4;
    */

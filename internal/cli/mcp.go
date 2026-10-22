@@ -176,7 +176,7 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			switch share {
 			case "", config.ShareNone, config.ShareDirectory, config.ShareRepository, config.ShareGlobal:
 			default:
-				return &usageError{fmt.Errorf("--share must be none, directory, repository, or global")}
+				return &usageError{fmt.Errorf("--share must be none, directory, repo, or global")}
 			}
 			if command != nil {
 				items := []any{}
@@ -274,7 +274,7 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 	cmd.Flags().StringVar(&load, "load", "",
 		"native (in the harness's tool list) or on_demand (reached with agx mcp call); default native")
 	cmd.Flags().StringVar(&share, "share", "",
-		"stdio: none (a process per session), or one process per directory, repository, or global; default none")
+		"stdio: none (a process per session), or one process per directory, repo, or global; default none")
 	return cmd
 }
 

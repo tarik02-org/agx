@@ -3367,7 +3367,7 @@ type McpProcess struct {
 	Pid   int64                  `protobuf:"varint,2,opt,name=pid,proto3" json:"pid,omitempty"`
 	// The process's working directory.
 	Directory string `protobuf:"bytes,3,opt,name=directory,proto3" json:"directory,omitempty"`
-	// none, directory, repository, or global.
+	// none, directory, repo, or global.
 	Share string `protobuf:"bytes,4,opt,name=share,proto3" json:"share,omitempty"`
 	// The launch directory or repository root a shared process is keyed on; empty otherwise.
 	Root string `protobuf:"bytes,5,opt,name=root,proto3" json:"root,omitempty"`

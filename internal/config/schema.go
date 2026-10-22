@@ -305,7 +305,7 @@ func (MCPShare) JSONSchema() *jsonschema.Schema {
 	})
 	return &jsonschema.Schema{
 		Description: "stdio: none gives each harness session its own process (default); directory, " +
-			"repository, or global share one process per launch directory, repository root, or " +
+			"repo, or global share one process per launch directory, repository root, or " +
 			"everywhere. {type, idle} also sets how long it stays after its last session.",
 		OneOf: []*jsonschema.Schema{
 			{Enum: modes},

@@ -102,7 +102,7 @@ type resourceJSON struct {
 	Kind string  `json:"kind"`
 	ID   string  `json:"id"`
 	Load *string `json:"load"`
-	// Share is none, directory, repository, or global for MCP servers, null for other kinds.
+	// Share is none, directory, repo, or global for MCP servers, null for other kinds.
 	Share *string `json:"share"`
 }
 
@@ -260,7 +260,7 @@ type mcpServerJSON struct {
 	Auth *mcpAuthJSON `json:"auth"`
 	// Load is native or on_demand.
 	Load string `json:"load"`
-	// Share is none, directory, repository, or global.
+	// Share is none, directory, repo, or global.
 	Share       string     `json:"share"`
 	Description *string    `json:"description"`
 	Inline      bool       `json:"inline"`

@@ -142,7 +142,7 @@ const (
 const (
 	ShareNone       = "none"
 	ShareDirectory  = "directory"
-	ShareRepository = "repository"
+	ShareRepository = "repo"
 	ShareGlobal     = "global"
 )
 

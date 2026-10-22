@@ -225,7 +225,7 @@ func printExplain(snapshot *config.Snapshot) error {
 	return err
 }
 
-// mcpMark notes after its ID that an MCP server is on demand or shared.
+// mcpMark notes after its ID that an MCP server is on demand or shared, and how.
 func mcpMark(out *ui.Printer, c *config.Config, r config.Resource) string {
 	if r.Kind != "mcp" {
 		return ""
@@ -235,13 +235,8 @@ func mcpMark(out *ui.Printer, c *config.Config, r config.Resource) string {
 	if server.Load == config.LoadOnDemand {
 		notes = append(notes, "on demand")
 	}
-	switch server.Share.Type {
-	case config.ShareDirectory:
-		notes = append(notes, "shared per directory")
-	case config.ShareRepository:
-		notes = append(notes, "shared per repository")
-	case config.ShareGlobal:
-		notes = append(notes, "shared")
+	if server.Share.Type != "" {
+		notes = append(notes, "share: "+server.Share.Type)
 	}
 	if len(notes) == 0 {
 		return ""

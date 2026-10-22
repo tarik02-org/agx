@@ -25,7 +25,7 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   of every harness's tool list and are reached with `agx mcp call`; `mcp list`, `resolve`,
   `explain`, and `mcp tools` show the load mode, and `agx mcp add` takes `--description`
   and `--load`.
-- Local MCP servers take `share: none | directory | repository | global`: harness sessions
+- Local MCP servers take `share: none | directory | repo | global`: harness sessions
   and `agx mcp call` sessions join one process per launch directory, per repository root,
   or for every launch, instead of starting a process each. The daemon multiplexes the
   sessions onto the server, answers its `roots/list` with the shared root, and refuses

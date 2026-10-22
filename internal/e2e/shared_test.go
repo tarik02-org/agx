@@ -21,7 +21,7 @@ func TestSharedMCPServers(t *testing.T) {
 	e.write("config/agx.yaml", `mcp:
   search:
     command: ['`+mcp+`']
-    share: repository
+    share: repo
     environment:
       FAKEMCP_STARTS: '`+filepath.ToSlash(sharedStarts)+`'
   own:
@@ -102,7 +102,7 @@ harnesses:
 		t.Fatalf("processes = %+v", listed.Processes)
 	}
 	p := listed.Processes[0]
-	if p.MCPID != "search" || p.Share != "repository" || p.Root == nil || p.Directory != *p.Root ||
+	if p.MCPID != "search" || p.Share != "repo" || p.Root == nil || p.Directory != *p.Root ||
 		p.PID == 0 || p.Sessions != 0 || len(p.LaunchIDs) != 0 || p.StopsAt == nil {
 		t.Fatalf("shared process = %+v", p)
 	}

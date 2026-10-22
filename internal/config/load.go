@@ -1082,7 +1082,7 @@ func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
 			)
 		}
 	default:
-		return fmt.Errorf("%s: MCP server %s: share must be none, directory, repository, or global", where, name)
+		return fmt.Errorf("%s: MCP server %s: share must be none, directory, repo, or global", where, name)
 	}
 	if server.Cwd != "" {
 		cwd, err := m.expand(server.Cwd)
