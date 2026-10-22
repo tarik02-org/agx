@@ -127,7 +127,7 @@ func (s *Server) WatchOperation(
 	req *connect.Request[v1.WatchOperationRequest],
 	stream *connect.ServerStream[v1.WatchOperationResponse],
 ) error {
-	if !equalBearer(req.Header().Get("Authorization"), s.discovery.Token) {
+	if !s.managed(req.Header()) {
 		return rpcError(connect.CodeUnauthenticated, "management credential required")
 	}
 	ticker := time.NewTicker(250 * time.Millisecond)

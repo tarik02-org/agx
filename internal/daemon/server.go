@@ -174,6 +174,8 @@ type Server struct {
 	port       int
 	// clients pools the daemon's own MCP client sessions for ListTools and CallTool.
 	clients *clientPool
+	// ui holds the web UI's login codes and sessions.
+	ui *uiSessions
 	// shared runs the stdio MCP servers launches share.
 	shared *mcpruntime.Shared
 }
@@ -270,6 +272,7 @@ func Serve(
 		store:             store,
 		port:              listener.Addr().(*net.TCPAddr).Port,
 		clients:           newClientPool(),
+		ui:                newUISessions(),
 		shared:            mcpruntime.NewShared(serverCtx, Version),
 	}
 	if port != 0 && port != s.port && len(restored) > 0 {
@@ -289,7 +292,7 @@ func Serve(
 			// Lifecycle procedures check the lifecycle token, and tool procedures accept a launch
 			// grant instead of the management token; they authorize themselves.
 			if !selfAuthorized[req.Spec().Procedure] {
-				if !equalBearer(req.Header().Get("Authorization"), discovery.Token) {
+				if !s.managed(req.Header()) {
 					return nil, rpcError(connect.CodeUnauthenticated, "management credential required")
 				}
 			}
@@ -310,6 +313,10 @@ func Serve(
 	mux.Handle(path, handler)
 	path, handler = agxv1connect.NewSecretServiceHandler(s, opts...)
 	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewUIServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	mux.HandleFunc("/ui/login", s.serveUILogin)
+	mux.Handle("/ui/", s.serveUI())
 	mux.HandleFunc("/launch/", s.serveMCP)
 	mux.HandleFunc("/oauth/callback", s.manager.Callback)
 	mux.HandleFunc("/stop", func(w http.ResponseWriter, r *http.Request) {
@@ -870,7 +877,7 @@ func (s *Server) WatchRuntime(
 	req *connect.Request[v1.WatchRuntimeRequest],
 	stream *connect.ServerStream[v1.WatchRuntimeResponse],
 ) error {
-	if !equalBearer(req.Header().Get("Authorization"), s.discovery.Token) {
+	if !s.managed(req.Header()) {
 		return rpcError(connect.CodeUnauthenticated, "management credential required")
 	}
 	ticker := time.NewTicker(250 * time.Millisecond)

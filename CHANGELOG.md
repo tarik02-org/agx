@@ -6,6 +6,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Added
 
+- `agx ui` opens a web UI the daemon serves on its own port, signed in with a one-time link
+  that the browser trades for a session cookie (`--print` prints the link). Its first page
+  shows launches and their MCP servers live. Release binaries and the Nix package embed it.
+
 - Harness definitions take `settings:` in the harness's own configuration schema. Codex gets
   one `-c` override per setting, encoded as TOML; Claude Code gets a per-launch file passed
   with `--settings`; Pi definitions reject them. Settings merge along the base chain with

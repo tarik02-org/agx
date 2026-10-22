@@ -2,4 +2,7 @@
 .audit/
 decisions.tsv
 result
-dist/
+/dist/
+/internal/ui/dist/*
+!/internal/ui/dist/.keep
+/web/node_modules/
