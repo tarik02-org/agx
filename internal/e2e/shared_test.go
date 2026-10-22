@@ -97,7 +97,7 @@ harnesses:
 		} `json:"processes"`
 	}
 	e.work = repository
-	e.jsonOK(&listed, "mcp", "ps", repository)
+	e.jsonOK(&listed, "mcp", "ps", "--cwd", repository)
 	if len(listed.Processes) != 1 {
 		t.Fatalf("processes = %+v", listed.Processes)
 	}
@@ -106,8 +106,18 @@ harnesses:
 		p.PID == 0 || p.Sessions != 0 || len(p.LaunchIDs) != 0 || p.StopsAt == nil {
 		t.Fatalf("shared process = %+v", p)
 	}
-	e.jsonOK(&listed, "mcp", "ps", filepath.Join(e.dir, "elsewhere"))
+	e.jsonOK(&listed, "mcp", "ps", "--under", e.dir)
+	if len(listed.Processes) != 1 {
+		t.Fatalf("processes under %s = %+v", e.dir, listed.Processes)
+	}
+	for _, filter := range []string{"--cwd", "--under"} {
+		e.jsonOK(&listed, "mcp", "ps", filter, filepath.Join(repository, "a"))
+		if len(listed.Processes) != 0 {
+			t.Fatalf("mcp ps %s in a subdirectory = %+v", filter, listed.Processes)
+		}
+	}
+	e.jsonOK(&listed, "mcp", "ps", "--cwd", e.dir)
 	if len(listed.Processes) != 0 {
-		t.Fatalf("processes outside the directory = %+v", listed.Processes)
+		t.Fatalf("mcp ps --cwd a parent = %+v", listed.Processes)
 	}
 }

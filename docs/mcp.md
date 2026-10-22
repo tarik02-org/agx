@@ -309,11 +309,12 @@ already serve many sessions.
 
 `agx mcp add` takes `--share`; `agx mcp list`, `agx resolve`, and `agx explain`
 show the share mode. `agx mcp ps` lists the local server processes running now,
-shared or not, with their sessions and launches, and when an idle one stops;
-`agx mcp ps <directory>` only those working in that directory or below it:
+shared or not, with their sessions and launches, and when an idle one stops.
+`--cwd <directory>` keeps those working in exactly that directory, `--under
+<directory>` those working in it or below it:
 
 ```console
-$ agx mcp ps ~/work
+$ agx mcp ps --under ~/work
 ID   PID    SHARE       SESSIONS  LAUNCHES  STATE                  DIRECTORY
 fff  41822  repository  3         2         in use                 ~/work/acme-web
 fff  40310  repository  0         0         idle, stops in 4m12s   ~/work/blog

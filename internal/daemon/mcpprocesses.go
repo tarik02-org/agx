@@ -18,9 +18,9 @@ func (s *Server) ListMcpProcesses(
 	_ context.Context,
 	req *connect.Request[v1.ListMcpProcessesRequest],
 ) (*connect.Response[v1.ListMcpProcessesResponse], error) {
-	directory := req.Msg.Directory
-	if directory != "" && !filepath.IsAbs(directory) {
-		return nil, rpcError(connect.CodeInvalidArgument, "directory must be absolute")
+	cwd, under := req.Msg.Cwd, req.Msg.Under
+	if cwd != "" && !filepath.IsAbs(cwd) || under != "" && !filepath.IsAbs(under) {
+		return nil, rpcError(connect.CodeInvalidArgument, "directories must be absolute")
 	}
 	type entry struct {
 		process  mcpruntime.Process
@@ -62,7 +62,8 @@ func (s *Server) ListMcpProcesses(
 	processes := []*v1.McpProcess{}
 	for _, e := range entries {
 		p := e.process
-		if directory != "" && !config.Contains(directory, p.Directory) {
+		if cwd != "" && filepath.Clean(cwd) != filepath.Clean(p.Directory) ||
+			under != "" && !config.Contains(under, p.Directory) {
 			continue
 		}
 		slices.Sort(e.launches)

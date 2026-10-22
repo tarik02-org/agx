@@ -32,7 +32,7 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   sampling and elicitation; the process stops five minutes after its last session, when a
   secret it uses changes, or when it crashes; `share: {type, idle}` sets how long it
   stays idle. `agx mcp add` takes `--share`; `mcp list`, `resolve`, and `explain` show it.
-- `agx mcp ps [<directory>]` and `RuntimeService.ListMcpProcesses` list the running local
+- `agx mcp ps [--cwd <dir>] [--under <dir>]` and `RuntimeService.ListMcpProcesses` list the running local
   MCP server processes, shared or not, with their share mode, root, sessions, launches,
   and when an idle shared one stops.
 - Harnesses get `AGX_LAUNCH_ID` next to `AGX_MCP_GRANT`; Codex app-server threads get

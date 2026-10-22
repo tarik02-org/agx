@@ -16,21 +16,29 @@ import (
 )
 
 func mcpProcessesCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+	cwd, under := "", ""
 	cmd := &cobra.Command{
-		Use:   "ps [<directory>]",
+		Use:   "ps",
 		Short: "List the running local MCP server processes",
 		Long: "Lists the stdio MCP server processes the daemon runs: shared ones, including idle ones " +
-			"that stay warm, and those of single sessions. With a directory, only processes working " +
-			"in it or below it.",
-		Example: "  agx mcp ps\n  agx mcp ps .\n  agx mcp ps ~/work --json",
-		Args:    cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			directory := ""
-			if len(args) > 0 {
-				var err error
-				if directory, err = config.Canonical(args[0]); err != nil {
+			"that stay warm, and those of single sessions. --cwd keeps processes working in exactly " +
+			"that directory, --under those working in it or below it.",
+		Example: "  agx mcp ps\n  agx mcp ps --cwd .\n  agx mcp ps --under ~/work --json",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			filter := &v1.ListMcpProcessesRequest{}
+			for _, f := range []struct {
+				value string
+				into  *string
+			}{{cwd, &filter.Cwd}, {under, &filter.Under}} {
+				if f.value == "" {
+					continue
+				}
+				directory, err := config.Canonical(f.value)
+				if err != nil {
 					return err
 				}
+				*f.into = directory
 			}
 			c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
 			if err != nil {
@@ -40,7 +48,7 @@ func mcpProcessesCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 			defer cancel()
 			response, err := c.runtime.ListMcpProcesses(
 				ctx,
-				request(&v1.ListMcpProcessesRequest{Directory: directory}, c.discovery.Token),
+				request(filter, c.discovery.Token),
 			)
 			if err != nil {
 				return err
@@ -51,6 +59,10 @@ func mcpProcessesCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 			return printMCPProcesses(response.Msg.Processes, time.Now())
 		},
 	}
+	cmd.Flags().StringVar(&cwd, "cwd", "", "only processes whose working directory is this directory")
+	cmd.Flags().StringVar(&under, "under", "", "only processes working in this directory or below it")
+	_ = cmd.MarkFlagDirname("cwd")
+	_ = cmd.MarkFlagDirname("under")
 	jsonFlag(cmd)
 	return cmd
 }

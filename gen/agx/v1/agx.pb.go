@@ -3264,8 +3264,10 @@ func (x *McpCallScope) GetEnvironmentInputs() map[string]string {
 
 type ListMcpProcessesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Only processes working in this absolute directory or below it; empty lists all.
-	Directory     string `protobuf:"bytes,1,opt,name=directory,proto3" json:"directory,omitempty"`
+	// Only processes whose working directory is this absolute directory; empty for any.
+	Cwd string `protobuf:"bytes,1,opt,name=cwd,proto3" json:"cwd,omitempty"`
+	// Only processes working in this absolute directory or below it; empty for any.
+	Under         string `protobuf:"bytes,2,opt,name=under,proto3" json:"under,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3300,9 +3302,16 @@ func (*ListMcpProcessesRequest) Descriptor() ([]byte, []int) {
 	return file_agx_v1_agx_proto_rawDescGZIP(), []int{45}
 }
 
-func (x *ListMcpProcessesRequest) GetDirectory() string {
+func (x *ListMcpProcessesRequest) GetCwd() string {
 	if x != nil {
-		return x.Directory
+		return x.Cwd
+	}
+	return ""
+}
+
+func (x *ListMcpProcessesRequest) GetUnder() string {
+	if x != nil {
+		return x.Under
 	}
 	return ""
 }
@@ -4786,9 +4795,10 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x12environment_inputs\x18\x04 \x03(\v2+.agx.v1.McpCallScope.EnvironmentInputsEntryR\x11environmentInputs\x1aD\n" +
 	"\x16EnvironmentInputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"7\n" +
-	"\x17ListMcpProcessesRequest\x12\x1c\n" +
-	"\tdirectory\x18\x01 \x01(\tR\tdirectory\"L\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"A\n" +
+	"\x17ListMcpProcessesRequest\x12\x10\n" +
+	"\x03cwd\x18\x01 \x01(\tR\x03cwd\x12\x14\n" +
+	"\x05under\x18\x02 \x01(\tR\x05under\"L\n" +
 	"\x18ListMcpProcessesResponse\x120\n" +
 	"\tprocesses\x18\x01 \x03(\v2\x12.agx.v1.McpProcessR\tprocesses\"\xaa\x02\n" +
 	"\n" +

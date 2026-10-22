@@ -195,12 +195,12 @@ About a week:
 
 Each launch's endpoint state still shows whether a server is ready, as for
 unshared servers. Which processes run is a separate question, answered by
-`RuntimeService.ListMcpProcesses` and `agx mcp ps [<directory>]`: every stdio
+`RuntimeService.ListMcpProcesses` and `agx mcp ps`: every stdio
 server process the daemon runs, shared ones including idle ones still warm,
 with its server, process ID, working directory, share mode and root, the
 launches whose sessions use it, its session count, start time, and, when idle,
-when it stops. A directory limits the list to processes working in it or below
-it. The list needs the management token, like the runtime view.
+when it stops. Filters keep processes working in exactly one directory
+(`--cwd`), or in a directory or below it (`--under`). The list needs the management token, like the runtime view.
 
 ## Open questions
 

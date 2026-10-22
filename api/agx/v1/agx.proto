@@ -404,8 +404,10 @@ message McpCallScope {
 }
 
 message ListMcpProcessesRequest {
-  // Only processes working in this absolute directory or below it; empty lists all.
-  string directory = 1;
+  // Only processes whose working directory is this absolute directory; empty for any.
+  string cwd = 1;
+  // Only processes working in this absolute directory or below it; empty for any.
+  string under = 2;
 }
 message ListMcpProcessesResponse {
   // Ordered by directory, then server, then process ID.
