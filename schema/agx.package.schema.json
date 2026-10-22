@@ -372,6 +372,9 @@
                 "on_demand"
               ],
               "description": "native: in the harness's tool list (default); on_demand: reached with agx mcp call."
+            },
+            "share": {
+              "$ref": "#/$defs/MCPShare"
             }
           },
           "additionalProperties": false,
@@ -488,6 +491,9 @@
           ],
           "description": "native: in the harness's tool list (default); on_demand: reached with agx mcp call."
         },
+        "share": {
+          "$ref": "#/$defs/MCPShare"
+        },
         "override": {
           "type": "boolean",
           "description": "Replace an existing definition."
@@ -495,6 +501,40 @@
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "MCPShare": {
+      "oneOf": [
+        {
+          "enum": [
+            "none",
+            "directory",
+            "repo",
+            "global"
+          ]
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "none",
+                "directory",
+                "repo",
+                "global"
+              ]
+            },
+            "idle": {
+              "type": "string",
+              "description": "How long the process stays after its last session, such as 30m; default 5m."
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "type"
+          ]
+        }
+      ],
+      "description": "stdio: none gives each harness session its own process (default); directory, repo, or global share one process per launch directory, repository root, or everywhere. {type, idle} also sets how long it stays after its last session."
     },
     "Package": {
       "allOf": [

@@ -48,6 +48,7 @@ func mcpCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command
 		mcpToolsCommand(paths, builtins),
 		mcpCallCommand(paths, builtins),
 		mcpTypesCommand(paths, builtins),
+		mcpProcessesCommand(paths, builtins),
 	)
 	return command
 }
@@ -113,7 +114,7 @@ func loginSecret(c *config.Config, id string) (string, error) {
 func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
 	var flags editFlags
 	var headers, env []string
-	authValue, clientID, description, load := "", "", "", ""
+	authValue, clientID, description, load, share := "", "", "", "", ""
 	noBrowser := false
 	cmd := &cobra.Command{
 		Use:         "add <id> <url | -- command...>",
@@ -172,6 +173,11 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			default:
 				return &usageError{fmt.Errorf("--load must be native or on_demand")}
 			}
+			switch share {
+			case "", config.ShareNone, config.ShareDirectory, config.ShareRepository, config.ShareGlobal:
+			default:
+				return &usageError{fmt.Errorf("--share must be none, directory, repo, or global")}
+			}
 			if command != nil {
 				items := []any{}
 				for _, arg := range command {
@@ -194,6 +200,9 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 				edit.Set(definition, "url", edit.Scalar(target))
 				if len(env) > 0 {
 					return &usageError{fmt.Errorf("--env applies to stdio servers; use --header for HTTP")}
+				}
+				if share != "" && share != config.ShareNone {
+					return &usageError{fmt.Errorf("--share applies to stdio servers")}
 				}
 				if len(headers) > 0 {
 					values, err := pairs("header", headers)
@@ -222,6 +231,9 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			}
 			if load != "" {
 				edit.Set(definition, "load", edit.Scalar(load))
+			}
+			if share != "" {
+				edit.Set(definition, "share", edit.Scalar(share))
 			}
 			file, err := s.definitionFile(flags.file)
 			if err != nil {
@@ -261,6 +273,8 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 	cmd.Flags().StringVar(&description, "description", "", "what the server offers, shown by agx mcp tools")
 	cmd.Flags().StringVar(&load, "load", "",
 		"native (in the harness's tool list) or on_demand (reached with agx mcp call); default native")
+	cmd.Flags().StringVar(&share, "share", "",
+		"stdio: none (a process per session), or one process per directory, repo, or global; default none")
 	return cmd
 }
 
@@ -427,8 +441,14 @@ func mcpRows(c *config.Config) ([]string, [][]string, any) {
 			authText = "!secret " + string(server.Auth.Secret)
 			auth = &mcpAuthJSON{Kind: secret.Kind, SecretID: jsonString(string(server.Auth.Secret))}
 		}
+		// Like auth for stdio, share does not apply to HTTP servers.
+		shareText := server.ShareMode()
+		if server.Transport == "http" {
+			shareText = ""
+		}
 		rows = append(rows, []string{
-			out.ID(string(id)), server.Transport, target, authText, server.Load, out.Path(location(c, server.Source)),
+			out.ID(string(id)), server.Transport, target, authText, server.Load, shareText,
+			out.Path(location(c, server.Source)),
 		})
 		items = append(items, mcpServerJSON{
 			ID:          string(id),
@@ -437,12 +457,13 @@ func mcpRows(c *config.Config) ([]string, [][]string, any) {
 			Command:     server.Command,
 			Auth:        auth,
 			Load:        server.Load,
+			Share:       server.ShareMode(),
 			Description: jsonString(server.Description),
 			Inline:      server.Inline,
 			Source:      configSource(server.Source),
 		})
 	}
-	return []string{"ID", "TRANSPORT", "TARGET", "AUTH", "LOAD", "SOURCE"}, rows, mcpListJSON{MCP: items}
+	return []string{"ID", "TRANSPORT", "TARGET", "AUTH", "LOAD", "SHARE", "SOURCE"}, rows, mcpListJSON{MCP: items}
 }
 
 func location(c *config.Config, source config.Source) string {

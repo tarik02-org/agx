@@ -295,6 +295,30 @@ func mcpSchema(s *jsonschema.Schema) {
 
 // JSONSchema accepts a string for the kind shorthand, none, and !secret ID, which YAML editors
 // validate as its string argument, or an inline secret mapping.
+func (MCPShare) JSONSchema() *jsonschema.Schema {
+	modes := []any{ShareNone, ShareDirectory, ShareRepository, ShareGlobal}
+	properties := jsonschema.NewProperties()
+	properties.Set("type", &jsonschema.Schema{Enum: modes})
+	properties.Set("idle", &jsonschema.Schema{
+		Type:        "string",
+		Description: "How long the process stays after its last session, such as 30m; default 5m.",
+	})
+	return &jsonschema.Schema{
+		Description: "stdio: none gives each harness session its own process (default); directory, " +
+			"repo, or global share one process per launch directory, repository root, or " +
+			"everywhere. {type, idle} also sets how long it stays after its last session.",
+		OneOf: []*jsonschema.Schema{
+			{Enum: modes},
+			{
+				Type:                 "object",
+				Properties:           properties,
+				Required:             []string{"type"},
+				AdditionalProperties: jsonschema.FalseSchema,
+			},
+		},
+	}
+}
+
 func (MCPAuth) JSONSchema() *jsonschema.Schema {
 	inline := &jsonschema.Schema{Ref: "#/$defs/Secret", Not: requires("override")}
 	return &jsonschema.Schema{

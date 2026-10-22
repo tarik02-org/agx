@@ -51,6 +51,7 @@ func (s *Server) secret(id string) (config.Secret, error) {
 // resetUsers ends the sessions of active MCP servers using a secret, so they reconnect with
 // the current credential.
 func (s *Server) resetUsers(id config.ID) {
+	s.shared.Reset(id)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, l := range s.launches {

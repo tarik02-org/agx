@@ -268,11 +268,18 @@ func (s *Server) endpoints(
 		if r.Kind != "mcp" {
 			continue
 		}
-		definition := snapshot.Config.MCP[r.ID]
-		if definition.Cwd == "" {
-			definition.Cwd = snapshot.Directory
+		definition, root := mcpDefinition(snapshot.Config.MCP[r.ID], snapshot.Directory)
+		// Each server gets only the inputs it reads, so launches that differ in others still
+		// share its process.
+		own := map[string]string{}
+		for _, name := range scopeSnapshot(snapshot.Config, []config.ID{r.ID}).MCPEnvironment() {
+			if value, ok := inputs[name]; ok {
+				own[name] = value
+			}
 		}
-		endpoints[r.ID] = mcpruntime.New(ctx, r.ID, definition, snapshot.Config.Secrets, inputs, s.manager)
+		endpoints[r.ID] = mcpruntime.New(
+			ctx, r.ID, definition, snapshot.Config.Secrets, own, s.manager, s.shared, root,
+		)
 		if definition.Load == config.LoadOnDemand {
 			continue
 		}
@@ -285,6 +292,45 @@ func (s *Server) endpoints(
 		)
 	}
 	return endpoints, native
+}
+
+// mcpDefinition prepares an MCP server's definition for a launch in directory: its working
+// directory, and the root a shared server keys on, empty unless it shares per directory or
+// repository. A global server runs in the home directory, since no launch's directory is its.
+func mcpDefinition(definition config.MCPServer, directory string) (config.MCPServer, string) {
+	root := ""
+	switch definition.Share.Type {
+	case config.ShareDirectory:
+		root = directory
+	case config.ShareRepository:
+		root = repositoryRoot(directory)
+	}
+	if definition.Cwd == "" {
+		switch {
+		case root != "":
+			definition.Cwd = root
+		case definition.Share.Type == config.ShareGlobal:
+			definition.Cwd, _ = os.UserHomeDir()
+		default:
+			definition.Cwd = directory
+		}
+	}
+	return definition, root
+}
+
+// repositoryRoot is the closest directory at or above directory holding .git, so each
+// worktree is a root of its own; outside a repository, directory itself.
+func repositoryRoot(directory string) string {
+	for dir := directory; ; {
+		if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return directory
+		}
+		dir = parent
+	}
 }
 
 func (s *Server) lifecycleLaunch(id, header string) (*launch, error) {

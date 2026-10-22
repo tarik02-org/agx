@@ -190,10 +190,7 @@ func (s *Server) client(ctx context.Context, scope *callScope, id config.ID) (*p
 				return session, endpoint, closer, err
 			})
 	}
-	definition := scope.servers[id]
-	if definition.Cwd == "" {
-		definition.Cwd = scope.directory
-	}
+	definition, root := mcpDefinition(scope.servers[id], scope.directory)
 	inputs := map[string]string{}
 	for _, name := range scopeSnapshot(scope.config, []config.ID{id}).MCPEnvironment() {
 		if value, ok := scope.inputs[name]; ok {
@@ -206,7 +203,7 @@ func (s *Server) client(ctx context.Context, scope *callScope, id config.ID) (*p
 	secrets := scope.config.Secrets
 	return s.clients.acquire(ctx, s.ctx, key, "",
 		func(ctx context.Context) (*mcp.ClientSession, *mcpruntime.Endpoint, func(), error) {
-			endpoint := mcpruntime.New(s.ctx, id, definition, secrets, inputs, s.manager)
+			endpoint := mcpruntime.New(s.ctx, id, definition, secrets, inputs, s.manager, s.shared, root)
 			session, closer, err := connectHandler(ctx, endpoint)
 			if err != nil {
 				err = mcpFailure(ctx, id, definition, endpoint, err)

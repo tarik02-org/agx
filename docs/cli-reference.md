@@ -93,7 +93,7 @@ Command-specific flags:
 
 | Command | Flags |
 | --- | --- |
-| `mcp add` | `--header KEY=VALUE` (remote), `--env KEY=VALUE` (local), `--auth none\|oauth\|keychain\|'!secret <id>'`, `--client-id <id>` (OAuth public client), `--description <text>`, `--load native\|on_demand`, `--no-browser` |
+| `mcp add` | `--header KEY=VALUE` (remote), `--env KEY=VALUE` (local), `--auth none\|oauth\|keychain\|'!secret <id>'`, `--client-id <id>` (OAuth public client), `--description <text>`, `--load native\|on_demand`, `--share none\|directory\|repository\|global` (local), `--no-browser` |
 | `skill add` | `--skill <name>` (repeatable), `--all`, `--ref <ref>`, `--path <dir>`, `--package <id>` |
 | `instructions add` | `--id <id>`, `--text <text>` |
 | `harness add` | `--base <harness>`, `--executable <path>`, `--env KEY=VALUE` (repeatable) |
@@ -127,6 +127,7 @@ See [The daemon](daemon.md) and [Secrets](secrets.md).
 | `agx mcp tools [<server>] [--schema] [--all] [--json]` | list the servers you can call with their state, load mode, description, and tools; with a server, its tool signatures |
 | `agx mcp call <server>.<tool> [key=value ...]` | call a tool and print its result |
 | `agx mcp types [<server> ...] [--out <dir>] [--all] [--json]` | print TypeScript declarations for the tools; with `--out`, write them with an ES module client |
+| `agx mcp ps [--cwd <dir>] [--under <dir>] [--json]` | list the running local MCP server processes, shared or not; `--cwd` keeps those working in exactly that directory, `--under` those in it or below it |
 
 `mcp call` flags:
 

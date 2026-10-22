@@ -129,6 +129,19 @@ func (p *clientPool) closeLaunch(id string) {
 	}
 }
 
+// ownedEndpoints lists the endpoints of open sessions outside launches, which the pool owns.
+func (p *clientPool) ownedEndpoints() []*mcpruntime.Endpoint {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	endpoints := []*mcpruntime.Endpoint{}
+	for _, c := range p.clients {
+		if c.launchID == "" && c.endpoint != nil {
+			endpoints = append(endpoints, c.endpoint)
+		}
+	}
+	return endpoints
+}
+
 // closeAll closes every session, waiting until they closed, and opens none from then on.
 func (p *clientPool) closeAll() {
 	p.mu.Lock()

@@ -25,6 +25,16 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   of every harness's tool list and are reached with `agx mcp call`; `mcp list`, `resolve`,
   `explain`, and `mcp tools` show the load mode, and `agx mcp add` takes `--description`
   and `--load`.
+- Local MCP servers take `share: none | directory | repo | global`: harness sessions
+  and `agx mcp call` sessions join one process per launch directory, per repository root,
+  or for every launch, instead of starting a process each. The daemon multiplexes the
+  sessions onto the server, answers its `roots/list` with the shared root, and refuses
+  sampling and elicitation; the process stops five minutes after its last session, when a
+  secret it uses changes, or when it crashes; `share: {type, idle}` sets how long it
+  stays idle. `agx mcp add` takes `--share`; `mcp list`, `resolve`, and `explain` show it.
+- `agx mcp ps [--cwd <dir>] [--under <dir>]` and `RuntimeService.ListMcpProcesses` list the running local
+  MCP server processes, shared or not, with their share mode, root, sessions, launches,
+  and when an idle shared one stops.
 - Harnesses get `AGX_LAUNCH_ID` next to `AGX_MCP_GRANT`; Codex app-server threads get
   their own in their shell environment.
 - `RuntimeService.ListTools` and `CallTool`, and the JSON error code `mcp_failed`

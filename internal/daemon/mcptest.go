@@ -44,12 +44,11 @@ func (s *Server) TestMcpServer(
 		}
 		inputs[name] = value
 	}
-	if definition.Cwd == "" {
-		definition.Cwd = req.Msg.Directory
-	}
+	// A test starts a process of its own, whatever the server shares.
+	definition, _ = mcpDefinition(definition, req.Msg.Directory)
 	ctx, cancel := context.WithTimeout(ctx, mcpTestTimeout)
 	defer cancel()
-	endpoint := mcpruntime.New(s.ctx, id, definition, c.Secrets, inputs, s.manager)
+	endpoint := mcpruntime.New(s.ctx, id, definition, c.Secrets, inputs, s.manager, nil, "")
 	defer endpoint.Close()
 	session, closeSession, err := connectHandler(ctx, endpoint)
 	if err != nil {

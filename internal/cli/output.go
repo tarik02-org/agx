@@ -152,7 +152,7 @@ func printResolve(snapshot *config.Snapshot) error {
 		}
 		rows := [][]string{}
 		for _, r := range snapshot.Resources {
-			rows = append(rows, []string{r.Kind, out.ID(string(r.ID)) + onDemandMark(out, snapshot.Config, r)})
+			rows = append(rows, []string{r.Kind, out.ID(string(r.ID)) + mcpMark(out, snapshot.Config, r)})
 		}
 		b.WriteString(out.Table([]string{"KIND", "ID"}, rows))
 	}
@@ -190,7 +190,7 @@ func printExplain(snapshot *config.Snapshot) error {
 		if out.Styled() {
 			root = fmt.Sprintf("%s %s  %s", t.Resource.Kind, out.ID(string(t.Resource.ID)), out.Badge(level, state))
 		}
-		root += onDemandMark(out, snapshot.Config, t.Resource)
+		root += mcpMark(out, snapshot.Config, t.Resource)
 		if t.Order != 0 {
 			root += " " + out.Muted("order ") + strconv.Itoa(t.Order)
 		}
@@ -225,12 +225,23 @@ func printExplain(snapshot *config.Snapshot) error {
 	return err
 }
 
-// onDemandMark notes an on-demand MCP server after its ID.
-func onDemandMark(out *ui.Printer, c *config.Config, r config.Resource) string {
-	if r.Kind != "mcp" || c.MCP[r.ID].Load != config.LoadOnDemand {
+// mcpMark notes after its ID that an MCP server is on demand or shared, and how.
+func mcpMark(out *ui.Printer, c *config.Config, r config.Resource) string {
+	if r.Kind != "mcp" {
 		return ""
 	}
-	return " " + out.Muted("(on demand)")
+	notes := []string{}
+	server := c.MCP[r.ID]
+	if server.Load == config.LoadOnDemand {
+		notes = append(notes, "on demand")
+	}
+	if server.Share.Type != "" {
+		notes = append(notes, "share: "+server.Share.Type)
+	}
+	if len(notes) == 0 {
+		return ""
+	}
+	return " " + out.Muted("("+strings.Join(notes, ", ")+")")
 }
 
 // printExplainCompact puts each resource on one line with the steps that decided it, shortening
@@ -271,7 +282,7 @@ func printExplainCompact(snapshot *config.Snapshot) error {
 			pad(string(t.Resource.ID), idWidth),
 		)
 		steps := []string{}
-		if mark := onDemandMark(out, snapshot.Config, t.Resource); mark != "" {
+		if mark := mcpMark(out, snapshot.Config, t.Resource); mark != "" {
 			steps = append(steps, strings.TrimSpace(mark))
 		}
 		if t.Order != 0 {

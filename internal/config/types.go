@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/tarik02-org/agx/internal/platform"
 )
@@ -122,6 +123,7 @@ type MCPServer struct {
 	Auth        MCPAuth          `yaml:"auth"        json:"auth"`
 	Description string           `yaml:"description" json:"description,omitempty"                                         jsonschema_description:"What the server offers, shown by agx mcp tools."`
 	Load        string           `yaml:"load"        json:"load"                  jsonschema:"enum=native,enum=on_demand" jsonschema_description:"native: in the harness's tool list (default); on_demand: reached with agx mcp call."`
+	Share       MCPShare         `yaml:"share"       json:"share,omitzero"`
 	Override    bool             `yaml:"override"    json:"-"                                                             jsonschema_description:"Replace an existing definition."`
 	Inline      bool             `yaml:"-"           json:"-"`
 	Source      Source           `yaml:"-"           json:"source"`
@@ -133,6 +135,33 @@ const (
 	LoadNative   = "native"
 	LoadOnDemand = "on_demand"
 )
+
+// Share modes of a stdio MCP server: whether harness sessions get a process each, or join one
+// process per launch directory, per repository root, or for everything. Merging leaves none
+// empty, so snapshots of configurations that do not share keep their identity.
+const (
+	ShareNone       = "none"
+	ShareDirectory  = "directory"
+	ShareRepository = "repo"
+	ShareGlobal     = "global"
+)
+
+// MCPShare is whether a stdio MCP server's sessions share one process: a share mode, or
+// {type, idle} to also say how long the process outlives its last session.
+type MCPShare struct {
+	// Type is a share mode other than none; empty once merged for none.
+	Type string `json:"type,omitempty"`
+	// Idle is how long a shared process stays after its last session; nil for the default.
+	Idle *time.Duration `json:"idle,omitempty"`
+}
+
+// ShareMode is the server's share mode, none when it does not share.
+func (c MCPServer) ShareMode() string {
+	if c.Share.Type == "" {
+		return ShareNone
+	}
+	return c.Share.Type
+}
 
 // MCPAuth is the credential an HTTP MCP server sends as its bearer token: a top-level secret
 // referenced with !secret, an inline secret owned by the entry, or none. Merging stores an

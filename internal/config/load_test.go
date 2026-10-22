@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/securefs"
@@ -583,5 +584,36 @@ func TestMCPLoad(t *testing.T) {
 	if _, err := config.Read(bad, builtins); err == nil ||
 		!strings.Contains(err.Error(), "load must be native or on_demand") {
 		t.Fatalf("invalid load: %v", err)
+	}
+}
+
+func TestMCPShare(t *testing.T) {
+	root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), `mcp:
+  plain: {command: [plain]}
+  search: {command: [search], share: repo}
+  index: {command: [index], share: {type: directory, idle: 30m}}
+`)
+	c := read(t, root)
+	if got := c.MCP["plain"].ShareMode(); got != config.ShareNone {
+		t.Fatalf("default share = %q", got)
+	}
+	if got := c.MCP["search"].Share.Type; got != config.ShareRepository {
+		t.Fatalf("share = %q", got)
+	}
+	if index := c.MCP["index"].Share; index.Type != config.ShareDirectory || index.Idle == nil ||
+		*index.Idle != 30*time.Minute {
+		t.Fatalf("index share = %+v", index)
+	}
+	for content, want := range map[string]string{
+		"mcp:\n  x: {command: [x], share: {type: global, idle: soon}}\n": "share idle must be a duration",
+		"mcp:\n  x: {command: [x], share: {idle: 1m}}\n":                 "share needs a type",
+		"mcp:\n  x: {command: [x], share: {type: none, idle: 1m}}\n":     "share idle needs a share type other than none",
+		"mcp:\n  x: {command: [x], share: project}\n":                    "share must be none, directory, repo, or global",
+		"mcp:\n  x: {url: https://x.example/mcp, share: global}\n":       "share applies to stdio servers",
+	} {
+		bad := write(t, filepath.Join(t.TempDir(), "agx.yaml"), content)
+		if _, err := config.Read(bad, builtins); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("%q: %v", content, err)
+		}
 	}
 }

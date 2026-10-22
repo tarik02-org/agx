@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/tarik02-org/agx/internal/yaml"
 )
@@ -60,6 +61,40 @@ func (v *Value) UnmarshalYAML(node *yaml.Node) error {
 		v.Literal = node.Value
 	}
 	return nil
+}
+
+func (s *MCPShare) UnmarshalYAML(node *yaml.Node) error {
+	*s = MCPShare{}
+	switch node.Kind {
+	case yaml.ScalarNode:
+		if node.ShortTag() != "!!str" {
+			return errors.New("share must be a share mode or {type, idle}")
+		}
+		s.Type = node.Value
+		return nil
+	case yaml.MappingNode:
+		var fields struct {
+			Type string `yaml:"type"`
+			Idle string `yaml:"idle"`
+		}
+		if err := node.Load(&fields, yaml.WithKnownFields()); err != nil {
+			return err
+		}
+		if fields.Type == "" {
+			return errors.New("share needs a type")
+		}
+		s.Type = fields.Type
+		if fields.Idle != "" {
+			idle, err := time.ParseDuration(fields.Idle)
+			if err != nil || idle < 0 {
+				return fmt.Errorf("share idle must be a duration such as 30m, not %q", fields.Idle)
+			}
+			s.Idle = &idle
+		}
+		return nil
+	default:
+		return errors.New("share must be a share mode or {type, idle}")
+	}
 }
 
 func (a *MCPAuth) UnmarshalYAML(node *yaml.Node) error {
