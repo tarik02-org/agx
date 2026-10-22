@@ -1,6 +1,6 @@
 # Serve a web UI from the daemon
 
-Status: proposed.
+Status: accepted.
 
 agx is driven from the command line, plus the TUI launcher. That suits scripts
 and quick edits, but some questions are hard to answer from a terminal:
@@ -175,6 +175,9 @@ Each feature is a page, listed in the order they ship.
        edit, and the plan is made again.
    - Each definition's form shows the file and line it comes from, and new
      definitions go to the file the CLI would pick, or one you choose.
+   - A definition whose fields no form models yet, such as an unusual MCP
+     `auth` or harness `settings`, opens in a YAML editor for that one
+     definition (CodeMirror with the agx JSON Schema), staged like a form.
    - Local skill files are edited in CodeMirror with Markdown support, staged
      like the rest.
    - A file is read-only when it is a symlink or not writable, which covers
@@ -244,9 +247,3 @@ About three weeks, shippable after each step:
    shared package: 4 days.
 6. Configuration editor with plan and apply: 3 days.
 7. Scope graph, if wanted: 2 days.
-
-## Open questions
-
-- Whether a form for a kind the editor does not model yet (an unusual MCP auth,
-  harness `settings`) should fall back to a YAML snippet editor for that one
-  definition, staged like a form.
