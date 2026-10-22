@@ -47,6 +47,9 @@ service RuntimeService {
   // Lists the running stdio MCP server processes: shared ones, including idle ones still
   // warm, and those of single sessions.
   rpc ListMcpProcesses(ListMcpProcessesRequest) returns (ListMcpProcessesResponse);
+  // Stops one stdio MCP server process. Its sessions end, so harnesses reconnect and the next
+  // session starts it again; a shared process stops for every launch using it.
+  rpc StopMcpProcess(StopMcpProcessRequest) returns (StopMcpProcessResponse);
 }
 
 // The web UI's sign-in: agx ui exchanges the management credential for a one-time code, which
@@ -437,6 +440,10 @@ message McpProcess {
   // When an idle shared process stops; unset while sessions use it.
   google.protobuf.Timestamp stops_at = 9;
 }
+message StopMcpProcessRequest {
+  int64 pid = 1;
+}
+message StopMcpProcessResponse {}
 message ListToolsRequest {
   McpCallScope scope = 1;
   // One server, whose failure fails the request; empty lists every server in scope, each with

@@ -1,9 +1,15 @@
 # Web UI
 
 The daemon serves a web UI for what is easier to see than to read in a
-terminal. It starts with the runtime: running launches and the MCP servers in
-them, updated live. Explain, the MCP inspector, skills, and the configuration
-editor follow ([ADR 0026](adr/0026-web-ui.md)).
+terminal. It starts with the runtime page:
+
+- launches, updated live, and revoking one;
+- the local MCP server processes `agx mcp ps` lists, and restarting one;
+- secrets with their state, and OAuth login and logout;
+- installing the configuration's packages, with progress.
+
+Explain, the MCP inspector, skills, and the configuration editor follow
+([ADR 0026](adr/0026-web-ui.md)).
 
 ```sh
 agx ui            # opens the UI in your browser, signed in

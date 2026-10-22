@@ -22,6 +22,7 @@ import {
   SidebarMenuItem,
   SidebarProvider,
 } from "~/components/ui/sidebar.tsx";
+import { Toaster } from "~/components/ui/toast.tsx";
 import { TooltipProvider } from "~/components/ui/tooltip.tsx";
 
 interface Section {
@@ -41,42 +42,44 @@ const sections: ReadonlyArray<Section> = [
 
 export function AppShell({ children }: { readonly children: ReactNode }) {
   return (
-    <TooltipProvider>
-      <SidebarProvider>
-        <Sidebar collapsible="icon">
-          <SidebarHeader>
-            <span className="px-2 font-mono font-semibold">agx</span>
-          </SidebarHeader>
-          <SidebarContent>
-            <SidebarGroup>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {sections.map((section) => (
-                    <SidebarMenuItem key={section.label}>
-                      {section.to === null ? (
-                        <SidebarMenuButton disabled tooltip={section.label}>
-                          <section.icon />
-                          <span>{section.label}</span>
-                        </SidebarMenuButton>
-                      ) : (
-                        <SidebarMenuButton
-                          tooltip={section.label}
-                          render={<Link to={section.to} activeProps={{ "data-active": true }} />}
-                        >
-                          <section.icon />
-                          <span>{section.label}</span>
-                        </SidebarMenuButton>
-                      )}
-                      {section.to === null && <SidebarMenuBadge>soon</SidebarMenuBadge>}
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          </SidebarContent>
-        </Sidebar>
-        <SidebarInset>{children}</SidebarInset>
-      </SidebarProvider>
-    </TooltipProvider>
+    <Toaster>
+      <TooltipProvider>
+        <SidebarProvider>
+          <Sidebar collapsible="icon">
+            <SidebarHeader>
+              <span className="px-2 font-mono font-semibold">agx</span>
+            </SidebarHeader>
+            <SidebarContent>
+              <SidebarGroup>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {sections.map((section) => (
+                      <SidebarMenuItem key={section.label}>
+                        {section.to === null ? (
+                          <SidebarMenuButton disabled tooltip={section.label}>
+                            <section.icon />
+                            <span>{section.label}</span>
+                          </SidebarMenuButton>
+                        ) : (
+                          <SidebarMenuButton
+                            tooltip={section.label}
+                            render={<Link to={section.to} activeProps={{ "data-active": true }} />}
+                          >
+                            <section.icon />
+                            <span>{section.label}</span>
+                          </SidebarMenuButton>
+                        )}
+                        {section.to === null && <SidebarMenuBadge>soon</SidebarMenuBadge>}
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            </SidebarContent>
+          </Sidebar>
+          <SidebarInset>{children}</SidebarInset>
+        </SidebarProvider>
+      </TooltipProvider>
+    </Toaster>
   );
 }

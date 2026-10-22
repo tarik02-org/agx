@@ -136,3 +136,38 @@ func mcpProcessesDocument(processes []*v1.McpProcess) mcpProcessesJSON {
 	}
 	return mcpProcessesJSON{Processes: items}
 }
+
+func mcpStopCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "stop <pid>",
+		Short: "Stop a running local MCP server process",
+		Long: "Stops a process agx mcp ps lists. Its sessions end, so harnesses reconnect and the next " +
+			"session starts it again; a shared process stops for every launch using it.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pid, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return &usageError{fmt.Errorf("pid must be a number, not %q", args[0])}
+			}
+			c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
+			if err != nil {
+				return err
+			}
+			ctx, cancel := context.WithTimeout(cmd.Context(), callTimeout)
+			defer cancel()
+			if _, err := c.runtime.StopMcpProcess(
+				ctx,
+				request(&v1.StopMcpProcessRequest{Pid: pid}, c.discovery.Token),
+			); err != nil {
+				return err
+			}
+			if scripting.enabled {
+				return printJSON(map[string]any{"pid": pid, "stopped": true})
+			}
+			_, err = fmt.Fprintf(ui.Stdout, "Stopped MCP server process %d.\n", pid)
+			return err
+		},
+	}
+	jsonFlag(cmd)
+	return cmd
+}

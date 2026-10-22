@@ -7,8 +7,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ### Added
 
 - `agx ui` opens a web UI the daemon serves on its own port, signed in with a one-time link
-  that the browser trades for a session cookie (`--print` prints the link). Its first page
-  shows launches and their MCP servers live. Release binaries and the Nix package embed it.
+  that the browser trades for a session cookie (`--print` prints the link). Its runtime page
+  shows launches live, MCP server processes, secrets, and package installation, with
+  revoke, restart, OAuth login and logout, and install actions. Release binaries and the
+  Nix package embed it.
+- `agx mcp stop <pid>` and `RuntimeService.StopMcpProcess` stop a local MCP server process;
+  its sessions reconnect and the next one starts it again.
 
 - Harness definitions take `settings:` in the harness's own configuration schema. Codex gets
   one `-c` override per setting, encoded as TOML; Claude Code gets a per-launch file passed

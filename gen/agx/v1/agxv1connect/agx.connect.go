@@ -94,6 +94,9 @@ const (
 	// RuntimeServiceListMcpProcessesProcedure is the fully-qualified name of the RuntimeService's
 	// ListMcpProcesses RPC.
 	RuntimeServiceListMcpProcessesProcedure = "/agx.v1.RuntimeService/ListMcpProcesses"
+	// RuntimeServiceStopMcpProcessProcedure is the fully-qualified name of the RuntimeService's
+	// StopMcpProcess RPC.
+	RuntimeServiceStopMcpProcessProcedure = "/agx.v1.RuntimeService/StopMcpProcess"
 	// UIServiceCreateLoginCodeProcedure is the fully-qualified name of the UIService's CreateLoginCode
 	// RPC.
 	UIServiceCreateLoginCodeProcedure = "/agx.v1.UIService/CreateLoginCode"
@@ -577,6 +580,9 @@ type RuntimeServiceClient interface {
 	// Lists the running stdio MCP server processes: shared ones, including idle ones still
 	// warm, and those of single sessions.
 	ListMcpProcesses(context.Context, *connect.Request[v1.ListMcpProcessesRequest]) (*connect.Response[v1.ListMcpProcessesResponse], error)
+	// Stops one stdio MCP server process. Its sessions end, so harnesses reconnect and the next
+	// session starts it again; a shared process stops for every launch using it.
+	StopMcpProcess(context.Context, *connect.Request[v1.StopMcpProcessRequest]) (*connect.Response[v1.StopMcpProcessResponse], error)
 }
 
 // NewRuntimeServiceClient constructs a client for the agx.v1.RuntimeService service. By default, it
@@ -626,6 +632,12 @@ func NewRuntimeServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(runtimeServiceMethods.ByName("ListMcpProcesses")),
 			connect.WithClientOptions(opts...),
 		),
+		stopMcpProcess: connect.NewClient[v1.StopMcpProcessRequest, v1.StopMcpProcessResponse](
+			httpClient,
+			baseURL+RuntimeServiceStopMcpProcessProcedure,
+			connect.WithSchema(runtimeServiceMethods.ByName("StopMcpProcess")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -637,6 +649,7 @@ type runtimeServiceClient struct {
 	listTools        *connect.Client[v1.ListToolsRequest, v1.ListToolsResponse]
 	callTool         *connect.Client[v1.CallToolRequest, v1.CallToolResponse]
 	listMcpProcesses *connect.Client[v1.ListMcpProcessesRequest, v1.ListMcpProcessesResponse]
+	stopMcpProcess   *connect.Client[v1.StopMcpProcessRequest, v1.StopMcpProcessResponse]
 }
 
 // GetRuntime calls agx.v1.RuntimeService.GetRuntime.
@@ -669,6 +682,11 @@ func (c *runtimeServiceClient) ListMcpProcesses(ctx context.Context, req *connec
 	return c.listMcpProcesses.CallUnary(ctx, req)
 }
 
+// StopMcpProcess calls agx.v1.RuntimeService.StopMcpProcess.
+func (c *runtimeServiceClient) StopMcpProcess(ctx context.Context, req *connect.Request[v1.StopMcpProcessRequest]) (*connect.Response[v1.StopMcpProcessResponse], error) {
+	return c.stopMcpProcess.CallUnary(ctx, req)
+}
+
 // RuntimeServiceHandler is an implementation of the agx.v1.RuntimeService service.
 type RuntimeServiceHandler interface {
 	GetRuntime(context.Context, *connect.Request[v1.GetRuntimeRequest]) (*connect.Response[v1.GetRuntimeResponse], error)
@@ -684,6 +702,9 @@ type RuntimeServiceHandler interface {
 	// Lists the running stdio MCP server processes: shared ones, including idle ones still
 	// warm, and those of single sessions.
 	ListMcpProcesses(context.Context, *connect.Request[v1.ListMcpProcessesRequest]) (*connect.Response[v1.ListMcpProcessesResponse], error)
+	// Stops one stdio MCP server process. Its sessions end, so harnesses reconnect and the next
+	// session starts it again; a shared process stops for every launch using it.
+	StopMcpProcess(context.Context, *connect.Request[v1.StopMcpProcessRequest]) (*connect.Response[v1.StopMcpProcessResponse], error)
 }
 
 // NewRuntimeServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -729,6 +750,12 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 		connect.WithSchema(runtimeServiceMethods.ByName("ListMcpProcesses")),
 		connect.WithHandlerOptions(opts...),
 	)
+	runtimeServiceStopMcpProcessHandler := connect.NewUnaryHandler(
+		RuntimeServiceStopMcpProcessProcedure,
+		svc.StopMcpProcess,
+		connect.WithSchema(runtimeServiceMethods.ByName("StopMcpProcess")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.RuntimeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RuntimeServiceGetRuntimeProcedure:
@@ -743,6 +770,8 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 			runtimeServiceCallToolHandler.ServeHTTP(w, r)
 		case RuntimeServiceListMcpProcessesProcedure:
 			runtimeServiceListMcpProcessesHandler.ServeHTTP(w, r)
+		case RuntimeServiceStopMcpProcessProcedure:
+			runtimeServiceStopMcpProcessHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -774,6 +803,10 @@ func (UnimplementedRuntimeServiceHandler) CallTool(context.Context, *connect.Req
 
 func (UnimplementedRuntimeServiceHandler) ListMcpProcesses(context.Context, *connect.Request[v1.ListMcpProcessesRequest]) (*connect.Response[v1.ListMcpProcessesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.ListMcpProcesses is not implemented"))
+}
+
+func (UnimplementedRuntimeServiceHandler) StopMcpProcess(context.Context, *connect.Request[v1.StopMcpProcessRequest]) (*connect.Response[v1.StopMcpProcessResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.StopMcpProcess is not implemented"))
 }
 
 // UIServiceClient is a client for the agx.v1.UIService service.

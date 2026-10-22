@@ -62,7 +62,10 @@ export default defineConfig({
       {
         // shadcn generates these; they change through its CLI (add --diff), not by hand.
         files: ["src/components/ui/**", "src/hooks/use-mobile.ts"],
-        rules: { "react/set-state-in-effect": "off" },
+        rules: {
+          "react/set-state-in-effect": "off",
+          "react/no-object-type-as-default-prop": "off",
+        },
       },
     ],
   },

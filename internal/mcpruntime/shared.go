@@ -139,6 +139,16 @@ func (sh *Shared) Processes() []Process {
 	return processes
 }
 
+// StopProcess stops the shared process with this process ID; its client sessions end. It
+// reports whether one ran.
+func (sh *Shared) StopProcess(pid int) bool {
+	taken := sh.take(func(s *sharedServer) bool { return s.pid() == pid })
+	for _, s := range taken {
+		s.stop()
+	}
+	return len(taken) > 0
+}
+
 // take removes the servers match selects and marks them stopping, so no client joins them.
 func (sh *Shared) take(match func(*sharedServer) bool) []*sharedServer {
 	sh.mu.Lock()
