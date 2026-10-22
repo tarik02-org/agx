@@ -51,6 +51,8 @@ export default defineConfig({
       "react/react-in-jsx-scope": "off",
       "unicorn/no-array-sort": "off",
       "eslint/no-shadow": "off",
+      // Effect discriminates unions and errors by _tag.
+      "eslint/no-underscore-dangle": ["error", { allow: ["_tag"] }],
       "import/no-cycle": "error",
       "typescript/no-explicit-any": "error",
       "typescript/no-non-null-assertion": "error",

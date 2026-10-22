@@ -23,9 +23,6 @@ importers:
       '@connectrpc/connect-web':
         specifier: ^2.2.0
         version: 2.2.0(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))
-      '@effect/atom-react':
-        specifier: ^4.0.5
-        version: 4.0.5(effect@4.0.5)(react@19.3.1)(scheduler@0.28.0)
       '@fontsource-variable/inter':
         specifier: ^5.3.0
         version: 5.3.0
@@ -282,13 +279,6 @@ packages:
 
   '@dotenvx/primitives@0.8.0':
     resolution: {integrity: sha512-VYJy0uhFm9zTJ1TxBaW/pA8bjbOM/OttaNMwZ1RHG4JKyRG7DhSdiqD1ipQoAyoD22olUtxbP78W9xY3Wd11bg==}
-
-  '@effect/atom-react@4.0.5':
-    resolution: {integrity: sha512-tqTSiy0rWBitej7kPfvTSw29q4ipof52+txDg6bIBJx0ksHVzVXaFTsssDa+AZBeImafK0xmjm9m1XzPfE6k2A==}
-    peerDependencies:
-      effect: ^4.0.5
-      react: '>=19.0.0 <20.0.0'
-      scheduler: '>=0.25.0 <0.29.0'
 
   '@floating-ui/core@1.8.0':
     resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
@@ -3221,12 +3211,6 @@ snapshots:
       yocto-spinner: 1.2.2
 
   '@dotenvx/primitives@0.8.0': {}
-
-  '@effect/atom-react@4.0.5(effect@4.0.5)(react@19.3.1)(scheduler@0.28.0)':
-    dependencies:
-      effect: 4.0.5
-      react: 19.3.1
-      scheduler: 0.28.0
 
   '@floating-ui/core@1.8.0':
     dependencies:

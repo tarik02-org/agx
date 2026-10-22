@@ -1,7 +1,4 @@
-import { useAtomValue } from "@effect/atom-react";
 import { createFileRoute } from "@tanstack/react-router";
-import * as Option from "effect/Option";
-import { AsyncResult } from "effect/reactivity";
 import { PlugIcon, TerminalIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -24,37 +21,20 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table.tsx";
-import { DaemonError } from "~/daemon/error.ts";
-import { runtimeViewAtom } from "~/daemon/runtime.ts";
+import { useRuntimeView } from "~/daemon/runtimeView.ts";
 import { Launch_State, McpRuntime_State, type RuntimeView } from "~/gen/agx/v1/agx_pb.ts";
 
 export const Route = createFileRoute("/")({ component: RuntimePage });
 
 function RuntimePage() {
-  const result = useAtomValue(runtimeViewAtom);
+  const state = useRuntimeView();
   return (
     <Page title="Runtime">
-      <RuntimeResult result={result} />
+      {state._tag === "Connecting" && <Skeleton className="h-40" />}
+      {state._tag === "Failed" && <DaemonProblem error={state.error} />}
+      {state._tag === "Live" && <Runtime view={state.view} />}
     </Page>
   );
-}
-
-function RuntimeResult({
-  result,
-}: {
-  readonly result: AsyncResult.AsyncResult<RuntimeView, unknown>;
-}) {
-  if (AsyncResult.isSuccess(result)) {
-    return <Runtime view={result.value} />;
-  }
-  if (AsyncResult.isInitial(result)) {
-    return <Skeleton className="h-40" />;
-  }
-  const error = AsyncResult.error(result);
-  if (Option.isSome(error) && error.value instanceof DaemonError) {
-    return <DaemonProblem error={error.value} />;
-  }
-  return <p className="text-muted-foreground">The daemon closed its runtime stream.</p>;
 }
 
 function Page({ title, children }: { readonly title: string; readonly children: ReactNode }) {
