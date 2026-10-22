@@ -3,10 +3,12 @@
 The daemon serves a web UI for what is easier to see than to read in a
 terminal. The top bar switches pages and holds the **scope**: a directory, or
 everywhere. `agx ui` scopes the UI to the directory it runs in, and the scope
-stays in the address, so a scoped page can be shared and reloaded. The sidebar
-is the configuration as a tree: every definition by kind, package skills under
-their package, and the configuration files; when the UI is scoped, it shows
-only what a launch in that directory gets, or everything with one switch.
+stays in the address, so a scoped page can be shared and reloaded. The sidebar,
+on every page, is the configuration as a tree: every definition by kind,
+package skills under their package, and the configuration files. Expanding a
+skill lists its files, and expanding an MCP server starts it and lists its
+tools. When the UI is scoped, the tree shows only what a launch in that
+directory gets, or everything with one switch.
 
 The runtime page shows:
 
@@ -20,12 +22,13 @@ optionally a harness: every resource with the rules that added or removed it,
 the harness's resolved settings grouped by key with where each was set, and
 packages it goes without.
 
-The MCP inspector lists every configured server's tools, starting servers
-without their own working directory in the scope directory, and calls one with a
-form built from its input schema, or raw JSON, showing the result's content and
-keeping recent calls in the browser.
+The MCP inspector shows the server or tool picked in the tree, starting servers
+without their own working directory in the scope directory, and calls a tool
+with a form built from its input schema, or raw JSON, showing the result's
+content and keeping recent calls in the browser.
 
-The skills page shows each skill's SKILL.md and files and where to enable it.
+The skills page shows the skill or skill file picked in the tree, editing a
+local skill's files, and where to enable it.
 Adding skills is a wizard: a Git source (`owner/repo[@ref][/path]` or a URL),
 which the daemon fetches without configuring anything; the skills to enable,
 with their SKILL.md and files; where to enable them, starting with the scope;

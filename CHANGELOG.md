@@ -13,8 +13,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   directory gets for a harness and why; its MCP inspector calls tools with schema-built forms;
   its skills page previews and adds skills from Git with a wizard; its configuration page edits
   every definition with forms or YAML and applies staged changes at once after showing their
-  diff. A sidebar shows the configuration as a tree, and the UI is scoped to the directory
-  `agx ui` ran in.
+  diff. A sidebar shows the configuration as a tree, with skills' files and MCP servers' tools
+  loaded on expand, and the UI is scoped to the directory `agx ui` ran in.
   Release binaries and the Nix package embed it.
 - `ConfigurationService.GetConfiguration` and `CompleteDirectory`, and harness settings in
   `ResolveResponse`.

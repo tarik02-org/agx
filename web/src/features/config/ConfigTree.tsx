@@ -1,54 +1,46 @@
-import { Link } from "@tanstack/react-router";
-import { ChevronRightIcon, LockIcon, PlusIcon } from "lucide-react";
+import { useQueries } from "@tanstack/react-query";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import { FilterIcon } from "lucide-react";
 import { useState } from "react";
 
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "~/components/ui/collapsible.tsx";
-import { Field, FieldLabel } from "~/components/ui/field.tsx";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupAction,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarInput,
-  SidebarMenu,
-  SidebarMenuBadge,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarMenuSkeleton,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
-} from "~/components/ui/sidebar.tsx";
-import { Switch } from "~/components/ui/switch.tsx";
+import { NavTree } from "~/components/NavTree.tsx";
+import { Toggle } from "~/components/ui/toggle.tsx";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
+import { DaemonError } from "~/daemon/error.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
+import { useRunEffect } from "~/effect/react.tsx";
 import { kinds } from "~/features/config/kinds.ts";
+import { useInspectorDirectory } from "~/features/mcp/tools.ts";
+import { mcpStates } from "~/features/runtime/states.ts";
 import { useEnabledHere, useScopeDirectory } from "~/features/scope/scope.ts";
-import type { Definition } from "~/gen/agx/v1/agx_pb.ts";
+import type { GetSkillResponse, McpTools } from "~/gen/agx/v1/agx_pb.ts";
+import { McpRuntime_State } from "~/gen/agx/v1/agx_pb.ts";
 import { shortPath } from "~/lib/path.ts";
 
 /** Kinds a scope selects; the others apply wherever they are defined. */
 const scoped = new Set(["skills", "instructions", "mcp"]);
 
-const active = { "data-active": true, "aria-current": "page" } as const;
+const label = (kind: string) => kinds.find((k) => k.kind === kind)?.label ?? kind;
 
-// Skills open on the skills page, which shows their files; everything else in the editor. The
-// sidebar button renders as this link and merges its own props into it.
-const definitionLink = (definition: Definition) =>
-  definition.kind === "skills" ? (
-    <Link to="/skills" search={{ skill: definition.id }} activeProps={active} />
-  ) : (
-    <Link to="/config" search={{ kind: definition.kind, id: definition.id }} activeProps={active} />
-  );
+/** What the tree needs of a folder's query. */
+interface Loading<A> {
+  readonly data: A | undefined;
+  readonly error: unknown;
+}
 
-/** The whole configuration as a tree: every definition by kind, package skills under their package. */
+type Target =
+  | { readonly page: "skill"; readonly skill: string; readonly file?: string }
+  | { readonly page: "server"; readonly server: string; readonly tool?: string }
+  | { readonly page: "definition"; readonly kind: string; readonly id: string }
+  | { readonly page: "file"; readonly file: string };
+
+/**
+ * The configuration as one tree: a folder per kind with its definitions, IDs nesting at their
+ * slashes (a package's skills sit under the package's name), and the configuration files. Skills
+ * hold their files and MCP servers their tools, loaded when first expanded; a server starts only
+ * then.
+ */
 export function ConfigTree() {
   const definitions = useDaemonQuery(
     queryKeys.definitions,
@@ -59,143 +51,196 @@ export function ConfigTree() {
     Daemon.use((daemon) => daemon.configuration),
   );
   const directory = useScopeDirectory();
+  const toolsDirectory = useInspectorDirectory() ?? "";
   const enabledHere = useEnabledHere();
   const [onlyHere, setOnlyHere] = useState(true);
-  const [filter, setFilter] = useState("");
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const navigate = useNavigate();
+  const search = useSearch({ strict: false });
+  const run = useRunEffect();
   const home = configuration.data?.home ?? "";
-  const all = definitions.data ?? [];
-  const shown = (definition: Definition): boolean => {
-    if (filter !== "" && !definition.id.toLowerCase().includes(filter.toLowerCase())) {
-      return false;
+
+  const shown = (definitions.data ?? []).filter(
+    (definition) =>
+      enabledHere === undefined ||
+      !onlyHere ||
+      !scoped.has(definition.kind) ||
+      enabledHere.has(`${definition.kind}/${definition.id}`),
+  );
+  const expandedSkills = shown.filter(
+    (d) => d.kind === "skills" && expanded.has(`${label("skills")}/${d.id}`),
+  );
+  const expandedServers = shown.filter(
+    (d) => d.kind === "mcp" && expanded.has(`${label("mcp")}/${d.id}`),
+  );
+  const skills = useQueries({
+    queries: expandedSkills.map((d) => ({
+      queryKey: queryKeys.skill(d.id),
+      queryFn: ({ signal }: { readonly signal: AbortSignal }) =>
+        run(
+          Daemon.use((daemon) => daemon.skill(d.id)),
+          { signal },
+        ),
+    })),
+  });
+  const servers = useQueries({
+    queries: expandedServers.map((d) => ({
+      queryKey: queryKeys.tools(toolsDirectory, d.id),
+      queryFn: ({ signal }: { readonly signal: AbortSignal }) =>
+        run(
+          Daemon.use((daemon) => daemon.tools(toolsDirectory, d.id)),
+          { signal },
+        ),
+      enabled: toolsDirectory !== "",
+      retry: false,
+    })),
+  });
+  const skillFiles = new Map<string, Loading<GetSkillResponse>>(
+    expandedSkills.flatMap((d, index) => {
+      const query = skills[index];
+      return query === undefined ? [] : [[d.id, query]];
+    }),
+  );
+  const serverTools = new Map<string, Loading<McpTools>>(
+    expandedServers.flatMap((d, index) => {
+      const query = servers[index];
+      return query === undefined ? [] : [[d.id, query]];
+    }),
+  );
+
+  const targets = new Map<string, Target>();
+  const lazy = new Map<string, boolean>();
+  const decorations = new Map<string, string>();
+  for (const definition of shown) {
+    const here = enabledHere?.has(`${definition.kind}/${definition.id}`) === true;
+    const path = `${label(definition.kind)}/${definition.id}`;
+    if (definition.readOnly && definition.package === "") {
+      decorations.set(path, "read-only");
+    } else if (here && !onlyHere) {
+      decorations.set(path, "here");
     }
-    if (enabledHere === undefined || !onlyHere || !scoped.has(definition.kind)) {
-      return true;
+    switch (definition.kind) {
+      case "skills": {
+        targets.set(path, { page: "skill", skill: definition.id });
+        const loaded = skillFiles.get(definition.id);
+        lazy.set(path, loaded?.data !== undefined || (loaded?.error ?? null) !== null);
+        if ((loaded?.error ?? null) !== null) {
+          decorations.set(path, "failed to load");
+        }
+        if (loaded?.data !== undefined) {
+          const files = new Set(["SKILL.md", ...loaded.data.files]);
+          for (const file of files) {
+            targets.set(`${path}/${file}`, { page: "skill", skill: definition.id, file });
+          }
+        }
+        break;
+      }
+      case "mcp": {
+        targets.set(path, { page: "server", server: definition.id });
+        const loaded = serverTools.get(definition.id);
+        lazy.set(path, loaded?.data !== undefined || (loaded?.error ?? null) !== null);
+        if ((loaded?.error ?? null) !== null) {
+          const needsLogin =
+            loaded?.error instanceof DaemonError && loaded.error.reason === "needs_login";
+          decorations.set(
+            path,
+            mcpStates[needsLogin ? McpRuntime_State.NEEDS_AUTH : McpRuntime_State.FAILED].label,
+          );
+        }
+        for (const tool of loaded?.data?.tools ?? []) {
+          targets.set(`${path}/${tool.name}`, {
+            page: "server",
+            server: definition.id,
+            tool: tool.name,
+          });
+        }
+        break;
+      }
+      default:
+        targets.set(path, { page: "definition", kind: definition.kind, id: definition.id });
     }
-    return enabledHere.has(`${definition.kind}/${definition.id}`);
-  };
-  const packageSkills = (packageId: string) =>
-    all.filter((d) => d.kind === "skills" && d.package === packageId && shown(d));
+  }
+  for (const file of configuration.data?.files ?? []) {
+    const path = `Files/${shortPath(file.path, home).replace(/^~\//, "")}`;
+    targets.set(path, { page: "file", file: file.path });
+    if (file.readOnly) {
+      decorations.set(path, "read-only");
+    }
+  }
+  // A skill's file or a server's tool is selected before it loads, so its folder opens for it.
+  const selected =
+    search.skill !== undefined
+      ? `${label("skills")}/${search.skill}${search.file === undefined ? "" : `/${search.file}`}`
+      : search.server !== undefined
+        ? `${label("mcp")}/${search.server}${search.tool === undefined ? "" : `/${search.tool}`}`
+        : [...targets].find(([, target]) => {
+            switch (target.page) {
+              case "skill":
+              case "server":
+                return false;
+              case "definition":
+                return search.kind === target.kind && search.id === target.id;
+              case "file":
+                return search.file === target.file;
+            }
+          })?.[0];
+
   return (
-    <Sidebar
-      collapsible="offcanvas"
-      className="top-(--header-height) h-[calc(100svh-var(--header-height))]!"
-    >
-      <SidebarHeader>
-        <SidebarInput
-          type="search"
-          aria-label="Filter configuration"
-          placeholder="Filter configuration…"
-          autoComplete="off"
-          spellCheck={false}
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-        />
-        {directory !== "" && (
-          <Field orientation="horizontal" className="px-1">
-            <Switch id="only-here" checked={onlyHere} onCheckedChange={setOnlyHere} />
-            <FieldLabel htmlFor="only-here">Only what this directory gets</FieldLabel>
-          </Field>
-        )}
-      </SidebarHeader>
-      <SidebarContent>
-        {definitions.isPending && (
-          <SidebarMenu className="px-2">
-            <SidebarMenuSkeleton />
-            <SidebarMenuSkeleton />
-            <SidebarMenuSkeleton />
-          </SidebarMenu>
-        )}
-        {kinds.map(({ kind, label }) => {
-          // Package skills show under their package.
-          const own = all.filter(
-            (d) => d.kind === kind && shown(d) && !(kind === "skills" && d.package !== ""),
-          );
-          const packages = kind === "packages" ? own : [];
-          return (
-            <Collapsible key={kind} defaultOpen className="group/collapsible">
-              <SidebarGroup>
-                <SidebarGroupLabel render={<CollapsibleTrigger />}>
-                  <ChevronRightIcon className="transition-transform group-data-[open]/collapsible:rotate-90" />
-                  {label}
-                </SidebarGroupLabel>
-                <SidebarGroupAction
-                  render={<Link to="/config" search={{ kind, create: true }} />}
-                  aria-label={`New ${label}`}
+    <NavTree
+      // Lazy folders hold what is loaded; everything else is a leaf.
+      paths={[...targets.keys()].filter((path) => !lazy.has(path))}
+      lazy={lazy}
+      onExpand={(folder) => setExpanded((current) => new Set([...current, folder]))}
+      order={[...kinds.map((k) => k.label), "Files"]}
+      selected={selected}
+      decorations={decorations}
+      onSelect={(path) => {
+        const target = targets.get(path);
+        if (target === undefined) {
+          return;
+        }
+        switch (target.page) {
+          case "skill":
+            void navigate({
+              to: "/skills",
+              search: target.file === undefined ? { skill: target.skill } : { ...target },
+            });
+            return;
+          case "server":
+            void navigate({
+              to: "/mcp",
+              search: target.tool === undefined ? { server: target.server } : { ...target },
+            });
+            return;
+          case "definition":
+            void navigate({ to: "/config", search: { kind: target.kind, id: target.id } });
+            return;
+          case "file":
+            void navigate({ to: "/config", search: { file: target.file } });
+        }
+      }}
+      header={
+        directory === "" ? undefined : (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Toggle
+                  size="sm"
+                  pressed={onlyHere}
+                  onPressedChange={setOnlyHere}
+                  aria-label="Only what the scope directory gets"
                 >
-                  <PlusIcon />
-                </SidebarGroupAction>
-                <CollapsibleContent>
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      {own.map((definition) => (
-                        <SidebarMenuItem key={definition.id}>
-                          <SidebarMenuButton
-                            size="sm"
-                            className="font-mono"
-                            render={definitionLink(definition)}
-                          >
-                            <span className="truncate">{definition.id}</span>
-                          </SidebarMenuButton>
-                          {definition.readOnly && definition.package === "" && (
-                            <SidebarMenuBadge>
-                              <LockIcon aria-label="read-only" className="size-3" />
-                            </SidebarMenuBadge>
-                          )}
-                          {kind === "packages" && packages.includes(definition) && (
-                            <SidebarMenuSub>
-                              {packageSkills(definition.id).map((skill) => (
-                                <SidebarMenuSubItem key={skill.id}>
-                                  <SidebarMenuSubButton
-                                    size="sm"
-                                    className="font-mono"
-                                    render={definitionLink(skill)}
-                                  >
-                                    <span className="truncate">
-                                      {skill.id.slice(definition.id.length + 1)}
-                                    </span>
-                                  </SidebarMenuSubButton>
-                                </SidebarMenuSubItem>
-                              ))}
-                            </SidebarMenuSub>
-                          )}
-                        </SidebarMenuItem>
-                      ))}
-                      {own.length === 0 && (
-                        <SidebarMenuItem>
-                          <span className="px-2 text-muted-foreground text-xs">None</span>
-                        </SidebarMenuItem>
-                      )}
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </CollapsibleContent>
-              </SidebarGroup>
-            </Collapsible>
-          );
-        })}
-        <SidebarGroup>
-          <SidebarGroupLabel>Files</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {(configuration.data?.files ?? []).map((file) => (
-                <SidebarMenuItem key={file.path}>
-                  <SidebarMenuButton
-                    size="sm"
-                    className="font-mono"
-                    render={<Link to="/config" search={{ file: file.path }} activeProps={active} />}
-                  >
-                    <span className="truncate">{shortPath(file.path, home)}</span>
-                  </SidebarMenuButton>
-                  {file.readOnly && (
-                    <SidebarMenuBadge>
-                      <LockIcon aria-label="read-only" className="size-3" />
-                    </SidebarMenuBadge>
-                  )}
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-    </Sidebar>
+                  <FilterIcon />
+                </Toggle>
+              }
+            />
+            <TooltipContent>
+              {onlyHere ? "Showing only what " : "Show only what "}
+              {shortPath(directory, home)} gets
+            </TooltipContent>
+          </Tooltip>
+        )
+      }
+    />
   );
 }

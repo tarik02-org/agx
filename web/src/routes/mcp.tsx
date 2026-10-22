@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
-import { HistoryIcon, WrenchIcon } from "lucide-react";
+import { FileCode2Icon, HistoryIcon, WrenchIcon } from "lucide-react";
 import { useState } from "react";
 
 import { ButtonLink } from "~/components/ButtonLink.tsx";
@@ -8,6 +8,7 @@ import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -20,16 +21,15 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "~/components/ui/empty.tsx";
-import { Input } from "~/components/ui/input.tsx";
-import { ScrollArea } from "~/components/ui/scroll-area.tsx";
 import { Pending } from "~/components/Pending.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import type { DaemonError } from "~/daemon/error.ts";
-import { queryKeys, useDaemonMutation, useDaemonQuery } from "~/daemon/query.ts";
+import { useDaemonMutation } from "~/daemon/query.ts";
 import { mcpStates } from "~/features/runtime/states.ts";
 import { useCallHistory } from "~/features/mcp/history.ts";
 import { ToolForm } from "~/features/mcp/ToolForm.tsx";
 import { ToolResult } from "~/features/mcp/ToolResult.tsx";
+import { useServerTools } from "~/features/mcp/tools.ts";
 import {
   type CallToolResponse,
   McpTools_Load,
@@ -39,7 +39,6 @@ import {
 import { parseSchema } from "~/lib/jsonSchema.ts";
 import { Markdown } from "~/lib/markdown.tsx";
 import { pageTitle } from "~/lib/title.ts";
-import { useScopeDirectory } from "~/features/scope/scope.ts";
 
 const InspectorSearch = Schema.Struct({
   server: Schema.optional(Schema.String),
@@ -52,124 +51,95 @@ export const Route = createFileRoute("/mcp")({
 });
 
 function InspectorPage() {
-  const configuration = useDaemonQuery(
-    queryKeys.configuration,
-    Daemon.use((daemon) => daemon.configuration),
-  );
-  // Servers without their own cwd start in the scope directory, or the home directory.
-  const scope = useScopeDirectory();
-  const directory = scope === "" ? (configuration.data?.home ?? "") : scope;
-  const tools = useDaemonQuery(
-    [...queryKeys.tools, directory],
-    Daemon.use((daemon) => daemon.tools(directory)),
-    {
-      enabled: configuration.isSuccess,
-    },
-  );
   const search = Route.useSearch();
   return (
-    <div className="flex h-full flex-col gap-2 px-4 py-3">
+    <div className="flex max-w-5xl flex-col gap-2 px-4 py-3">
       <title>
         {pageTitle(
-          search.tool === undefined ? undefined : `${search.server ?? ""}.${search.tool}`,
+          search.server === undefined
+            ? undefined
+            : search.tool === undefined
+              ? search.server
+              : `${search.server}.${search.tool}`,
           "MCP inspector",
         )}
       </title>
       <h1 className="font-heading font-semibold text-sm">MCP inspector</h1>
-      {(configuration.isPending || tools.isPending) && <Pending className="h-64" />}
-      {configuration.isError && <DaemonProblem error={configuration.error} />}
-      {tools.isError && <DaemonProblem error={tools.error} />}
-      {tools.isSuccess && <Inspector servers={tools.data} directory={directory} />}
-    </div>
-  );
-}
-
-function Inspector({
-  servers,
-  directory,
-}: {
-  readonly servers: ReadonlyArray<McpTools>;
-  /** Where stdio servers without a cwd run. */
-  readonly directory: string;
-}) {
-  const search = Route.useSearch();
-  const [filter, setFilter] = useState("");
-  const server = servers.find((s) => s.mcpId === search.server);
-  const tool = server?.tools.find((t) => t.name === search.tool);
-  const matches = (name: string) => name.toLowerCase().includes(filter.toLowerCase());
-  return (
-    <div className="grid min-h-0 flex-1 grid-cols-[18rem_minmax(0,1fr)] gap-4">
-      <Card size="sm" className="min-h-0">
-        <CardHeader>
-          <Input
-            type="search"
-            aria-label="Filter tools"
-            placeholder="Filter tools…"
-            autoComplete="off"
-            spellCheck={false}
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-          />
-        </CardHeader>
-        <ScrollArea className="min-h-0 flex-1">
-          <ul className="flex flex-col gap-3 px-3 pb-3">
-            {servers.map((s) => (
-              <li key={s.mcpId} className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium font-mono">{s.mcpId}</span>
-                  <Badge variant={mcpStates[s.state].variant}>{mcpStates[s.state].label}</Badge>
-                  {s.load === McpTools_Load.ON_DEMAND && (
-                    <Badge variant="secondary">on demand</Badge>
-                  )}
-                </div>
-                {s.message !== "" && <span className="text-destructive text-xs">{s.message}</span>}
-                <ul className="flex flex-col">
-                  {s.tools
-                    .filter((t) => filter === "" || matches(t.name) || matches(s.mcpId))
-                    .map((t) => (
-                      <li key={t.name}>
-                        <ButtonLink
-                          variant={
-                            s.mcpId === search.server && t.name === search.tool
-                              ? "secondary"
-                              : "ghost"
-                          }
-                          size="sm"
-                          className="w-full justify-start font-mono"
-                          to="/mcp"
-                          search={{ server: s.mcpId, tool: t.name }}
-                        >
-                          {t.name}
-                        </ButtonLink>
-                      </li>
-                    ))}
-                </ul>
-              </li>
-            ))}
-          </ul>
-        </ScrollArea>
-      </Card>
-      {server === undefined || tool === undefined ? (
+      {search.server === undefined ? (
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <WrenchIcon />
             </EmptyMedia>
-            <EmptyTitle>Pick a tool</EmptyTitle>
+            <EmptyTitle>Pick a tool in the sidebar</EmptyTitle>
             <EmptyDescription>
-              Call any configured MCP server's tools, with a form built from their schema.
+              Expand an MCP server to see its tools, and call them with a form built from their
+              schema.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
-        <ToolPanel
-          key={`${server.mcpId}/${tool.name}`}
-          server={server}
-          tool={tool}
-          directory={directory}
-        />
+        <ServerView key={search.server} mcpId={search.server} toolName={search.tool} />
       )}
     </div>
+  );
+}
+
+function ServerView({
+  mcpId,
+  toolName,
+}: {
+  readonly mcpId: string;
+  readonly toolName: string | undefined;
+}) {
+  const { tools, directory } = useServerTools(mcpId);
+  if (tools.isPending) {
+    return <Pending className="h-64" />;
+  }
+  if (tools.isError) {
+    return <DaemonProblem error={tools.error} />;
+  }
+  const tool = tools.data.tools.find((t) => t.name === toolName);
+  return tool === undefined ? (
+    <ServerStatus server={tools.data} />
+  ) : (
+    <ToolPanel key={tool.name} server={tools.data} tool={tool} directory={directory} />
+  );
+}
+
+/** A server's state, and why it has no tools to call when it has none. */
+function ServerStatus({ server }: { readonly server: McpTools }) {
+  return (
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 font-mono">
+          {server.mcpId}
+          <Badge variant={mcpStates[server.state].variant}>{mcpStates[server.state].label}</Badge>
+          {server.load === McpTools_Load.ON_DEMAND && <Badge variant="secondary">on demand</Badge>}
+        </CardTitle>
+        <CardDescription>{server.description}</CardDescription>
+        <CardAction>
+          <ButtonLink
+            variant="outline"
+            size="sm"
+            to="/config"
+            search={{ kind: "mcp", id: server.mcpId }}
+          >
+            <FileCode2Icon data-icon="inline-start" />
+            Definition
+          </ButtonLink>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="text-xs">
+        {server.message === "" ? (
+          <span className="text-muted-foreground">
+            {server.tools.length === 0 ? "It offers no tools." : "Pick one of its tools."}
+          </span>
+        ) : (
+          <span className="text-destructive">{server.message}</span>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -195,7 +165,7 @@ function ToolPanel({
     (entry) => entry.server === server.mcpId && entry.tool === tool.name,
   );
   return (
-    <ScrollArea className="min-h-0">
+    <>
       <div className="flex flex-col gap-4 pr-3">
         <Card size="sm">
           <CardHeader>
@@ -262,6 +232,6 @@ function ToolPanel({
           </Card>
         )}
       </div>
-    </ScrollArea>
+    </>
   );
 }

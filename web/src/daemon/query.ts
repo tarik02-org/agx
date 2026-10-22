@@ -9,7 +9,7 @@ export const queryKeys = {
   processes: ["mcp-processes"],
   secrets: ["secrets"],
   configuration: ["configuration"],
-  tools: ["mcp-tools"],
+  tools: (directory: string, mcpId: string) => ["mcp-tools", directory, mcpId],
   resolve: (directory: string, harness: string) => ["resolve", directory, harness],
   completeDirectory: (prefix: string) => ["complete-directory", prefix],
   definitions: ["definitions"],
@@ -29,6 +29,7 @@ export function useDaemonQuery<A>(
     readonly refetchInterval?: number;
     readonly enabled?: boolean;
     readonly staleTime?: number;
+    readonly retry?: boolean;
   } = {},
 ) {
   const run = useRunEffect();

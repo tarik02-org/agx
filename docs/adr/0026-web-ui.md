@@ -126,9 +126,12 @@ tool whose author already writes Effect, and Aperture uses the same model.
 ## Layout and scope
 
 - A top bar navigates between pages and holds the scope and the staged changes.
-- The sidebar is the configuration as a tree, not a list of pages: definitions by
-  kind, package skills under their package, and the files. Selecting an entry
-  opens it in the skills page or the editor.
+- The sidebar, the same on every page, is the configuration as a tree, not a
+  list of pages: definitions by kind, package skills under their package, and
+  the files. Skills hold their files and MCP servers their tools, loaded when
+  first expanded, so a server starts only when someone looks inside it.
+  Selecting an entry opens it in the skills page, the MCP inspector, or the
+  editor; pages keep no navigation of their own.
 - The scope is a directory, or everywhere, kept in the address (`?dir=`) that
   every link carries. `agx ui` passes its working directory with the sign-in
   code, and the sign-in redirect keeps it only as a query value of the UI's own
@@ -156,8 +159,8 @@ Each feature is a page, listed in the order they ship.
    - Each source location opens the configuration file at that line in the
      editor page.
 3. **MCP inspector**
-   - Every configured server with its state, description, and tools, as
-     `agx mcp tools --all --schema` reports them.
+   - A server's state, description, and tools, as `agx mcp tools <id> --schema`
+     reports them, listed when it is expanded in the tree.
    - A form generated from a tool's input schema, or raw JSON.
    - The call goes through `CallTool`, shown with:
      - text and Markdown content;
@@ -167,8 +170,8 @@ Each feature is a page, listed in the order they ship.
      - errors by their reason.
    - A call history kept in the browser.
 4. **Skills and packages**
-   - **Installed skills:** rendered `SKILL.md` and a file tree with file
-     previews, grouped by package.
+   - **Installed skills:** rendered `SKILL.md` and file previews; the files
+     are in the sidebar tree, grouped by package.
    - **Add from Git:** enter a repository URL or `owner/repo`. The daemon
      clones it into a temporary directory and lists the skills it finds, the
      way `agx skill add` does. For each skill it shows the description, the

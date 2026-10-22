@@ -168,6 +168,12 @@
     --trees-accent-override: var(--primary);
     --trees-font-family-override: var(--font-mono);
     --trees-font-size-override: 12px;
+    --trees-search-bg-override: var(--input);
+    --trees-search-fg-override: var(--foreground);
+    --trees-input-bg-override: var(--input);
+    --trees-selected-fg-override: var(--foreground);
+    --trees-selected-focused-border-color-override: var(--ring);
+    --trees-scrollbar-thumb-override: var(--border);
   }
 }
 

@@ -11,7 +11,13 @@ import {
   NavigationMenuList,
 } from "~/components/ui/navigation-menu.tsx";
 import { Separator } from "~/components/ui/separator.tsx";
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "~/components/ui/sidebar.tsx";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from "~/components/ui/sidebar.tsx";
 import { Toaster } from "~/components/ui/toast.tsx";
 import { TooltipProvider } from "~/components/ui/tooltip.tsx";
 import { ConfigTree } from "~/features/config/ConfigTree.tsx";
@@ -92,7 +98,14 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
               </div>
             </header>
             <div className="flex flex-1">
-              <ConfigTree />
+              <Sidebar
+                collapsible="offcanvas"
+                className="top-(--header-height) h-[calc(100svh-var(--header-height))]!"
+              >
+                <SidebarContent className="py-1">
+                  <ConfigTree />
+                </SidebarContent>
+              </Sidebar>
               <SidebarInset
                 id="main"
                 tabIndex={-1}

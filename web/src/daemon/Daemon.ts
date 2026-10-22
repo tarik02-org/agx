@@ -51,8 +51,11 @@ export class Daemon extends Context.Service<
     readonly logout: (secretId: string) => Effect.Effect<void, DaemonError>;
     /** Stores a keychain secret's value. */
     readonly setSecret: (secretId: string, value: string) => Effect.Effect<void, DaemonError>;
-    /** Every configured MCP server with its tools; directory is where a stdio server without cwd runs. */
-    readonly tools: (directory: string) => Effect.Effect<ReadonlyArray<McpTools>, DaemonError>;
+    /**
+     * A configured MCP server with its tools, starting it if needed; directory is where a stdio
+     * server without cwd runs. A server that cannot start fails.
+     */
+    readonly tools: (directory: string, mcpId: string) => Effect.Effect<McpTools, DaemonError>;
     readonly callTool: (
       directory: string,
       mcpId: string,
@@ -190,10 +193,16 @@ export const makeDaemon = (): Daemon["Service"] => {
           secrets.setSecret({ secretId, value: new TextEncoder().encode(value) }, { signal }),
         ),
       ),
-    tools: (directory) =>
+    tools: (directory, mcpId) =>
       call("listTools", (signal) =>
-        runtime.listTools({ scope: { directory, all: true } }, { signal }),
-      ).pipe(Effect.map((response) => response.servers)),
+        runtime.listTools({ scope: { directory, all: true }, mcpId }, { signal }),
+      ).pipe(
+        Effect.flatMap((response) =>
+          response.servers[0] === undefined
+            ? Effect.die(new Error(`listTools returned no server for ${mcpId}`))
+            : Effect.succeed(response.servers[0]),
+        ),
+      ),
     callTool: (directory, mcpId, tool, argumentsJson) =>
       call("callTool", (signal) =>
         runtime.callTool(

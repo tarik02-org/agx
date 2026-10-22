@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
   BlocksIcon,
@@ -43,7 +43,6 @@ import {
 } from "~/components/ui/empty.tsx";
 import { Input } from "~/components/ui/input.tsx";
 import { Pending } from "~/components/Pending.tsx";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs.tsx";
 import { toast } from "~/components/ui/toast.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
@@ -51,15 +50,13 @@ import { CodeEditor } from "~/features/config/CodeEditor.tsx";
 import { ScopeDialog } from "~/features/config/ScopeDialog.tsx";
 import { useStagedFile, useStaging, writeFile } from "~/features/config/staging.ts";
 import { FilePreview } from "~/features/skills/SkillDocument.tsx";
-import { SkillFiles } from "~/features/skills/SkillFiles.tsx";
 import type { Definition } from "~/gen/agx/v1/agx_pb.ts";
 import { shortPath } from "~/lib/path.ts";
 import { pageTitle } from "~/lib/title.ts";
 
 const SkillsSearch = Schema.Struct({
   skill: Schema.optional(Schema.String),
-  tab: Schema.optional(Schema.Literals(["skill", "files"])),
-  /** The open file, relative to the skill's directory. */
+  /** The open file, relative to the skill's directory; SKILL.md when absent. */
   file: Schema.optional(Schema.String),
 });
 
@@ -170,7 +167,6 @@ function SkillOverview({ skills }: { readonly skills: ReadonlyArray<Definition> 
 
 function SkillView({ skillId, home }: { readonly skillId: string; readonly home: string }) {
   const search = Route.useSearch();
-  const navigate = useNavigate({ from: Route.fullPath });
   const skill = useDaemonQuery(
     queryKeys.skill(skillId),
     Daemon.use((daemon) => daemon.skill(skillId)),
@@ -181,7 +177,7 @@ function SkillView({ skillId, home }: { readonly skillId: string; readonly home:
   if (skill.isError) {
     return <DaemonProblem error={skill.error} />;
   }
-  const { definition, skillMd, files } = skill.data;
+  const { definition, skillMd } = skill.data;
   // A skill written in configuration has no directory; its definition holds SKILL.md.
   const directory = definition?.path ?? "";
   const editable = definition !== undefined && !definition.readOnly && directory !== "";
@@ -229,67 +225,20 @@ function SkillView({ skillId, home }: { readonly skillId: string; readonly home:
           </CardContent>
         )}
       </Card>
-      <Tabs
-        value={search.tab ?? "skill"}
-        onValueChange={(next) =>
-          void navigate({
-            search: (current) => ({ ...current, tab: next === "files" ? "files" : "skill" }),
-            replace: true,
-          })
-        }
-      >
-        <TabsList>
-          <TabsTrigger value="skill">SKILL.md</TabsTrigger>
-          <TabsTrigger value="files" disabled={files.length === 0}>
-            Files ({files.length})
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="skill">
-          <EditableFile
-            path={`${directory}/SKILL.md`}
-            original={skillMd}
-            editable={editable}
-            home={home}
-          />
-        </TabsContent>
-        <TabsContent value="files">
-          <SkillFileBrowser directory={directory} files={files} editable={editable} home={home} />
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
-}
-
-function SkillFileBrowser({
-  directory,
-  files,
-  editable,
-  home,
-}: {
-  readonly directory: string;
-  readonly files: ReadonlyArray<string>;
-  readonly editable: boolean;
-  readonly home: string;
-}) {
-  const file = Route.useSearch({ select: (search) => search.file });
-  const navigate = useNavigate({ from: Route.fullPath });
-  return (
-    <div className="grid grid-cols-[16rem_minmax(0,1fr)] gap-4">
-      <Card size="sm">
-        <CardContent>
-          <SkillFiles
-            files={files}
-            selected={file}
-            onSelect={(next) =>
-              void navigate({ search: (current) => ({ ...current, file: next }) })
-            }
-          />
-        </CardContent>
-      </Card>
-      {file === undefined ? (
-        <p className="text-muted-foreground text-xs">Pick a file.</p>
+      {search.file === undefined || search.file === "SKILL.md" ? (
+        <EditableFile
+          path={`${directory}/SKILL.md`}
+          original={skillMd}
+          editable={editable}
+          home={home}
+        />
       ) : (
-        <SkillFile key={file} path={`${directory}/${file}`} editable={editable} home={home} />
+        <SkillFile
+          key={search.file}
+          path={`${directory}/${search.file}`}
+          editable={editable}
+          home={home}
+        />
       )}
     </div>
   );
