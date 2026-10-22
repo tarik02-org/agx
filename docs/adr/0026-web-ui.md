@@ -43,7 +43,9 @@ with the management credential, delivered without ever putting it in a URL:
 2. The daemon exchanges the code for a session cookie:
    - `HttpOnly`, `SameSite=Strict`, path `/`, no `Secure` flag, since the
      connection is plain HTTP on loopback;
-   - it expires with the daemon or after 12 hours of inactivity.
+   - it expires with the daemon or after 12 hours of inactivity. Sessions live
+     in the daemon's memory only: after a daemon restart the UI asks to run
+     `agx ui` again.
 
    The browser is then redirected to `/ui/` without the code.
 3. Requests carrying that cookie are authorized like the management token.
@@ -57,8 +59,9 @@ with the management credential, delivered without ever putting it in a URL:
 4. Launch grants never authorize the UI. A harness process cannot open it, and
    UI sessions are separate from launch leases.
 
-`agx ui --print` prints the login URL instead of opening a browser, for remote
-use. The code still expires after one use or 60 seconds.
+`agx ui --print` prints the login URL instead of opening a browser, for use
+through an SSH tunnel. The code still expires after one use or 60 seconds.
+Connecting to a remote daemon directly is out of scope.
 
 ## Frontend stack
 
@@ -74,7 +77,7 @@ use. The code still expires after one use or 60 seconds.
 | State and effects | Effect 4 with `@effect/atom-react` (see below) |
 | Markdown | `react-markdown` 10 with `remark-gfm`, code blocks highlighted with Shiki, as T3 Code renders chat and pull request Markdown |
 | Diffs and file trees | `@pierre/diffs` (also Shiki highlighting) and `@pierre/trees` |
-| Editors | CodeMirror 6: YAML with the agx JSON Schema (`schema/agx.schema.json`) for completion and diagnostics, Markdown for skills |
+| Editors | forms for definitions and scopes (below); CodeMirror 6 for skill files and for viewing YAML |
 | Graphs | React Flow (`@xyflow/react`), only for the scope view (below) |
 
 ### Effect
@@ -155,12 +158,28 @@ Each feature is a page, listed in the order they ship.
      a harness), see the configuration diff, then confirm.
    - **Packages:** status, lock, `agx install`, and `agx update` with progress.
 5. **Configuration editor**
-   - Configuration fragments and local skills are opened in CodeMirror. YAML
-     gets schema completion and diagnostics as you type.
-   - On save, the daemon validates the whole configuration and returns a diff;
-     nothing is written until you confirm.
-   - Files under `/nix/store` and other read-only paths open read-only, with a
-     note on where they come from.
+   - Configuration is edited through the interface, not as text:
+     - create, edit, and delete skills, instructions, MCP servers, secrets,
+       bundles, harness definitions, packages, and scope rules, in forms built
+       for each kind;
+     - scope rules are edited as lists of resources per directory and harness,
+       with resources picked from what the configuration defines.
+   - Changes are staged, not written one by one. The page shows the pending
+     changes as one diff across every file they touch, and applies them
+     atomically:
+     - the daemon plans the whole set, validates the configuration it would
+       produce, and writes nothing if anything fails;
+     - files are rewritten the way the CLI's edit commands rewrite them, so
+       comments, order, and formatting of everything else survive;
+     - apply fails if a file changed since the plan, such as through a CLI
+       edit, and the plan is made again.
+   - Each definition's form shows the file and line it comes from, and new
+     definitions go to the file the CLI would pick, or one you choose.
+   - Local skill files are edited in CodeMirror with Markdown support, staged
+     like the rest.
+   - A file is read-only when it is a symlink or not writable, which covers
+     files Nix or Home Manager link from `/nix/store`. Its definitions open
+     read-only, with the file's path and where the link points.
 6. **Scope graph** (optional)
    - A React Flow view: scopes and harnesses on the left, bundles in the
      middle, and resources on the right.
@@ -181,7 +200,7 @@ authorization:
 | --- | --- |
 | `UIService.CreateLoginCode` | `agx ui` |
 | `ConfigurationService.GetConfiguration` | the configuration as loaded: definitions, scopes, packages, files with read-only marks; the same model `--json` list commands print |
-| `ConfigurationService.ReadFile`, `PlanEdit`, `ApplyEdit` | the editor: read a fragment or local skill file, validate a change and return its diff, and write it if the file has not changed since |
+| `ConfigurationService.PlanChanges`, `ApplyChanges` | the editor: plan a set of definition, scope, and file changes, validate the configuration it would produce, and return the diff; apply it atomically if no file changed since |
 | `PackageService.PreviewSource` | clone a Git source into a temporary directory under the cache, list its skills with `SKILL.md` and file trees, read a file; previews expire after 30 minutes |
 | `PackageService.AddSkills` | the selection of the preview, written as `agx skill add` would, through the same edit path |
 | `RuntimeService.RestartMcpProcess`, `StopMcpProcess` | process controls; a shared process restarts for all its clients |
@@ -228,12 +247,6 @@ About three weeks, shippable after each step:
 
 ## Open questions
 
-- Whether the editor should edit only what agx can rewrite structurally (one
-  definition at a time, as the CLI does), or whole files. Whole files keep
-  comments and layout, but conflict with concurrent CLI edits.
-- How the UI shows a configuration that Nix or Home Manager owns: read-only
-  with the store path, or with a hint to change the Nix source instead.
-- Whether a browser tab may keep a session across daemon restarts. That needs
-  the session store persisted next to the daemon state, or `agx ui` run again.
-- Whether to support a remote daemon directly, beyond an SSH tunnel and
-  `--print`, for example a UI that lists several machines' daemons.
+- Whether a form for a kind the editor does not model yet (an unusual MCP auth,
+  harness `settings`) should fall back to a YAML snippet editor for that one
+  definition, staged like a form.
