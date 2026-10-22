@@ -547,14 +547,7 @@
               "description": "native: in the harness's tool list (default); on_demand: reached with agx mcp call."
             },
             "share": {
-              "type": "string",
-              "enum": [
-                "none",
-                "directory",
-                "repository",
-                "global"
-              ],
-              "description": "stdio: none gives each harness session its own process (default); directory, repository, or global share one process per launch directory, repository root, or everywhere."
+              "$ref": "#/$defs/MCPShare"
             }
           },
           "additionalProperties": false,
@@ -672,14 +665,7 @@
           "description": "native: in the harness's tool list (default); on_demand: reached with agx mcp call."
         },
         "share": {
-          "type": "string",
-          "enum": [
-            "none",
-            "directory",
-            "repository",
-            "global"
-          ],
-          "description": "stdio: none gives each harness session its own process (default); directory, repository, or global share one process per launch directory, repository root, or everywhere."
+          "$ref": "#/$defs/MCPShare"
         },
         "override": {
           "type": "boolean",
@@ -688,6 +674,40 @@
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "MCPShare": {
+      "oneOf": [
+        {
+          "enum": [
+            "none",
+            "directory",
+            "repository",
+            "global"
+          ]
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "none",
+                "directory",
+                "repository",
+                "global"
+              ]
+            },
+            "idle": {
+              "type": "string",
+              "description": "How long the process stays after its last session, such as 30m; default 5m."
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "type"
+          ]
+        }
+      ],
+      "description": "stdio: none gives each harness session its own process (default); directory, repository, or global share one process per launch directory, repository root, or everywhere. {type, idle} also sets how long it stays after its last session."
     },
     "Package": {
       "allOf": [

@@ -23,7 +23,11 @@ func TestMCPDefinitionSharesPerRepositoryRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	outside := t.TempDir()
-	server := config.MCPServer{Transport: "stdio", Command: []string{"x"}, Share: config.ShareRepository}
+	server := config.MCPServer{
+		Transport: "stdio",
+		Command:   []string{"x"},
+		Share:     config.MCPShare{Type: config.ShareRepository},
+	}
 	for directory, want := range map[string]string{
 		repository: repository,
 		nested:     worktree,
@@ -34,11 +38,11 @@ func TestMCPDefinitionSharesPerRepositoryRoot(t *testing.T) {
 			t.Errorf("%s: root %s, cwd %s; want %s", directory, root, definition.Cwd, want)
 		}
 	}
-	server.Share = config.ShareDirectory
+	server.Share.Type = config.ShareDirectory
 	if definition, root := mcpDefinition(server, nested); root != nested || definition.Cwd != nested {
 		t.Errorf("directory share: root %s, cwd %s", root, definition.Cwd)
 	}
-	server.Share, server.Cwd = config.ShareGlobal, ""
+	server.Share.Type, server.Cwd = config.ShareGlobal, ""
 	home, _ := os.UserHomeDir()
 	if definition, root := mcpDefinition(server, nested); root != "" || definition.Cwd != home {
 		t.Errorf("global share: root %q, cwd %s", root, definition.Cwd)

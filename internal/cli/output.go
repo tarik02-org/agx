@@ -235,7 +235,7 @@ func mcpMark(out *ui.Printer, c *config.Config, r config.Resource) string {
 	if server.Load == config.LoadOnDemand {
 		notes = append(notes, "on demand")
 	}
-	switch server.Share {
+	switch server.Share.Type {
 	case config.ShareDirectory:
 		notes = append(notes, "shared per directory")
 	case config.ShareRepository:

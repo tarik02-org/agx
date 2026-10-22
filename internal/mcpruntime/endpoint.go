@@ -81,8 +81,11 @@ type stdioSession struct {
 	cancel        context.CancelFunc
 	// kill ends the server's process tree at once, or only leaves a shared server; exited
 	// closes once its process exited, or once the session left its shared server.
-	kill     func()
-	exited   chan struct{}
+	kill   func()
+	exited chan struct{}
+	// process is the session's own process; shared is the server a shared session joined.
+	process  *process
+	shared   *sharedServer
 	done     sync.Once
 	ended    chan struct{}
 	active   int
@@ -536,7 +539,9 @@ func (e *Endpoint) openStdio(w http.ResponseWriter) (string, *stdioSession) {
 
 // process is a running stdio MCP server.
 type process struct {
-	conn mcp.Connection
+	pid     int
+	started time.Time
+	conn    mcp.Connection
 	// cancel starts its shutdown; kill ends its process tree at once.
 	cancel context.CancelFunc
 	kill   func()
@@ -617,7 +622,14 @@ func (e *Endpoint) startProcess(base, resolve context.Context, inputs map[string
 		// Descendants the server left behind end with it.
 		kill()
 	}()
-	return &process{conn: conn, cancel: cancel, kill: kill, exited: exited}, nil
+	return &process{
+		pid:     cmd.Process.Pid,
+		started: time.Now(),
+		conn:    conn,
+		cancel:  cancel,
+		kill:    kill,
+		exited:  exited,
+	}, nil
 }
 
 func (e *Endpoint) startStdio(id string, inputs map[string]string) (*stdioSession, error) {
@@ -644,6 +656,7 @@ func (e *Endpoint) startStdio(id string, inputs map[string]string) (*stdioSessio
 		cancel:        cancel,
 		kill:          p.kill,
 		exited:        p.exited,
+		process:       p,
 		ended:         make(chan struct{}),
 	}
 	go func() {
@@ -729,6 +742,7 @@ func (e *Endpoint) joinShared(id string, inputs map[string]string) (*stdioSessio
 		},
 		cancel: cancel,
 		exited: exited,
+		shared: server,
 		ended:  make(chan struct{}),
 	}
 	s.kill = s.close
@@ -737,6 +751,46 @@ func (e *Endpoint) joinShared(id string, inputs map[string]string) (*stdioSessio
 		e.sessionEnded(id, s)
 	}()
 	return s, nil
+}
+
+// Process is a running stdio MCP server process, for runtime views.
+type Process struct {
+	ID        config.ID
+	PID       int
+	Directory string
+	// Share is the server's share mode; Root is the directory a shared process is keyed on.
+	Share    string
+	Root     string
+	Sessions int
+	Started  time.Time
+	// StopsAt is when an idle shared process stops; zero while sessions use it.
+	StopsAt time.Time
+}
+
+// Processes lists the processes of the endpoint's unshared sessions, and the IDs of the
+// shared processes its other sessions use.
+func (e *Endpoint) Processes() ([]Process, []int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	own, shared := []Process{}, []int{}
+	for _, s := range e.sessions {
+		switch {
+		case s.process != nil:
+			own = append(own, Process{
+				ID:        e.id,
+				PID:       s.process.pid,
+				Directory: e.definition.Cwd,
+				Share:     config.ShareNone,
+				Sessions:  1,
+				Started:   s.process.started,
+			})
+		case s.shared != nil:
+			if pid := s.shared.pid(); pid != 0 {
+				shared = append(shared, pid)
+			}
+		}
+	}
+	return own, shared
 }
 
 // sessionEnded forgets session id once its process exited or it left its shared server.

@@ -82,4 +82,32 @@ harnesses:
 	if got := count(ownStarts); got != 4 {
 		t.Fatalf("unshared server started %d times, want once per session", got)
 	}
+
+	// Both launches ended: the shared process stays warm and idle, the unshared ones exited.
+	var listed struct {
+		Processes []struct {
+			MCPID     string   `json:"mcp_id"`
+			PID       int64    `json:"pid"`
+			Directory string   `json:"directory"`
+			Share     string   `json:"share"`
+			Root      *string  `json:"root"`
+			LaunchIDs []string `json:"launch_ids"`
+			Sessions  int      `json:"sessions"`
+			StopsAt   *string  `json:"stops_at"`
+		} `json:"processes"`
+	}
+	e.work = repository
+	e.jsonOK(&listed, "mcp", "ps", repository)
+	if len(listed.Processes) != 1 {
+		t.Fatalf("processes = %+v", listed.Processes)
+	}
+	p := listed.Processes[0]
+	if p.MCPID != "search" || p.Share != "repository" || p.Root == nil || p.Directory != *p.Root ||
+		p.PID == 0 || p.Sessions != 0 || len(p.LaunchIDs) != 0 || p.StopsAt == nil {
+		t.Fatalf("shared process = %+v", p)
+	}
+	e.jsonOK(&listed, "mcp", "ps", filepath.Join(e.dir, "elsewhere"))
+	if len(listed.Processes) != 0 {
+		t.Fatalf("processes outside the directory = %+v", listed.Processes)
+	}
 }

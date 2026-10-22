@@ -93,7 +93,7 @@ func newSharedFixture(t *testing.T, share string) *sharedFixture {
 			Transport:   "stdio",
 			Command:     []string{executable, "-test.run=^$"},
 			Environment: map[string]config.Value{fakeSharedServerEnv: {Literal: "1"}},
-			Share:       share,
+			Share:       config.MCPShare{Type: share},
 			Cwd:         t.TempDir(),
 		},
 	}
@@ -285,5 +285,37 @@ func TestSharedServerStopsOnSecretReset(t *testing.T) {
 	f.shared.Reset("token")
 	if got := f.shared.Servers(); got != 0 {
 		t.Fatalf("shared servers after reset = %d, want 0", got)
+	}
+}
+
+func TestProcessesListSharedAndOwnProcesses(t *testing.T) {
+	f := newSharedFixture(t, config.ShareDirectory)
+	root := t.TempDir()
+	e := f.endpoint(root)
+	first, second := connect(t, e), connect(t, f.endpoint(root))
+	pid := call(t, first, tool("pid"))
+	call(t, second, tool("pid"))
+	processes := f.shared.Processes()
+	if len(processes) != 1 || strconv.Itoa(processes[0].PID) != pid || processes[0].Sessions != 2 ||
+		processes[0].Root != root || !processes[0].StopsAt.IsZero() {
+		t.Fatalf("shared processes = %+v", processes)
+	}
+	own, joined := e.Processes()
+	if len(own) != 0 || len(joined) != 1 || strconv.Itoa(joined[0]) != pid {
+		t.Fatalf("endpoint processes = %+v, joined %v", own, joined)
+	}
+	_ = first.Close()
+	_ = second.Close()
+	eventually(t, "the server went idle", func() bool {
+		processes := f.shared.Processes()
+		return len(processes) == 1 && processes[0].Sessions == 0 && !processes[0].StopsAt.IsZero()
+	})
+
+	unshared := newSharedFixture(t, config.ShareNone)
+	alone := unshared.endpoint("")
+	session := connect(t, alone)
+	own, _ = alone.Processes()
+	if len(own) != 1 || strconv.Itoa(own[0].PID) != call(t, session, tool("pid")) || own[0].Sessions != 1 {
+		t.Fatalf("unshared processes = %+v", own)
 	}
 }

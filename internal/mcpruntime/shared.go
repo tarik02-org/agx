@@ -111,6 +111,34 @@ func (sh *Shared) Kill() {
 	sh.Close()
 }
 
+// Processes lists the running shared processes; Sessions counts their client sessions.
+func (sh *Shared) Processes() []Process {
+	sh.mu.Lock()
+	servers := []*sharedServer{}
+	for _, s := range sh.servers {
+		servers = append(servers, s)
+	}
+	sh.mu.Unlock()
+	processes := []Process{}
+	for _, s := range servers {
+		s.mu.Lock()
+		if s.process != nil && !s.stopping {
+			processes = append(processes, Process{
+				ID:        s.id,
+				PID:       s.process.pid,
+				Directory: s.cwd,
+				Share:     s.share,
+				Root:      s.root,
+				Sessions:  len(s.clients),
+				Started:   s.process.started,
+				StopsAt:   s.stopsAt,
+			})
+		}
+		s.mu.Unlock()
+	}
+	return processes
+}
+
 // take removes the servers match selects and marks them stopping, so no client joins them.
 func (sh *Shared) take(match func(*sharedServer) bool) []*sharedServer {
 	sh.mu.Lock()
@@ -176,13 +204,19 @@ func (sh *Shared) join(ctx context.Context, e *Endpoint, inputs map[string]strin
 	}
 	s := sh.servers[e.shareKey]
 	if s == nil {
+		idle := sh.idle
+		if configured := e.definition.Share.Idle; configured != nil {
+			idle = *configured
+		}
 		s = &sharedServer{
 			shared:        sh,
 			key:           e.shareKey,
 			id:            e.id,
 			root:          e.shareRoot,
+			share:         e.definition.Share.Type,
+			cwd:           e.definition.Cwd,
 			secrets:       e.definition.Secrets(),
-			idle:          sh.idle,
+			idle:          idle,
 			ready:         make(chan struct{}),
 			exited:        make(chan struct{}),
 			clients:       map[*sharedClient]bool{},
@@ -216,6 +250,8 @@ type sharedServer struct {
 	key     string
 	id      config.ID
 	root    string
+	share   string
+	cwd     string
 	secrets []config.ID
 	idle    time.Duration
 	// ready closes once the process started and initialized; err then says whether it failed.
@@ -233,6 +269,7 @@ type sharedServer struct {
 	reserved      int
 	stopping      bool
 	idleTimer     *time.Timer
+	stopsAt       time.Time
 	next          uint64
 	pending       map[jsonrpc.ID]*pendingCall
 	progress      map[string]progressRoute
@@ -412,6 +449,16 @@ func (s *sharedServer) ended() {
 	}
 }
 
+// pid is the process's ID, or 0 before it started.
+func (s *sharedServer) pid() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.process == nil {
+		return 0
+	}
+	return s.process.pid
+}
+
 func (s *sharedServer) unreserve() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -427,6 +474,7 @@ func (s *sharedServer) idleLocked() {
 	if s.idleTimer != nil {
 		s.idleTimer.Stop()
 	}
+	s.stopsAt = time.Now().Add(s.idle)
 	s.idleTimer = time.AfterFunc(s.idle, func() {
 		taken := s.shared.take(func(candidate *sharedServer) bool {
 			if candidate != s {
@@ -459,6 +507,7 @@ func (s *sharedServer) attach(ctx context.Context, down mcp.Connection) (*shared
 		s.idleTimer.Stop()
 		s.idleTimer = nil
 	}
+	s.stopsAt = time.Time{}
 	c := &sharedClient{
 		server:        s,
 		ctx:           ctx,

@@ -1066,9 +1066,12 @@ func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
 	default:
 		return fmt.Errorf("%s: MCP server %s: load must be native or on_demand", where, name)
 	}
-	switch server.Share {
+	switch server.Share.Type {
 	case ShareNone:
-		server.Share = ""
+		if server.Share.Idle != nil {
+			return fmt.Errorf("%s: MCP server %s: share idle needs a share type other than none", where, name)
+		}
+		server.Share.Type = ""
 	case "":
 	case ShareDirectory, ShareRepository, ShareGlobal:
 		if transport == "http" {

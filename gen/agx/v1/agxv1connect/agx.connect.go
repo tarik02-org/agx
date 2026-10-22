@@ -89,6 +89,9 @@ const (
 	RuntimeServiceListToolsProcedure = "/agx.v1.RuntimeService/ListTools"
 	// RuntimeServiceCallToolProcedure is the fully-qualified name of the RuntimeService's CallTool RPC.
 	RuntimeServiceCallToolProcedure = "/agx.v1.RuntimeService/CallTool"
+	// RuntimeServiceListMcpProcessesProcedure is the fully-qualified name of the RuntimeService's
+	// ListMcpProcesses RPC.
+	RuntimeServiceListMcpProcessesProcedure = "/agx.v1.RuntimeService/ListMcpProcesses"
 	// SecretServiceLoginProcedure is the fully-qualified name of the SecretService's Login RPC.
 	SecretServiceLoginProcedure = "/agx.v1.SecretService/Login"
 	// SecretServiceSetSecretProcedure is the fully-qualified name of the SecretService's SetSecret RPC.
@@ -566,6 +569,9 @@ type RuntimeServiceClient interface {
 	// Calls one tool of an MCP server in a call scope. Credentials and tool execution stay in the
 	// daemon; the caller receives only the result. Authorized like ListTools.
 	CallTool(context.Context, *connect.Request[v1.CallToolRequest]) (*connect.Response[v1.CallToolResponse], error)
+	// Lists the running stdio MCP server processes: shared ones, including idle ones still
+	// warm, and those of single sessions.
+	ListMcpProcesses(context.Context, *connect.Request[v1.ListMcpProcessesRequest]) (*connect.Response[v1.ListMcpProcessesResponse], error)
 }
 
 // NewRuntimeServiceClient constructs a client for the agx.v1.RuntimeService service. By default, it
@@ -609,16 +615,23 @@ func NewRuntimeServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(runtimeServiceMethods.ByName("CallTool")),
 			connect.WithClientOptions(opts...),
 		),
+		listMcpProcesses: connect.NewClient[v1.ListMcpProcessesRequest, v1.ListMcpProcessesResponse](
+			httpClient,
+			baseURL+RuntimeServiceListMcpProcessesProcedure,
+			connect.WithSchema(runtimeServiceMethods.ByName("ListMcpProcesses")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // runtimeServiceClient implements RuntimeServiceClient.
 type runtimeServiceClient struct {
-	getRuntime    *connect.Client[v1.GetRuntimeRequest, v1.GetRuntimeResponse]
-	watchRuntime  *connect.Client[v1.WatchRuntimeRequest, v1.WatchRuntimeResponse]
-	testMcpServer *connect.Client[v1.TestMcpServerRequest, v1.TestMcpServerResponse]
-	listTools     *connect.Client[v1.ListToolsRequest, v1.ListToolsResponse]
-	callTool      *connect.Client[v1.CallToolRequest, v1.CallToolResponse]
+	getRuntime       *connect.Client[v1.GetRuntimeRequest, v1.GetRuntimeResponse]
+	watchRuntime     *connect.Client[v1.WatchRuntimeRequest, v1.WatchRuntimeResponse]
+	testMcpServer    *connect.Client[v1.TestMcpServerRequest, v1.TestMcpServerResponse]
+	listTools        *connect.Client[v1.ListToolsRequest, v1.ListToolsResponse]
+	callTool         *connect.Client[v1.CallToolRequest, v1.CallToolResponse]
+	listMcpProcesses *connect.Client[v1.ListMcpProcessesRequest, v1.ListMcpProcessesResponse]
 }
 
 // GetRuntime calls agx.v1.RuntimeService.GetRuntime.
@@ -646,6 +659,11 @@ func (c *runtimeServiceClient) CallTool(ctx context.Context, req *connect.Reques
 	return c.callTool.CallUnary(ctx, req)
 }
 
+// ListMcpProcesses calls agx.v1.RuntimeService.ListMcpProcesses.
+func (c *runtimeServiceClient) ListMcpProcesses(ctx context.Context, req *connect.Request[v1.ListMcpProcessesRequest]) (*connect.Response[v1.ListMcpProcessesResponse], error) {
+	return c.listMcpProcesses.CallUnary(ctx, req)
+}
+
 // RuntimeServiceHandler is an implementation of the agx.v1.RuntimeService service.
 type RuntimeServiceHandler interface {
 	GetRuntime(context.Context, *connect.Request[v1.GetRuntimeRequest]) (*connect.Response[v1.GetRuntimeResponse], error)
@@ -658,6 +676,9 @@ type RuntimeServiceHandler interface {
 	// Calls one tool of an MCP server in a call scope. Credentials and tool execution stay in the
 	// daemon; the caller receives only the result. Authorized like ListTools.
 	CallTool(context.Context, *connect.Request[v1.CallToolRequest]) (*connect.Response[v1.CallToolResponse], error)
+	// Lists the running stdio MCP server processes: shared ones, including idle ones still
+	// warm, and those of single sessions.
+	ListMcpProcesses(context.Context, *connect.Request[v1.ListMcpProcessesRequest]) (*connect.Response[v1.ListMcpProcessesResponse], error)
 }
 
 // NewRuntimeServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -697,6 +718,12 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 		connect.WithSchema(runtimeServiceMethods.ByName("CallTool")),
 		connect.WithHandlerOptions(opts...),
 	)
+	runtimeServiceListMcpProcessesHandler := connect.NewUnaryHandler(
+		RuntimeServiceListMcpProcessesProcedure,
+		svc.ListMcpProcesses,
+		connect.WithSchema(runtimeServiceMethods.ByName("ListMcpProcesses")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.RuntimeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RuntimeServiceGetRuntimeProcedure:
@@ -709,6 +736,8 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 			runtimeServiceListToolsHandler.ServeHTTP(w, r)
 		case RuntimeServiceCallToolProcedure:
 			runtimeServiceCallToolHandler.ServeHTTP(w, r)
+		case RuntimeServiceListMcpProcessesProcedure:
+			runtimeServiceListMcpProcessesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -736,6 +765,10 @@ func (UnimplementedRuntimeServiceHandler) ListTools(context.Context, *connect.Re
 
 func (UnimplementedRuntimeServiceHandler) CallTool(context.Context, *connect.Request[v1.CallToolRequest]) (*connect.Response[v1.CallToolResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.CallTool is not implemented"))
+}
+
+func (UnimplementedRuntimeServiceHandler) ListMcpProcesses(context.Context, *connect.Request[v1.ListMcpProcessesRequest]) (*connect.Response[v1.ListMcpProcessesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.ListMcpProcesses is not implemented"))
 }
 
 // SecretServiceClient is a client for the agx.v1.SecretService service.

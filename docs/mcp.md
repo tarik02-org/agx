@@ -282,12 +282,22 @@ mcp:
 | `global` | every launch, wherever it runs |
 
 A shared server runs in the directory or repository root it is shared for, or in
-your home directory for `global`, unless `cwd` says otherwise. Launches still
+your home directory for `global`, unless `cwd` says otherwise. It stays five
+minutes after its last session ends, so the next launch finds it warm; set how
+long with the mapping form:
+
+```yaml
+mcp:
+  fff:
+    command: [fff-mcp]
+    share: { type: repository, idle: 30m }   # idle: 0s stops it with its last session
+```
+ Launches still
 reach only the servers they select. Sessions that differ in the server's command,
-environment, secrets, or `!env` values get separate processes. A shared server
-stops five minutes after its last session ends, when a secret it uses changes
-or you log in again, and when the daemon stops. If it crashes, its sessions end
-and the next one starts it again.
+environment, secrets, `!env` values, or idle period get separate processes. A
+shared server also stops when a secret it uses changes or you log in again, and
+when the daemon stops. If it crashes, its sessions end and the next one starts
+it again.
 
 Share only servers that hold the same state for every session. One process sees
 every launch's requests, so a server that remembers a selected workspace, a
@@ -298,7 +308,16 @@ sampling and elicitation. `share` applies only to local servers; remote servers
 already serve many sessions.
 
 `agx mcp add` takes `--share`; `agx mcp list`, `agx resolve`, and `agx explain`
-show the share mode.
+show the share mode. `agx mcp ps` lists the local server processes running now,
+shared or not, with their sessions and launches, and when an idle one stops;
+`agx mcp ps <directory>` only those working in that directory or below it:
+
+```console
+$ agx mcp ps ~/work
+ID   PID    SHARE       SESSIONS  LAUNCHES  STATE                  DIRECTORY
+fff  41822  repository  3         2         in use                 ~/work/acme-web
+fff  40310  repository  0         0         idle, stops in 4m12s   ~/work/blog
+```
 
 ## Code mode
 
@@ -364,7 +383,7 @@ mcp:
 | `environment` | local | environment variables; values may use `!secret`, `!env`, `!file` |
 | `description` | both | what the server offers, shown by `agx mcp tools` |
 | `load` | both | `native` (default): in the harness's tool list; `on_demand`: reached with `agx mcp call` only |
-| `share` | local | `none` (default), `directory`, `repository`, or `global`: see [Sharing a local server](#sharing-a-local-server) |
+| `share` | local | `none` (default), `directory`, `repository`, or `global`, or `{type, idle}`: see [Sharing a local server](#sharing-a-local-server) |
 
 A server has either `url` or `command`. agx manages the `Authorization`,
 `Cookie`, `Host`, and `Mcp-Session-Id` headers itself.

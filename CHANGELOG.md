@@ -30,8 +30,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   or for every launch, instead of starting a process each. The daemon multiplexes the
   sessions onto the server, answers its `roots/list` with the shared root, and refuses
   sampling and elicitation; the process stops five minutes after its last session, when a
-  secret it uses changes, or when it crashes. `agx mcp add` takes `--share`; `mcp list`,
-  `resolve`, and `explain` show it.
+  secret it uses changes, or when it crashes; `share: {type, idle}` sets how long it
+  stays idle. `agx mcp add` takes `--share`; `mcp list`, `resolve`, and `explain` show it.
+- `agx mcp ps [<directory>]` and `RuntimeService.ListMcpProcesses` list the running local
+  MCP server processes, shared or not, with their share mode, root, sessions, launches,
+  and when an idle shared one stops.
 - Harnesses get `AGX_LAUNCH_ID` next to `AGX_MCP_GRANT`; Codex app-server threads get
   their own in their shell environment.
 - `RuntimeService.ListTools` and `CallTool`, and the JSON error code `mcp_failed`

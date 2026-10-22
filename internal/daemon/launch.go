@@ -299,7 +299,7 @@ func (s *Server) endpoints(
 // repository. A global server runs in the home directory, since no launch's directory is its.
 func mcpDefinition(definition config.MCPServer, directory string) (config.MCPServer, string) {
 	root := ""
-	switch definition.Share {
+	switch definition.Share.Type {
 	case config.ShareDirectory:
 		root = directory
 	case config.ShareRepository:
@@ -309,7 +309,7 @@ func mcpDefinition(definition config.MCPServer, directory string) (config.MCPSer
 		switch {
 		case root != "":
 			definition.Cwd = root
-		case definition.Share == config.ShareGlobal:
+		case definition.Share.Type == config.ShareGlobal:
 			definition.Cwd, _ = os.UserHomeDir()
 		default:
 			definition.Cwd = directory

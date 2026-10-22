@@ -125,9 +125,11 @@ servers whose state is the same for every client".
 - A shared server starts on its first client session and is reference-counted
   by client sessions: harness sessions on launch endpoints and pooled CLI
   sessions. When the last ends (a launch ending closes its endpoints and thus
-  its client sessions), it stays warm for an idle period like the ADR 0022 pool,
-  about five minutes, then its process gets the usual input close, termination,
-  and kill.
+  its client sessions), it stays warm for an idle period, five minutes like the
+  ADR 0022 pool unless the definition says otherwise, then its process gets the
+  usual input close, termination, and kill. `share` takes a mode, or
+  `{type: <mode>, idle: <duration>}` to set the idle period; `idle: 0s` stops
+  the process with its last session. The idle period is part of the share key.
 - The per-endpoint limit of 8 sessions counts client sessions; a shared server
   takes a separate limit of 64 client sessions.
 - A config change that alters a share key's inputs simply yields a new key; the
@@ -189,15 +191,20 @@ About a week:
 4. Runtime views listing shared servers and their clients, docs, end-to-end
    tests with several launches: 1 day.
 
-Runtime views show a shared server through each launch's endpoint state, as for
-unshared servers; a view listing shared servers and their clients is left for
-later.
+## Process list
+
+Each launch's endpoint state still shows whether a server is ready, as for
+unshared servers. Which processes run is a separate question, answered by
+`RuntimeService.ListMcpProcesses` and `agx mcp ps [<directory>]`: every stdio
+server process the daemon runs, shared ones including idle ones still warm,
+with its server, process ID, working directory, share mode and root, the
+launches whose sessions use it, its session count, start time, and, when idle,
+when it stops. A directory limits the list to processes working in it or below
+it. The list needs the management token, like the runtime view.
 
 ## Open questions
 
 - Whether the multiplexer should also serve `share: none` stdio servers, so one
   code path parses messages; that changes today's byte-level relay, which
   forwards protocol features agx does not yet know.
-- How long the idle period should be for servers that index, and whether it
-  should be configurable per server (`share_idle`).
-- How runtime views attribute a shared server's state and failures to launches.
+- How runtime views attribute a shared server's failures to launches.
