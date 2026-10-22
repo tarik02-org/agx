@@ -174,6 +174,8 @@ type Server struct {
 	port       int
 	// clients pools the daemon's own MCP client sessions for ListTools and CallTool.
 	clients *clientPool
+	// shared runs the stdio MCP servers launches share.
+	shared *mcpruntime.Shared
 }
 
 // Serve runs the daemon until stop closes or a stop request arrives, then shuts down gracefully:
@@ -268,6 +270,7 @@ func Serve(
 		store:             store,
 		port:              listener.Addr().(*net.TCPAddr).Port,
 		clients:           newClientPool(),
+		shared:            mcpruntime.NewShared(serverCtx, Version),
 	}
 	if port != 0 && port != s.port && len(restored) > 0 {
 		fmt.Fprintf(
@@ -410,6 +413,9 @@ loop:
 		_ = server.Shutdown(shutdownCtx)
 	}()
 	s.closeLaunches(ctx, launches)
+	stopKilling := context.AfterFunc(ctx, s.shared.Kill)
+	s.shared.Close()
+	stopKilling()
 	select {
 	case <-shutdownDone:
 	case <-time.After(time.Second):

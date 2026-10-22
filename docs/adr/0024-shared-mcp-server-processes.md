@@ -1,6 +1,6 @@
 # Share MCP server processes across launches on request
 
-Status: proposed.
+Status: accepted.
 
 Each launch gets its own stdio MCP server processes, and each harness session
 on a launch gets another. That is the safe default, but it is costly for servers
@@ -41,14 +41,14 @@ least four copies of a stdio server.
 
 ## Decision
 
-An MCP server definition gains `share: none | directory | global` (default
-`none`):
+An MCP server definition gains `share: none | directory | repository | global`
+(default `none`):
 
 ```yaml
 mcp:
   fff:
     command: [fff-mcp]
-    share: directory
+    share: repository
 ```
 
 - `none`: today's behaviour.
@@ -56,11 +56,15 @@ mcp:
   launch directory, digest of the resolved definition, the identities of the
   secrets it uses, and the values of the environment inputs it reads). Every
   launch, thread launch, and `agx mcp call` whose key matches uses that process.
-- `global`: the same key without the directory. Only for servers that do not
+- `repository`: the same, keyed on the repository root instead: the closest
+  directory at or above the launch directory holding `.git`, so launches in
+  subdirectories of one project share, and each worktree, whose `.git` is a
+  file, is a root of its own. Outside a repository it keys on the launch
+  directory, as `directory` does. A `directory` or `repository` stdio server
+  without an explicit `cwd` runs in its root.
+- `global`: the same key without a root. Only for servers that do not
   depend on their working directory; a `global` stdio server without an explicit
-  `cwd` runs in the daemon's home directory, not a launch's, and `agx config
-  validate` warns when the command or environment references the launch
-  directory.
+  `cwd` runs in the home directory, not a launch's.
 
 Launch endpoints stay per launch: grants, selection, `/launch/<id>/mcp/<server>`
 URLs, and runtime views are unchanged. A shared endpoint replaces only the
@@ -94,13 +98,20 @@ session, and maps client sessions onto it.
 - **Logging**: `logging/setLevel` is not forwarded; upstream runs at the most
   verbose level any client asked for, and each client receives
   `notifications/message` at or above its own level.
-- **Server requests**: agx declares no `sampling`, `elicitation`, or `roots`
-  capability upstream, so a conforming server does not ask. Requests that come
-  anyway are answered with an error naming the server as shared: no single
-  client owns the session, and choosing one (the caller of the request in
-  flight, the oldest client) would leak one launch's model or user prompt into
-  another's work. `roots/list` would also be wrong for `global`, and is
-  redundant for `directory`, whose process already runs in the root.
+- **Server requests**: agx declares no `sampling` or `elicitation` capability
+  upstream, so a conforming server does not ask. Requests that come anyway are
+  answered with an error naming the server as shared: no single client owns the
+  session, and choosing one (the caller of the request in flight, the oldest
+  client) would leak one launch's model or user prompt into another's work.
+  `ping` is answered by agx.
+- **Roots**: for `directory` and `repository`, agx declares the `roots`
+  capability and answers `roots/list` itself with the one root the key holds,
+  `file://<root>`: every client of the server shares that root, so the answer
+  is right for each of them, and servers that pick their workspace from roots
+  rather than their working directory can be shared too. Clients'
+  `notifications/roots/list_changed` are absorbed, since the root never
+  changes. A `global` server has no common root; agx declares no `roots`
+  capability and refuses `roots/list`.
 - Anything else the shared server does not know is rejected with "method not
   supported for shared MCP servers", rather than forwarded blindly.
 
@@ -178,6 +189,10 @@ About a week:
 4. Runtime views listing shared servers and their clients, docs, end-to-end
    tests with several launches: 1 day.
 
+Runtime views show a shared server through each launch's endpoint state, as for
+unshared servers; a view listing shared servers and their clients is left for
+later.
+
 ## Open questions
 
 - Whether the multiplexer should also serve `share: none` stdio servers, so one
@@ -185,8 +200,4 @@ About a week:
   forwards protocol features agx does not yet know.
 - How long the idle period should be for servers that index, and whether it
   should be configurable per server (`share_idle`).
-- Whether `directory` should key on the repository root rather than the launch
-  directory, so launches in subdirectories of one project share.
-- Whether to forward `roots/list` for `directory` servers by answering it from
-  the daemon with the shared directory, instead of refusing.
 - How runtime views attribute a shared server's state and failures to launches.

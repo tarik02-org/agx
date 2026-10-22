@@ -585,3 +585,26 @@ func TestMCPLoad(t *testing.T) {
 		t.Fatalf("invalid load: %v", err)
 	}
 }
+
+func TestMCPShare(t *testing.T) {
+	root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), `mcp:
+  plain: {command: [plain]}
+  search: {command: [search], share: repository}
+`)
+	c := read(t, root)
+	if got := c.MCP["plain"].ShareMode(); got != config.ShareNone {
+		t.Fatalf("default share = %q", got)
+	}
+	if got := c.MCP["search"].Share; got != config.ShareRepository {
+		t.Fatalf("share = %q", got)
+	}
+	for content, want := range map[string]string{
+		"mcp:\n  x: {command: [x], share: project}\n":              "share must be none, directory, repository, or global",
+		"mcp:\n  x: {url: https://x.example/mcp, share: global}\n": "share applies to stdio servers",
+	} {
+		bad := write(t, filepath.Join(t.TempDir(), "agx.yaml"), content)
+		if _, err := config.Read(bad, builtins); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("%q: %v", content, err)
+		}
+	}
+}

@@ -56,6 +56,9 @@ type Endpoint struct {
 	auth           *auth.Manager
 	secrets        map[config.ID]config.Secret
 	inputs         map[string]string
+	shared         *Shared
+	shareKey       string
+	shareRoot      string
 	sessions       map[string]*stdioSession
 	starting       int
 	remoteSessions map[string]*remoteSession
@@ -72,9 +75,12 @@ type Endpoint struct {
 type stdioSession struct {
 	transport  *mcp.StreamableServerTransport
 	downstream mcp.Connection
-	upstream   mcp.Connection
-	cancel     context.CancelFunc
-	// kill ends the server's process tree at once; exited closes once its process exited.
+	// closeUpstream closes the connection to the session's own process, or leaves its shared
+	// server.
+	closeUpstream func()
+	cancel        context.CancelFunc
+	// kill ends the server's process tree at once, or only leaves a shared server; exited
+	// closes once its process exited, or once the session left its shared server.
 	kill     func()
 	exited   chan struct{}
 	done     sync.Once
@@ -91,6 +97,9 @@ type remoteSession struct {
 	lastUsed   time.Time
 }
 
+// New returns the endpoint of MCP server id. A stdio server whose definition sets share joins
+// a server of shared rooted at root: the launch directory or repository root its share mode
+// keys on, empty for global. Without shared, every session gets its own process.
 func New(
 	ctx context.Context,
 	id config.ID,
@@ -98,6 +107,8 @@ func New(
 	secrets map[config.ID]config.Secret,
 	inputs map[string]string,
 	manager *auth.Manager,
+	shared *Shared,
+	root string,
 ) *Endpoint {
 	ctx, cancel := context.WithCancel(ctx)
 	e := &Endpoint{
@@ -112,6 +123,10 @@ func New(
 		remoteSessions: map[string]*remoteSession{},
 		closeDone:      make(chan struct{}),
 		state:          "connecting",
+	}
+	if shared != nil && c.Transport == "stdio" && c.ShareMode() != config.ShareNone {
+		e.shared, e.shareRoot = shared, root
+		e.shareKey = shareKey(id, c, root, secrets, inputs)
 	}
 	go e.expireIdle()
 	return e
@@ -303,7 +318,7 @@ func (e *Endpoint) deleteUpstream(upstreamID, credential string, headers map[str
 // close ends the session without waiting for its server: cancelling the session's context
 // starts the server's shutdown (see startStdio).
 func (s *stdioSession) close() {
-	s.done.Do(func() { s.cancel(); _ = s.upstream.Close(); _ = s.downstream.Close(); close(s.ended) })
+	s.done.Do(func() { s.cancel(); s.closeUpstream(); _ = s.downstream.Close(); close(s.ended) })
 }
 
 func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -471,7 +486,11 @@ func (e *Endpoint) openStdio(w http.ResponseWriter) (string, *stdioSession) {
 	go e.release(idleStdio, idleRemote)
 
 	id := securefs.Token()
-	s, err := e.startStdio(id, inputs)
+	start := e.startStdio
+	if e.shared != nil {
+		start = e.joinShared
+	}
+	s, err := start(id, inputs)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.starting--
@@ -515,13 +534,25 @@ func (e *Endpoint) openStdio(w http.ResponseWriter) (string, *stdioSession) {
 	return id, s
 }
 
-func (e *Endpoint) startStdio(id string, inputs map[string]string) (*stdioSession, error) {
-	ctx, cancel := context.WithCancel(e.ctx)
+// process is a running stdio MCP server.
+type process struct {
+	conn mcp.Connection
+	// cancel starts its shutdown; kill ends its process tree at once.
+	cancel context.CancelFunc
+	kill   func()
+	exited chan struct{}
+}
+
+// startProcess starts the server's command under base, resolving its environment with resolve.
+// Cancelling base, or the returned cancel, closes the server's input, then terminates and
+// kills it.
+func (e *Endpoint) startProcess(base, resolve context.Context, inputs map[string]string) (*process, error) {
+	ctx, cancel := context.WithCancel(base)
 	cmd := exec.CommandContext(ctx, e.definition.Command[0], e.definition.Command[1:]...)
 	cmd.Dir = e.definition.Cwd
 	cmd.Env = auth.SystemEnvironment()
 	for name, v := range e.definition.Environment {
-		value, err := e.resolve(ctx, fmt.Sprintf("mcp %s environment %s", e.id, name), v, inputs)
+		value, err := e.resolve(resolve, fmt.Sprintf("mcp %s environment %s", e.id, name), v, inputs)
 		if err != nil {
 			cancel()
 			return nil, err
@@ -573,30 +604,47 @@ func (e *Endpoint) startStdio(id string, inputs map[string]string) (*stdioSessio
 	}
 	// On Windows, the kill closes the job handle, which must happen once.
 	kill := sync.OnceFunc(owned)
-	up, err := (&mcp.IOTransport{Reader: stdout, Writer: stdin}).Connect(ctx)
+	conn, err := (&mcp.IOTransport{Reader: stdout, Writer: stdin}).Connect(ctx)
 	if err != nil {
 		kill()
 		_ = cmd.Wait()
 		cancel()
 		return nil, err
 	}
+	go func() {
+		_ = cmd.Wait()
+		close(exited)
+		// Descendants the server left behind end with it.
+		kill()
+	}()
+	return &process{conn: conn, cancel: cancel, kill: kill, exited: exited}, nil
+}
+
+func (e *Endpoint) startStdio(id string, inputs map[string]string) (*stdioSession, error) {
+	ctx, cancel := context.WithCancel(e.ctx)
+	p, err := e.startProcess(ctx, ctx, inputs)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	up := p.conn
 	t := &mcp.StreamableServerTransport{SessionID: id}
 	down, err := t.Connect(ctx)
 	if err != nil {
-		kill()
+		p.kill()
 		_ = up.Close()
-		_ = cmd.Wait()
 		cancel()
+		<-p.exited
 		return nil, err
 	}
 	s := &stdioSession{
-		transport:  t,
-		downstream: down,
-		upstream:   up,
-		cancel:     cancel,
-		kill:       kill,
-		exited:     exited,
-		ended:      make(chan struct{}),
+		transport:     t,
+		downstream:    down,
+		closeUpstream: func() { _ = up.Close() },
+		cancel:        cancel,
+		kill:          p.kill,
+		exited:        p.exited,
+		ended:         make(chan struct{}),
 	}
 	go func() {
 		defer s.close()
@@ -641,21 +689,67 @@ func (e *Endpoint) startStdio(id string, inputs map[string]string) (*stdioSessio
 		}
 	}()
 	go func() {
-		_ = cmd.Wait()
-		close(exited)
-		// Descendants the server left behind end with it.
-		kill()
-		s.close()
-		e.mu.Lock()
-		if e.sessions[id] == s {
-			delete(e.sessions, id)
-		}
-		if !e.closed {
-			e.state = "connecting"
-		}
-		e.mu.Unlock()
+		<-p.exited
+		e.sessionEnded(id, s)
 	}()
 	return s, nil
+}
+
+// joinShared opens a client session on the endpoint's shared server, starting the server
+// when none runs for its share key.
+func (e *Endpoint) joinShared(id string, inputs map[string]string) (*stdioSession, error) {
+	ctx, cancel := context.WithCancel(e.ctx)
+	joinCtx, stopJoin := context.WithTimeout(ctx, sharedStartTimeout)
+	server, err := e.shared.join(joinCtx, e, inputs)
+	stopJoin()
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	t := &mcp.StreamableServerTransport{SessionID: id}
+	down, err := t.Connect(ctx)
+	if err != nil {
+		server.unreserve()
+		cancel()
+		return nil, err
+	}
+	client, err := server.attach(ctx, down)
+	if err != nil {
+		_ = down.Close()
+		cancel()
+		return nil, err
+	}
+	exited := make(chan struct{})
+	s := &stdioSession{
+		transport:  t,
+		downstream: down,
+		closeUpstream: func() {
+			client.end()
+			close(exited)
+		},
+		cancel: cancel,
+		exited: exited,
+		ended:  make(chan struct{}),
+	}
+	s.kill = s.close
+	go func() {
+		<-client.Ended()
+		e.sessionEnded(id, s)
+	}()
+	return s, nil
+}
+
+// sessionEnded forgets session id once its process exited or it left its shared server.
+func (e *Endpoint) sessionEnded(id string, s *stdioSession) {
+	s.close()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.sessions[id] == s {
+		delete(e.sessions, id)
+	}
+	if !e.closed {
+		e.state = "connecting"
+	}
 }
 
 func (e *Endpoint) serveRemote(w http.ResponseWriter, r *http.Request) {

@@ -378,6 +378,12 @@ func (k *completer) registerCompletions(root *cobra.Command) {
 		"native\tin the harness's tool list",
 		"on_demand\treached with agx mcp call",
 	))
+	_ = find("mcp", "add").RegisterFlagCompletionFunc("share", fixed(
+		"none\ta process per harness session",
+		"directory\tone process per launch directory",
+		"repository\tone process per repository root",
+		"global\tone process for every launch",
+	))
 	set := func(complete cobra.CompletionFunc, path ...string) {
 		find(path...).ValidArgsFunction = complete
 	}

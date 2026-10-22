@@ -47,7 +47,7 @@ func TestSopsFailureNeedsAuth(t *testing.T) {
 		URL:       "http://127.0.0.1:1/mcp",
 		Auth:      config.MCPAuth{Secret: "token"},
 	}
-	e := mcpruntime.New(t.Context(), "remote", server, secrets, nil, auth.New("http://127.0.0.1:1/callback"))
+	e := mcpruntime.New(t.Context(), "remote", server, secrets, nil, auth.New("http://127.0.0.1:1/callback"), nil, "")
 	t.Cleanup(e.Close)
 
 	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`

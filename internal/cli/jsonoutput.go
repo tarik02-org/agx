@@ -102,12 +102,15 @@ type resourceJSON struct {
 	Kind string  `json:"kind"`
 	ID   string  `json:"id"`
 	Load *string `json:"load"`
+	// Share is none, directory, repository, or global for MCP servers, null for other kinds.
+	Share *string `json:"share"`
 }
 
 func resourceDocument(c *config.Config, r config.Resource) resourceJSON {
 	out := resourceJSON{Kind: r.Kind, ID: string(r.ID)}
 	if r.Kind == "mcp" {
 		out.Load = jsonString(c.MCP[r.ID].Load)
+		out.Share = jsonString(c.MCP[r.ID].ShareMode())
 	}
 	return out
 }
@@ -256,7 +259,9 @@ type mcpServerJSON struct {
 	// Auth is null for stdio servers, which take credentials through their environment.
 	Auth *mcpAuthJSON `json:"auth"`
 	// Load is native or on_demand.
-	Load        string     `json:"load"`
+	Load string `json:"load"`
+	// Share is none, directory, repository, or global.
+	Share       string     `json:"share"`
 	Description *string    `json:"description"`
 	Inline      bool       `json:"inline"`
 	Source      sourceJSON `json:"source"`

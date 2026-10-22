@@ -260,6 +260,46 @@ scopes:
       instructions: [on-demand-mcp]
 ```
 
+## Sharing a local server
+
+Each harness session normally starts its own copy of a local server, and so does
+`agx mcp call` from a shell. For servers whose value is warm state, such as a
+file search server that indexes the project, one process per project serves
+better:
+
+```yaml
+mcp:
+  fff:
+    command: [fff-mcp]
+    share: repository
+```
+
+| `share` | One process for |
+| --- | --- |
+| `none` (default) | each harness session and each `agx mcp call` session |
+| `directory` | every launch in the same directory |
+| `repository` | every launch in the same repository, from any of its subdirectories; each worktree is a repository of its own, and outside a repository it acts like `directory` |
+| `global` | every launch, wherever it runs |
+
+A shared server runs in the directory or repository root it is shared for, or in
+your home directory for `global`, unless `cwd` says otherwise. Launches still
+reach only the servers they select. Sessions that differ in the server's command,
+environment, secrets, or `!env` values get separate processes. A shared server
+stops five minutes after its last session ends, when a secret it uses changes
+or you log in again, and when the daemon stops. If it crashes, its sessions end
+and the next one starts it again.
+
+Share only servers that hold the same state for every session. One process sees
+every launch's requests, so a server that remembers a selected workspace, a
+logged-in user, or a conversation would mix launches up. A shared server also
+cannot ask any one harness for anything: agx answers its `roots/list` requests
+with the shared directory or repository (none for `global`) and refuses
+sampling and elicitation. `share` applies only to local servers; remote servers
+already serve many sessions.
+
+`agx mcp add` takes `--share`; `agx mcp list`, `agx resolve`, and `agx explain`
+show the share mode.
+
 ## Code mode
 
 When a task chains several calls or filters large results, a script is cheaper
@@ -308,6 +348,7 @@ mcp:
   fs:                               # local (stdio)
     command: [npx, -y, '@modelcontextprotocol/server-filesystem', .]
     cwd: ~/work                     # default: the launch directory
+    share: repository               # one process per repository
     environment:
       LOG_LEVEL: warning
       API_TOKEN: !secret fs-token
@@ -323,6 +364,7 @@ mcp:
 | `environment` | local | environment variables; values may use `!secret`, `!env`, `!file` |
 | `description` | both | what the server offers, shown by `agx mcp tools` |
 | `load` | both | `native` (default): in the harness's tool list; `on_demand`: reached with `agx mcp call` only |
+| `share` | local | `none` (default), `directory`, `repository`, or `global`: see [Sharing a local server](#sharing-a-local-server) |
 
 A server has either `url` or `command`. agx manages the `Authorization`,
 `Cookie`, `Host`, and `Mcp-Session-Id` headers itself.

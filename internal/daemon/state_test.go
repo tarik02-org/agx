@@ -13,6 +13,7 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/auth"
+	"github.com/tarik02-org/agx/internal/mcpruntime"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
@@ -25,6 +26,7 @@ func stateServer(t *testing.T) *Server {
 		paths:    paths,
 		launches: map[string]*launch{},
 		clients:  newClientPool(),
+		shared:   mcpruntime.NewShared(context.Background(), "test"),
 		port:     4242,
 		store:    &stateStore{path: StatePath(paths), interval: renewalWriteInterval},
 	}

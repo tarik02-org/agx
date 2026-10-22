@@ -113,16 +113,17 @@ type Instructions struct {
 // LoadNative or LoadOnDemand once merged.
 type MCPServer struct {
 	// Transport follows from url (http) or command (stdio) once merged.
-	Transport   string           `yaml:"transport"   json:"transport"             jsonschema:"enum=stdio,enum=http"       jsonschema_description:"How to reach the server; inferred from url (http) or command (stdio)."`
-	Command     []string         `yaml:"command"     json:"command,omitempty"                                             jsonschema_description:"stdio: server command and arguments."`
-	URL         string           `yaml:"url"         json:"url,omitempty"                                                 jsonschema_description:"http: server URL; http or https."`
-	Cwd         string           `yaml:"cwd"         json:"cwd,omitempty"                                                 jsonschema_description:"stdio: working directory; defaults to the launch directory."`
-	Environment map[string]Value `yaml:"environment" json:"environment,omitempty"                                         jsonschema_description:"stdio: environment variables for the server."`
-	Headers     map[string]Value `yaml:"headers"     json:"headers,omitempty"                                             jsonschema_description:"http: extra request headers."`
+	Transport   string           `yaml:"transport"   json:"transport"             jsonschema:"enum=stdio,enum=http"                                 jsonschema_description:"How to reach the server; inferred from url (http) or command (stdio)."`
+	Command     []string         `yaml:"command"     json:"command,omitempty"                                                                       jsonschema_description:"stdio: server command and arguments."`
+	URL         string           `yaml:"url"         json:"url,omitempty"                                                                           jsonschema_description:"http: server URL; http or https."`
+	Cwd         string           `yaml:"cwd"         json:"cwd,omitempty"                                                                           jsonschema_description:"stdio: working directory; defaults to the launch directory."`
+	Environment map[string]Value `yaml:"environment" json:"environment,omitempty"                                                                   jsonschema_description:"stdio: environment variables for the server."`
+	Headers     map[string]Value `yaml:"headers"     json:"headers,omitempty"                                                                       jsonschema_description:"http: extra request headers."`
 	Auth        MCPAuth          `yaml:"auth"        json:"auth"`
-	Description string           `yaml:"description" json:"description,omitempty"                                         jsonschema_description:"What the server offers, shown by agx mcp tools."`
-	Load        string           `yaml:"load"        json:"load"                  jsonschema:"enum=native,enum=on_demand" jsonschema_description:"native: in the harness's tool list (default); on_demand: reached with agx mcp call."`
-	Override    bool             `yaml:"override"    json:"-"                                                             jsonschema_description:"Replace an existing definition."`
+	Description string           `yaml:"description" json:"description,omitempty"                                                                   jsonschema_description:"What the server offers, shown by agx mcp tools."`
+	Load        string           `yaml:"load"        json:"load"                  jsonschema:"enum=native,enum=on_demand"                           jsonschema_description:"native: in the harness's tool list (default); on_demand: reached with agx mcp call."`
+	Share       string           `yaml:"share"       json:"share,omitempty"       jsonschema:"enum=none,enum=directory,enum=repository,enum=global" jsonschema_description:"stdio: none gives each harness session its own process (default); directory, repository, or global share one process per launch directory, repository root, or everywhere."`
+	Override    bool             `yaml:"override"    json:"-"                                                                                       jsonschema_description:"Replace an existing definition."`
 	Inline      bool             `yaml:"-"           json:"-"`
 	Source      Source           `yaml:"-"           json:"source"`
 }
@@ -133,6 +134,24 @@ const (
 	LoadNative   = "native"
 	LoadOnDemand = "on_demand"
 )
+
+// Share modes of a stdio MCP server: whether harness sessions get a process each, or join one
+// process per launch directory, per repository root, or for everything. Merging leaves none
+// empty, so snapshots of configurations that do not share keep their identity.
+const (
+	ShareNone       = "none"
+	ShareDirectory  = "directory"
+	ShareRepository = "repository"
+	ShareGlobal     = "global"
+)
+
+// ShareMode is the server's share mode, none when it does not share.
+func (c MCPServer) ShareMode() string {
+	if c.Share == "" {
+		return ShareNone
+	}
+	return c.Share
+}
 
 // MCPAuth is the credential an HTTP MCP server sends as its bearer token: a top-level secret
 // referenced with !secret, an inline secret owned by the entry, or none. Merging stores an
