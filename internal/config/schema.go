@@ -110,6 +110,15 @@ func (Value) JSONSchema() *jsonschema.Schema {
 	}
 }
 
+func (Settings) JSONSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{
+		Type: "object",
+		Description: "Native settings, in the harness's own configuration schema: Codex config.toml keys, " +
+			"Claude Code settings.json keys. null removes an inherited key. !file reads a file; !secret " +
+			"and !env are not allowed.",
+	}
+}
+
 func (ID) JSONSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{Type: "string", Pattern: idPattern}
 }

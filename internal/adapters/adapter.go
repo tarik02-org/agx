@@ -55,6 +55,19 @@ type Adapter interface {
 	Resume(session Session) []string
 }
 
+// SettingsAdapter is an adapter whose harness takes a definition's native settings.
+type SettingsAdapter interface {
+	// ValidateSettings checks resolved settings, and the definition's literal arguments, for what
+	// cannot take effect.
+	ValidateSettings(settings map[string]any, args []string) error
+	// SettingsArguments delivers settings as native arguments. dir holds files the launch owns;
+	// it is empty for installation, which needs only what arguments alone carry.
+	SettingsArguments(settings map[string]any, dir string) ([]string, error)
+}
+
+// LaunchDirectory holds a launch's own files, removed when the launch ends.
+func (l Launch) LaunchDirectory() string { return filepath.Join(l.Cache, "launches", l.ID) }
+
 // Launch is what an adapter turns into native arguments.
 type Launch struct {
 	Snapshot *config.Snapshot
@@ -236,7 +249,9 @@ type Plan struct {
 	// Warnings are shown before the harness starts.
 	Warnings []string
 	// Arguments follow the native executable, which the wrapper resolves on its own PATH.
-	Arguments   []string
+	Arguments []string
+	// Settings are the arguments that deliver the definition's settings, first in Arguments.
+	Settings    []string
 	Directory   string
 	Environment map[string]string
 	Unset       []string
@@ -276,10 +291,14 @@ func (r Registry) Names() []string { return slices.Sorted(maps.Keys(r.adapters))
 // Builtins describes the registered harnesses to configuration, which cannot import adapters.
 func (r Registry) Builtins(commands []string) config.Builtins {
 	harnesses := map[string][]string{}
+	settings := map[string]func(map[string]any, []string) error{}
 	for name, a := range r.adapters {
 		harnesses[name] = a.Modes()
+		if s, ok := a.(SettingsAdapter); ok {
+			settings[name] = s.ValidateSettings
+		}
 	}
-	return config.Builtins{Harnesses: harnesses, Commands: commands}
+	return config.Builtins{Harnesses: harnesses, Commands: commands, Settings: settings}
 }
 
 // Install runs every adapter's native installation, in name order, for every harness
@@ -304,7 +323,15 @@ func (r Registry) Install(
 		if err != nil {
 			return nil, err
 		}
-		targets[h.Builtin] = append(targets[h.Builtin], InstallTarget(h, lookup))
+		target := InstallTarget(h, lookup)
+		if s, ok := r.adapters[h.Builtin].(SettingsAdapter); ok && len(h.Settings) > 0 {
+			settings, err := s.SettingsArguments(h.Settings, "")
+			if err != nil {
+				return nil, fmt.Errorf("harness %s settings: %w", h.Name, err)
+			}
+			target.Arguments = append(settings, target.Arguments...)
+		}
+		targets[h.Builtin] = append(targets[h.Builtin], target)
 	}
 	warnings := []string{}
 	for _, name := range r.Names() {
@@ -320,8 +347,8 @@ func (r Registry) Install(
 	return warnings, nil
 }
 
-// Build composes the arguments as the adapter's managed arguments, the definition's resolved groups, then
-// native args. It fills in the launch's artifacts, and runs the adapter's installation when the
+// Build composes the arguments as the definition's settings, the adapter's managed arguments,
+// the definition's resolved groups, then native args. It fills in the launch's artifacts, and runs the adapter's installation when the
 // launch finds it missing.
 func Build(
 	ctx context.Context,
@@ -344,8 +371,16 @@ func Build(
 	plan.Environment[GrantEnvironment] = grant
 	plan.Environment[LaunchEnvironment] = l.ID
 	l.Native = args
+	settings := []string{}
+	if s, ok := a.(SettingsAdapter); ok && len(h.Settings) > 0 {
+		var err error
+		if settings, err = s.SettingsArguments(h.Settings, l.LaunchDirectory()); err != nil {
+			return Plan{}, fmt.Errorf("harness %s settings: %w", h.Name, err)
+		}
+	}
+	plan.Settings = settings
 	resolved := l.Target.Resolved
-	l.Target = NewTarget(h, harnessArgs, harnessEnv, args, l.Target.Lookup)
+	l.Target = NewTarget(h, append(slices.Clone(settings), harnessArgs...), harnessEnv, args, l.Target.Lookup)
 	l.Target.Resolved = resolved
 	l.plan = &plan
 	var prefix []string
@@ -355,6 +390,7 @@ func Build(
 	}); err != nil {
 		return Plan{}, err
 	}
+	prefix = append(slices.Clone(settings), prefix...)
 	prefix = append(prefix, harnessArgs...)
 	prefix = append(prefix, args...)
 	plan.Arguments = prefix

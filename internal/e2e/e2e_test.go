@@ -224,6 +224,7 @@ type dump struct {
 	Env          map[string]string `json:"env"`
 	Skills       map[string]string `json:"skills"`
 	Instructions string            `json:"instructions"`
+	Settings     string            `json:"settings"`
 	Endpoints    map[string]string `json:"endpoints"`
 	Tools        map[string]string `json:"tools"`
 }

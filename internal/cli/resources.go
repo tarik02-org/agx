@@ -261,11 +261,13 @@ func harnessRows(c *config.Config) ([]string, [][]string, any) {
 		}
 		rows = append(rows, []string{out.ID(name), base, h.Builtin, ui.ShortPath(h.Executable, ""), out.Path(source)})
 		items = append(items, harnessJSON{
-			Name:       name,
-			Base:       jsonString(def.Base),
-			Builtin:    h.Builtin,
-			Executable: jsonString(h.Executable),
-			Source:     sourceDocument,
+			Name:             name,
+			Base:             jsonString(def.Base),
+			Builtin:          h.Builtin,
+			Executable:       jsonString(h.Executable),
+			Settings:         def.Settings,
+			ResolvedSettings: h.Settings,
+			Source:           sourceDocument,
 		})
 	}
 	return []string{"NAME", "BASE", "BUILT-IN", "EXECUTABLE", "SOURCE"}, rows, harnessListJSON{Harnesses: items}

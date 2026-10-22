@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -21,6 +22,9 @@ const ModePassthrough = "passthrough"
 type Builtins struct {
 	Harnesses map[string][]string
 	Commands  []string
+	// Settings checks the native settings of definitions based on a built-in, given their
+	// resolved settings and literal arguments; a built-in without an entry takes no settings.
+	Settings map[string]func(settings map[string]any, args []string) error
 }
 
 // Bare returns a configuration without fragments, in which only the built-in harnesses resolve.
@@ -106,6 +110,7 @@ type Harness struct {
 	Add         SelectionSpec    `yaml:"add"         jsonschema_description:"Resources selected for this harness."`
 	Remove      SelectionSpec    `yaml:"remove"      jsonschema_description:"Resources deselected for this harness."`
 	Hidden      *bool            `yaml:"hidden"      jsonschema_description:"Leave this harness out of the launcher's new-session list; it still runs by name. Not inherited."`
+	Settings    Settings         `yaml:"settings"    jsonschema_description:"Native settings in the harness's own schema: Codex config.toml keys, Claude Code settings.json keys."`
 	Override    bool             `yaml:"override"    jsonschema_description:"Replace the definition from earlier fragments."`
 }
 
@@ -117,7 +122,11 @@ type HarnessDefinition struct {
 	Environment map[string]Value   `json:"environment,omitempty"`
 	Selections  []HarnessSelection `json:"selections,omitempty"`
 	Hidden      bool               `json:"hidden,omitempty"`
-	Source      Source             `json:"source"`
+	// Settings are the definition's own native settings; null leaves remove inherited keys.
+	Settings map[string]any `json:"settings,omitempty"`
+	// SettingSources locates each leaf of Settings, keyed by settingKey of its path.
+	SettingSources map[string]Source `json:"-"`
+	Source         Source            `json:"source"`
 	// sources locates set-once fields (base, executable, environment.<name>) for conflict errors.
 	sources map[string]Source
 }
@@ -141,6 +150,10 @@ type ResolvedHarness struct {
 	// Hidden keeps the harness out of the launcher's new-session list. Definitions based on it do
 	// not inherit it, so hiding a built-in leaves its variants offered.
 	Hidden bool
+	// Settings are the native settings layered along the chain, without nulls.
+	Settings map[string]any
+	// SettingSources locates each resolved leaf in the definition that set it.
+	SettingSources []SettingSource
 }
 
 // Arguments returns the argument groups that apply to mode, in order.
@@ -188,6 +201,7 @@ func (c *Config) Harness(name string) (ResolvedHarness, error) {
 		Environment: map[string]Value{},
 		Hidden:      c.Harnesses[name].Hidden,
 	}
+	settings := map[string]any{}
 	for _, n := range chain {
 		def := c.Harnesses[n]
 		if def.Executable != "" {
@@ -196,6 +210,17 @@ func (c *Config) Harness(name string) (ResolvedHarness, error) {
 		h.Args = append(h.Args, def.Args...)
 		for key, value := range def.Environment {
 			h.Environment[key] = value
+		}
+		settings = layerSettings(settings, def.Settings)
+	}
+	h.Settings = withoutNulls(settings)
+	for _, leaf := range SettingLeaves(h.Settings) {
+		// A resolved leaf comes whole from the last definition that set its path.
+		for i := len(chain) - 1; i >= 0; i-- {
+			if at, ok := c.Harnesses[chain[i]].SettingSources[settingKey(leaf.Path)]; ok {
+				h.SettingSources = append(h.SettingSources, SettingSource{Path: leaf.Path, Source: at})
+				break
+			}
 		}
 	}
 	return h, nil
@@ -243,7 +268,12 @@ func (m *merger) harnesses(d Document) error {
 		}
 		def, exists := c.Harnesses[name]
 		if h.Override || !exists {
-			def = HarnessDefinition{Source: at(), Environment: map[string]Value{}, sources: map[string]Source{}}
+			def = HarnessDefinition{
+				Source:         at(),
+				Environment:    map[string]Value{},
+				SettingSources: map[string]Source{},
+				sources:        map[string]Source{},
+			}
 		}
 		set := func(field string, at Source, apply func()) error {
 			if previous, ok := def.sources[field]; ok {
@@ -297,6 +327,35 @@ func (m *merger) harnesses(d Document) error {
 			}
 			def.Args = append(def.Args, ArgGroup{Values: values, Modes: g.Modes})
 		}
+		if h.Settings.node != nil {
+			settings, sources, err := m.settings(h.Settings, name)
+			if err != nil {
+				return err
+			}
+			if def.Settings == nil {
+				def.Settings = map[string]any{}
+			}
+			conflict := func(path []string) error {
+				previous := def.SettingSources[settingKey(path)]
+				for key, at := range def.SettingSources {
+					// The earlier fragment may have set a leaf below this path instead.
+					if previous == (Source{}) && strings.HasPrefix(key, strings.TrimSuffix(settingKey(path), "]")+",") {
+						previous = at
+					}
+				}
+				return fmt.Errorf(
+					"%s: harness %s: settings %s already set at %s; set override: true to replace the definition",
+					locate(at("settings")),
+					name,
+					FormatSettingPath(path),
+					locate(previous),
+				)
+			}
+			if err := mergeFragmentSettings(def.Settings, settings, nil, conflict); err != nil {
+				return err
+			}
+			maps.Copy(def.SettingSources, sources)
+		}
 		add, err := m.selection(h.Add)
 		if err != nil {
 			return err
@@ -334,6 +393,9 @@ func (c *Config) validateHarnesses() error {
 			return fmt.Errorf("%s: %w", locate(def.Source), err)
 		}
 		modes := c.builtins.Harnesses[h.Builtin]
+		if err := c.validateSettings(name, def, h); err != nil {
+			return err
+		}
 		for _, g := range def.Args {
 			if len(g.Values) == 0 {
 				return fmt.Errorf("%s: harness %s: argument group needs values", locate(def.Source), name)
@@ -404,4 +466,36 @@ func position(node *yaml.Node, file string, path ...string) Source {
 		}
 	}
 	return out
+}
+
+// validateSettings checks a definition's resolved settings against its built-in harness.
+func (c *Config) validateSettings(name string, def HarnessDefinition, h ResolvedHarness) error {
+	if len(h.Settings) == 0 {
+		return nil
+	}
+	at := def.Source
+	if len(h.SettingSources) > 0 {
+		at = h.SettingSources[0].Source
+	}
+	check, ok := c.builtins.Settings[h.Builtin]
+	if !ok {
+		return fmt.Errorf(
+			"%s: harness %s: %s takes no settings; pass its options in args instead",
+			locate(at),
+			name,
+			h.Builtin,
+		)
+	}
+	args := []string{}
+	for _, g := range h.Args {
+		for _, v := range g.Values {
+			if !v.Tagged() {
+				args = append(args, v.Literal)
+			}
+		}
+	}
+	if err := check(h.Settings, args); err != nil {
+		return fmt.Errorf("%s: harness %s: %w", locate(at), name, err)
+	}
+	return nil
 }

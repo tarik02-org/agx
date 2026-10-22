@@ -1,6 +1,6 @@
 # Give harness definitions native settings
 
-Status: proposed.
+Status: accepted.
 
 A harness definition changes how a harness runs through `args` and
 `environment`. For settings that is awkward. A Codex definition for a gateway
@@ -211,6 +211,18 @@ Settings therefore never hold secrets and can be shown in full anywhere.
   settings of the definition it is resumed under.
 - **`agx harness add`** gains no flag in this change; settings are edited in
   YAML.
+
+## Implementation notes
+
+- `!file` in settings is read when the configuration loads, so a setting holds the
+  file's contents in snapshots and `explain`.
+- `!secret` and `!env` are rejected by the configuration's tag check, which names
+  harness settings, before settings are converted.
+- `explain --harness` shows each resolved leaf with its source in both forms and in
+  JSON (`settings`); the delivered form (`-c` arguments, the settings file) is not
+  shown.
+- Thread launches of `codex app-server` and explicit installation get the Codex
+  arguments too, so plugin checks see settings such as `features.plugins`.
 
 ## Alternatives
 

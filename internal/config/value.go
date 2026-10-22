@@ -403,7 +403,19 @@ func checkTags(file string, node *yaml.Node, path []string) error {
 		default:
 			return fmt.Errorf("%s:%d: unknown tag %s; use !env, !file, or !secret", file, node.Line, tag)
 		}
-		if !slices.ContainsFunc(taggedFields, func(pattern []string) bool { return matchPath(pattern, path) }) {
+		// Settings take !file at any depth, but no credentials: Codex gets them as arguments.
+		settings := len(path) >= 3 && path[0] == "harnesses" && path[2] == "settings"
+		if settings && tag != "!file" {
+			return fmt.Errorf(
+				"%s:%d: %s is not allowed in harness settings, which can reach process arguments; set the "+
+					"value in the harness environment and name the variable in settings",
+				file,
+				node.Line,
+				tag,
+			)
+		}
+		if !settings &&
+			!slices.ContainsFunc(taggedFields, func(pattern []string) bool { return matchPath(pattern, path) }) {
 			return misplacedTagError{
 				fmt.Errorf(
 					"%s:%d: %s is allowed only in harness environment and args, mcp environment, headers, and auth, and sops age_key",

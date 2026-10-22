@@ -6,6 +6,13 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Added
 
+- Harness definitions take `settings:` in the harness's own configuration schema. Codex gets
+  one `-c` override per setting, encoded as TOML; Claude Code gets a per-launch file passed
+  with `--settings`; Pi definitions reject them. Settings merge along the base chain with
+  `null` removing inherited keys, allow `!file`, and reject `!secret` and `!env`.
+  `agx explain --harness` and `agx harness list --json` show them, and `agx doctor` runs
+  Codex with each definition's settings to report what it rejects.
+
 - A Home Manager module, `homeManagerModules.default` (`programs.agx`): installs agx,
   writes `settings` to the drop-in `agx.d/10-home-manager.yaml` with `!secret`, `!env`,
   and `!file` values from `config.lib.agx`, validates it at build time, runs
