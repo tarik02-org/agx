@@ -28,6 +28,7 @@ import { toast } from "~/components/ui/toast.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonMutation, useDaemonQuery } from "~/daemon/query.ts";
 import { useEffectCallback } from "~/effect/react.tsx";
+import { SetSecretDialog } from "~/features/runtime/SetSecretDialog.tsx";
 import { secretStates } from "~/features/runtime/states.ts";
 import {
   LoginFinished_Outcome,
@@ -162,6 +163,11 @@ function SecretTable({ secrets }: { readonly secrets: ReadonlyArray<SecretStatus
               {secret.diagnostics.map((d) => d.summary).join("; ")}
             </TableCell>
             <TableCell className="text-right">
+              {secret.kind === "keychain" && (
+                <div className="flex justify-end">
+                  <SetSecretDialog secretId={secret.secretId} />
+                </div>
+              )}
               {secret.kind === "oauth" && (
                 <div className="flex justify-end gap-1">
                   <Button

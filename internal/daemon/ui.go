@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/securefs"
 	"github.com/tarik02-org/agx/internal/ui"
 )
@@ -127,6 +128,26 @@ func (s *Server) serveUILogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 	})
 	http.Redirect(w, r, "/ui/", http.StatusSeeOther)
+}
+
+// serveUISchema serves the configuration JSON Schema of this daemon's version and harnesses, which
+// the UI's editors validate and complete against.
+func (s *Server) serveUISchema(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.managed(r.Header) {
+		http.Error(w, "unauthenticated", http.StatusUnauthorized)
+		return
+	}
+	schema, err := config.Schema(false, s.builtins)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/schema+json")
+	_, _ = w.Write(schema)
 }
 
 func (s *Server) serveUI() http.Handler { return ui.Handler("/ui") }

@@ -11,11 +11,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/tarik02-org/agx/internal/yaml"
-
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/config/edit"
+	"github.com/tarik02-org/agx/internal/configedit"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
@@ -181,11 +180,11 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 				}
 			}
 			if base == "" {
-				if base, err = s.ask("Base harness:", strings.Join(s.config.HarnessNames(), ", "), nil); err != nil {
+				if base, err = s.ask("Base harness:", strings.Join(s.Config.HarnessNames(), ", "), nil); err != nil {
 					return err
 				}
 			}
-			if slices.Contains(s.config.HarnessNames(), name) {
+			if slices.Contains(s.Config.HarnessNames(), name) {
 				return codedf(codeConflict, "harness %s already exists; edit its definition instead", name)
 			}
 			definition := edit.Mapping("base", base)
@@ -210,7 +209,7 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 			if err != nil {
 				return err
 			}
-			f, err := s.file(file)
+			f, err := s.File(file)
 			if err != nil {
 				return err
 			}
@@ -277,71 +276,10 @@ func harnessRows(c *config.Config) ([]string, [][]string, any) {
 // go first; with force, scope rules limited to it lose it from their filter, and rules left
 // without a filter target are removed.
 func (s *session) removeHarness(name string, force bool) error {
-	for _, other := range slices.Sorted(maps.Keys(s.config.Harnesses)) {
-		if s.config.Harnesses[other].Base == name {
-			return codedf(codeConflict, "harness %s extends %s; remove it first", other, name)
-		}
-	}
-	declared := false
-	filters := []string{}
-	for _, path := range s.fragments() {
-		f, err := s.file(path)
-		if err != nil {
-			return err
-		}
-		if f.Definition("harnesses", name) != nil {
-			if err := edit.Writable(path); err != nil {
-				return coded(codeReadOnly, err)
-			}
-			f.Undefine("harnesses", name)
-			declared = true
-		}
-		for _, r := range f.Rules() {
-			if slices.Contains(r.Harnesses, name) {
-				filters = append(filters, ui.ShortPath(path, "")+": scope "+scope{
-					directory: r.Directory,
-					written:   homeRelative(r.Directory), harnesses: r.Harnesses,
-				}.String())
-			}
-		}
-	}
-	if !declared {
-		if slices.Contains(s.config.HarnessNames(), name) {
-			return codedf(codeReadOnly, "%s is built in and not customized", name)
-		}
-		return codedf(codeNotFound, "unknown harness %s", name)
+	if err := s.RemoveHarness(name, force); err != nil {
+		return err
 	}
 	s.result.Removed = append(s.result.Removed, definitionJSON{Kind: "harnesses", ID: name})
-	if len(filters) == 0 {
-		return nil
-	}
-	if !force {
-		return codedf(codeConflict, "scope rules apply only to %s; pass --force to drop it from them:\n  %s",
-			name, strings.Join(filters, "\n  "))
-	}
-	for _, path := range s.fragments() {
-		f, err := s.file(path)
-		if err != nil {
-			return err
-		}
-		for _, r := range f.Rules() {
-			if !slices.Contains(r.Harnesses, name) {
-				continue
-			}
-			if err := edit.Writable(path); err != nil {
-				return coded(codeReadOnly, err)
-			}
-			list := edit.Get(r.Node, "harnesses")
-			list.Content = slices.DeleteFunc(list.Content, func(n *yaml.Node) bool { return n.Value == name })
-			if len(list.Content) == 0 {
-				// The rule applied only to this harness; without it the rule would apply to all.
-				edit.Delete(r.Node, "harnesses")
-				edit.Delete(r.Node, "add")
-				edit.Delete(r.Node, "remove")
-				f.Touch(r.Node)
-			}
-		}
-	}
 	return nil
 }
 
@@ -373,7 +311,7 @@ func useCommands(paths *platform.Paths, builtins *config.Builtins) []*cobra.Comm
 						return err
 					}
 				}
-				kind, err := resourceKind(s.config, id, kind)
+				kind, err := resourceKind(s.Config, id, kind)
 				if err != nil {
 					return err
 				}
@@ -424,10 +362,10 @@ func useCommands(paths *platform.Paths, builtins *config.Builtins) []*cobra.Comm
 }
 
 func inScope(target scope) string {
-	if target.directory == "" && len(target.harnesses) == 0 {
+	if target.Directory == "" && len(target.Harnesses) == 0 {
 		return "everywhere"
 	}
-	if target.directory == "" {
+	if target.Directory == "" {
 		return "everywhere " + strings.TrimPrefix(target.String(), "everywhere ")
 	}
 	return "in " + target.String()
@@ -437,7 +375,7 @@ func inScope(target scope) string {
 func resourceKind(c *config.Config, id, kind string) (string, error) {
 	kinds := []string{}
 	for _, k := range []string{edit.Skills, edit.Instructions, edit.MCP, edit.Bundles} {
-		if _, _, exists := definitionSource(c, k, id); exists && (kind == "" || kind == k) {
+		if _, exists := configedit.Lookup(c, k, id); exists && (kind == "" || kind == k) {
 			kinds = append(kinds, k)
 		}
 	}
@@ -461,9 +399,5 @@ func (s *session) ruleFile(kind, id, flag string) (string, error) {
 	if flag != "" {
 		return s.definitionFile(flag)
 	}
-	source, _, _ := definitionSource(s.config, kind, id)
-	if slices.Contains(s.config.Files, source.Path) && edit.Writable(source.Path) == nil {
-		return source.Path, nil
-	}
-	return s.root, nil
+	return s.RuleFile(kind, id), nil
 }

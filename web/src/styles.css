@@ -136,3 +136,18 @@
     @apply font-sans;
   }
 }
+
+/* @pierre/trees renders in a shadow root and takes its colors from these variables. */
+@layer components {
+  .file-tree {
+    --trees-bg-override: transparent;
+    --trees-bg-muted-override: var(--muted);
+    --trees-fg-override: var(--foreground);
+    --trees-fg-muted-override: var(--muted-foreground);
+    --trees-selected-bg-override: var(--accent);
+    --trees-border-color-override: var(--border);
+    --trees-accent-override: var(--primary);
+    --trees-font-family-override: var(--font-mono);
+    --trees-font-size-override: 12px;
+  }
+}

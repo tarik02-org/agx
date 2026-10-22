@@ -9,8 +9,13 @@ export const queryKeys = {
   processes: ["mcp-processes"],
   secrets: ["secrets"],
   configuration: ["configuration"],
+  tools: ["mcp-tools"],
   resolve: (directory: string, harness: string) => ["resolve", directory, harness],
   completeDirectory: (prefix: string) => ["complete-directory", prefix],
+  definitions: ["definitions"],
+  skill: (skillId: string) => ["skill", skillId],
+  file: (path: string) => ["file", path],
+  configSchema: ["config-schema"],
 } as const satisfies Record<string, QueryKey | ((...args: ReadonlyArray<string>) => QueryKey)>;
 
 /**
@@ -20,7 +25,11 @@ export const queryKeys = {
 export function useDaemonQuery<A>(
   key: QueryKey,
   effect: Effect.Effect<A, DaemonError, Services>,
-  options: { readonly refetchInterval?: number; readonly enabled?: boolean } = {},
+  options: {
+    readonly refetchInterval?: number;
+    readonly enabled?: boolean;
+    readonly staleTime?: number;
+  } = {},
 ) {
   const run = useRunEffect();
   return useQuery<A, DaemonError>({
@@ -31,13 +40,13 @@ export function useDaemonQuery<A>(
 }
 
 /** A daemon change that refreshes the reads it affects once it finishes. */
-export function useDaemonMutation<Args>(
-  effect: (args: Args) => Effect.Effect<unknown, DaemonError, Services>,
+export function useDaemonMutation<Args, A = unknown>(
+  effect: (args: Args) => Effect.Effect<A, DaemonError, Services>,
   invalidates: ReadonlyArray<QueryKey>,
 ) {
   const run = useRunEffect();
   const client = useQueryClient();
-  return useMutation<unknown, DaemonError, Args>({
+  return useMutation<A, DaemonError, Args>({
     mutationFn: (args) => run(effect(args)),
     onSettled: () =>
       Promise.all(invalidates.map((queryKey) => client.invalidateQueries({ queryKey }))),

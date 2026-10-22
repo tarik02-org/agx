@@ -178,6 +178,11 @@ type Server struct {
 	ui *uiSessions
 	// shared runs the stdio MCP servers launches share.
 	shared *mcpruntime.Shared
+	// editMu serializes planning and applying configuration changes, so an apply checks and
+	// writes what no other apply is writing.
+	editMu sync.Mutex
+	// previews holds the Git sources PreviewSource fetched.
+	previews previews
 }
 
 // Serve runs the daemon until stop closes or a stop request arrives, then shuts down gracefully:
@@ -316,6 +321,7 @@ func Serve(
 	path, handler = agxv1connect.NewUIServiceHandler(s, opts...)
 	mux.Handle(path, handler)
 	mux.HandleFunc("/ui/login", s.serveUILogin)
+	mux.HandleFunc("/ui/schema.json", s.serveUISchema)
 	mux.Handle("/ui/", s.serveUI())
 	mux.HandleFunc("/launch/", s.serveMCP)
 	mux.HandleFunc("/oauth/callback", s.manager.Callback)
@@ -458,6 +464,9 @@ var startsWork = map[string]bool{
 	agxv1connect.LaunchServicePrepareThreadLaunchProcedure: true,
 	agxv1connect.PackageServiceInstallProcedure:            true,
 	agxv1connect.PackageServiceUpdateProcedure:             true,
+	agxv1connect.PackageServicePreviewSourceProcedure:      true,
+	agxv1connect.ConfigurationServicePlanChangesProcedure:  true,
+	agxv1connect.ConfigurationServiceApplyChangesProcedure: true,
 	agxv1connect.RuntimeServiceTestMcpServerProcedure:      true,
 	agxv1connect.RuntimeServiceListToolsProcedure:          true,
 	agxv1connect.RuntimeServiceCallToolProcedure:           true,

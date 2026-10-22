@@ -10,9 +10,15 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   that the browser trades for a session cookie (`--print` prints the link). Its runtime page
   shows launches live, MCP server processes, secrets, and package installation, with
   revoke, restart, OAuth login and logout, and install actions; its explain page shows what a
-  directory gets for a harness and why. Release binaries and the Nix package embed it.
+  directory gets for a harness and why; its MCP inspector calls tools with schema-built forms;
+  its skills page previews and adds skills from Git; its configuration page edits every
+  definition with forms or YAML and applies staged changes at once after showing their diff.
+  Release binaries and the Nix package embed it.
 - `ConfigurationService.GetConfiguration` and `CompleteDirectory`, and harness settings in
   `ResolveResponse`.
+- `ConfigurationService.ListDefinitions`, `GetSkill`, `ReadFile`, `PlanChanges`, and
+  `ApplyChanges`, and `PackageService.PreviewSource` and `ReadPreviewFile`: the editing the
+  CLI does, as a plan with per-file diffs and an apply that fails if a file changed since.
 - `agx mcp stop <pid>` and `RuntimeService.StopMcpProcess` stop a local MCP server process;
   its sessions reconnect and the next one starts it again.
 

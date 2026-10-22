@@ -55,6 +55,21 @@ const (
 	// ConfigurationServiceCompleteDirectoryProcedure is the fully-qualified name of the
 	// ConfigurationService's CompleteDirectory RPC.
 	ConfigurationServiceCompleteDirectoryProcedure = "/agx.v1.ConfigurationService/CompleteDirectory"
+	// ConfigurationServiceListDefinitionsProcedure is the fully-qualified name of the
+	// ConfigurationService's ListDefinitions RPC.
+	ConfigurationServiceListDefinitionsProcedure = "/agx.v1.ConfigurationService/ListDefinitions"
+	// ConfigurationServiceGetSkillProcedure is the fully-qualified name of the ConfigurationService's
+	// GetSkill RPC.
+	ConfigurationServiceGetSkillProcedure = "/agx.v1.ConfigurationService/GetSkill"
+	// ConfigurationServiceReadFileProcedure is the fully-qualified name of the ConfigurationService's
+	// ReadFile RPC.
+	ConfigurationServiceReadFileProcedure = "/agx.v1.ConfigurationService/ReadFile"
+	// ConfigurationServicePlanChangesProcedure is the fully-qualified name of the
+	// ConfigurationService's PlanChanges RPC.
+	ConfigurationServicePlanChangesProcedure = "/agx.v1.ConfigurationService/PlanChanges"
+	// ConfigurationServiceApplyChangesProcedure is the fully-qualified name of the
+	// ConfigurationService's ApplyChanges RPC.
+	ConfigurationServiceApplyChangesProcedure = "/agx.v1.ConfigurationService/ApplyChanges"
 	// PackageServiceInstallProcedure is the fully-qualified name of the PackageService's Install RPC.
 	PackageServiceInstallProcedure = "/agx.v1.PackageService/Install"
 	// PackageServiceUpdateProcedure is the fully-qualified name of the PackageService's Update RPC.
@@ -62,6 +77,12 @@ const (
 	// PackageServiceWatchOperationProcedure is the fully-qualified name of the PackageService's
 	// WatchOperation RPC.
 	PackageServiceWatchOperationProcedure = "/agx.v1.PackageService/WatchOperation"
+	// PackageServicePreviewSourceProcedure is the fully-qualified name of the PackageService's
+	// PreviewSource RPC.
+	PackageServicePreviewSourceProcedure = "/agx.v1.PackageService/PreviewSource"
+	// PackageServiceReadPreviewFileProcedure is the fully-qualified name of the PackageService's
+	// ReadPreviewFile RPC.
+	PackageServiceReadPreviewFileProcedure = "/agx.v1.PackageService/ReadPreviewFile"
 	// LaunchServicePrepareLaunchProcedure is the fully-qualified name of the LaunchService's
 	// PrepareLaunch RPC.
 	LaunchServicePrepareLaunchProcedure = "/agx.v1.LaunchService/PrepareLaunch"
@@ -125,6 +146,17 @@ type ConfigurationServiceClient interface {
 	GetConfiguration(context.Context, *connect.Request[v1.GetConfigurationRequest]) (*connect.Response[v1.GetConfigurationResponse], error)
 	// Directories whose path starts with a prefix, for directory pickers.
 	CompleteDirectory(context.Context, *connect.Request[v1.CompleteDirectoryRequest]) (*connect.Response[v1.CompleteDirectoryResponse], error)
+	// Every definition as configured, with the YAML that defines it.
+	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
+	// A skill's files, for browsing and editing a local one.
+	GetSkill(context.Context, *connect.Request[v1.GetSkillRequest]) (*connect.Response[v1.GetSkillResponse], error)
+	// One file of a configured skill or instructions definition, or of a configuration fragment.
+	ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error)
+	// Validates a set of changes against the configuration they would produce and returns their
+	// diff; writes nothing.
+	PlanChanges(context.Context, *connect.Request[v1.PlanChangesRequest]) (*connect.Response[v1.PlanChangesResponse], error)
+	// Writes a planned set of changes atomically, when no file changed since the plan.
+	ApplyChanges(context.Context, *connect.Request[v1.ApplyChangesRequest]) (*connect.Response[v1.ApplyChangesResponse], error)
 }
 
 // NewConfigurationServiceClient constructs a client for the agx.v1.ConfigurationService service. By
@@ -162,6 +194,36 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(configurationServiceMethods.ByName("CompleteDirectory")),
 			connect.WithClientOptions(opts...),
 		),
+		listDefinitions: connect.NewClient[v1.ListDefinitionsRequest, v1.ListDefinitionsResponse](
+			httpClient,
+			baseURL+ConfigurationServiceListDefinitionsProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ListDefinitions")),
+			connect.WithClientOptions(opts...),
+		),
+		getSkill: connect.NewClient[v1.GetSkillRequest, v1.GetSkillResponse](
+			httpClient,
+			baseURL+ConfigurationServiceGetSkillProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("GetSkill")),
+			connect.WithClientOptions(opts...),
+		),
+		readFile: connect.NewClient[v1.ReadFileRequest, v1.ReadFileResponse](
+			httpClient,
+			baseURL+ConfigurationServiceReadFileProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ReadFile")),
+			connect.WithClientOptions(opts...),
+		),
+		planChanges: connect.NewClient[v1.PlanChangesRequest, v1.PlanChangesResponse](
+			httpClient,
+			baseURL+ConfigurationServicePlanChangesProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("PlanChanges")),
+			connect.WithClientOptions(opts...),
+		),
+		applyChanges: connect.NewClient[v1.ApplyChangesRequest, v1.ApplyChangesResponse](
+			httpClient,
+			baseURL+ConfigurationServiceApplyChangesProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ApplyChanges")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -171,6 +233,11 @@ type configurationServiceClient struct {
 	resolve           *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
 	getConfiguration  *connect.Client[v1.GetConfigurationRequest, v1.GetConfigurationResponse]
 	completeDirectory *connect.Client[v1.CompleteDirectoryRequest, v1.CompleteDirectoryResponse]
+	listDefinitions   *connect.Client[v1.ListDefinitionsRequest, v1.ListDefinitionsResponse]
+	getSkill          *connect.Client[v1.GetSkillRequest, v1.GetSkillResponse]
+	readFile          *connect.Client[v1.ReadFileRequest, v1.ReadFileResponse]
+	planChanges       *connect.Client[v1.PlanChangesRequest, v1.PlanChangesResponse]
+	applyChanges      *connect.Client[v1.ApplyChangesRequest, v1.ApplyChangesResponse]
 }
 
 // Validate calls agx.v1.ConfigurationService.Validate.
@@ -193,6 +260,31 @@ func (c *configurationServiceClient) CompleteDirectory(ctx context.Context, req 
 	return c.completeDirectory.CallUnary(ctx, req)
 }
 
+// ListDefinitions calls agx.v1.ConfigurationService.ListDefinitions.
+func (c *configurationServiceClient) ListDefinitions(ctx context.Context, req *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error) {
+	return c.listDefinitions.CallUnary(ctx, req)
+}
+
+// GetSkill calls agx.v1.ConfigurationService.GetSkill.
+func (c *configurationServiceClient) GetSkill(ctx context.Context, req *connect.Request[v1.GetSkillRequest]) (*connect.Response[v1.GetSkillResponse], error) {
+	return c.getSkill.CallUnary(ctx, req)
+}
+
+// ReadFile calls agx.v1.ConfigurationService.ReadFile.
+func (c *configurationServiceClient) ReadFile(ctx context.Context, req *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error) {
+	return c.readFile.CallUnary(ctx, req)
+}
+
+// PlanChanges calls agx.v1.ConfigurationService.PlanChanges.
+func (c *configurationServiceClient) PlanChanges(ctx context.Context, req *connect.Request[v1.PlanChangesRequest]) (*connect.Response[v1.PlanChangesResponse], error) {
+	return c.planChanges.CallUnary(ctx, req)
+}
+
+// ApplyChanges calls agx.v1.ConfigurationService.ApplyChanges.
+func (c *configurationServiceClient) ApplyChanges(ctx context.Context, req *connect.Request[v1.ApplyChangesRequest]) (*connect.Response[v1.ApplyChangesResponse], error) {
+	return c.applyChanges.CallUnary(ctx, req)
+}
+
 // ConfigurationServiceHandler is an implementation of the agx.v1.ConfigurationService service.
 type ConfigurationServiceHandler interface {
 	Validate(context.Context, *connect.Request[v1.ValidateRequest]) (*connect.Response[v1.ValidateResponse], error)
@@ -201,6 +293,17 @@ type ConfigurationServiceHandler interface {
 	GetConfiguration(context.Context, *connect.Request[v1.GetConfigurationRequest]) (*connect.Response[v1.GetConfigurationResponse], error)
 	// Directories whose path starts with a prefix, for directory pickers.
 	CompleteDirectory(context.Context, *connect.Request[v1.CompleteDirectoryRequest]) (*connect.Response[v1.CompleteDirectoryResponse], error)
+	// Every definition as configured, with the YAML that defines it.
+	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
+	// A skill's files, for browsing and editing a local one.
+	GetSkill(context.Context, *connect.Request[v1.GetSkillRequest]) (*connect.Response[v1.GetSkillResponse], error)
+	// One file of a configured skill or instructions definition, or of a configuration fragment.
+	ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error)
+	// Validates a set of changes against the configuration they would produce and returns their
+	// diff; writes nothing.
+	PlanChanges(context.Context, *connect.Request[v1.PlanChangesRequest]) (*connect.Response[v1.PlanChangesResponse], error)
+	// Writes a planned set of changes atomically, when no file changed since the plan.
+	ApplyChanges(context.Context, *connect.Request[v1.ApplyChangesRequest]) (*connect.Response[v1.ApplyChangesResponse], error)
 }
 
 // NewConfigurationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -234,6 +337,36 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 		connect.WithSchema(configurationServiceMethods.ByName("CompleteDirectory")),
 		connect.WithHandlerOptions(opts...),
 	)
+	configurationServiceListDefinitionsHandler := connect.NewUnaryHandler(
+		ConfigurationServiceListDefinitionsProcedure,
+		svc.ListDefinitions,
+		connect.WithSchema(configurationServiceMethods.ByName("ListDefinitions")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceGetSkillHandler := connect.NewUnaryHandler(
+		ConfigurationServiceGetSkillProcedure,
+		svc.GetSkill,
+		connect.WithSchema(configurationServiceMethods.ByName("GetSkill")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceReadFileHandler := connect.NewUnaryHandler(
+		ConfigurationServiceReadFileProcedure,
+		svc.ReadFile,
+		connect.WithSchema(configurationServiceMethods.ByName("ReadFile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServicePlanChangesHandler := connect.NewUnaryHandler(
+		ConfigurationServicePlanChangesProcedure,
+		svc.PlanChanges,
+		connect.WithSchema(configurationServiceMethods.ByName("PlanChanges")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceApplyChangesHandler := connect.NewUnaryHandler(
+		ConfigurationServiceApplyChangesProcedure,
+		svc.ApplyChanges,
+		connect.WithSchema(configurationServiceMethods.ByName("ApplyChanges")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.ConfigurationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ConfigurationServiceValidateProcedure:
@@ -244,6 +377,16 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 			configurationServiceGetConfigurationHandler.ServeHTTP(w, r)
 		case ConfigurationServiceCompleteDirectoryProcedure:
 			configurationServiceCompleteDirectoryHandler.ServeHTTP(w, r)
+		case ConfigurationServiceListDefinitionsProcedure:
+			configurationServiceListDefinitionsHandler.ServeHTTP(w, r)
+		case ConfigurationServiceGetSkillProcedure:
+			configurationServiceGetSkillHandler.ServeHTTP(w, r)
+		case ConfigurationServiceReadFileProcedure:
+			configurationServiceReadFileHandler.ServeHTTP(w, r)
+		case ConfigurationServicePlanChangesProcedure:
+			configurationServicePlanChangesHandler.ServeHTTP(w, r)
+		case ConfigurationServiceApplyChangesProcedure:
+			configurationServiceApplyChangesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -269,11 +412,36 @@ func (UnimplementedConfigurationServiceHandler) CompleteDirectory(context.Contex
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.CompleteDirectory is not implemented"))
 }
 
+func (UnimplementedConfigurationServiceHandler) ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.ListDefinitions is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) GetSkill(context.Context, *connect.Request[v1.GetSkillRequest]) (*connect.Response[v1.GetSkillResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.GetSkill is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.ReadFile is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) PlanChanges(context.Context, *connect.Request[v1.PlanChangesRequest]) (*connect.Response[v1.PlanChangesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.PlanChanges is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) ApplyChanges(context.Context, *connect.Request[v1.ApplyChangesRequest]) (*connect.Response[v1.ApplyChangesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.ApplyChanges is not implemented"))
+}
+
 // PackageServiceClient is a client for the agx.v1.PackageService service.
 type PackageServiceClient interface {
 	Install(context.Context, *connect.Request[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error)
 	Update(context.Context, *connect.Request[v1.UpdateRequest]) (*connect.Response[v1.UpdateResponse], error)
 	WatchOperation(context.Context, *connect.Request[v1.WatchOperationRequest]) (*connect.ServerStreamForClient[v1.WatchOperationResponse], error)
+	// Fetches a Git source into the cache and lists the skills it holds, without changing the
+	// configuration; previews expire after 30 minutes.
+	PreviewSource(context.Context, *connect.Request[v1.PreviewSourceRequest]) (*connect.Response[v1.PreviewSourceResponse], error)
+	// One file of a previewed skill.
+	ReadPreviewFile(context.Context, *connect.Request[v1.ReadPreviewFileRequest]) (*connect.Response[v1.ReadPreviewFileResponse], error)
 }
 
 // NewPackageServiceClient constructs a client for the agx.v1.PackageService service. By default, it
@@ -305,14 +473,28 @@ func NewPackageServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(packageServiceMethods.ByName("WatchOperation")),
 			connect.WithClientOptions(opts...),
 		),
+		previewSource: connect.NewClient[v1.PreviewSourceRequest, v1.PreviewSourceResponse](
+			httpClient,
+			baseURL+PackageServicePreviewSourceProcedure,
+			connect.WithSchema(packageServiceMethods.ByName("PreviewSource")),
+			connect.WithClientOptions(opts...),
+		),
+		readPreviewFile: connect.NewClient[v1.ReadPreviewFileRequest, v1.ReadPreviewFileResponse](
+			httpClient,
+			baseURL+PackageServiceReadPreviewFileProcedure,
+			connect.WithSchema(packageServiceMethods.ByName("ReadPreviewFile")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // packageServiceClient implements PackageServiceClient.
 type packageServiceClient struct {
-	install        *connect.Client[v1.InstallRequest, v1.InstallResponse]
-	update         *connect.Client[v1.UpdateRequest, v1.UpdateResponse]
-	watchOperation *connect.Client[v1.WatchOperationRequest, v1.WatchOperationResponse]
+	install         *connect.Client[v1.InstallRequest, v1.InstallResponse]
+	update          *connect.Client[v1.UpdateRequest, v1.UpdateResponse]
+	watchOperation  *connect.Client[v1.WatchOperationRequest, v1.WatchOperationResponse]
+	previewSource   *connect.Client[v1.PreviewSourceRequest, v1.PreviewSourceResponse]
+	readPreviewFile *connect.Client[v1.ReadPreviewFileRequest, v1.ReadPreviewFileResponse]
 }
 
 // Install calls agx.v1.PackageService.Install.
@@ -330,11 +512,26 @@ func (c *packageServiceClient) WatchOperation(ctx context.Context, req *connect.
 	return c.watchOperation.CallServerStream(ctx, req)
 }
 
+// PreviewSource calls agx.v1.PackageService.PreviewSource.
+func (c *packageServiceClient) PreviewSource(ctx context.Context, req *connect.Request[v1.PreviewSourceRequest]) (*connect.Response[v1.PreviewSourceResponse], error) {
+	return c.previewSource.CallUnary(ctx, req)
+}
+
+// ReadPreviewFile calls agx.v1.PackageService.ReadPreviewFile.
+func (c *packageServiceClient) ReadPreviewFile(ctx context.Context, req *connect.Request[v1.ReadPreviewFileRequest]) (*connect.Response[v1.ReadPreviewFileResponse], error) {
+	return c.readPreviewFile.CallUnary(ctx, req)
+}
+
 // PackageServiceHandler is an implementation of the agx.v1.PackageService service.
 type PackageServiceHandler interface {
 	Install(context.Context, *connect.Request[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error)
 	Update(context.Context, *connect.Request[v1.UpdateRequest]) (*connect.Response[v1.UpdateResponse], error)
 	WatchOperation(context.Context, *connect.Request[v1.WatchOperationRequest], *connect.ServerStream[v1.WatchOperationResponse]) error
+	// Fetches a Git source into the cache and lists the skills it holds, without changing the
+	// configuration; previews expire after 30 minutes.
+	PreviewSource(context.Context, *connect.Request[v1.PreviewSourceRequest]) (*connect.Response[v1.PreviewSourceResponse], error)
+	// One file of a previewed skill.
+	ReadPreviewFile(context.Context, *connect.Request[v1.ReadPreviewFileRequest]) (*connect.Response[v1.ReadPreviewFileResponse], error)
 }
 
 // NewPackageServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -362,6 +559,18 @@ func NewPackageServiceHandler(svc PackageServiceHandler, opts ...connect.Handler
 		connect.WithSchema(packageServiceMethods.ByName("WatchOperation")),
 		connect.WithHandlerOptions(opts...),
 	)
+	packageServicePreviewSourceHandler := connect.NewUnaryHandler(
+		PackageServicePreviewSourceProcedure,
+		svc.PreviewSource,
+		connect.WithSchema(packageServiceMethods.ByName("PreviewSource")),
+		connect.WithHandlerOptions(opts...),
+	)
+	packageServiceReadPreviewFileHandler := connect.NewUnaryHandler(
+		PackageServiceReadPreviewFileProcedure,
+		svc.ReadPreviewFile,
+		connect.WithSchema(packageServiceMethods.ByName("ReadPreviewFile")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.PackageService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PackageServiceInstallProcedure:
@@ -370,6 +579,10 @@ func NewPackageServiceHandler(svc PackageServiceHandler, opts ...connect.Handler
 			packageServiceUpdateHandler.ServeHTTP(w, r)
 		case PackageServiceWatchOperationProcedure:
 			packageServiceWatchOperationHandler.ServeHTTP(w, r)
+		case PackageServicePreviewSourceProcedure:
+			packageServicePreviewSourceHandler.ServeHTTP(w, r)
+		case PackageServiceReadPreviewFileProcedure:
+			packageServiceReadPreviewFileHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -389,6 +602,14 @@ func (UnimplementedPackageServiceHandler) Update(context.Context, *connect.Reque
 
 func (UnimplementedPackageServiceHandler) WatchOperation(context.Context, *connect.Request[v1.WatchOperationRequest], *connect.ServerStream[v1.WatchOperationResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.PackageService.WatchOperation is not implemented"))
+}
+
+func (UnimplementedPackageServiceHandler) PreviewSource(context.Context, *connect.Request[v1.PreviewSourceRequest]) (*connect.Response[v1.PreviewSourceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.PackageService.PreviewSource is not implemented"))
+}
+
+func (UnimplementedPackageServiceHandler) ReadPreviewFile(context.Context, *connect.Request[v1.ReadPreviewFileRequest]) (*connect.Response[v1.ReadPreviewFileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.PackageService.ReadPreviewFile is not implemented"))
 }
 
 // LaunchServiceClient is a client for the agx.v1.LaunchService service.

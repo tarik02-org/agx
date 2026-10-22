@@ -13,8 +13,26 @@ directories are suggested, and typed paths complete) and optionally a harness,
 and see every resource with the rules that added or removed it, the harness's
 resolved settings, and packages it goes without.
 
-The MCP inspector, skills, and the configuration editor follow
-([ADR 0026](adr/0026-web-ui.md)).
+The MCP inspector lists every configured server's tools and calls one with a
+form built from its input schema, or raw JSON, showing the result's content and
+keeping recent calls in the browser.
+
+The skills page shows each skill's SKILL.md and files and where to enable it.
+Adding skills starts from a Git source (`owner/repo[@ref][/path]` or a URL):
+the daemon fetches it without configuring anything, the page previews its
+skills, and you pick which to enable and where.
+
+The configuration page edits every definition (MCP servers, skills,
+instructions, secrets, bundles, packages, and harnesses) with a form, or as
+YAML checked against the configuration schema, and edits configuration files
+directly. Secrets stored in the keychain get their value from the runtime page.
+
+Nothing is written while you edit. Changes are staged, and **Staged changes**
+shows the diff of every file they touch; **Apply** writes them all at once,
+formatted and commented as the CLI leaves them, or none if a file changed since
+the diff. Files that are links, such as those Home Manager manages, and
+definitions from packages are shown read-only. See
+[ADR 0026](adr/0026-web-ui.md) for the design.
 
 ```sh
 agx ui            # opens the UI in your browser, signed in

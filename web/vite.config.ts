@@ -22,12 +22,16 @@ export default defineConfig({
     proxy: {
       "/agx.v1.": { target: daemon, changeOrigin: true, headers: { origin: daemon } },
       "/ui/login": { target: daemon, changeOrigin: true },
+      "/ui/schema.json": { target: daemon, changeOrigin: true },
     },
   },
   build: {
     outDir: "../internal/ui/dist",
     emptyOutDir: true,
     assetsDir: "assets",
+    // The daemon serves these from localhost. The largest chunk is the configuration editor's,
+    // whose JSON Schema support brings its own Shiki for hover documentation.
+    chunkSizeWarningLimit: 1100,
   },
   fmt: {
     ignorePatterns: [
@@ -66,6 +70,7 @@ export default defineConfig({
           "react/set-state-in-effect": "off",
           "react/no-object-type-as-default-prop": "off",
           "react/no-array-index-key": "off",
+          "react/jsx-no-constructed-context-values": "off",
         },
       },
     ],

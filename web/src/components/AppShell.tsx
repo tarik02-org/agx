@@ -3,6 +3,7 @@ import {
   ActivityIcon,
   BlocksIcon,
   FileCode2Icon,
+  GitCompareArrowsIcon,
   type LucideIcon,
   ScanSearchIcon,
   WrenchIcon,
@@ -12,6 +13,7 @@ import type { ReactNode } from "react";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
@@ -24,23 +26,26 @@ import {
 } from "~/components/ui/sidebar.tsx";
 import { Toaster } from "~/components/ui/toast.tsx";
 import { TooltipProvider } from "~/components/ui/tooltip.tsx";
+import { ReviewChanges } from "~/features/config/ReviewChanges.tsx";
+import { useStaging } from "~/features/config/staging.ts";
 
 interface Section {
   readonly label: string;
   readonly icon: LucideIcon;
-  readonly to: "/" | "/explain" | null;
+  readonly to: "/" | "/explain" | "/mcp" | "/skills" | "/config";
 }
 
-// Pages arrive in the order ADR 0026 lists them; those still to come show as such.
 const sections: ReadonlyArray<Section> = [
   { label: "Runtime", icon: ActivityIcon, to: "/" },
   { label: "Explain", icon: ScanSearchIcon, to: "/explain" },
-  { label: "MCP inspector", icon: WrenchIcon, to: null },
-  { label: "Skills", icon: BlocksIcon, to: null },
-  { label: "Configuration", icon: FileCode2Icon, to: null },
+  { label: "MCP inspector", icon: WrenchIcon, to: "/mcp" },
+  { label: "Skills", icon: BlocksIcon, to: "/skills" },
+  { label: "Configuration", icon: FileCode2Icon, to: "/config" },
 ];
 
 export function AppShell({ children }: { readonly children: ReactNode }) {
+  const staged = useStaging((state) => state.changes.length);
+  const review = useStaging((state) => state.review);
   return (
     <Toaster>
       <TooltipProvider>
@@ -55,29 +60,33 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
                   <SidebarMenu>
                     {sections.map((section) => (
                       <SidebarMenuItem key={section.label}>
-                        {section.to === null ? (
-                          <SidebarMenuButton disabled tooltip={section.label}>
-                            <section.icon />
-                            <span>{section.label}</span>
-                          </SidebarMenuButton>
-                        ) : (
-                          <SidebarMenuButton
-                            tooltip={section.label}
-                            render={<Link to={section.to} activeProps={{ "data-active": true }} />}
-                          >
-                            <section.icon />
-                            <span>{section.label}</span>
-                          </SidebarMenuButton>
-                        )}
-                        {section.to === null && <SidebarMenuBadge>soon</SidebarMenuBadge>}
+                        <SidebarMenuButton
+                          tooltip={section.label}
+                          render={<Link to={section.to} activeProps={{ "data-active": true }} />}
+                        >
+                          <section.icon />
+                          <span>{section.label}</span>
+                        </SidebarMenuButton>
                       </SidebarMenuItem>
                     ))}
                   </SidebarMenu>
                 </SidebarGroupContent>
               </SidebarGroup>
             </SidebarContent>
+            <SidebarFooter>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton tooltip="Staged changes" onClick={() => review(true)}>
+                    <GitCompareArrowsIcon />
+                    <span>Staged changes</span>
+                  </SidebarMenuButton>
+                  {staged > 0 && <SidebarMenuBadge>{staged}</SidebarMenuBadge>}
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarFooter>
           </Sidebar>
           <SidebarInset>{children}</SidebarInset>
+          <ReviewChanges />
         </SidebarProvider>
       </TooltipProvider>
     </Toaster>

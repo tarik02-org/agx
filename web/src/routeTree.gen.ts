@@ -10,11 +10,20 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ConfigRouteImport } from './routes/config'
 import { Route as ExplainRouteImport } from './routes/explain'
+import { Route as McpRouteImport } from './routes/mcp'
+import { Route as SkillsIndexRouteImport } from './routes/skills.index'
+import { Route as SkillsAddRouteImport } from './routes/skills.add'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConfigRoute = ConfigRouteImport.update({
+  id: '/config',
+  path: '/config',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ExplainRoute = ExplainRouteImport.update({
@@ -22,31 +31,69 @@ const ExplainRoute = ExplainRouteImport.update({
   path: '/explain',
   getParentRoute: () => rootRouteImport,
 } as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SkillsIndexRoute = SkillsIndexRouteImport.update({
+  id: '/skills/',
+  path: '/skills/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SkillsAddRoute = SkillsAddRouteImport.update({
+  id: '/skills/add',
+  path: '/skills/add',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/config': typeof ConfigRoute
   '/explain': typeof ExplainRoute
+  '/mcp': typeof McpRoute
+  '/skills/add': typeof SkillsAddRoute
+  '/skills/': typeof SkillsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/config': typeof ConfigRoute
   '/explain': typeof ExplainRoute
+  '/mcp': typeof McpRoute
+  '/skills/add': typeof SkillsAddRoute
+  '/skills': typeof SkillsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/config': typeof ConfigRoute
   '/explain': typeof ExplainRoute
+  '/mcp': typeof McpRoute
+  '/skills/add': typeof SkillsAddRoute
+  '/skills/': typeof SkillsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/explain'
+  fullPaths: '/' | '/config' | '/explain' | '/mcp' | '/skills/add' | '/skills/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/explain'
-  id: '__root__' | '/' | '/explain'
+  to: '/' | '/config' | '/explain' | '/mcp' | '/skills/add' | '/skills'
+  id:
+    | '__root__'
+    | '/'
+    | '/config'
+    | '/explain'
+    | '/mcp'
+    | '/skills/add'
+    | '/skills/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ConfigRoute: typeof ConfigRoute
   ExplainRoute: typeof ExplainRoute
+  McpRoute: typeof McpRoute
+  SkillsAddRoute: typeof SkillsAddRoute
+  SkillsIndexRoute: typeof SkillsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -58,6 +105,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/config': {
+      id: '/config'
+      path: '/config'
+      fullPath: '/config'
+      preLoaderRoute: typeof ConfigRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/explain': {
       id: '/explain'
       path: '/explain'
@@ -65,12 +119,37 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ExplainRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/skills/': {
+      id: '/skills/'
+      path: '/skills'
+      fullPath: '/skills/'
+      preLoaderRoute: typeof SkillsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/skills/add': {
+      id: '/skills/add'
+      path: '/skills/add'
+      fullPath: '/skills/add'
+      preLoaderRoute: typeof SkillsAddRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ConfigRoute: ConfigRoute,
   ExplainRoute: ExplainRoute,
+  McpRoute: McpRoute,
+  SkillsAddRoute: SkillsAddRoute,
+  SkillsIndexRoute: SkillsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

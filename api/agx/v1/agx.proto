@@ -14,12 +14,28 @@ service ConfigurationService {
   rpc GetConfiguration(GetConfigurationRequest) returns (GetConfigurationResponse);
   // Directories whose path starts with a prefix, for directory pickers.
   rpc CompleteDirectory(CompleteDirectoryRequest) returns (CompleteDirectoryResponse);
+  // Every definition as configured, with the YAML that defines it.
+  rpc ListDefinitions(ListDefinitionsRequest) returns (ListDefinitionsResponse);
+  // A skill's files, for browsing and editing a local one.
+  rpc GetSkill(GetSkillRequest) returns (GetSkillResponse);
+  // One file of a configured skill or instructions definition, or of a configuration fragment.
+  rpc ReadFile(ReadFileRequest) returns (ReadFileResponse);
+  // Validates a set of changes against the configuration they would produce and returns their
+  // diff; writes nothing.
+  rpc PlanChanges(PlanChangesRequest) returns (PlanChangesResponse);
+  // Writes a planned set of changes atomically, when no file changed since the plan.
+  rpc ApplyChanges(ApplyChangesRequest) returns (ApplyChangesResponse);
 }
 
 service PackageService {
   rpc Install(InstallRequest) returns (InstallResponse);
   rpc Update(UpdateRequest) returns (UpdateResponse);
   rpc WatchOperation(WatchOperationRequest) returns (stream WatchOperationResponse);
+  // Fetches a Git source into the cache and lists the skills it holds, without changing the
+  // configuration; previews expire after 30 minutes.
+  rpc PreviewSource(PreviewSourceRequest) returns (PreviewSourceResponse);
+  // One file of a previewed skill.
+  rpc ReadPreviewFile(ReadPreviewFileRequest) returns (ReadPreviewFileResponse);
 }
 
 service LaunchService {
@@ -617,4 +633,145 @@ message CreateLoginCodeResponse {
   // Single use; open /ui/login?code=<code> before expires_at.
   string code = 1;
   google.protobuf.Timestamp expires_at = 2;
+}
+
+// A definition kind is a configuration section: skills, instructions, mcp, secrets, bundles,
+// packages, or harnesses.
+message Definition {
+  string kind = 1;
+  string id = 2;
+  SourceLocation source = 3;
+  // The definition's value as written in its file; empty for one a package defines.
+  string yaml = 4;
+  // The package that defines it; empty for configuration fragments.
+  string package = 5;
+  // Its file is a symlink or not writable, or a package defines it.
+  bool read_only = 6;
+  // What it offers: a skill's or MCP server's description.
+  string description = 7;
+  // A skill's directory, or an instructions definition's file; empty otherwise.
+  string path = 8;
+}
+message ListDefinitionsRequest {}
+message ListDefinitionsResponse {
+  repeated Definition definitions = 1;
+}
+
+message GetSkillRequest {
+  string skill_id = 1;
+}
+message GetSkillResponse {
+  Definition definition = 1;
+  // SKILL.md as written.
+  string skill_md = 2;
+  // Files below the skill's directory, relative and /-separated, sorted.
+  repeated string files = 3;
+}
+
+message ReadFileRequest {
+  // A configuration fragment, or a file of a configured skill or instructions definition.
+  string path = 1;
+}
+message ReadFileResponse {
+  string path = 1;
+  string content = 2;
+  // A file larger than 1 MiB or not UTF-8 text is not returned.
+  bool binary = 3;
+  bool read_only = 4;
+}
+
+// One change the editor stages; PlanChanges and ApplyChanges take them in order.
+message ConfigChange {
+  oneof change {
+    DefineChange define = 1;
+    UndefineChange undefine = 2;
+    SelectionChange enable = 3;
+    SelectionChange disable = 4;
+    FileWrite write_file = 5;
+    PackageSource add_package = 6;
+  }
+}
+// Creates or replaces a definition with the given YAML value, in the file that defines it now,
+// or in file (default: the root configuration) for a new one.
+message DefineChange {
+  string kind = 1;
+  string id = 2;
+  string yaml = 3;
+  string file = 4;
+}
+// Removes a definition and every reference to it.
+message UndefineChange {
+  string kind = 1;
+  string id = 2;
+}
+// Selects or deselects a skill, instructions definition, MCP server, or bundle for a directory
+// (empty: everywhere) and harnesses (empty: all), as agx use and unuse do.
+message SelectionChange {
+  string kind = 1;
+  string id = 2;
+  string directory = 3;
+  repeated string harnesses = 4;
+}
+// Replaces a file of a local skill or instructions definition.
+message FileWrite {
+  string path = 1;
+  string content = 2;
+}
+// Declares a Git package, installs it into the cache, and locks it.
+message PackageSource {
+  string id = 1;
+  string git = 2;
+  string ref = 3;
+  string subdir = 4;
+}
+
+message PlanChangesRequest {
+  repeated ConfigChange changes = 1;
+}
+message PlannedFile {
+  string path = 1;
+  // A unified diff from the file's current content.
+  string diff = 2;
+  // SHA-256 of the current content, hex; empty for a new file.
+  string before_sha256 = 3;
+}
+message PlanChangesResponse {
+  repeated PlannedFile files = 1;
+}
+message ApplyChangesRequest {
+  repeated ConfigChange changes = 1;
+  // The files of the plan with the hashes it saw; a file that changed since fails the apply.
+  repeated PlannedFile expected = 2;
+}
+message ApplyChangesResponse {
+  repeated string written = 1;
+}
+
+message PreviewSourceRequest {
+  // owner/repo[@ref][/path], or a Git URL.
+  string source = 1;
+}
+message PreviewSourceResponse {
+  string preview_id = 1;
+  // The package the source would be declared as, and its parsed source.
+  PackageSource package = 2;
+  repeated PreviewSkill skills = 3;
+}
+message PreviewSkill {
+  // The skill's name within the package; its ID once added is <package>/<name>.
+  string name = 1;
+  string description = 2;
+  string skill_md = 3;
+  repeated string files = 4;
+}
+message ReadPreviewFileRequest {
+  string preview_id = 1;
+  string skill = 2;
+  // Relative to the skill's directory, /-separated.
+  string path = 3;
+}
+message ReadPreviewFileResponse {
+  string content = 1;
+  // A file larger than 1 MiB or not UTF-8 text is not returned.
+  bool binary = 2;
 }
