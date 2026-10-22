@@ -1,3 +1,4 @@
+import { cn } from "cn";
 import { useState } from "react";
 
 import {
@@ -16,12 +17,13 @@ interface DirectoryPickerProps {
   /** Directories offered before anything is typed, such as those scope rules name. */
   readonly suggestions: ReadonlyArray<string>;
   readonly onChange: (directory: string) => void;
+  readonly className?: string;
 }
 
 const isPath = (text: string): boolean => text.startsWith("/") || text.startsWith("~/");
 
 /** Picks a directory: a suggestion, a completion of what is typed, or the typed path itself. */
-export function DirectoryPicker({ value, suggestions, onChange }: DirectoryPickerProps) {
+export function DirectoryPicker({ value, suggestions, onChange, className }: DirectoryPickerProps) {
   const [query, setQuery] = useState(value);
   const completions = useDaemonQuery(
     queryKeys.completeDirectory(query),
@@ -47,7 +49,11 @@ export function DirectoryPicker({ value, suggestions, onChange }: DirectoryPicke
         }
       }}
     >
-      <ComboboxInput placeholder="~/work/project" className="w-[32rem] font-mono" />
+      <ComboboxInput
+        aria-label="Directory"
+        placeholder="~/work/project…"
+        className={cn("w-[32rem] font-mono", className)}
+      />
       <ComboboxContent>
         <ComboboxEmpty>No matching directories.</ComboboxEmpty>
         <ComboboxList>

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
   BlocksIcon,
@@ -13,6 +13,15 @@ import { useState } from "react";
 
 import { ButtonLink } from "~/components/ButtonLink.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemTitle,
+} from "~/components/ui/item.tsx";
+import { useEnabledHere } from "~/features/scope/scope.ts";
 import { UnsavedChanges } from "~/components/UnsavedChanges.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
 import { Button } from "~/components/ui/button.tsx";
@@ -33,7 +42,6 @@ import {
   EmptyTitle,
 } from "~/components/ui/empty.tsx";
 import { Input } from "~/components/ui/input.tsx";
-import { ScrollArea } from "~/components/ui/scroll-area.tsx";
 import { Pending } from "~/components/Pending.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs.tsx";
 import { toast } from "~/components/ui/toast.tsx";
@@ -83,78 +91,80 @@ function SkillsPage() {
       </div>
       {definitions.isPending && <Pending className="h-64" />}
       {definitions.isError && <DaemonProblem error={definitions.error} />}
-      {definitions.isSuccess && (
-        <div className="grid min-h-0 flex-1 grid-cols-[18rem_minmax(0,1fr)] gap-4">
-          <SkillList skills={skills} />
-          <ScrollArea className="min-h-0">
-            <div className="pr-3">
-              {search.skill === undefined ? (
-                <Empty>
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <BlocksIcon />
-                    </EmptyMedia>
-                    <EmptyTitle>Pick a skill</EmptyTitle>
-                    <EmptyDescription>
-                      Read its SKILL.md and files, edit local ones, and choose where it is enabled.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              ) : (
-                <SkillView
-                  key={search.skill}
-                  skillId={search.skill}
-                  home={configuration.data?.home ?? ""}
-                />
-              )}
-            </div>
-          </ScrollArea>
-        </div>
-      )}
+      {definitions.isSuccess &&
+        (search.skill === undefined ? (
+          <SkillOverview skills={skills} />
+        ) : (
+          <div className="max-w-5xl">
+            <SkillView
+              key={search.skill}
+              skillId={search.skill}
+              home={configuration.data?.home ?? ""}
+            />
+          </div>
+        ))}
     </div>
   );
 }
 
-function SkillList({ skills }: { readonly skills: ReadonlyArray<Definition> }) {
-  const search = Route.useSearch();
+/** Every skill with what it does, marking those the scope directory gets. */
+function SkillOverview({ skills }: { readonly skills: ReadonlyArray<Definition> }) {
+  const enabledHere = useEnabledHere();
   const [filter, setFilter] = useState("");
   const shown = skills.filter(
     (skill) =>
       filter === "" ||
       `${skill.id} ${skill.description}`.toLowerCase().includes(filter.toLowerCase()),
   );
+  if (skills.length === 0) {
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <BlocksIcon />
+          </EmptyMedia>
+          <EmptyTitle>No skills yet</EmptyTitle>
+          <EmptyDescription>Add some from a Git repository.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
   return (
-    <Card size="sm" className="min-h-0">
-      <CardHeader>
-        <Input
-          type="search"
-          aria-label="Filter skills"
-          placeholder="Filter skills…"
-          autoComplete="off"
-          spellCheck={false}
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-        />
-      </CardHeader>
-      <ScrollArea className="min-h-0 flex-1">
-        <ul className="flex flex-col px-3 pb-3">
-          {shown.map((skill) => (
-            <li key={skill.id}>
-              <ButtonLink
-                variant={search.skill === skill.id ? "secondary" : "ghost"}
-                size="sm"
-                className="w-full justify-start font-mono"
-                to="/skills"
-                search={{ skill: skill.id }}
-              >
-                <span className="truncate">{skill.id}</span>
-                {skill.package !== "" && <PackageIcon data-icon="inline-end" />}
-              </ButtonLink>
-            </li>
-          ))}
-        </ul>
-      </ScrollArea>
-    </Card>
+    <div className="flex max-w-5xl flex-col gap-3">
+      <Input
+        type="search"
+        aria-label="Filter skills"
+        placeholder="Filter skills…"
+        autoComplete="off"
+        spellCheck={false}
+        className="max-w-sm"
+        value={filter}
+        onChange={(event) => setFilter(event.target.value)}
+      />
+      <ItemGroup className="grid grid-cols-[repeat(auto-fill,minmax(20rem,1fr))] gap-2">
+        {shown.map((skill) => (
+          <Item
+            key={skill.id}
+            variant="outline"
+            size="sm"
+            render={<Link to="/skills" search={{ skill: skill.id }} />}
+          >
+            <ItemContent>
+              <ItemTitle className="font-mono">
+                {skill.id}
+                {skill.package !== "" && <PackageIcon className="size-3" />}
+              </ItemTitle>
+              <ItemDescription>{skill.description}</ItemDescription>
+            </ItemContent>
+            {enabledHere?.has(`skills/${skill.id}`) === true && (
+              <ItemActions>
+                <Badge variant="secondary">here</Badge>
+              </ItemActions>
+            )}
+          </Item>
+        ))}
+      </ItemGroup>
+    </div>
   );
 }
 

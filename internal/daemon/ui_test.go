@@ -3,6 +3,9 @@ package daemon
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -49,6 +52,20 @@ func TestUILoginSetsCookie(t *testing.T) {
 	header.Add("Cookie", uiCookie+"="+cookies[0].Value)
 	if !s.managed(header) {
 		t.Fatal("the session cookie does not authorize management")
+	}
+	scoped := httptest.NewRecorder()
+	next, _ := s.ui.code(time.Now())
+	s.serveUILogin(scoped, httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"/ui/login?code="+next+"&directory="+url.QueryEscape(filepath.Join(t.TempDir(), "a b")), nil))
+	if location := scoped.Header().Get("Location"); !strings.HasPrefix(location, "/ui/?dir=") {
+		t.Fatalf("a login with a directory went to %q", location)
+	}
+	relative := httptest.NewRecorder()
+	last, _ := s.ui.code(time.Now())
+	s.serveUILogin(relative, httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"/ui/login?code="+last+"&directory=relative/dir", nil))
+	if location := relative.Header().Get("Location"); location != "/ui/" {
+		t.Fatalf("a login with a relative directory went to %q", location)
 	}
 	again := httptest.NewRecorder()
 	s.serveUILogin(again, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/ui/login?code="+code, nil))

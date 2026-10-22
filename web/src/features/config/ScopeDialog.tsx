@@ -27,6 +27,7 @@ import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
 import { type Scope, scopeLabel, select, useStaging } from "~/features/config/staging.ts";
 import { DirectoryPicker } from "~/features/explain/DirectoryPicker.tsx";
+import { useScopeDirectory } from "~/features/scope/scope.ts";
 
 interface ScopePickerProps {
   readonly scope: Scope;
@@ -40,6 +41,7 @@ export function ScopePicker({ scope, onChange }: ScopePickerProps) {
     Daemon.use((daemon) => daemon.configuration),
   );
   const everywhere = scope.directory === "";
+  const scopeDirectory = useScopeDirectory();
   return (
     <FieldGroup>
       <Field>
@@ -51,7 +53,11 @@ export function ScopePicker({ scope, onChange }: ScopePickerProps) {
           onValueChange={(next) =>
             onChange({
               ...scope,
-              directory: next.includes("directory") ? (configuration.data?.home ?? "~") : "",
+              directory: next.includes("directory")
+                ? scopeDirectory === ""
+                  ? (configuration.data?.home ?? "")
+                  : scopeDirectory
+                : "",
             })
           }
         >
@@ -105,7 +111,8 @@ interface ScopeDialogProps {
 export function ScopeDialog({ kind, id, trigger }: ScopeDialogProps) {
   const stage = useStaging((state) => state.stage);
   const [action, setAction] = useState<"enable" | "disable">("enable");
-  const [scope, setScope] = useState<Scope>({ directory: "", harnesses: [] });
+  // Enabling starts where the UI is scoped.
+  const [scope, setScope] = useState<Scope>({ directory: useScopeDirectory(), harnesses: [] });
   const [open, setOpen] = useState(false);
   return (
     <Dialog open={open} onOpenChange={setOpen}>

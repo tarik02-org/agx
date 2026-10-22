@@ -6,7 +6,6 @@ import {
   ListChecksIcon,
   LockIcon,
   PackageIcon,
-  PlusIcon,
   RotateCcwIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -14,7 +13,6 @@ import { useState } from "react";
 
 import { ConfirmAction } from "~/components/ConfirmAction.tsx";
 import { UnsavedChanges } from "~/components/UnsavedChanges.tsx";
-import { ButtonLink } from "~/components/ButtonLink.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
@@ -37,7 +35,6 @@ import {
 } from "~/components/ui/empty.tsx";
 import { Field, FieldLabel } from "~/components/ui/field.tsx";
 import { Input } from "~/components/ui/input.tsx";
-import { ScrollArea } from "~/components/ui/scroll-area.tsx";
 import {
   Select,
   SelectContent,
@@ -65,6 +62,7 @@ import {
 import { yamlErrors } from "~/features/config/yamlDocument.ts";
 import type { ConfigurationFile, Definition } from "~/gen/agx/v1/agx_pb.ts";
 import { type ConfigSchema, definitionSchema, fieldDescription } from "~/lib/configSchema.ts";
+import { kinds, selectable } from "~/features/config/kinds.ts";
 import { shortPath } from "~/lib/path.ts";
 import { pageTitle } from "~/lib/title.ts";
 
@@ -82,19 +80,6 @@ export const Route = createFileRoute("/config")({
   validateSearch: Schema.decodeUnknownSync(ConfigSearch),
   component: ConfigPage,
 });
-
-const kinds: ReadonlyArray<{ readonly kind: string; readonly label: string }> = [
-  { kind: "mcp", label: "MCP servers" },
-  { kind: "skills", label: "Skills" },
-  { kind: "instructions", label: "Instructions" },
-  { kind: "secrets", label: "Secrets" },
-  { kind: "bundles", label: "Bundles" },
-  { kind: "packages", label: "Packages" },
-  { kind: "harnesses", label: "Harnesses" },
-];
-
-/** Kinds scope rules select, so they can be enabled and disabled. */
-const selectable = new Set(["skills", "instructions", "mcp", "bundles"]);
 
 function ConfigPage() {
   const configuration = useDaemonQuery(
@@ -119,143 +104,45 @@ function ConfigPage() {
       {configuration.isError && <DaemonProblem error={configuration.error} />}
       {definitions.isError && <DaemonProblem error={definitions.error} />}
       {configuration.isSuccess && definitions.isSuccess && (
-        <div className="grid min-h-0 flex-1 grid-cols-[18rem_minmax(0,1fr)] gap-4">
-          <Navigator
-            definitions={definitions.data}
-            files={configuration.data.files}
-            home={configuration.data.home}
-          />
-          <ScrollArea className="min-h-0">
-            <div className="pr-3">
-              {search.file !== undefined ? (
-                <FileEditor
-                  key={search.file}
-                  path={search.file}
-                  file={configuration.data.files.find((file) => file.path === search.file)}
-                  home={configuration.data.home}
-                  schema={schema.data}
-                />
-              ) : search.kind !== undefined &&
-                (search.id !== undefined || search.create === true) ? (
-                <DefinitionEditor
-                  key={`${search.kind}/${search.id ?? ""}/${String(search.create)}`}
-                  kind={search.kind}
-                  definition={definitions.data.find(
-                    (definition) => definition.kind === search.kind && definition.id === search.id,
-                  )}
-                  initialId={search.id ?? ""}
-                  files={configuration.data.files}
-                  home={configuration.data.home}
-                  schema={schema.data}
-                />
-              ) : (
-                <Empty>
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <FileCode2Icon />
-                    </EmptyMedia>
-                    <EmptyTitle>Pick a definition or file</EmptyTitle>
-                    <EmptyDescription>
-                      Edits are staged; review and apply them together from Staged changes.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              )}
-            </div>
-          </ScrollArea>
+        <div className="max-w-4xl">
+          <div>
+            {search.file !== undefined ? (
+              <FileEditor
+                key={search.file}
+                path={search.file}
+                file={configuration.data.files.find((file) => file.path === search.file)}
+                home={configuration.data.home}
+                schema={schema.data}
+              />
+            ) : search.kind !== undefined && (search.id !== undefined || search.create === true) ? (
+              <DefinitionEditor
+                key={`${search.kind}/${search.id ?? ""}/${String(search.create)}`}
+                kind={search.kind}
+                definition={definitions.data.find(
+                  (definition) => definition.kind === search.kind && definition.id === search.id,
+                )}
+                initialId={search.id ?? ""}
+                files={configuration.data.files}
+                home={configuration.data.home}
+                schema={schema.data}
+              />
+            ) : (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <FileCode2Icon />
+                  </EmptyMedia>
+                  <EmptyTitle>Pick a definition or file in the sidebar</EmptyTitle>
+                  <EmptyDescription>
+                    Edits are staged; review and apply them together from Staged changes.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
+          </div>
         </div>
       )}
     </div>
-  );
-}
-
-function Navigator({
-  definitions,
-  files,
-  home,
-}: {
-  readonly definitions: ReadonlyArray<Definition>;
-  readonly files: ReadonlyArray<ConfigurationFile>;
-  readonly home: string;
-}) {
-  const search = Route.useSearch();
-  const [filter, setFilter] = useState("");
-  const matches = (text: string) => text.toLowerCase().includes(filter.toLowerCase());
-  return (
-    <Card size="sm" className="min-h-0">
-      <CardHeader>
-        <Input
-          type="search"
-          aria-label="Filter definitions"
-          placeholder="Filter definitions…"
-          autoComplete="off"
-          spellCheck={false}
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-        />
-      </CardHeader>
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="flex flex-col gap-3 px-3 pb-3">
-          {kinds.map(({ kind, label }) => {
-            const own = definitions.filter(
-              (d) => d.kind === kind && (filter === "" || matches(d.id)),
-            );
-            return (
-              <section key={kind} className="flex flex-col gap-0.5">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-muted-foreground text-xs">{label}</span>
-                  <Badge variant="secondary">{own.length}</Badge>
-                  <ButtonLink
-                    variant="ghost"
-                    size="icon-sm"
-                    className="ml-auto"
-                    aria-label={`New ${label}`}
-                    to="/config"
-                    search={{ kind, create: true }}
-                  >
-                    <PlusIcon />
-                  </ButtonLink>
-                </div>
-                {own.map((definition) => (
-                  <ButtonLink
-                    key={definition.id}
-                    variant={
-                      search.kind === kind && search.id === definition.id ? "secondary" : "ghost"
-                    }
-                    size="sm"
-                    className="w-full justify-start font-mono"
-                    to="/config"
-                    search={{ kind, id: definition.id }}
-                  >
-                    <span className="truncate">{definition.id}</span>
-                    {definition.package !== "" && <PackageIcon data-icon="inline-end" />}
-                    {definition.readOnly && definition.package === "" && (
-                      <LockIcon data-icon="inline-end" />
-                    )}
-                  </ButtonLink>
-                ))}
-              </section>
-            );
-          })}
-          <section className="flex flex-col gap-0.5">
-            <span className="font-medium text-muted-foreground text-xs">Files</span>
-            {files.map((file) => (
-              <ButtonLink
-                key={file.path}
-                variant={search.file === file.path ? "secondary" : "ghost"}
-                size="sm"
-                className="w-full justify-start font-mono"
-                to="/config"
-                search={{ file: file.path }}
-              >
-                <span className="truncate">{shortPath(file.path, home)}</span>
-                {file.readOnly && <LockIcon data-icon="inline-end" />}
-              </ButtonLink>
-            ))}
-          </section>
-        </div>
-      </ScrollArea>
-    </Card>
   );
 }
 

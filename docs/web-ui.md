@@ -1,26 +1,35 @@
 # Web UI
 
 The daemon serves a web UI for what is easier to see than to read in a
-terminal. It starts with the runtime page:
+terminal. The top bar switches pages and holds the **scope**: a directory, or
+everywhere. `agx ui` scopes the UI to the directory it runs in, and the scope
+stays in the address, so a scoped page can be shared and reloaded. The sidebar
+is the configuration as a tree: every definition by kind, package skills under
+their package, and the configuration files; when the UI is scoped, it shows
+only what a launch in that directory gets, or everything with one switch.
+
+The runtime page shows:
 
 - launches, updated live, and revoking one;
 - the local MCP server processes `agx mcp ps` lists, and restarting one;
 - secrets with their state, and OAuth login and logout;
 - installing the configuration's packages, with progress.
 
-The explain page answers what `agx explain` does: pick a directory (scope
-directories are suggested, and typed paths complete) and optionally a harness,
-and see every resource with the rules that added or removed it, the harness's
-resolved settings, and packages it goes without.
+The explain page answers what `agx explain` does for the scope directory and
+optionally a harness: every resource with the rules that added or removed it,
+the harness's resolved settings grouped by key with where each was set, and
+packages it goes without.
 
-The MCP inspector lists every configured server's tools and calls one with a
+The MCP inspector lists every configured server's tools, starting servers
+without their own working directory in the scope directory, and calls one with a
 form built from its input schema, or raw JSON, showing the result's content and
 keeping recent calls in the browser.
 
 The skills page shows each skill's SKILL.md and files and where to enable it.
-Adding skills starts from a Git source (`owner/repo[@ref][/path]` or a URL):
-the daemon fetches it without configuring anything, the page previews its
-skills, and you pick which to enable and where.
+Adding skills is a wizard: a Git source (`owner/repo[@ref][/path]` or a URL),
+which the daemon fetches without configuring anything; the skills to enable,
+with their SKILL.md and files; where to enable them, starting with the scope;
+and the diff, applied at once or added to the staged changes.
 
 The configuration page edits every definition (MCP servers, skills,
 instructions, secrets, bundles, packages, and harnesses) with a form, or as
@@ -28,14 +37,14 @@ YAML checked against the configuration schema, and edits configuration files
 directly. Secrets stored in the keychain get their value from the runtime page.
 
 Nothing is written while you edit. Changes are staged, and **Staged changes**
-shows the diff of every file they touch; **Apply** writes them all at once,
+lists them, with the diff of every file they touch on a second tab; **Apply** writes them all at once,
 formatted and commented as the CLI leaves them, or none if a file changed since
 the diff. Files that are links, such as those Home Manager manages, and
 definitions from packages are shown read-only. See
 [ADR 0026](adr/0026-web-ui.md) for the design.
 
 ```sh
-agx ui            # opens the UI in your browser, signed in
+agx ui            # opens the UI in your browser, signed in and scoped to this directory
 agx ui --print    # prints the sign-in link instead
 ```
 

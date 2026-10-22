@@ -123,6 +123,19 @@ tool whose author already writes Effect, and Aperture uses the same model.
 - CI runs `vp lint`, `vp fmt --check`, the TypeScript check, and `vp test`, and
   builds the UI before the Go tests that serve it.
 
+## Layout and scope
+
+- A top bar navigates between pages and holds the scope and the staged changes.
+- The sidebar is the configuration as a tree, not a list of pages: definitions by
+  kind, package skills under their package, and the files. Selecting an entry
+  opens it in the skills page or the editor.
+- The scope is a directory, or everywhere, kept in the address (`?dir=`) that
+  every link carries. `agx ui` passes its working directory with the sign-in
+  code, and the sign-in redirect keeps it only as a query value of the UI's own
+  address. Explain resolves the scope directory, the MCP inspector starts
+  servers in it, the tree and the skills page mark or filter what it gets, and
+  enabling starts there.
+
 ## Features
 
 Each feature is a page, listed in the order they ship.

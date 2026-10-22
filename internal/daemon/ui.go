@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/subtle"
 	"net/http"
+	"net/url"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -127,7 +129,13 @@ func (s *Server) serveUILogin(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 	})
-	http.Redirect(w, r, "/ui/", http.StatusSeeOther)
+	// The directory agx ui ran in becomes the UI's scope. It travels only as a query value of the
+	// UI's own address, so the redirect cannot lead anywhere else.
+	target := "/ui/"
+	if directory := r.URL.Query().Get("directory"); filepath.IsAbs(directory) {
+		target += "?" + url.Values{"dir": {directory}}.Encode()
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // serveUISchema serves the configuration JSON Schema of this daemon's version and harnesses, which

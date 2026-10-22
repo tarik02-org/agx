@@ -39,6 +39,7 @@ import {
 import { parseSchema } from "~/lib/jsonSchema.ts";
 import { Markdown } from "~/lib/markdown.tsx";
 import { pageTitle } from "~/lib/title.ts";
+import { useScopeDirectory } from "~/features/scope/scope.ts";
 
 const InspectorSearch = Schema.Struct({
   server: Schema.optional(Schema.String),
@@ -55,10 +56,12 @@ function InspectorPage() {
     queryKeys.configuration,
     Daemon.use((daemon) => daemon.configuration),
   );
-  const home = configuration.data?.home ?? "";
+  // Servers without their own cwd start in the scope directory, or the home directory.
+  const scope = useScopeDirectory();
+  const directory = scope === "" ? (configuration.data?.home ?? "") : scope;
   const tools = useDaemonQuery(
-    queryKeys.tools,
-    Daemon.use((daemon) => daemon.tools(home)),
+    [...queryKeys.tools, directory],
+    Daemon.use((daemon) => daemon.tools(directory)),
     {
       enabled: configuration.isSuccess,
     },
@@ -76,17 +79,18 @@ function InspectorPage() {
       {(configuration.isPending || tools.isPending) && <Pending className="h-64" />}
       {configuration.isError && <DaemonProblem error={configuration.error} />}
       {tools.isError && <DaemonProblem error={tools.error} />}
-      {tools.isSuccess && <Inspector servers={tools.data} home={home} />}
+      {tools.isSuccess && <Inspector servers={tools.data} directory={directory} />}
     </div>
   );
 }
 
 function Inspector({
   servers,
-  home,
+  directory,
 }: {
   readonly servers: ReadonlyArray<McpTools>;
-  readonly home: string;
+  /** Where stdio servers without a cwd run. */
+  readonly directory: string;
 }) {
   const search = Route.useSearch();
   const [filter, setFilter] = useState("");
@@ -158,7 +162,12 @@ function Inspector({
           </EmptyHeader>
         </Empty>
       ) : (
-        <ToolPanel key={`${server.mcpId}/${tool.name}`} server={server} tool={tool} home={home} />
+        <ToolPanel
+          key={`${server.mcpId}/${tool.name}`}
+          server={server}
+          tool={tool}
+          directory={directory}
+        />
       )}
     </div>
   );
@@ -167,18 +176,19 @@ function Inspector({
 function ToolPanel({
   server,
   tool,
-  home,
+  directory,
 }: {
   readonly server: McpTools;
   readonly tool: McpTool;
-  readonly home: string;
+  /** Where stdio servers without a cwd run. */
+  readonly directory: string;
 }) {
   const history = useCallHistory();
   const [result, setResult] = useState<CallToolResponse | null>(null);
   const [failure, setFailure] = useState<DaemonError | null>(null);
   const call = useDaemonMutation(
     (argumentsJson: string) =>
-      Daemon.use((daemon) => daemon.callTool(home, server.mcpId, tool.name, argumentsJson)),
+      Daemon.use((daemon) => daemon.callTool(directory, server.mcpId, tool.name, argumentsJson)),
     [],
   );
   const own = history.entries.filter(

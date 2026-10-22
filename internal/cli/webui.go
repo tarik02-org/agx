@@ -3,6 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -20,7 +23,8 @@ func uiCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command 
 		GroupID: "runtime",
 		Long: "Opens the daemon's web UI, signed in with a one-time link. With --print, prints the link " +
 			"instead, for a browser on another machine that reaches the daemon through an SSH tunnel " +
-			"(ssh -L <port>:127.0.0.1:<port>). The link works once, within a minute.",
+			"(ssh -L <port>:127.0.0.1:<port>). The link works once, within a minute. The UI starts " +
+			"scoped to the current directory.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
@@ -33,7 +37,16 @@ func uiCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command 
 			if err != nil {
 				return err
 			}
-			link := c.discovery.URL + "/ui/login?code=" + response.Msg.Code
+			query := url.Values{"code": {response.Msg.Code}}
+			// The UI starts scoped to where agx ui ran.
+			// Canonical, as the daemon names directories: /tmp is /private/tmp on macOS.
+			if directory, err := os.Getwd(); err == nil {
+				if canonical, err := filepath.EvalSymlinks(directory); err == nil {
+					directory = canonical
+				}
+				query.Set("directory", directory)
+			}
+			link := c.discovery.URL + "/ui/login?" + query.Encode()
 			if print {
 				_, err := fmt.Fprintln(ui.Stdout, link)
 				return err

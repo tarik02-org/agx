@@ -4,7 +4,6 @@ import { ScanSearchIcon, TriangleAlertIcon } from "lucide-react";
 
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert.tsx";
-import { Badge } from "~/components/ui/badge.tsx";
 import {
   Card,
   CardContent,
@@ -28,19 +27,11 @@ import {
   SelectValue,
 } from "~/components/ui/select.tsx";
 import { Pending } from "~/components/Pending.tsx";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "~/components/ui/table.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
-import { DirectoryPicker } from "~/features/explain/DirectoryPicker.tsx";
-import { shortPath } from "~/lib/path.ts";
+import { useScopeDirectory } from "~/features/scope/scope.ts";
 import { pageTitle } from "~/lib/title.ts";
+import { SettingsTree } from "~/features/explain/SettingsTree.tsx";
 import { resourceKey, Traces } from "~/features/explain/Traces.tsx";
 import {
   Diagnostic_Severity,
@@ -50,7 +41,6 @@ import {
 
 // The address bar is a boundary: what it holds is decoded, not trusted.
 const ExplainSearch = Schema.Struct({
-  directory: Schema.optional(Schema.String),
   harness: Schema.optional(Schema.String),
 });
 
@@ -78,7 +68,8 @@ function ExplainPage() {
 function Explain({ configuration }: { readonly configuration: GetConfigurationResponse }) {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const directory = search.directory ?? "";
+  // The directory is the UI's scope, picked in the top bar.
+  const directory = useScopeDirectory();
   const harness = search.harness ?? "";
   const harnesses = [
     { label: "No harness", value: "" },
@@ -87,11 +78,6 @@ function Explain({ configuration }: { readonly configuration: GetConfigurationRe
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <DirectoryPicker
-          value={directory}
-          suggestions={configuration.scopeDirectories}
-          onChange={(next) => void navigate({ search: { ...search, directory: next } })}
-        />
         <Select
           items={harnesses}
           value={harness}
@@ -121,9 +107,10 @@ function Explain({ configuration }: { readonly configuration: GetConfigurationRe
             <EmptyMedia variant="icon">
               <ScanSearchIcon />
             </EmptyMedia>
-            <EmptyTitle>Pick a directory</EmptyTitle>
+            <EmptyTitle>Scope the UI to a directory</EmptyTitle>
             <EmptyDescription>
-              See every skill, instruction, and MCP server it gets, and the rule that decided each.
+              Pick one in the top bar to see every skill, instruction, and MCP server it gets, and
+              the rule that decided each.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -206,30 +193,7 @@ function ResolutionView({
             <CardTitle>Harness settings</CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Setting</TableHead>
-                  <TableHead>Value</TableHead>
-                  <TableHead>Source</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {response.settings.map((setting) => (
-                  <TableRow key={setting.path.join("\u0000")}>
-                    <TableCell className="font-mono">{setting.path.join(".")}</TableCell>
-                    <TableCell className="font-mono">
-                      <Badge variant="secondary">{setting.valueJson}</Badge>
-                    </TableCell>
-                    <TableCell className="font-mono text-muted-foreground">
-                      {setting.source === undefined
-                        ? ""
-                        : `${shortPath(setting.source.path, home)}:${setting.source.line}`}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <SettingsTree settings={response.settings} home={home} />
           </CardContent>
         </Card>
       )}
