@@ -21,7 +21,12 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     inherit (finalAttrs) pname version src;
     pnpm = pnpm_12;
     fetcherVersion = 4;
-    hash = "sha256-V4m5pBaN0Z0p2gjtuBU3YtT50fU0+ZjXV2r0dhT0ELo=";
+    # pnpm 12 leaves an empty links directory in the store on macOS only; without it the store
+    # is the same on every platform.
+    preFixup = ''
+      rmdir "$storePath/v11/links" 2>/dev/null || true
+    '';
+    hash = "sha256-YUsAj63t2krnNDYICV/5RHl6osDmr+zD+XfCn1hfgSI=";
   };
 
   nativeBuildInputs = [

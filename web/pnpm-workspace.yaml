@@ -4,9 +4,3 @@ overrides:
 peerDependencyRules:
   allowedVersions:
     vite: "1.3.0"
-# The Nix build fetches dependencies once for every platform it builds on, so the store holds
-# the native packages (Rolldown, Oxc, Tailwind) of all of them and its hash is the same everywhere.
-supportedArchitectures:
-  os: [darwin, linux, win32]
-  cpu: [x64, arm64]
-  libc: [glibc, musl]
