@@ -1,5 +1,3 @@
-import "@fontsource-variable/inter";
-import "@fontsource-variable/jetbrains-mono";
 import "~/styles.css";
 
 import { RegistryProvider } from "@effect/atom-react";

@@ -1,3 +1,6 @@
+import { CircleAlertIcon } from "lucide-react";
+
+import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert.tsx";
 import type { DaemonError } from "~/daemon/error.ts";
 
 // Explains a failed daemon call in terms of what the user can do about it.
@@ -5,21 +8,21 @@ export function DaemonProblem({ error }: { readonly error: DaemonError }) {
   switch (error.reason) {
     case "unauthenticated":
       return (
-        <Notice title="Signed out">
+        <Problem title="Signed out">
           This page is no longer signed in to the daemon, which happens after it restarts. Run{" "}
           <code className="font-mono">agx ui</code> to sign in again.
-        </Notice>
+        </Problem>
       );
     case "unreachable":
     case "unavailable":
       return (
-        <Notice title="Daemon unreachable">
+        <Problem title="Daemon unreachable">
           The daemon does not answer; retrying. Start it with{" "}
           <code className="font-mono">agx daemon start</code>.
-        </Notice>
+        </Problem>
       );
     case "config_invalid":
-      return <Notice title="Configuration invalid">{error.message}</Notice>;
+      return <Problem title="Configuration invalid">{error.message}</Problem>;
     case "invalid_request":
     case "not_found":
     case "conflict":
@@ -28,11 +31,11 @@ export function DaemonProblem({ error }: { readonly error: DaemonError }) {
     case "timeout":
     case "internal":
     case "mcp_failed":
-      return <Notice title="Request failed">{error.message}</Notice>;
+      return <Problem title="Request failed">{error.message}</Problem>;
   }
 }
 
-function Notice({
+function Problem({
   title,
   children,
 }: {
@@ -40,9 +43,10 @@ function Notice({
   readonly children: React.ReactNode;
 }) {
   return (
-    <div className="m-4 max-w-xl rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-      <div className="font-medium text-destructive">{title}</div>
-      <p className="mt-1 text-muted-foreground">{children}</p>
-    </div>
+    <Alert variant="destructive" className="max-w-xl">
+      <CircleAlertIcon />
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription>{children}</AlertDescription>
+    </Alert>
   );
 }

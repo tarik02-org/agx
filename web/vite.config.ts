@@ -30,7 +30,13 @@ export default defineConfig({
     assetsDir: "assets",
   },
   fmt: {
-    ignorePatterns: ["src/gen/**", "src/routeTree.gen.ts", "pnpm-lock.yaml"],
+    ignorePatterns: [
+      "src/gen/**",
+      "src/routeTree.gen.ts",
+      "pnpm-lock.yaml",
+      "src/components/ui/**",
+      "src/hooks/use-mobile.ts",
+    ],
     sortPackageJson: {},
   },
   lint: {
@@ -50,6 +56,13 @@ export default defineConfig({
       "typescript/no-non-null-assertion": "error",
       "import/no-unassigned-import": ["error", { allow: ["**/*.css", "@fontsource-variable/*"] }],
     },
+    overrides: [
+      {
+        // shadcn generates these; they change through its CLI (add --diff), not by hand.
+        files: ["src/components/ui/**", "src/hooks/use-mobile.ts"],
+        rules: { "react/set-state-in-effect": "off" },
+      },
+    ],
   },
   test: {
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],

@@ -55,6 +55,17 @@ pnpm --dir web test
 AGX_DAEMON_URL=http://127.0.0.1:<port> pnpm --dir web dev
 ```
 
+Components come from shadcn (Base UI primitives, the `mira` style, lucide
+icons; see `web/components.json`). Add them with its CLI, never by hand, and
+update them with `add --diff`:
+
+```sh
+cd web && pnpm dlx shadcn@latest add dialog
+```
+
+Theme tokens live in `web/src/styles.css`; agx adds `success` and `warning`
+next to shadcn's.
+
 `vp dev` serves the UI with hot reload and forwards RPCs to the running daemon
 at `AGX_DAEMON_URL`; sign in by opening the `agx ui --print` link with the dev
 server's origin. The Nix build fetches pnpm dependencies with a fixed hash

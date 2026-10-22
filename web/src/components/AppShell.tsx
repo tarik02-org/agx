@@ -9,6 +9,21 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+} from "~/components/ui/sidebar.tsx";
+import { TooltipProvider } from "~/components/ui/tooltip.tsx";
+
 interface Section {
   readonly label: string;
   readonly icon: LucideIcon;
@@ -26,32 +41,42 @@ const sections: ReadonlyArray<Section> = [
 
 export function AppShell({ children }: { readonly children: ReactNode }) {
   return (
-    <div className="flex h-dvh">
-      <nav className="flex w-48 shrink-0 flex-col gap-0.5 border-r bg-card/50 p-2">
-        <div className="px-2 pt-1 pb-3 font-mono font-semibold text-sm tracking-tight">agx</div>
-        {sections.map((section) =>
-          section.to === null ? (
-            <span
-              key={section.label}
-              className="flex items-center gap-2 rounded-md px-2 py-1 text-muted-foreground/50"
-              title="Coming soon"
-            >
-              <section.icon className="size-3.5" />
-              {section.label}
-            </span>
-          ) : (
-            <Link
-              key={section.label}
-              to={section.to}
-              className="flex items-center gap-2 rounded-md px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground data-[status=active]:bg-accent data-[status=active]:text-foreground"
-            >
-              <section.icon className="size-3.5" />
-              {section.label}
-            </Link>
-          ),
-        )}
-      </nav>
-      <main className="min-w-0 flex-1 overflow-auto">{children}</main>
-    </div>
+    <TooltipProvider>
+      <SidebarProvider>
+        <Sidebar collapsible="icon">
+          <SidebarHeader>
+            <span className="px-2 font-mono font-semibold">agx</span>
+          </SidebarHeader>
+          <SidebarContent>
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {sections.map((section) => (
+                    <SidebarMenuItem key={section.label}>
+                      {section.to === null ? (
+                        <SidebarMenuButton disabled tooltip={section.label}>
+                          <section.icon />
+                          <span>{section.label}</span>
+                        </SidebarMenuButton>
+                      ) : (
+                        <SidebarMenuButton
+                          tooltip={section.label}
+                          render={<Link to={section.to} activeProps={{ "data-active": true }} />}
+                        >
+                          <section.icon />
+                          <span>{section.label}</span>
+                        </SidebarMenuButton>
+                      )}
+                      {section.to === null && <SidebarMenuBadge>soon</SidebarMenuBadge>}
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </SidebarContent>
+        </Sidebar>
+        <SidebarInset>{children}</SidebarInset>
+      </SidebarProvider>
+    </TooltipProvider>
   );
 }
