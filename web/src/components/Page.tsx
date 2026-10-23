@@ -47,12 +47,12 @@ export function Page({ title, crumbs, actions, fill = false, className, children
     <>
       <title>{pageTitle(...title)}</title>
       <header className="sticky top-0 z-10 flex items-center border-b bg-background">
-        {/* At the sidebar's edge, beside what it hides; an equal gap on the right keeps the
-            header's content centered over the page's. */}
+        {/* At the sidebar's edge, beside what it hides. The header spans the window; only the
+            content below is centered. */}
         <div className="flex w-10 shrink-0 justify-center self-start pt-2.5">
           <SidebarTrigger />
         </div>
-        <div className={cn(width, "flex min-h-11 min-w-0 flex-wrap items-center gap-2 py-1.5")}>
+        <div className="flex min-h-11 min-w-0 flex-1 flex-wrap items-center gap-2 py-1.5 pr-3">
           <Breadcrumb className="min-w-0">
             <BreadcrumbList className="flex-nowrap">
               {crumbs.map((crumb, index) => (
@@ -88,7 +88,6 @@ export function Page({ title, crumbs, actions, fill = false, className, children
             {actions}
           </div>
         </div>
-        <div className="w-10 shrink-0" />
       </header>
       <PageActionsSlot value={slot}>
         <div
