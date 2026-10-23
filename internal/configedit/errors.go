@@ -1,6 +1,6 @@
 // Package configedit makes configuration edits: it changes fragments through their YAML trees,
-// validates the configuration they produce, and writes them. The CLI's edit commands and the
-// daemon's editor share it, so both write identical YAML.
+// validates the configuration they produce, and writes them. It knows nothing of the CLI, so
+// anything else that edits configuration can share it and write identical YAML.
 package configedit
 
 import (
