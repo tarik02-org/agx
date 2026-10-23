@@ -1,14 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { FileCode2Icon, HistoryIcon, WrenchIcon } from "lucide-react";
 import { useState } from "react";
 
 import { ButtonLink } from "~/components/ButtonLink.tsx";
+import { type Crumb, Page } from "~/components/Page.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -38,7 +38,6 @@ import {
 } from "~/gen/agx/v1/agx_pb.ts";
 import { parseSchema } from "~/lib/jsonSchema.ts";
 import { Markdown } from "~/lib/markdown.tsx";
-import { pageTitle } from "~/lib/title.ts";
 
 const InspectorSearch = Schema.Struct({
   server: Schema.optional(Schema.String),
@@ -52,19 +51,42 @@ export const Route = createFileRoute("/mcp")({
 
 function InspectorPage() {
   const search = Route.useSearch();
+  const crumbs: Array<Crumb> = [{ label: "MCP inspector", link: <Link to="/mcp" /> }];
+  if (search.server !== undefined) {
+    crumbs.push({
+      label: search.server,
+      mono: true,
+      link: <Link to="/mcp" search={{ server: search.server }} />,
+    });
+  }
+  if (search.server !== undefined && search.tool !== undefined) {
+    crumbs.push({ label: search.tool, mono: true });
+  }
   return (
-    <div className="flex max-w-5xl flex-col gap-2 px-4 py-3">
-      <title>
-        {pageTitle(
-          search.server === undefined
-            ? undefined
-            : search.tool === undefined
-              ? search.server
-              : `${search.server}.${search.tool}`,
-          "MCP inspector",
-        )}
-      </title>
-      <h1 className="font-heading font-semibold text-sm">MCP inspector</h1>
+    <Page
+      title={[
+        search.server === undefined
+          ? undefined
+          : search.tool === undefined
+            ? search.server
+            : `${search.server}.${search.tool}`,
+        "MCP inspector",
+      ]}
+      crumbs={crumbs}
+      actions={
+        search.server === undefined ? undefined : (
+          <ButtonLink
+            variant="outline"
+            size="sm"
+            to="/config"
+            search={{ kind: "mcp", id: search.server }}
+          >
+            <FileCode2Icon data-icon="inline-start" />
+            Definition
+          </ButtonLink>
+        )
+      }
+    >
       {search.server === undefined ? (
         <Empty>
           <EmptyHeader>
@@ -81,7 +103,7 @@ function InspectorPage() {
       ) : (
         <ServerView key={search.server} mcpId={search.server} toolName={search.tool} />
       )}
-    </div>
+    </Page>
   );
 }
 
@@ -112,23 +134,12 @@ function ServerStatus({ server }: { readonly server: McpTools }) {
   return (
     <Card size="sm">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 font-mono">
-          {server.mcpId}
+        {/* The top bar names the server. */}
+        <CardTitle className="flex items-center gap-2">
           <Badge variant={mcpStates[server.state].variant}>{mcpStates[server.state].label}</Badge>
           {server.load === McpTools_Load.ON_DEMAND && <Badge variant="secondary">on demand</Badge>}
         </CardTitle>
         <CardDescription>{server.description}</CardDescription>
-        <CardAction>
-          <ButtonLink
-            variant="outline"
-            size="sm"
-            to="/config"
-            search={{ kind: "mcp", id: server.mcpId }}
-          >
-            <FileCode2Icon data-icon="inline-start" />
-            Definition
-          </ButtonLink>
-        </CardAction>
       </CardHeader>
       <CardContent className="text-xs">
         {server.message === "" ? (
@@ -169,10 +180,8 @@ function ToolPanel({
       <div className="flex flex-col gap-4 pr-3">
         <Card size="sm">
           <CardHeader>
-            <CardTitle className="font-mono">
-              {server.mcpId}.{tool.name}
-            </CardTitle>
-            {tool.title !== "" && <CardDescription>{tool.title}</CardDescription>}
+            {/* The top bar names the tool. */}
+            {tool.title !== "" && <CardTitle>{tool.title}</CardTitle>}
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
             {tool.description !== "" && <Markdown>{tool.description}</Markdown>}

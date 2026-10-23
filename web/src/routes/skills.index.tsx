@@ -12,6 +12,7 @@ import {
 import { useState } from "react";
 
 import { ButtonLink } from "~/components/ButtonLink.tsx";
+import { Page, PageActions } from "~/components/Page.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import {
   Item,
@@ -25,15 +26,7 @@ import { useEnabledHere } from "~/features/scope/scope.ts";
 import { UnsavedChanges } from "~/components/UnsavedChanges.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
 import { Button } from "~/components/ui/button.tsx";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card.tsx";
+import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card.tsx";
 import {
   Empty,
   EmptyDescription,
@@ -52,7 +45,6 @@ import { useStagedFile, useStaging, writeFile } from "~/features/config/staging.
 import { FilePreview } from "~/features/skills/SkillDocument.tsx";
 import type { Definition } from "~/gen/agx/v1/agx_pb.ts";
 import { shortPath } from "~/lib/path.ts";
-import { pageTitle } from "~/lib/title.ts";
 
 const SkillsSearch = Schema.Struct({
   skill: Schema.optional(Schema.String),
@@ -77,30 +69,66 @@ function SkillsPage() {
   const search = Route.useSearch();
   const skills = (definitions.data ?? []).filter((definition) => definition.kind === "skills");
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2 px-4 py-3">
-      <title>{pageTitle(search.skill, "Skills")}</title>
-      <div className="flex items-center gap-2">
-        <h1 className="font-heading font-semibold text-sm">Skills</h1>
-        <ButtonLink size="sm" className="ml-auto" to="/skills/add">
-          <GitBranchPlusIcon data-icon="inline-start" />
-          Add from Git
-        </ButtonLink>
-      </div>
+    <Page
+      title={[search.file, search.skill, "Skills"]}
+      crumbs={[
+        { label: "Skills", link: <Link to="/skills" /> },
+        ...(search.skill === undefined
+          ? []
+          : [
+              {
+                label: search.skill,
+                mono: true,
+                link: <Link to="/skills" search={{ skill: search.skill }} />,
+              },
+              { label: search.file ?? "SKILL.md", mono: true },
+            ]),
+      ]}
+      actions={
+        <>
+          {search.skill !== undefined && (
+            <>
+              <ButtonLink
+                variant="outline"
+                size="sm"
+                to="/config"
+                search={{ kind: "skills", id: search.skill }}
+              >
+                <FileCode2Icon data-icon="inline-start" />
+                Definition
+              </ButtonLink>
+              <ScopeDialog
+                kind="skills"
+                id={search.skill}
+                trigger={
+                  <Button variant="outline" size="sm">
+                    <ListChecksIcon data-icon="inline-start" />
+                    Enable or disable…
+                  </Button>
+                }
+              />
+            </>
+          )}
+          <ButtonLink size="sm" to="/skills/add">
+            <GitBranchPlusIcon data-icon="inline-start" />
+            Add from Git
+          </ButtonLink>
+        </>
+      }
+    >
       {definitions.isPending && <Pending className="h-64" />}
       {definitions.isError && <DaemonProblem error={definitions.error} />}
       {definitions.isSuccess &&
         (search.skill === undefined ? (
           <SkillOverview skills={skills} />
         ) : (
-          <div className="max-w-5xl">
-            <SkillView
-              key={search.skill}
-              skillId={search.skill}
-              home={configuration.data?.home ?? ""}
-            />
-          </div>
+          <SkillView
+            key={search.skill}
+            skillId={search.skill}
+            home={configuration.data?.home ?? ""}
+          />
         ))}
-    </div>
+    </Page>
   );
 }
 
@@ -182,11 +210,12 @@ function SkillView({ skillId, home }: { readonly skillId: string; readonly home:
   const directory = definition?.path ?? "";
   const editable = definition !== undefined && !definition.readOnly && directory !== "";
   return (
-    <div className="flex flex-col gap-2">
+    <>
       <Card size="sm">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 font-mono">
-            {skillId}
+          {/* The top bar names the skill and holds its actions. */}
+          <CardTitle className="flex items-center gap-2">
+            {definition?.description}
             {definition?.package !== undefined && definition.package !== "" && (
               <Badge variant="secondary">
                 <PackageIcon data-icon="inline-start" />
@@ -195,28 +224,6 @@ function SkillView({ skillId, home }: { readonly skillId: string; readonly home:
             )}
             {definition?.readOnly === true && <Badge variant="outline">read-only</Badge>}
           </CardTitle>
-          <CardDescription>{definition?.description}</CardDescription>
-          <CardAction className="flex gap-2">
-            <ButtonLink
-              variant="outline"
-              size="sm"
-              to="/config"
-              search={{ kind: "skills", id: skillId }}
-            >
-              <FileCode2Icon data-icon="inline-start" />
-              Definition
-            </ButtonLink>
-            <ScopeDialog
-              kind="skills"
-              id={skillId}
-              trigger={
-                <Button variant="outline" size="sm">
-                  <ListChecksIcon data-icon="inline-start" />
-                  Enable or disable…
-                </Button>
-              }
-            />
-          </CardAction>
         </CardHeader>
         {/* A package's skill lives in the cache; only a local skill's directory says something. */}
         {directory !== "" && definition?.package === "" && (
@@ -240,7 +247,7 @@ function SkillView({ skillId, home }: { readonly skillId: string; readonly home:
           home={home}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -302,14 +309,6 @@ function EditableFile({
           {name}
           {staged !== undefined && <Badge>staged</Badge>}
         </CardTitle>
-        {editable && !editing && (
-          <CardAction>
-            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-              <PencilIcon data-icon="inline-start" />
-              Edit
-            </Button>
-          </CardAction>
-        )}
       </CardHeader>
       <CardContent>
         {editing ? (
@@ -322,30 +321,41 @@ function EditableFile({
           <FilePreview file={name} content={text} binary={false} />
         )}
       </CardContent>
-      {editing && (
-        <CardFooter className="gap-2">
-          <Button
-            disabled={text === original && staged === undefined}
-            onClick={() => {
-              stage(writeFile(path, text, home));
-              setEditing(false);
-              toast.add({ type: "success", title: `Staged ${name}` });
-            }}
-          >
-            Stage
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              unstage(`file/${path}`);
-              setText(original);
-              setEditing(false);
-            }}
-          >
-            <RotateCcwIcon data-icon="inline-start" />
-            Revert
-          </Button>
-        </CardFooter>
+      {editable && (
+        <PageActions>
+          {editing ? (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  unstage(`file/${path}`);
+                  setText(original);
+                  setEditing(false);
+                }}
+              >
+                <RotateCcwIcon data-icon="inline-start" />
+                Revert
+              </Button>
+              <Button
+                size="sm"
+                disabled={text === original && staged === undefined}
+                onClick={() => {
+                  stage(writeFile(path, text, home));
+                  setEditing(false);
+                  toast.add({ type: "success", title: `Staged ${name}` });
+                }}
+              >
+                Stage
+              </Button>
+            </>
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+              <PencilIcon data-icon="inline-start" />
+              Edit
+            </Button>
+          )}
+        </PageActions>
       )}
     </Card>
   );

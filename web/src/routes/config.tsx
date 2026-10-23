@@ -13,16 +13,15 @@ import { useState } from "react";
 
 import { ConfirmAction } from "~/components/ConfirmAction.tsx";
 import { UnsavedChanges } from "~/components/UnsavedChanges.tsx";
+import { Page, PageActions } from "~/components/Page.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
 import { Button } from "~/components/ui/button.tsx";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "~/components/ui/card.tsx";
@@ -64,7 +63,6 @@ import type { ConfigurationFile, Definition } from "~/gen/agx/v1/agx_pb.ts";
 import { type ConfigSchema, definitionSchema, fieldDescription } from "~/lib/configSchema.ts";
 import { kinds, selectable } from "~/features/config/kinds.ts";
 import { shortPath } from "~/lib/path.ts";
-import { pageTitle } from "~/lib/title.ts";
 
 const ConfigSearch = Schema.Struct({
   kind: Schema.optional(Schema.String),
@@ -96,53 +94,75 @@ function ConfigPage() {
     { staleTime: Number.POSITIVE_INFINITY },
   );
   const search = Route.useSearch();
+  const home = configuration.data?.home ?? "";
+  const label = kinds.find((k) => k.kind === search.kind)?.label ?? search.kind;
+  const definition = definitions.data?.find(
+    (candidate) => candidate.kind === search.kind && candidate.id === search.id,
+  );
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2 px-4 py-3">
-      <title>{pageTitle(search.id ?? search.file?.split("/").at(-1), "Configuration")}</title>
-      <h1 className="font-heading font-semibold text-sm">Configuration</h1>
+    <Page
+      title={[search.id ?? search.file?.split("/").at(-1), "Configuration"]}
+      crumbs={[
+        { label: "Configuration" },
+        ...(search.file !== undefined
+          ? [{ label: shortPath(search.file, home), mono: true }]
+          : label !== undefined
+            ? [{ label }, { label: search.id ?? "new", mono: true }]
+            : []),
+      ]}
+      actions={
+        definition !== undefined &&
+        selectable.has(definition.kind) && (
+          <ScopeDialog
+            kind={definition.kind}
+            id={definition.id}
+            trigger={
+              <Button variant="outline" size="sm">
+                <ListChecksIcon data-icon="inline-start" />
+                Enable or disable…
+              </Button>
+            }
+          />
+        )
+      }
+    >
       {(configuration.isPending || definitions.isPending) && <Pending className="h-64" />}
       {configuration.isError && <DaemonProblem error={configuration.error} />}
       {definitions.isError && <DaemonProblem error={definitions.error} />}
-      {configuration.isSuccess && definitions.isSuccess && (
-        <div className="max-w-4xl">
-          <div>
-            {search.file !== undefined ? (
-              <FileEditor
-                key={search.file}
-                path={search.file}
-                file={configuration.data.files.find((file) => file.path === search.file)}
-                home={configuration.data.home}
-                schema={schema.data}
-              />
-            ) : search.kind !== undefined && (search.id !== undefined || search.create === true) ? (
-              <DefinitionEditor
-                key={`${search.kind}/${search.id ?? ""}/${String(search.create)}`}
-                kind={search.kind}
-                definition={definitions.data.find(
-                  (definition) => definition.kind === search.kind && definition.id === search.id,
-                )}
-                initialId={search.id ?? ""}
-                files={configuration.data.files}
-                home={configuration.data.home}
-                schema={schema.data}
-              />
-            ) : (
-              <Empty>
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <FileCode2Icon />
-                  </EmptyMedia>
-                  <EmptyTitle>Pick a definition or file in the sidebar</EmptyTitle>
-                  <EmptyDescription>
-                    Edits are staged; review and apply them together from Staged changes.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
+      {configuration.isSuccess &&
+        definitions.isSuccess &&
+        (search.file !== undefined ? (
+          <FileEditor
+            key={search.file}
+            path={search.file}
+            file={configuration.data.files.find((file) => file.path === search.file)}
+            home={configuration.data.home}
+            schema={schema.data}
+          />
+        ) : search.kind !== undefined && (search.id !== undefined || search.create === true) ? (
+          <DefinitionEditor
+            key={`${search.kind}/${search.id ?? ""}/${String(search.create)}`}
+            kind={search.kind}
+            definition={definition}
+            initialId={search.id ?? ""}
+            files={configuration.data.files}
+            home={configuration.data.home}
+            schema={schema.data}
+          />
+        ) : (
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <FileCode2Icon />
+              </EmptyMedia>
+              <EmptyTitle>Pick a definition or file in the sidebar</EmptyTitle>
+              <EmptyDescription>
+                Edits are staged; review and apply them together from Staged changes.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ))}
+    </Page>
   );
 }
 
@@ -164,7 +184,6 @@ function DefinitionEditor({
   home,
   schema,
 }: DefinitionEditorProps) {
-  const label = kinds.find((k) => k.kind === kind)?.label ?? kind;
   const writable = files.filter((file) => !file.readOnly);
   const [id, setId] = useState(initialId);
   const [file, setFile] = useState(writable[0]?.path ?? "");
@@ -189,9 +208,9 @@ function DefinitionEditor({
     <Card size="sm">
       <UnsavedChanges dirty={!readOnly && text !== saved} ignore={["view"]} />
       <CardHeader>
+        {/* The top bar names the definition and holds its actions. */}
         <CardTitle className="flex items-center gap-2">
-          <span className="text-muted-foreground">{label}</span>
-          {definition === undefined ? (
+          {definition === undefined && (
             <Input
               aria-label="ID"
               className="w-72 font-mono"
@@ -200,8 +219,6 @@ function DefinitionEditor({
               value={id}
               onChange={(event) => setId(event.target.value)}
             />
-          ) : (
-            <span className="font-mono">{definition.id}</span>
           )}
           {definition?.package !== undefined && definition.package !== "" && (
             <Badge variant="secondary">
@@ -217,20 +234,6 @@ function DefinitionEditor({
             ? "Not written yet"
             : `${shortPath(location.path, home)}${location.line > 0 ? `:${location.line}` : ""}`}
         </CardDescription>
-        {definition !== undefined && selectable.has(kind) && (
-          <CardAction>
-            <ScopeDialog
-              kind={kind}
-              id={definition.id}
-              trigger={
-                <Button variant="outline" size="sm">
-                  <ListChecksIcon data-icon="inline-start" />
-                  Enable or disable…
-                </Button>
-              }
-            />
-          </CardAction>
-        )}
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
         {readOnly && (
@@ -323,31 +326,11 @@ function DefinitionEditor({
         )}
       </CardContent>
       {!readOnly && (
-        <CardFooter className="gap-2">
-          <Button
-            disabled={id === "" || errors.length > 0 || (text === original && staged === undefined)}
-            onClick={() => {
-              stage(define(kind, id, text, definition === undefined ? file : ""));
-              toast.add({ type: "success", title: `Staged ${id}` });
-            }}
-          >
-            Stage
-          </Button>
-          <Button
-            variant="outline"
-            disabled={staged === undefined && text === original}
-            onClick={() => {
-              unstage(`definition/${kind}/${id}`);
-              setText(original);
-            }}
-          >
-            <RotateCcwIcon data-icon="inline-start" />
-            Revert
-          </Button>
+        <PageActions>
           {definition !== undefined && (
             <ConfirmAction
               trigger={
-                <Button variant="destructive" className="ml-auto">
+                <Button variant="destructive" size="sm">
                   <Trash2Icon data-icon="inline-start" />
                   Remove
                 </Button>
@@ -358,7 +341,29 @@ function DefinitionEditor({
               onConfirm={() => stage(undefine(kind, definition.id))}
             />
           )}
-        </CardFooter>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={staged === undefined && text === original}
+            onClick={() => {
+              unstage(`definition/${kind}/${id}`);
+              setText(original);
+            }}
+          >
+            <RotateCcwIcon data-icon="inline-start" />
+            Revert
+          </Button>
+          <Button
+            size="sm"
+            disabled={id === "" || errors.length > 0 || (text === original && staged === undefined)}
+            onClick={() => {
+              stage(define(kind, id, text, definition === undefined ? file : ""));
+              toast.add({ type: "success", title: `Staged ${id}` });
+            }}
+          >
+            Stage
+          </Button>
+        </PageActions>
       )}
     </Card>
   );
@@ -456,18 +461,10 @@ function FileText({
         {errors.length > 0 && <p className="text-destructive text-xs">{errors[0]}</p>}
       </CardContent>
       {!readOnly && (
-        <CardFooter className="gap-2">
-          <Button
-            disabled={errors.length > 0 || (text === original && staged === undefined)}
-            onClick={() => {
-              stage(writeFile(path, text, home));
-              toast.add({ type: "success", title: `Staged ${shortPath(path, home)}` });
-            }}
-          >
-            Stage
-          </Button>
+        <PageActions>
           <Button
             variant="outline"
+            size="sm"
             disabled={staged === undefined && text === original}
             onClick={() => {
               unstage(`file/${path}`);
@@ -477,7 +474,17 @@ function FileText({
             <RotateCcwIcon data-icon="inline-start" />
             Revert
           </Button>
-        </CardFooter>
+          <Button
+            size="sm"
+            disabled={errors.length > 0 || (text === original && staged === undefined)}
+            onClick={() => {
+              stage(writeFile(path, text, home));
+              toast.add({ type: "success", title: `Staged ${shortPath(path, home)}` });
+            }}
+          >
+            Stage
+          </Button>
+        </PageActions>
       )}
     </>
   );

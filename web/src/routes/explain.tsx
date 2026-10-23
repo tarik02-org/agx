@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { ScanSearchIcon, TriangleAlertIcon } from "lucide-react";
 
+import { Page } from "~/components/Page.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert.tsx";
 import {
@@ -30,7 +31,6 @@ import { Pending } from "~/components/Pending.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
 import { useScopeDirectory } from "~/features/scope/scope.ts";
-import { pageTitle } from "~/lib/title.ts";
 import { SettingsTree } from "~/features/explain/SettingsTree.tsx";
 import { resourceKey, Traces } from "~/features/explain/Traces.tsx";
 import {
@@ -54,40 +54,27 @@ function ExplainPage() {
     queryKeys.configuration,
     Daemon.use((daemon) => daemon.configuration),
   );
-  return (
-    <div className="flex flex-col gap-2 px-4 py-3">
-      <title>{pageTitle("Explain")}</title>
-      <h1 className="font-heading font-semibold text-sm">Explain</h1>
-      {configuration.isPending && <Pending className="h-8 w-[32rem]" />}
-      {configuration.isError && <DaemonProblem error={configuration.error} />}
-      {configuration.isSuccess && <Explain configuration={configuration.data} />}
-    </div>
-  );
-}
-
-function Explain({ configuration }: { readonly configuration: GetConfigurationResponse }) {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  // The directory is the UI's scope, picked in the top bar.
-  const directory = useScopeDirectory();
-  const harness = search.harness ?? "";
   const harnesses = [
     { label: "No harness", value: "" },
-    ...configuration.harnesses.map((h) => ({ label: h.name, value: h.name })),
+    ...(configuration.data?.harnesses ?? []).map((h) => ({ label: h.name, value: h.name })),
   ];
   return (
-    <>
-      <div className="flex flex-wrap items-center gap-2">
+    <Page
+      title={[search.harness, "Explain"]}
+      crumbs={[{ label: "Explain" }]}
+      actions={
         <Select
           items={harnesses}
-          value={harness}
+          value={search.harness ?? ""}
           onValueChange={(next) =>
             void navigate({
               search: { ...search, harness: next === null || next === "" ? undefined : next },
             })
           }
         >
-          <SelectTrigger className="w-48">
+          <SelectTrigger size="sm" className="w-44" aria-label="Harness">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -100,7 +87,22 @@ function Explain({ configuration }: { readonly configuration: GetConfigurationRe
             </SelectGroup>
           </SelectContent>
         </Select>
-      </div>
+      }
+    >
+      {configuration.isPending && <Pending className="h-40" />}
+      {configuration.isError && <DaemonProblem error={configuration.error} />}
+      {configuration.isSuccess && <Explain configuration={configuration.data} />}
+    </Page>
+  );
+}
+
+function Explain({ configuration }: { readonly configuration: GetConfigurationResponse }) {
+  const search = Route.useSearch();
+  // The directory is the UI's scope, picked in the top bar.
+  const directory = useScopeDirectory();
+  const harness = search.harness ?? "";
+  return (
+    <>
       {directory === "" ? (
         <Empty>
           <EmptyHeader>

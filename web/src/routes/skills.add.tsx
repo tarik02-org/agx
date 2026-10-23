@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+import { Page } from "~/components/Page.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Pending } from "~/components/Pending.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
@@ -56,7 +57,6 @@ import { FilePreview, SkillDocument } from "~/features/skills/SkillDocument.tsx"
 import { SkillFiles } from "~/features/skills/SkillFiles.tsx";
 import type { PreviewSkill, PreviewSourceResponse } from "~/gen/agx/v1/agx_pb.ts";
 import { shortPath } from "~/lib/path.ts";
-import { pageTitle } from "~/lib/title.ts";
 
 export const Route = createFileRoute("/skills/add")({
   component: AddSkillsPage,
@@ -104,9 +104,11 @@ function AddSkillsPage() {
     [],
   );
   return (
-    <div className="flex max-w-6xl flex-col gap-2 px-4 py-3">
-      <title>{pageTitle("Add skills")}</title>
-      <h1 className="font-heading font-semibold text-sm">Add skills from Git</h1>
+    <Page
+      title={["Add from Git", "Skills"]}
+      crumbs={[{ label: "Skills", link: <Link to="/skills" /> }, { label: "Add from Git" }]}
+      className="max-w-6xl"
+    >
       <Steps step={step} onStep={setStep} />
       {step === 0 && (
         <Card size="sm" className="max-w-2xl">
@@ -157,7 +159,7 @@ function AddSkillsPage() {
       {step > 0 && preview.isSuccess && (
         <Wizard key={preview.data.previewId} preview={preview.data} step={step} onStep={setStep} />
       )}
-    </div>
+    </Page>
   );
 }
 

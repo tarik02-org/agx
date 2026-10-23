@@ -192,6 +192,10 @@
   box-shadow: none;
   --tw-ring-shadow: 0 0 #0000;
 }
+/* The top bar's border already sits above a page's first section. */
+[data-slot="page"] > [data-slot="card"]:not([data-slot="card"] ~ [data-slot="card"]) {
+  border-top: 0;
+}
 [data-slot="card-header"],
 [data-slot="card-content"],
 [data-slot="card-footer"] {
