@@ -223,7 +223,7 @@ function SkillView({ skillId, home }: { readonly skillId: string; readonly home:
     <>
       <Card size="sm">
         <CardHeader>
-          {/* The top bar names the skill and holds its actions. */}
+          {/* The page header names the skill and holds its actions. */}
           <CardTitle className="flex items-center gap-2">
             {definition?.description}
             {definition?.package !== undefined && definition.package !== "" && (

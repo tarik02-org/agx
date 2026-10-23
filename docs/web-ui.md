@@ -1,9 +1,10 @@
 # Web UI
 
 The daemon serves a web UI for what is easier to see than to read in a
-terminal. The top bar switches pages and holds the **scope**: a directory, or
+terminal. The sidebar holds what is global: the **scope**, a directory or
 everywhere, picked from the directories scope rules name or by browsing
-folders. Each page has a header with where it is and every action it offers. `agx ui` scopes the UI to the directory it runs in, and the scope
+folders; the pages; and the staged changes. Each page has one header with where
+it is and every action it offers. `agx ui` scopes the UI to the directory it runs in, and the scope
 stays in the address, so a scoped page can be shared and reloaded. The sidebar,
 on every page, is the configuration as a tree: every definition by kind,
 package skills under their package, and the configuration files. Expanding a

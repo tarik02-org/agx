@@ -98,7 +98,7 @@ function ExplainPage() {
 
 function Explain({ configuration }: { readonly configuration: GetConfigurationResponse }) {
   const search = Route.useSearch();
-  // The directory is the UI's scope, picked in the top bar.
+  // The directory is the UI's scope, picked in the sidebar.
   const directory = useScopeDirectory();
   const harness = search.harness ?? "";
   return (
@@ -111,7 +111,7 @@ function Explain({ configuration }: { readonly configuration: GetConfigurationRe
             </EmptyMedia>
             <EmptyTitle>Scope the UI to a directory</EmptyTitle>
             <EmptyDescription>
-              Pick one in the top bar to see every skill, instruction, and MCP server it gets, and
+              Pick one in the sidebar to see every skill, instruction, and MCP server it gets, and
               the rule that decided each.
             </EmptyDescription>
           </EmptyHeader>

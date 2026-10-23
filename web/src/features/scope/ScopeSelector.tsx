@@ -37,7 +37,7 @@ export function ScopeSelector() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={
-          <Button variant="outline" size="sm" className="max-w-80 font-mono">
+          <Button variant="outline" size="sm" className="w-full justify-start font-mono">
             {directory === "" ? (
               <GlobeIcon data-icon="inline-start" />
             ) : (
