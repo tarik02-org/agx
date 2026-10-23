@@ -69,22 +69,19 @@ function FullScreen({ children }: { readonly children: ReactNode }) {
   );
 }
 
-// A state's colour tints the banner and outlines its word.
+// A state's colour is its word's.
 const tones = {
-  primary: { banner: "bg-primary/5", word: "text-primary ring-primary/40" },
-  warning: { banner: "bg-warning/5", word: "text-warning ring-warning/40" },
-  destructive: { banner: "bg-destructive/5", word: "text-destructive ring-destructive/40" },
+  primary: "text-primary",
+  warning: "text-warning",
+  destructive: "text-destructive",
 } as const;
 
-/** The panel's top: the state as one word, boxed in its colour. */
+/** The panel's top: the state as one word, in its colour. */
 function StateBanner({ word, tone }: { readonly word: string; readonly tone: keyof typeof tones }) {
   return (
-    <header className={cn("flex justify-center border-b px-6 py-7", tones[tone].banner)}>
+    <header className="flex justify-center border-b px-6 py-7">
       <span
-        className={cn(
-          "rounded-md px-4 py-1.5 font-mono font-semibold text-3xl uppercase tracking-tight ring-1",
-          tones[tone].word,
-        )}
+        className={cn("font-mono font-semibold text-3xl uppercase tracking-tight", tones[tone])}
       >
         {word}
       </span>
@@ -157,29 +154,23 @@ function ConnectionScreen({
       <StateBanner word={screen.word} tone={screen.tone} />
       <div className="flex flex-col items-center gap-4 px-6 pt-6 pb-5 text-center">
         <h1 className="font-heading font-semibold text-base tracking-tight">{screen.title}</h1>
-        <code className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-1.5 font-mono text-sm">
-          <span className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">
-            Run
-          </span>
-          {screen.command}
-        </code>
-        <p className="max-w-sm text-balance text-muted-foreground text-xs/relaxed">
-          {screen.description}
-        </p>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-1 rounded-md border bg-muted/50 py-0.5 pr-0.5 pl-3">
+          <code className="font-mono text-sm">{screen.command}</code>
           <Button
-            size="sm"
+            size="icon-sm"
+            variant="ghost"
+            aria-label={copied ? "Copied" : "Copy command"}
             onClick={() =>
               void navigator.clipboard.writeText(screen.command).then(() => setCopied(true))
             }
           >
-            {copied ? (
-              <CheckIcon data-icon="inline-start" />
-            ) : (
-              <CopyIcon data-icon="inline-start" />
-            )}
-            {copied ? "Copied" : "Copy command"}
+            {copied ? <CheckIcon /> : <CopyIcon />}
           </Button>
+        </div>
+        <p className="max-w-sm text-balance text-muted-foreground text-xs/relaxed">
+          {screen.description}
+        </p>
+        <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={onRetry}>
             <RotateCwIcon data-icon="inline-start" />
             Try now
