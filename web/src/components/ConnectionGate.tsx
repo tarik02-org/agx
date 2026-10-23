@@ -118,7 +118,6 @@ const screens: Record<
     readonly word: string;
     readonly tone: keyof typeof tones;
     readonly title: string;
-    readonly description: string;
     readonly command: string;
     readonly waiting: string;
   }
@@ -127,8 +126,6 @@ const screens: Record<
     word: "Signed out",
     tone: "warning",
     title: "This page's session ended",
-    description:
-      "The daemon restarted, or the page sat idle for 12 hours. Sign in again from a terminal; this page carries on by itself.",
     command: "agx ui",
     waiting: "Waiting for sign-in…",
   },
@@ -136,8 +133,6 @@ const screens: Record<
     word: "Offline",
     tone: "destructive",
     title: "The daemon does not answer",
-    description:
-      "It stopped or is restarting. If it is not running, start it; this page carries on by itself.",
     command: "agx daemon start",
     waiting: "Retrying…",
   },
@@ -160,9 +155,6 @@ function ConnectionScreen({
           <code className="font-mono text-sm">{screen.command}</code>
           <CopyButton text={screen.command} />
         </div>
-        <p className="max-w-sm text-balance text-muted-foreground text-xs/relaxed">
-          {screen.description}
-        </p>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={onRetry}>
             <RotateCwIcon data-icon="inline-start" />
@@ -209,7 +201,9 @@ function CopyButton({ text }: { readonly text: string }) {
   );
   return (
     <Tooltip>
+      {/* Outside the app's tooltip provider, so the delay is set here: none, as for every copy button. */}
       <TooltipTrigger
+        delay={0}
         closeOnClick={false}
         render={
           <Button size="icon-sm" variant="ghost" aria-label={copyLabels[state]} onClick={copy}>
@@ -217,7 +211,7 @@ function CopyButton({ text }: { readonly text: string }) {
           </Button>
         }
       />
-      <TooltipContent>{copyLabels[state]}</TooltipContent>
+      <TooltipContent side="right">{copyLabels[state]}</TooltipContent>
     </Tooltip>
   );
 }
