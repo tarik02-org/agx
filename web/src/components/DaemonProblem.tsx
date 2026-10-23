@@ -9,8 +9,8 @@ export function DaemonProblem({ error }: { readonly error: DaemonError }) {
     case "unauthenticated":
       return (
         <Problem title="Signed out">
-          This page is no longer signed in to the daemon, which happens after it restarts. Run{" "}
-          <code className="font-mono">agx ui</code> to sign in again.
+          This page's session with the daemon ended: the daemon restarted, or the page sat idle for
+          12 hours. Run <code className="font-mono">agx ui</code> to sign in again.
         </Problem>
       );
     case "unreachable":

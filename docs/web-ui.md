@@ -10,6 +10,11 @@ skill lists its files, and expanding an MCP server starts it and lists its
 tools. When the UI is scoped, the tree shows only what a launch in that
 directory gets, or everything with one switch.
 
+Until the daemon answers, and whenever the page's session ends or the daemon
+stops answering, the whole window says so and how to fix it: run `agx ui` to
+sign in again, or `agx daemon start`. The page carries on by itself once the
+daemon answers again, with unsaved edits kept.
+
 The runtime page shows:
 
 - launches, updated live, and revoking one;

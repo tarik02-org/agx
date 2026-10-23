@@ -2,6 +2,7 @@ import { createRootRoute, Outlet, retainSearchParams } from "@tanstack/react-rou
 import * as Schema from "effect/Schema";
 
 import { AppShell } from "~/components/AppShell.tsx";
+import { ConnectionGate } from "~/components/ConnectionGate.tsx";
 
 // Every page shares the scope directory; links keep it.
 const RootSearch = Schema.Struct({
@@ -12,8 +13,10 @@ export const Route = createRootRoute({
   validateSearch: Schema.decodeUnknownSync(RootSearch),
   search: { middlewares: [retainSearchParams<typeof RootSearch.Type>(["dir"])] },
   component: () => (
-    <AppShell>
-      <Outlet />
-    </AppShell>
+    <ConnectionGate>
+      <AppShell>
+        <Outlet />
+      </AppShell>
+    </ConnectionGate>
   ),
 });

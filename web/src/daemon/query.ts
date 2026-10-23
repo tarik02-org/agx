@@ -26,7 +26,7 @@ export function useDaemonQuery<A>(
   key: QueryKey,
   effect: Effect.Effect<A, DaemonError, Services>,
   options: {
-    readonly refetchInterval?: number;
+    readonly refetchInterval?: number | false;
     readonly enabled?: boolean;
     readonly staleTime?: number;
     readonly retry?: boolean;
