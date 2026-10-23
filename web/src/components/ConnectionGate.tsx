@@ -1,13 +1,16 @@
 import { useQueryClient } from "@tanstack/react-query";
+import * as Effect from "effect/Effect";
 import { cn } from "cn";
 import { CheckIcon, CopyIcon, RotateCwIcon } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button.tsx";
 import { Spinner } from "~/components/ui/spinner.tsx";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { type ConnectionLoss, useConnection } from "~/daemon/connection.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
+import { useEffectCallback, useFork } from "~/effect/react.tsx";
 
 // While the connection is lost, the configuration is read again this often to notice it is back:
 // the daemon restarting, or `agx ui` signing the browser in again from another tab.
@@ -148,7 +151,6 @@ function ConnectionScreen({
   readonly onRetry: () => void;
 }) {
   const screen = screens[loss];
-  const [copied, setCopied] = useState(false);
   return (
     <FullScreen>
       <StateBanner word={screen.word} tone={screen.tone} />
@@ -156,16 +158,7 @@ function ConnectionScreen({
         <h1 className="font-heading font-semibold text-base tracking-tight">{screen.title}</h1>
         <div className="flex items-center gap-1 rounded-md border bg-muted/50 py-0.5 pr-0.5 pl-3">
           <code className="font-mono text-sm">{screen.command}</code>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label={copied ? "Copied" : "Copy command"}
-            onClick={() =>
-              void navigator.clipboard.writeText(screen.command).then(() => setCopied(true))
-            }
-          >
-            {copied ? <CheckIcon /> : <CopyIcon />}
-          </Button>
+          <CopyButton text={screen.command} />
         </div>
         <p className="max-w-sm text-balance text-muted-foreground text-xs/relaxed">
           {screen.description}
@@ -182,5 +175,49 @@ function ConnectionScreen({
         </span>
       </div>
     </FullScreen>
+  );
+}
+
+// How long the button says it copied before offering to copy again.
+const copiedFor = "1500 millis";
+
+type CopyState = "idle" | "copied" | "failed";
+
+const copyLabels: Record<CopyState, string> = {
+  idle: "Copy",
+  copied: "Copied",
+  failed: "Could not copy",
+};
+
+/** Copies text to the clipboard, saying so for a moment. */
+function CopyButton({ text }: { readonly text: string }) {
+  const [state, setState] = useState<CopyState>("idle");
+  const copy = useEffectCallback(
+    () =>
+      Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
+        // The browser refuses without permission or focus; the button says so instead.
+        Effect.match({ onFailure: () => setState("failed"), onSuccess: () => setState("copied") }),
+      ),
+    [text],
+  );
+  useFork(
+    () =>
+      state === "idle"
+        ? undefined
+        : Effect.sleep(copiedFor).pipe(Effect.andThen(Effect.sync(() => setState("idle")))),
+    [state],
+  );
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        closeOnClick={false}
+        render={
+          <Button size="icon-sm" variant="ghost" aria-label={copyLabels[state]} onClick={copy}>
+            {state === "copied" ? <CheckIcon /> : <CopyIcon />}
+          </Button>
+        }
+      />
+      <TooltipContent>{copyLabels[state]}</TooltipContent>
+    </Tooltip>
   );
 }
