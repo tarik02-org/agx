@@ -181,6 +181,8 @@ type Server struct {
 	editMu sync.Mutex
 	// previews holds the Git sources PreviewSource fetched.
 	previews previews
+	// icons remembers the icons MCP servers declared, for the web UI.
+	icons *mcpIcons
 }
 
 // Serve runs the daemon until stop closes or a stop request arrives, then shuts down gracefully:
@@ -275,6 +277,7 @@ func Serve(
 		store:             store,
 		port:              listener.Addr().(*net.TCPAddr).Port,
 		clients:           newClientPool(),
+		icons:             newMCPIcons(filepath.Join(paths.Cache, "mcp-icons.json")),
 		shared:            mcpruntime.NewShared(serverCtx, Version),
 	}
 	if port != 0 && port != s.port && len(restored) > 0 {
