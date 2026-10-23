@@ -6,6 +6,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Added
 
+- `ConfigurationService.GetConfiguration` (harnesses, scope directories, and files with
+  whether each is writable), `CompleteDirectory`, `ListDefinitions` (every definition with the
+  YAML that defines it), `GetSkill`, and `ReadFile` (configuration fragments and files of
+  configured skills and instructions only), and harness settings in `ResolveResponse`.
+- `agx mcp stop <pid>` and `RuntimeService.StopMcpProcess` stop a local MCP server process;
+  its sessions reconnect and the next one starts it again.
 - Harness definitions take `settings:` in the harness's own configuration schema. Codex gets
   one `-c` override per setting, encoded as TOML; Claude Code gets a per-launch file passed
   with `--settings`; Pi definitions reject them. Settings merge along the base chain with

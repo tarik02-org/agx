@@ -793,6 +793,26 @@ func (e *Endpoint) Processes() ([]Process, []int) {
 	return own, shared
 }
 
+// StopProcess ends the session whose own process has this process ID, which stops the process.
+// It reports whether the endpoint had one.
+func (e *Endpoint) StopProcess(pid int) bool {
+	e.mu.Lock()
+	var found *stdioSession
+	for id, s := range e.sessions {
+		if s.process != nil && s.process.pid == pid {
+			found = s
+			delete(e.sessions, id)
+			break
+		}
+	}
+	e.mu.Unlock()
+	if found == nil {
+		return false
+	}
+	found.close()
+	return true
+}
+
 // sessionEnded forgets session id once its process exited or it left its shared server.
 func (e *Endpoint) sessionEnded(id string, s *stdioSession) {
 	s.close()

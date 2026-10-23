@@ -47,6 +47,21 @@ const (
 	// ConfigurationServiceResolveProcedure is the fully-qualified name of the ConfigurationService's
 	// Resolve RPC.
 	ConfigurationServiceResolveProcedure = "/agx.v1.ConfigurationService/Resolve"
+	// ConfigurationServiceGetConfigurationProcedure is the fully-qualified name of the
+	// ConfigurationService's GetConfiguration RPC.
+	ConfigurationServiceGetConfigurationProcedure = "/agx.v1.ConfigurationService/GetConfiguration"
+	// ConfigurationServiceCompleteDirectoryProcedure is the fully-qualified name of the
+	// ConfigurationService's CompleteDirectory RPC.
+	ConfigurationServiceCompleteDirectoryProcedure = "/agx.v1.ConfigurationService/CompleteDirectory"
+	// ConfigurationServiceListDefinitionsProcedure is the fully-qualified name of the
+	// ConfigurationService's ListDefinitions RPC.
+	ConfigurationServiceListDefinitionsProcedure = "/agx.v1.ConfigurationService/ListDefinitions"
+	// ConfigurationServiceGetSkillProcedure is the fully-qualified name of the ConfigurationService's
+	// GetSkill RPC.
+	ConfigurationServiceGetSkillProcedure = "/agx.v1.ConfigurationService/GetSkill"
+	// ConfigurationServiceReadFileProcedure is the fully-qualified name of the ConfigurationService's
+	// ReadFile RPC.
+	ConfigurationServiceReadFileProcedure = "/agx.v1.ConfigurationService/ReadFile"
 	// PackageServiceInstallProcedure is the fully-qualified name of the PackageService's Install RPC.
 	PackageServiceInstallProcedure = "/agx.v1.PackageService/Install"
 	// PackageServiceUpdateProcedure is the fully-qualified name of the PackageService's Update RPC.
@@ -92,6 +107,9 @@ const (
 	// RuntimeServiceListMcpProcessesProcedure is the fully-qualified name of the RuntimeService's
 	// ListMcpProcesses RPC.
 	RuntimeServiceListMcpProcessesProcedure = "/agx.v1.RuntimeService/ListMcpProcesses"
+	// RuntimeServiceStopMcpProcessProcedure is the fully-qualified name of the RuntimeService's
+	// StopMcpProcess RPC.
+	RuntimeServiceStopMcpProcessProcedure = "/agx.v1.RuntimeService/StopMcpProcess"
 	// SecretServiceLoginProcedure is the fully-qualified name of the SecretService's Login RPC.
 	SecretServiceLoginProcedure = "/agx.v1.SecretService/Login"
 	// SecretServiceSetSecretProcedure is the fully-qualified name of the SecretService's SetSecret RPC.
@@ -107,6 +125,16 @@ const (
 type ConfigurationServiceClient interface {
 	Validate(context.Context, *connect.Request[v1.ValidateRequest]) (*connect.Response[v1.ValidateResponse], error)
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
+	// The configuration as loaded, for browsing it: harnesses, scope directories, and files.
+	GetConfiguration(context.Context, *connect.Request[v1.GetConfigurationRequest]) (*connect.Response[v1.GetConfigurationResponse], error)
+	// Directories whose path starts with a prefix, for directory pickers.
+	CompleteDirectory(context.Context, *connect.Request[v1.CompleteDirectoryRequest]) (*connect.Response[v1.CompleteDirectoryResponse], error)
+	// Every definition as configured, with the YAML that defines it.
+	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
+	// A skill's files, for browsing and editing a local one.
+	GetSkill(context.Context, *connect.Request[v1.GetSkillRequest]) (*connect.Response[v1.GetSkillResponse], error)
+	// One file of a configured skill or instructions definition, or of a configuration fragment.
+	ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error)
 }
 
 // NewConfigurationServiceClient constructs a client for the agx.v1.ConfigurationService service. By
@@ -132,13 +160,48 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(configurationServiceMethods.ByName("Resolve")),
 			connect.WithClientOptions(opts...),
 		),
+		getConfiguration: connect.NewClient[v1.GetConfigurationRequest, v1.GetConfigurationResponse](
+			httpClient,
+			baseURL+ConfigurationServiceGetConfigurationProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("GetConfiguration")),
+			connect.WithClientOptions(opts...),
+		),
+		completeDirectory: connect.NewClient[v1.CompleteDirectoryRequest, v1.CompleteDirectoryResponse](
+			httpClient,
+			baseURL+ConfigurationServiceCompleteDirectoryProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("CompleteDirectory")),
+			connect.WithClientOptions(opts...),
+		),
+		listDefinitions: connect.NewClient[v1.ListDefinitionsRequest, v1.ListDefinitionsResponse](
+			httpClient,
+			baseURL+ConfigurationServiceListDefinitionsProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ListDefinitions")),
+			connect.WithClientOptions(opts...),
+		),
+		getSkill: connect.NewClient[v1.GetSkillRequest, v1.GetSkillResponse](
+			httpClient,
+			baseURL+ConfigurationServiceGetSkillProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("GetSkill")),
+			connect.WithClientOptions(opts...),
+		),
+		readFile: connect.NewClient[v1.ReadFileRequest, v1.ReadFileResponse](
+			httpClient,
+			baseURL+ConfigurationServiceReadFileProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ReadFile")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // configurationServiceClient implements ConfigurationServiceClient.
 type configurationServiceClient struct {
-	validate *connect.Client[v1.ValidateRequest, v1.ValidateResponse]
-	resolve  *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
+	validate          *connect.Client[v1.ValidateRequest, v1.ValidateResponse]
+	resolve           *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
+	getConfiguration  *connect.Client[v1.GetConfigurationRequest, v1.GetConfigurationResponse]
+	completeDirectory *connect.Client[v1.CompleteDirectoryRequest, v1.CompleteDirectoryResponse]
+	listDefinitions   *connect.Client[v1.ListDefinitionsRequest, v1.ListDefinitionsResponse]
+	getSkill          *connect.Client[v1.GetSkillRequest, v1.GetSkillResponse]
+	readFile          *connect.Client[v1.ReadFileRequest, v1.ReadFileResponse]
 }
 
 // Validate calls agx.v1.ConfigurationService.Validate.
@@ -151,10 +214,45 @@ func (c *configurationServiceClient) Resolve(ctx context.Context, req *connect.R
 	return c.resolve.CallUnary(ctx, req)
 }
 
+// GetConfiguration calls agx.v1.ConfigurationService.GetConfiguration.
+func (c *configurationServiceClient) GetConfiguration(ctx context.Context, req *connect.Request[v1.GetConfigurationRequest]) (*connect.Response[v1.GetConfigurationResponse], error) {
+	return c.getConfiguration.CallUnary(ctx, req)
+}
+
+// CompleteDirectory calls agx.v1.ConfigurationService.CompleteDirectory.
+func (c *configurationServiceClient) CompleteDirectory(ctx context.Context, req *connect.Request[v1.CompleteDirectoryRequest]) (*connect.Response[v1.CompleteDirectoryResponse], error) {
+	return c.completeDirectory.CallUnary(ctx, req)
+}
+
+// ListDefinitions calls agx.v1.ConfigurationService.ListDefinitions.
+func (c *configurationServiceClient) ListDefinitions(ctx context.Context, req *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error) {
+	return c.listDefinitions.CallUnary(ctx, req)
+}
+
+// GetSkill calls agx.v1.ConfigurationService.GetSkill.
+func (c *configurationServiceClient) GetSkill(ctx context.Context, req *connect.Request[v1.GetSkillRequest]) (*connect.Response[v1.GetSkillResponse], error) {
+	return c.getSkill.CallUnary(ctx, req)
+}
+
+// ReadFile calls agx.v1.ConfigurationService.ReadFile.
+func (c *configurationServiceClient) ReadFile(ctx context.Context, req *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error) {
+	return c.readFile.CallUnary(ctx, req)
+}
+
 // ConfigurationServiceHandler is an implementation of the agx.v1.ConfigurationService service.
 type ConfigurationServiceHandler interface {
 	Validate(context.Context, *connect.Request[v1.ValidateRequest]) (*connect.Response[v1.ValidateResponse], error)
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
+	// The configuration as loaded, for browsing it: harnesses, scope directories, and files.
+	GetConfiguration(context.Context, *connect.Request[v1.GetConfigurationRequest]) (*connect.Response[v1.GetConfigurationResponse], error)
+	// Directories whose path starts with a prefix, for directory pickers.
+	CompleteDirectory(context.Context, *connect.Request[v1.CompleteDirectoryRequest]) (*connect.Response[v1.CompleteDirectoryResponse], error)
+	// Every definition as configured, with the YAML that defines it.
+	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
+	// A skill's files, for browsing and editing a local one.
+	GetSkill(context.Context, *connect.Request[v1.GetSkillRequest]) (*connect.Response[v1.GetSkillResponse], error)
+	// One file of a configured skill or instructions definition, or of a configuration fragment.
+	ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error)
 }
 
 // NewConfigurationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -176,12 +274,52 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 		connect.WithSchema(configurationServiceMethods.ByName("Resolve")),
 		connect.WithHandlerOptions(opts...),
 	)
+	configurationServiceGetConfigurationHandler := connect.NewUnaryHandler(
+		ConfigurationServiceGetConfigurationProcedure,
+		svc.GetConfiguration,
+		connect.WithSchema(configurationServiceMethods.ByName("GetConfiguration")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceCompleteDirectoryHandler := connect.NewUnaryHandler(
+		ConfigurationServiceCompleteDirectoryProcedure,
+		svc.CompleteDirectory,
+		connect.WithSchema(configurationServiceMethods.ByName("CompleteDirectory")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceListDefinitionsHandler := connect.NewUnaryHandler(
+		ConfigurationServiceListDefinitionsProcedure,
+		svc.ListDefinitions,
+		connect.WithSchema(configurationServiceMethods.ByName("ListDefinitions")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceGetSkillHandler := connect.NewUnaryHandler(
+		ConfigurationServiceGetSkillProcedure,
+		svc.GetSkill,
+		connect.WithSchema(configurationServiceMethods.ByName("GetSkill")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceReadFileHandler := connect.NewUnaryHandler(
+		ConfigurationServiceReadFileProcedure,
+		svc.ReadFile,
+		connect.WithSchema(configurationServiceMethods.ByName("ReadFile")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.ConfigurationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ConfigurationServiceValidateProcedure:
 			configurationServiceValidateHandler.ServeHTTP(w, r)
 		case ConfigurationServiceResolveProcedure:
 			configurationServiceResolveHandler.ServeHTTP(w, r)
+		case ConfigurationServiceGetConfigurationProcedure:
+			configurationServiceGetConfigurationHandler.ServeHTTP(w, r)
+		case ConfigurationServiceCompleteDirectoryProcedure:
+			configurationServiceCompleteDirectoryHandler.ServeHTTP(w, r)
+		case ConfigurationServiceListDefinitionsProcedure:
+			configurationServiceListDefinitionsHandler.ServeHTTP(w, r)
+		case ConfigurationServiceGetSkillProcedure:
+			configurationServiceGetSkillHandler.ServeHTTP(w, r)
+		case ConfigurationServiceReadFileProcedure:
+			configurationServiceReadFileHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -197,6 +335,26 @@ func (UnimplementedConfigurationServiceHandler) Validate(context.Context, *conne
 
 func (UnimplementedConfigurationServiceHandler) Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.Resolve is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) GetConfiguration(context.Context, *connect.Request[v1.GetConfigurationRequest]) (*connect.Response[v1.GetConfigurationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.GetConfiguration is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) CompleteDirectory(context.Context, *connect.Request[v1.CompleteDirectoryRequest]) (*connect.Response[v1.CompleteDirectoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.CompleteDirectory is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.ListDefinitions is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) GetSkill(context.Context, *connect.Request[v1.GetSkillRequest]) (*connect.Response[v1.GetSkillResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.GetSkill is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.ReadFile is not implemented"))
 }
 
 // PackageServiceClient is a client for the agx.v1.PackageService service.
@@ -572,6 +730,9 @@ type RuntimeServiceClient interface {
 	// Lists the running stdio MCP server processes: shared ones, including idle ones still
 	// warm, and those of single sessions.
 	ListMcpProcesses(context.Context, *connect.Request[v1.ListMcpProcessesRequest]) (*connect.Response[v1.ListMcpProcessesResponse], error)
+	// Stops one stdio MCP server process. Its sessions end, so harnesses reconnect and the next
+	// session starts it again; a shared process stops for every launch using it.
+	StopMcpProcess(context.Context, *connect.Request[v1.StopMcpProcessRequest]) (*connect.Response[v1.StopMcpProcessResponse], error)
 }
 
 // NewRuntimeServiceClient constructs a client for the agx.v1.RuntimeService service. By default, it
@@ -621,6 +782,12 @@ func NewRuntimeServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(runtimeServiceMethods.ByName("ListMcpProcesses")),
 			connect.WithClientOptions(opts...),
 		),
+		stopMcpProcess: connect.NewClient[v1.StopMcpProcessRequest, v1.StopMcpProcessResponse](
+			httpClient,
+			baseURL+RuntimeServiceStopMcpProcessProcedure,
+			connect.WithSchema(runtimeServiceMethods.ByName("StopMcpProcess")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -632,6 +799,7 @@ type runtimeServiceClient struct {
 	listTools        *connect.Client[v1.ListToolsRequest, v1.ListToolsResponse]
 	callTool         *connect.Client[v1.CallToolRequest, v1.CallToolResponse]
 	listMcpProcesses *connect.Client[v1.ListMcpProcessesRequest, v1.ListMcpProcessesResponse]
+	stopMcpProcess   *connect.Client[v1.StopMcpProcessRequest, v1.StopMcpProcessResponse]
 }
 
 // GetRuntime calls agx.v1.RuntimeService.GetRuntime.
@@ -664,6 +832,11 @@ func (c *runtimeServiceClient) ListMcpProcesses(ctx context.Context, req *connec
 	return c.listMcpProcesses.CallUnary(ctx, req)
 }
 
+// StopMcpProcess calls agx.v1.RuntimeService.StopMcpProcess.
+func (c *runtimeServiceClient) StopMcpProcess(ctx context.Context, req *connect.Request[v1.StopMcpProcessRequest]) (*connect.Response[v1.StopMcpProcessResponse], error) {
+	return c.stopMcpProcess.CallUnary(ctx, req)
+}
+
 // RuntimeServiceHandler is an implementation of the agx.v1.RuntimeService service.
 type RuntimeServiceHandler interface {
 	GetRuntime(context.Context, *connect.Request[v1.GetRuntimeRequest]) (*connect.Response[v1.GetRuntimeResponse], error)
@@ -679,6 +852,9 @@ type RuntimeServiceHandler interface {
 	// Lists the running stdio MCP server processes: shared ones, including idle ones still
 	// warm, and those of single sessions.
 	ListMcpProcesses(context.Context, *connect.Request[v1.ListMcpProcessesRequest]) (*connect.Response[v1.ListMcpProcessesResponse], error)
+	// Stops one stdio MCP server process. Its sessions end, so harnesses reconnect and the next
+	// session starts it again; a shared process stops for every launch using it.
+	StopMcpProcess(context.Context, *connect.Request[v1.StopMcpProcessRequest]) (*connect.Response[v1.StopMcpProcessResponse], error)
 }
 
 // NewRuntimeServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -724,6 +900,12 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 		connect.WithSchema(runtimeServiceMethods.ByName("ListMcpProcesses")),
 		connect.WithHandlerOptions(opts...),
 	)
+	runtimeServiceStopMcpProcessHandler := connect.NewUnaryHandler(
+		RuntimeServiceStopMcpProcessProcedure,
+		svc.StopMcpProcess,
+		connect.WithSchema(runtimeServiceMethods.ByName("StopMcpProcess")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.RuntimeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RuntimeServiceGetRuntimeProcedure:
@@ -738,6 +920,8 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 			runtimeServiceCallToolHandler.ServeHTTP(w, r)
 		case RuntimeServiceListMcpProcessesProcedure:
 			runtimeServiceListMcpProcessesHandler.ServeHTTP(w, r)
+		case RuntimeServiceStopMcpProcessProcedure:
+			runtimeServiceStopMcpProcessHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -769,6 +953,10 @@ func (UnimplementedRuntimeServiceHandler) CallTool(context.Context, *connect.Req
 
 func (UnimplementedRuntimeServiceHandler) ListMcpProcesses(context.Context, *connect.Request[v1.ListMcpProcessesRequest]) (*connect.Response[v1.ListMcpProcessesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.ListMcpProcesses is not implemented"))
+}
+
+func (UnimplementedRuntimeServiceHandler) StopMcpProcess(context.Context, *connect.Request[v1.StopMcpProcessRequest]) (*connect.Response[v1.StopMcpProcessResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.StopMcpProcess is not implemented"))
 }
 
 // SecretServiceClient is a client for the agx.v1.SecretService service.

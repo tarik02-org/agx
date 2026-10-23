@@ -128,6 +128,7 @@ See [The daemon](daemon.md) and [Secrets](secrets.md).
 | `agx mcp call <server>.<tool> [key=value ...]` | call a tool and print its result |
 | `agx mcp types [<server> ...] [--out <dir>] [--all] [--json]` | print TypeScript declarations for the tools; with `--out`, write them with an ES module client |
 | `agx mcp ps [--cwd <dir>] [--under <dir>] [--json]` | list the running local MCP server processes, shared or not; `--cwd` keeps those working in exactly that directory, `--under` those in it or below it |
+| `agx mcp stop <pid> [--json]` | stop a running local MCP server process; its sessions reconnect and the next one starts it again |
 
 `mcp call` flags:
 
