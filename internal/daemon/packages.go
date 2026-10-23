@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"os"
+	"regexp"
 	"time"
 
 	"connectrpc.com/connect"
@@ -100,10 +101,7 @@ func (s *Server) packageOperation(
 			op.state = &v1.WatchOperationResponse{
 				OperationId: id,
 				State: &v1.WatchOperationResponse_Failure{
-					Failure: diagnostic(
-						"install_failed",
-						"Package installation failed; retry agx install locally for diagnostics.",
-					),
+					Failure: diagnostic("install_failed", installFailure(err)),
 				},
 			}
 			return
@@ -162,4 +160,13 @@ func (s *Server) WatchOperation(
 		case <-ticker.C:
 		}
 	}
+}
+
+// urlCredentials matches the user information of URLs, such as a token in a Git remote, which
+// git's errors may repeat.
+var urlCredentials = regexp.MustCompile(`(://)[^/@\s]+@`)
+
+// installFailure says why an installation failed, without credentials a URL in it carries.
+func installFailure(err error) string {
+	return "Package installation failed: " + urlCredentials.ReplaceAllString(err.Error(), "${1}***@")
 }

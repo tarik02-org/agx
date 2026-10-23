@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -299,5 +300,109 @@ func TestPlanAndApplyChanges(t *testing.T) {
 		if _, got := reason(t, err); got != test.want {
 			t.Errorf("%s: %v: reason %v, want %v", name, err, got, test.want)
 		}
+	}
+}
+
+// skillRepository commits a repository holding the skills alpha and beta.
+func skillRepository(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	dir := filepath.Join(t.TempDir(), "kit.git")
+	for _, name := range []string{"alpha", "beta"} {
+		writeFile(
+			t,
+			filepath.Join(dir, "skills", name, "SKILL.md"),
+			"---\nname: "+name+"\ndescription: "+name+" skill\n---\n",
+		)
+	}
+	writeFile(t, filepath.Join(dir, "skills", "alpha", "reference.md"), "Reference.\n")
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"add", "."},
+		{"-c", "user.name=agx", "-c", "user.email=agx@example.com", "commit", "-q", "-m", "skills"},
+	} {
+		cmd := exec.CommandContext(t.Context(), "git", append([]string{"-C", dir}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	return dir
+}
+
+func TestPreviewSource(t *testing.T) {
+	repo := skillRepository(t)
+	s, _ := editorServer(t, editorConfig)
+	url := "file://" + filepath.ToSlash(repo)
+	preview, err := s.PreviewSource(t.Context(), connect.NewRequest(&v1.PreviewSourceRequest{Source: url}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := preview.Msg
+	if msg.Package.Id != "kit" || msg.Package.Git != url || len(msg.Skills) != 2 ||
+		msg.Skills[0].Name != "alpha" || msg.Skills[0].Description != "alpha skill" ||
+		!slices.Equal(msg.Skills[0].Files, []string{"SKILL.md", "reference.md"}) {
+		t.Fatalf("preview = %+v", msg)
+	}
+	if b, _ := os.ReadFile(s.paths.Config); string(b) != editorConfig {
+		t.Fatal("previewing changed the configuration")
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(s.paths.Config), "agx.lock.json")); !os.IsNotExist(err) {
+		t.Fatalf("previewing wrote a lockfile: %v", err)
+	}
+
+	readPreview := func(skill, path string) (*v1.ReadPreviewFileResponse, error) {
+		response, err := s.ReadPreviewFile(t.Context(), connect.NewRequest(&v1.ReadPreviewFileRequest{
+			PreviewId: msg.PreviewId, Skill: skill, Path: path,
+		}))
+		if err != nil {
+			return nil, err
+		}
+		return response.Msg, nil
+	}
+	if got, err := readPreview("alpha", "reference.md"); err != nil || got.Content != "Reference.\n" {
+		t.Fatalf("reference = %+v, %v", got, err)
+	}
+	for _, path := range []string{"../beta/SKILL.md", "/etc/passwd", ""} {
+		_, err := readPreview("alpha", path)
+		wantReason(t, err, v1.ErrorDetail_REASON_INVALID_REQUEST)
+	}
+	_, err = readPreview("gamma", "SKILL.md")
+	wantReason(t, err, v1.ErrorDetail_REASON_NOT_FOUND)
+	_, err = s.ReadPreviewFile(t.Context(), connect.NewRequest(&v1.ReadPreviewFileRequest{PreviewId: "expired"}))
+	wantReason(t, err, v1.ErrorDetail_REASON_NOT_FOUND)
+
+	// Adding the previewed package with one of its skills declares, locks, and enables it.
+	changes := []*v1.ConfigChange{
+		{Change: &v1.ConfigChange_AddPackage{AddPackage: msg.Package}},
+		enable("skills", "kit/alpha"),
+	}
+	planned, err := s.PlanChanges(t.Context(), connect.NewRequest(&v1.PlanChangesRequest{Changes: changes}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planned.Msg.Files) != 2 || !strings.HasSuffix(planned.Msg.Files[1].Path, "agx.lock.json") ||
+		planned.Msg.Files[1].BeforeSha256 != "" || !strings.Contains(planned.Msg.Files[0].Diff, "+      skills: [kit/alpha]") {
+		t.Fatalf("plan = %+v", planned.Msg.Files)
+	}
+	if _, err := s.ApplyChanges(t.Context(), connect.NewRequest(&v1.ApplyChangesRequest{
+		Changes: changes, Expected: planned.Msg.Files,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.reload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.Skills["kit/alpha"]; !ok {
+		t.Fatalf("the added package's skills are not loaded: %v", c.Missing)
+	}
+}
+
+func TestInstallFailureRedactsCredentials(t *testing.T) {
+	got := installFailure(errors.New("clone https://user:ghp_secret@github.com/acme/skills: denied"))
+	if strings.Contains(got, "ghp_secret") || !strings.Contains(got, "https://***@github.com/acme/skills") {
+		t.Fatalf("installFailure = %q", got)
 	}
 }

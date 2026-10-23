@@ -31,6 +31,16 @@ service PackageService {
   rpc Install(InstallRequest) returns (InstallResponse);
   rpc Update(UpdateRequest) returns (UpdateResponse);
   rpc WatchOperation(WatchOperationRequest) returns (stream WatchOperationResponse);
+  // Fetches a Git source into the cache and lists the skills it holds, without changing the
+  // configuration; previews expire after 30 minutes.
+  rpc PreviewSource(PreviewSourceRequest) returns (PreviewSourceResponse);
+  // One file of a previewed skill.
+  rpc ReadPreviewFile(ReadPreviewFileRequest) returns (ReadPreviewFileResponse);
+  // A Git source's branches and tags, without fetching it.
+  rpc ListSourceRefs(ListSourceRefsRequest) returns (ListSourceRefsResponse);
+  // Checks a Git source out at a ref or revision without configuring it: the commit it resolves
+  // to, the content hash a package pinned to it records, and its directories.
+  rpc InspectSource(InspectSourceRequest) returns (InspectSourceResponse);
 }
 
 service LaunchService {
@@ -731,4 +741,70 @@ message ApplyChangesRequest {
 }
 message ApplyChangesResponse {
   repeated string written = 1;
+}
+
+message ListSourceRefsRequest {
+  // A Git URL or local repository, as a package's git field names it.
+  string git = 1;
+}
+message ListSourceRefsResponse {
+  // The default branch first, then the other branches by name, then tags, newest version first.
+  repeated SourceRef refs = 1;
+}
+message SourceRef {
+  // The name a ref field takes, such as main or v1.2.0.
+  string name = 1;
+  bool tag = 2;
+  // The commit it points to; an annotated tag's is the commit it tags.
+  string commit = 3;
+  // The branch the repository's HEAD names.
+  bool default = 4;
+}
+
+message InspectSourceRequest {
+  // A Git URL or local repository, as a package's git field names it.
+  string git = 1;
+  // Empty checks out the default branch.
+  string ref = 2;
+  // A commit, which wins over ref.
+  string rev = 3;
+  // The directory whose content is hashed; empty for the whole source.
+  string subdir = 4;
+}
+message InspectSourceResponse {
+  // The commit the ref or revision resolves to.
+  string revision = 1;
+  // The content hash of the subdirectory, as a package's hash field takes it.
+  string hash = 2;
+  // The source's directories, relative and /-separated, sorted, without Git metadata.
+  repeated string directories = 3;
+}
+
+message PreviewSourceRequest {
+  // owner/repo[@ref][/path], or a Git URL.
+  string source = 1;
+}
+message PreviewSourceResponse {
+  string preview_id = 1;
+  // The package the source would be declared as, and its parsed source.
+  PackageSource package = 2;
+  repeated PreviewSkill skills = 3;
+}
+message PreviewSkill {
+  // The skill's name within the package; its ID once added is <package>/<name>.
+  string name = 1;
+  string description = 2;
+  string skill_md = 3;
+  repeated string files = 4;
+}
+message ReadPreviewFileRequest {
+  string preview_id = 1;
+  string skill = 2;
+  // Relative to the skill's directory, /-separated.
+  string path = 3;
+}
+message ReadPreviewFileResponse {
+  string content = 1;
+  // A file larger than 1 MiB or not UTF-8 text is not returned.
+  bool binary = 2;
 }

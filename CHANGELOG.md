@@ -6,6 +6,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Added
 
+- `PackageService.PreviewSource` fetches a Git source (`owner/repo[@ref][/path]` or a URL)
+  into the cache and lists its skills with their SKILL.md and files, without configuring
+  anything; `ReadPreviewFile` reads one of their files for 30 minutes.
+- `PackageService.ListSourceRefs` lists a Git source's branches and tags, with their commits,
+  without fetching it; `InspectSource` checks one out at its pins for the commit, the content
+  hash a pinned package records, and its directories.
 - `ConfigurationService.PlanChanges` and `ApplyChanges`: the edits the CLI makes (define,
   undefine, enable, disable, a local skill's or instructions' file, and a Git package) as a
   plan with a diff and SHA-256 per file, and an apply that writes all of it or nothing, and
@@ -84,6 +90,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Changed
 
+- A failed package installation the daemon runs reports git's error, with credentials in
+  URLs redacted, instead of asking to retry `agx install` locally.
 - A package that is not installed, or changed since it was installed, no longer fails
   launches: they go on without its skills, instructions, and MCP servers, and warn once per
   package to run `agx install`; the daemon logs the same warning. `agx config validate`,

@@ -163,70 +163,15 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 				if !p.Manifest {
 					protocols += ":file"
 				}
-				if _, err := git(
-					ctx,
-					protocols,
-					false,
-					"clone",
-					"--quiet",
-					"--no-checkout",
-					"--",
-					p.Git,
-					gitDir,
-				); err != nil {
-					return cloneError(p.Git, err)
-				}
 				ref := cmp.Or(p.Rev, p.Ref, "HEAD")
 				if sourceMatches && !updateAll && !wanted[id] {
 					ref = previous.Revision
 				}
-				resolve := func() ([]byte, error) {
-					out, err := git(
-						ctx,
-						protocols,
-						true,
-						"-C",
-						gitDir,
-						"rev-parse",
-						"--verify",
-						"--end-of-options",
-						ref+"^{commit}",
-					)
-					// A clone checks out only the default branch; other branches are remote refs.
-					if err != nil && p.Rev == "" && ref != "HEAD" {
-						if remote, remoteErr := git(
-							ctx, protocols, true, "-C", gitDir, "rev-parse", "--verify", "--end-of-options",
-							"refs/remotes/origin/"+ref+"^{commit}",
-						); remoteErr == nil {
-							return remote, nil
-						}
-					}
-					return out, err
-				}
-				out, err := resolve()
-				// A pinned commit may be reachable only by its hash, which a clone does not fetch.
-				if err != nil && p.Rev != "" {
-					if _, fetchErr := git(
-						ctx, protocols, false, "-C", gitDir, "fetch", "--quiet", "origin", "--end-of-options", p.Rev,
-					); fetchErr == nil {
-						out, err = resolve()
-					}
-				}
-				if err != nil {
+				revision, err = checkoutGit(ctx, gitDir, p.Git, protocols, ref, p.Rev)
+				if errors.Is(err, errUnresolved) {
 					return fmt.Errorf("cannot resolve revision for package %s", id)
 				}
-				revision = strings.TrimSpace(string(out))
-				if _, err := git(
-					ctx,
-					protocols,
-					true,
-					"-C",
-					gitDir,
-					"checkout",
-					"--quiet",
-					"--detach",
-					revision,
-				); err != nil {
+				if err != nil {
 					return err
 				}
 				src = gitDir
@@ -398,6 +343,50 @@ func writeLocks(locks map[string]config.Lock) error {
 func EncodeLock(l config.Lock) ([]byte, error) {
 	b, err := json.MarshalIndent(l, "", "  ")
 	return append(b, '\n'), err
+}
+
+// errUnresolved is a ref or revision a cloned repository does not have.
+var errUnresolved = errors.New("cannot resolve revision")
+
+// checkoutGit clones url into dir and checks out ref, returning the commit. A ref names a tag,
+// the default branch, or another branch, which a clone holds only as a remote ref; rev, when
+// set, is a pinned commit, fetched by its hash when no branch reaches it.
+func checkoutGit(ctx context.Context, dir, url, protocols, ref, rev string) (string, error) {
+	if _, err := git(ctx, protocols, false, "clone", "--quiet", "--no-checkout", "--", url, dir); err != nil {
+		return "", cloneError(url, err)
+	}
+	resolve := func() ([]byte, error) {
+		out, err := git(
+			ctx, protocols, true, "-C", dir, "rev-parse", "--verify", "--end-of-options", ref+"^{commit}",
+		)
+		// A clone checks out only the default branch; other branches are remote refs.
+		if err != nil && rev == "" && ref != "HEAD" {
+			if remote, remoteErr := git(
+				ctx, protocols, true, "-C", dir, "rev-parse", "--verify", "--end-of-options",
+				"refs/remotes/origin/"+ref+"^{commit}",
+			); remoteErr == nil {
+				return remote, nil
+			}
+		}
+		return out, err
+	}
+	out, err := resolve()
+	// A pinned commit may be reachable only by its hash, which a clone does not fetch.
+	if err != nil && rev != "" {
+		if _, fetchErr := git(
+			ctx, protocols, false, "-C", dir, "fetch", "--quiet", "origin", "--end-of-options", rev,
+		); fetchErr == nil {
+			out, err = resolve()
+		}
+	}
+	if err != nil {
+		return "", errUnresolved
+	}
+	revision := strings.TrimSpace(string(out))
+	if _, err := git(ctx, protocols, true, "-C", dir, "checkout", "--quiet", "--detach", revision); err != nil {
+		return "", err
+	}
+	return revision, nil
 }
 
 // git runs with allowed transports restricted. Isolated invocations shape checked-out
