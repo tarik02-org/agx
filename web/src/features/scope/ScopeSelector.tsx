@@ -3,7 +3,14 @@ import { FolderIcon, GlobeIcon } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "~/components/ui/button.tsx";
-import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover.tsx";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "~/components/ui/dialog.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
 import { DirectoryBrowser } from "~/features/scope/DirectoryBrowser.tsx";
@@ -28,8 +35,8 @@ export function ScopeSelector() {
     });
   };
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger
         render={
           <Button variant="outline" size="sm" className="max-w-80 font-mono">
             {directory === "" ? (
@@ -43,10 +50,13 @@ export function ScopeSelector() {
           </Button>
         }
       />
-      <PopoverContent align="end" className="w-80 gap-0 p-0">
-        <p className="px-3 pt-2.5 pb-1.5 text-muted-foreground text-xs">
-          Pages show what a launch in this directory gets, and enable things here.
-        </p>
+      <DialogContent className="gap-0 p-0 sm:max-w-md">
+        <DialogHeader className="p-4 pb-2">
+          <DialogTitle>Scope</DialogTitle>
+          <DialogDescription>
+            Pages show what a launch in this directory gets, and enable things here.
+          </DialogDescription>
+        </DialogHeader>
         <DirectoryBrowser
           key={String(open)}
           value={directory}
@@ -55,7 +65,7 @@ export function ScopeSelector() {
           everywhere
           onPick={scopeTo}
         />
-      </PopoverContent>
-    </Popover>
+      </DialogContent>
+    </Dialog>
   );
 }

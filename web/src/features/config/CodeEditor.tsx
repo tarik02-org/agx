@@ -14,6 +14,8 @@ interface CodeEditorProps {
   readonly language: "yaml" | "markdown" | "text";
   readonly schema?: JSONSchema7 | undefined;
   readonly readOnly?: boolean;
+  /** Takes the height its flex container leaves, scrolling inside instead of growing. */
+  readonly fill?: boolean;
   readonly className?: string;
 }
 
@@ -46,11 +48,13 @@ export function CodeEditor({
   language,
   schema,
   readOnly = false,
+  fill = false,
   className,
 }: CodeEditorProps) {
   return (
     <CodeMirror
-      className={cn("overflow-hidden rounded-md border", className)}
+      className={cn("overflow-hidden rounded-md border", fill && "min-h-0 flex-1", className)}
+      {...(fill ? { height: "100%" } : {})}
       value={value}
       theme="dark"
       editable={!readOnly}

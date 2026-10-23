@@ -93,7 +93,7 @@ export function NumberField({ form, path, label, placeholder, description }: Fie
       <Input
         id={id}
         type="number"
-        className="w-32 font-mono"
+        className="w-32! font-mono"
         readOnly={form.readOnly}
         placeholder={placeholder}
         value={readString(form.text, path)}
@@ -160,6 +160,8 @@ export function ListField({ form, path, label, placeholder, description }: Field
 interface Option {
   readonly value: string;
   readonly label: string;
+  /** A line under the label in the list, saying what the choice means. */
+  readonly description?: string;
 }
 
 /** A choice among the schema's values; the empty choice removes the field. */
@@ -182,14 +184,21 @@ export function ChoiceField({
         disabled={form.readOnly}
         onValueChange={(next) => form.onChange(writeField(form.text, path, next ?? ""))}
       >
-        <SelectTrigger id={id} className="w-64">
+        <SelectTrigger id={id} className="w-64!">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>
             {items.map((item) => (
               <SelectItem key={item.value} value={item.value}>
-                {item.label}
+                {"description" in item && item.description !== undefined ? (
+                  <span className="flex flex-col gap-0.5">
+                    <span>{item.label}</span>
+                    <span className="text-muted-foreground text-xs">{item.description}</span>
+                  </span>
+                ) : (
+                  item.label
+                )}
               </SelectItem>
             ))}
           </SelectGroup>

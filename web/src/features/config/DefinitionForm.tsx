@@ -207,13 +207,33 @@ function ShareField({ form }: { readonly form: DefinitionText }) {
 }
 
 const secretKinds = [
-  { value: "keychain", label: "keychain" },
-  { value: "oauth", label: "OAuth" },
-  { value: "environment", label: "launch environment" },
-  { value: "daemon_environment", label: "daemon environment" },
-  { value: "command", label: "command" },
-  { value: "file", label: "file" },
-  { value: "sops", label: "sops" },
+  {
+    value: "keychain",
+    label: "Keychain",
+    description: "Kept in the OS keychain; set on the Runtime page.",
+  },
+  {
+    value: "oauth",
+    label: "OAuth sign-in",
+    description: "A sign-in, for an MCP server's auth only.",
+  },
+  {
+    value: "environment",
+    label: "Launch environment",
+    description: "A variable of the shell you launch from.",
+  },
+  {
+    value: "daemon_environment",
+    label: "Daemon environment",
+    description: "A variable of the shell that started the daemon.",
+  },
+  {
+    value: "command",
+    label: "Command output",
+    description: "What a command, such as a password manager, prints.",
+  },
+  { value: "file", label: "File", description: "The contents of a file." },
+  { value: "sops", label: "SOPS file", description: "A key of a SOPS-encrypted file." },
 ];
 
 function SecretForm({ form }: { readonly form: DefinitionText }) {

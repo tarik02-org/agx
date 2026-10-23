@@ -29,6 +29,8 @@ interface PageProps {
   /** The page's place: its section first, then what it shows. */
   readonly crumbs: ReadonlyArray<Crumb>;
   readonly actions?: ReactNode;
+  /** The content takes the window's remaining height, for an editor that scrolls on its own. */
+  readonly fill?: boolean;
   readonly className?: string;
   readonly children: ReactNode;
 }
@@ -37,7 +39,7 @@ interface PageProps {
  * A page: a header with where it is and what can be done, and the content centered below. Parts
  * of the page add actions to the header with PageActions, so every action is at the top.
  */
-export function Page({ title, crumbs, actions, className, children }: PageProps) {
+export function Page({ title, crumbs, actions, fill = false, className, children }: PageProps) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const width = cn("mx-auto w-full max-w-5xl px-4", className);
   return (
@@ -82,7 +84,10 @@ export function Page({ title, crumbs, actions, className, children }: PageProps)
         </div>
       </header>
       <PageActionsSlot value={slot}>
-        <div data-slot="page" className={cn(width, "flex flex-col gap-2 py-3")}>
+        <div
+          data-slot="page"
+          className={cn(width, "flex flex-col gap-2 py-3", fill && "min-h-0 flex-1")}
+        >
           {children}
         </div>
       </PageActionsSlot>

@@ -19,20 +19,13 @@ import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
 import { Button } from "~/components/ui/button.tsx";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card.tsx";
-import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
 } from "~/components/ui/empty.tsx";
-import { Field, FieldLabel } from "~/components/ui/field.tsx";
+import { Field, FieldGroup, FieldLabel } from "~/components/ui/field.tsx";
 import { Input } from "~/components/ui/input.tsx";
 import {
   Select,
@@ -110,20 +103,9 @@ function ConfigPage() {
             ? [{ label }, { label: search.id ?? "new", mono: true }]
             : []),
       ]}
-      actions={
-        definition !== undefined &&
-        selectable.has(definition.kind) && (
-          <ScopeDialog
-            kind={definition.kind}
-            id={definition.id}
-            trigger={
-              <Button variant="outline" size="sm">
-                <ListChecksIcon data-icon="inline-start" />
-                Enable or disable…
-              </Button>
-            }
-          />
-        )
+      fill={
+        search.file !== undefined ||
+        (search.kind !== undefined && (search.view === "yaml" || !hasForm(search.kind)))
       }
     >
       {(configuration.isPending || definitions.isPending) && <Pending className="h-64" />}
@@ -204,22 +186,21 @@ function DefinitionEditor({
   const tab = formAvailable ? (search.view ?? "form") : "yaml";
   const saved = stagedChange?.case === "define" ? (stagedChange.value.yaml ?? original) : original;
   const location = definition?.source;
+  const editable = !(readOnly && original === "");
   return (
-    <Card size="sm">
+    <Tabs
+      value={tab}
+      onValueChange={(next) =>
+        void navigate({
+          search: (current) => ({ ...current, view: next === "yaml" ? "yaml" : "form" }),
+          replace: true,
+        })
+      }
+      className="flex min-h-0 flex-1 flex-col gap-3"
+    >
       <UnsavedChanges dirty={!readOnly && text !== saved} ignore={["view"]} />
-      <CardHeader>
-        {/* The top bar names the definition and holds its actions. */}
-        <CardTitle className="flex items-center gap-2">
-          {definition === undefined && (
-            <Input
-              aria-label="ID"
-              className="w-72 font-mono"
-              placeholder="id"
-              spellCheck={false}
-              value={id}
-              onChange={(event) => setId(event.target.value)}
-            />
-          )}
+      <PageActions>
+        <span className="flex items-center gap-2">
           {definition?.package !== undefined && definition.package !== "" && (
             <Badge variant="secondary">
               <PackageIcon data-icon="inline-start" />
@@ -228,40 +209,113 @@ function DefinitionEditor({
           )}
           {readOnly && <Badge variant="outline">read-only</Badge>}
           {staged !== undefined && <Badge>{removing ? "removal staged" : "staged"}</Badge>}
-        </CardTitle>
-        <CardDescription className="font-mono">
-          {location === undefined
-            ? "Not written yet"
-            : `${shortPath(location.path, home)}${location.line > 0 ? `:${location.line}` : ""}`}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-2">
-        {readOnly && (
-          <Alert>
-            <LockIcon />
-            <AlertTitle>
-              {definition?.package === "" ? "Its file is read-only" : "A package defines this"}
-            </AlertTitle>
-            <AlertDescription>
-              {definition?.package === ""
-                ? "The file is a link, such as one Home Manager manages, or agx cannot write it. Change it where it comes from."
-                : "Override it in your own configuration, or change the package."}
-            </AlertDescription>
-          </Alert>
+          <span className="font-mono text-muted-foreground text-xs">
+            {location === undefined
+              ? "new"
+              : `${shortPath(location.path, home)}${location.line > 0 ? `:${location.line}` : ""}`}
+          </span>
+        </span>
+        {editable && (
+          <TabsList>
+            <TabsTrigger value="form" disabled={!formAvailable}>
+              Form
+            </TabsTrigger>
+            <TabsTrigger value="yaml">YAML</TabsTrigger>
+          </TabsList>
         )}
-        {definition?.description !== undefined && definition.description !== "" && (
-          <p className="text-muted-foreground text-xs">{definition.description}</p>
+        {definition !== undefined && selectable.has(kind) && (
+          <ScopeDialog
+            kind={kind}
+            id={definition.id}
+            trigger={
+              <Button variant="outline" size="sm">
+                <ListChecksIcon data-icon="inline-start" />
+                Enable or disable…
+              </Button>
+            }
+          />
         )}
-        {kind === "skills" && definition !== undefined && (
-          <Link
-            to="/skills"
-            search={{ skill: definition.id }}
-            className="text-primary text-xs underline"
-          >
-            Open in Skills
-          </Link>
+        {!readOnly && (
+          <>
+            {definition !== undefined && (
+              <ConfirmAction
+                trigger={
+                  <Button variant="destructive" size="sm">
+                    <Trash2Icon data-icon="inline-start" />
+                    Remove
+                  </Button>
+                }
+                title={`Remove ${definition.id}?`}
+                description="Stages removing the definition and every scope rule naming it."
+                action="Stage removal"
+                onConfirm={() => stage(undefine(kind, definition.id))}
+              />
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={staged === undefined && text === original}
+              onClick={() => {
+                unstage(`definition/${kind}/${id}`);
+                setText(original);
+              }}
+            >
+              <RotateCcwIcon data-icon="inline-start" />
+              Revert
+            </Button>
+            <Button
+              size="sm"
+              disabled={
+                id === "" || errors.length > 0 || (text === original && staged === undefined)
+              }
+              onClick={() => {
+                stage(define(kind, id, text, definition === undefined ? file : ""));
+                toast.add({ type: "success", title: `Staged ${id}` });
+              }}
+            >
+              Stage
+            </Button>
+          </>
         )}
-        {definition === undefined && (
+      </PageActions>
+      {readOnly && (
+        <Alert>
+          <LockIcon />
+          <AlertTitle>
+            {definition?.package === "" ? "Its file is read-only" : "A package defines this"}
+          </AlertTitle>
+          <AlertDescription>
+            {definition?.package === ""
+              ? "The file is a link, such as one Home Manager manages, or agx cannot write it. Change it where it comes from."
+              : "Override it in your own configuration, or change the package."}
+          </AlertDescription>
+        </Alert>
+      )}
+      {definition?.description !== undefined && definition.description !== "" && (
+        <p className="text-muted-foreground text-xs">{definition.description}</p>
+      )}
+      {kind === "skills" && definition !== undefined && (
+        <Link
+          to="/skills"
+          search={{ skill: definition.id }}
+          className="text-primary text-xs underline"
+        >
+          Open in Skills
+        </Link>
+      )}
+      {definition === undefined && (
+        <FieldGroup className="max-w-xl">
+          <Field>
+            <FieldLabel htmlFor="definition-id">ID</FieldLabel>
+            <Input
+              id="definition-id"
+              className="font-mono"
+              placeholder="id"
+              spellCheck={false}
+              value={id}
+              onChange={(event) => setId(event.target.value)}
+            />
+          </Field>
           <Field>
             <FieldLabel>Write to</FieldLabel>
             <Select
@@ -269,7 +323,7 @@ function DefinitionEditor({
               value={file}
               onValueChange={(next) => setFile(next ?? "")}
             >
-              <SelectTrigger className="w-96 font-mono">
+              <SelectTrigger className="font-mono">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -283,89 +337,35 @@ function DefinitionEditor({
               </SelectContent>
             </Select>
           </Field>
-        )}
-        {!(readOnly && original === "") && (
-          <Tabs
-            value={tab}
-            onValueChange={(next) =>
-              void navigate({
-                search: (current) => ({ ...current, view: next === "yaml" ? "yaml" : "form" }),
-                replace: true,
-              })
-            }
-          >
-            <TabsList>
-              <TabsTrigger value="form" disabled={!formAvailable}>
-                Form
-              </TabsTrigger>
-              <TabsTrigger value="yaml">YAML</TabsTrigger>
-            </TabsList>
-            <TabsContent value="form">
-              <DefinitionForm
-                kind={kind}
-                form={{
-                  text,
-                  onChange: setText,
-                  readOnly,
-                  describe: (field) => fieldDescription(schema, kind, field),
-                }}
-              />
-            </TabsContent>
-            <TabsContent value="yaml">
-              <CodeEditor
-                language="yaml"
-                className="min-h-48"
-                value={text}
-                readOnly={readOnly}
-                schema={schema === undefined ? undefined : definitionSchema(schema, kind)}
-                onChange={setText}
-              />
-              {errors.length > 0 && <p className="mt-2 text-destructive text-xs">{errors[0]}</p>}
-            </TabsContent>
-          </Tabs>
-        )}
-      </CardContent>
-      {!readOnly && (
-        <PageActions>
-          {definition !== undefined && (
-            <ConfirmAction
-              trigger={
-                <Button variant="destructive" size="sm">
-                  <Trash2Icon data-icon="inline-start" />
-                  Remove
-                </Button>
-              }
-              title={`Remove ${definition.id}?`}
-              description="Stages removing the definition and every scope rule naming it."
-              action="Stage removal"
-              onConfirm={() => stage(undefine(kind, definition.id))}
-            />
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={staged === undefined && text === original}
-            onClick={() => {
-              unstage(`definition/${kind}/${id}`);
-              setText(original);
-            }}
-          >
-            <RotateCcwIcon data-icon="inline-start" />
-            Revert
-          </Button>
-          <Button
-            size="sm"
-            disabled={id === "" || errors.length > 0 || (text === original && staged === undefined)}
-            onClick={() => {
-              stage(define(kind, id, text, definition === undefined ? file : ""));
-              toast.add({ type: "success", title: `Staged ${id}` });
-            }}
-          >
-            Stage
-          </Button>
-        </PageActions>
+        </FieldGroup>
       )}
-    </Card>
+      {editable && (
+        <>
+          <TabsContent value="form" className="max-w-xl">
+            <DefinitionForm
+              kind={kind}
+              form={{
+                text,
+                onChange: setText,
+                readOnly,
+                describe: (field) => fieldDescription(schema, kind, field),
+              }}
+            />
+          </TabsContent>
+          <TabsContent value="yaml" className="flex min-h-0 flex-1 flex-col gap-2">
+            <CodeEditor
+              language="yaml"
+              fill
+              value={text}
+              readOnly={readOnly}
+              schema={schema === undefined ? undefined : definitionSchema(schema, kind)}
+              onChange={setText}
+            />
+            {errors.length > 0 && <p className="text-destructive text-xs">{errors[0]}</p>}
+          </TabsContent>
+        </>
+      )}
+    </Tabs>
   );
 }
 
@@ -387,26 +387,17 @@ function FileEditor({
   );
   const linkTarget = file?.linkTarget ?? "";
   return (
-    <Card size="sm">
-      <CardHeader>
-        <CardTitle className="font-mono">{shortPath(path, home)}</CardTitle>
-        {linkTarget !== "" && (
-          <CardDescription className="flex items-center gap-1 font-mono">
-            <LinkIcon />
+    <>
+      {linkTarget !== "" && (
+        <PageActions>
+          <span className="flex items-center gap-1 font-mono text-muted-foreground text-xs">
+            <LinkIcon className="size-3" />
             {linkTarget}
-          </CardDescription>
-        )}
-      </CardHeader>
-      {content.isPending && (
-        <CardContent>
-          <Pending className="h-64" />
-        </CardContent>
+          </span>
+        </PageActions>
       )}
-      {content.isError && (
-        <CardContent>
-          <DaemonProblem error={content.error} />
-        </CardContent>
-      )}
+      {content.isPending && <Pending className="h-64" />}
+      {content.isError && <DaemonProblem error={content.error} />}
       {content.isSuccess && (
         <FileText
           path={path}
@@ -416,7 +407,7 @@ function FileEditor({
           schema={schema}
         />
       )}
-    </Card>
+    </>
   );
 }
 
@@ -441,25 +432,24 @@ function FileText({
   return (
     <>
       <UnsavedChanges dirty={!readOnly && text !== (staged ?? original)} />
-      <CardContent className="flex flex-col gap-2">
-        {readOnly && (
-          <Alert>
-            <LockIcon />
-            <AlertTitle>Read-only</AlertTitle>
-            <AlertDescription>
-              A link, such as one Home Manager manages, or a file agx cannot write.
-            </AlertDescription>
-          </Alert>
-        )}
-        <CodeEditor
-          language="yaml"
-          value={text}
-          readOnly={readOnly}
-          schema={schema}
-          onChange={setText}
-        />
-        {errors.length > 0 && <p className="text-destructive text-xs">{errors[0]}</p>}
-      </CardContent>
+      {readOnly && (
+        <Alert>
+          <LockIcon />
+          <AlertTitle>Read-only</AlertTitle>
+          <AlertDescription>
+            A link, such as one Home Manager manages, or a file agx cannot write.
+          </AlertDescription>
+        </Alert>
+      )}
+      <CodeEditor
+        language="yaml"
+        fill
+        value={text}
+        readOnly={readOnly}
+        schema={schema}
+        onChange={setText}
+      />
+      {errors.length > 0 && <p className="text-destructive text-xs">{errors[0]}</p>}
       {!readOnly && (
         <PageActions>
           <Button
