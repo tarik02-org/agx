@@ -12,6 +12,7 @@ export const queryKeys = {
   tools: (directory: string, mcpId: string) => ["mcp-tools", directory, mcpId],
   resolve: (directory: string, harness: string) => ["resolve", directory, harness],
   completeDirectory: (prefix: string) => ["complete-directory", prefix],
+  completePath: (prefix: string) => ["complete-path", prefix],
   definitions: ["definitions"],
   skill: (skillId: string) => ["skill", skillId],
   file: (path: string) => ["file", path],

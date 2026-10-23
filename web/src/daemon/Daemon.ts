@@ -20,6 +20,7 @@ import {
   type PlannedFile,
   type PreviewSourceResponse,
   type SourceRef,
+  type CompleteDirectoryResponse,
   type InspectSourceResponse,
   InspectSourceRequestSchema,
   type ReadFileResponse,
@@ -74,6 +75,10 @@ export class Daemon extends Context.Service<
     readonly completeDirectory: (
       prefix: string,
     ) => Effect.Effect<ReadonlyArray<string>, DaemonError>;
+    /** Directories and files completing a path, for picking a file. */
+    readonly completePath: (
+      prefix: string,
+    ) => Effect.Effect<CompleteDirectoryResponse, DaemonError>;
     /** Installs the configuration's packages, reporting progress until the result. */
     readonly install: Stream.Stream<WatchOperationResponse, DaemonError>;
     /** The configuration JSON Schema of the daemon's version and harnesses. */
@@ -228,6 +233,10 @@ export const makeDaemon = (): Daemon["Service"] => {
       call("completeDirectory", (signal) =>
         configuration.completeDirectory({ prefix }, { signal }),
       ).pipe(Effect.map((response) => response.directories)),
+    completePath: (prefix) =>
+      call("completePath", (signal) =>
+        configuration.completeDirectory({ prefix, files: true }, { signal }),
+      ),
     install: Stream.unwrap(
       call("install", (signal) =>
         packages.install({ requestId: crypto.randomUUID() }, { signal }),

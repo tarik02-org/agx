@@ -1,9 +1,10 @@
 import * as Effect from "effect/Effect";
-import { HashIcon } from "lucide-react";
+import { FolderIcon, HashIcon } from "lucide-react";
 import { type ReactNode, useId, useRef, useState } from "react";
 
 import { Badge } from "~/components/ui/badge.tsx";
 import { InputGroupButton } from "~/components/ui/input-group.tsx";
+import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover.tsx";
 import { Spinner } from "~/components/ui/spinner.tsx";
 import { toast } from "~/components/ui/toast.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
@@ -13,6 +14,9 @@ import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonMutation, useDaemonQuery } from "~/daemon/query.ts";
 import type { SourceRef } from "~/gen/agx/v1/agx_pb.ts";
 import { CodeEditor } from "~/features/config/CodeEditor.tsx";
+import { shortPath } from "~/lib/path.ts";
+import { DirectoryBrowser } from "~/features/scope/DirectoryBrowser.tsx";
+import { absoluteDirectory } from "~/features/scope/scope.ts";
 import {
   BooleanField,
   ChoiceField,
@@ -31,6 +35,7 @@ import {
 } from "~/features/config/fields.tsx";
 import {
   ensureField,
+  type FieldPath,
   putFields,
   type TakenFields,
   takeFields,
@@ -142,6 +147,7 @@ function McpForm({ form }: { readonly form: DefinitionText }) {
             path={["cwd"]}
             label="Working directory"
             placeholder="the launch directory"
+            action={!form.readOnly && <BrowseFolder form={form} path={["cwd"]} />}
           />
           <MapField form={form} path={["environment"]} label="Environment" />
           <ShareField form={form} />
@@ -150,13 +156,7 @@ function McpForm({ form }: { readonly form: DefinitionText }) {
         <>
           <TextField form={form} path={["url"]} label="URL" placeholder="https://example.com/mcp" />
           <MapField form={form} path={["headers"]} label="Headers" placeholder="Header-Name" />
-          <TextField
-            form={form}
-            path={["auth"]}
-            label="Auth"
-            placeholder="OAuth when the server asks"
-            description="oauth, keychain, none, or a secret ID; an inline secret is edited on the YAML tab."
-          />
+          <AuthField form={form} />
         </>
       )}
       <FieldSeparator />
@@ -355,6 +355,64 @@ function PinFields({ form }: { readonly form: DefinitionText }) {
       />
       <HashField form={form} />
     </>
+  );
+}
+
+/** How an HTTP server is authenticated: a kind of sign-in, or a secret by its ID. */
+function AuthField({ form }: { readonly form: DefinitionText }) {
+  const definitions = useDaemonQuery(
+    queryKeys.definitions,
+    Daemon.use((daemon) => daemon.definitions),
+  );
+  const secrets = (definitions.data ?? []).filter((d) => d.kind === "secrets");
+  return (
+    <SuggestField
+      form={form}
+      path={["auth"]}
+      label="Auth"
+      placeholder="OAuth when the server asks"
+      description="oauth, keychain, none, or a secret ID; an inline secret is edited on the YAML tab."
+      suggestions={[
+        { value: "oauth", detail: "sign in when asked" },
+        { value: "keychain", detail: "a token kept in the keychain" },
+        { value: "none", detail: "no authentication" },
+        ...secrets.map((secret) => ({ value: secret.id, detail: "secret" })),
+      ]}
+    />
+  );
+}
+
+/** A button beside a directory field that picks one by browsing folders. */
+function BrowseFolder({ form, path }: { readonly form: DefinitionText; readonly path: FieldPath }) {
+  const [open, setOpen] = useState(false);
+  const configuration = useDaemonQuery(
+    queryKeys.configuration,
+    Daemon.use((daemon) => daemon.configuration),
+  );
+  const home = configuration.data?.home ?? "";
+  const written = absoluteDirectory(readString(form.text, path), home);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={
+          <InputGroupButton size="icon-xs" aria-label="Browse folders">
+            <FolderIcon />
+          </InputGroupButton>
+        }
+      />
+      <PopoverContent align="end" className="w-80 gap-0 p-0">
+        <DirectoryBrowser
+          key={String(open)}
+          value={written.startsWith("/") ? written : ""}
+          home={home}
+          shortcuts={configuration.data?.scopeDirectories ?? []}
+          onPick={(directory) => {
+            setOpen(false);
+            form.onChange(writeField(form.text, path, shortPath(directory, home)));
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
 

@@ -59,6 +59,17 @@ func TestCompleteDirectory(t *testing.T) {
 	); err == nil {
 		t.Error("a relative prefix was accepted")
 	}
+	withFiles, err := s.CompleteDirectory(
+		t.Context(),
+		connect.NewRequest(&v1.CompleteDirectoryRequest{Prefix: filepath.Join(dir, "wo"), Files: true}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(withFiles.Msg.Files, []string{filepath.Join(dir, "workfile")}) ||
+		len(withFiles.Msg.Directories) != 2 {
+		t.Errorf("files = %v, directories = %v", withFiles.Msg.Files, withFiles.Msg.Directories)
+	}
 }
 
 func TestConfigurationFileReadOnly(t *testing.T) {

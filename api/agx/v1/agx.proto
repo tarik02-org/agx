@@ -229,10 +229,14 @@ message ConfigurationFile {
 message CompleteDirectoryRequest {
   // An absolute path or one starting with ~/; the last segment is a name prefix.
   string prefix = 1;
+  // Also lists files, for picking one.
+  bool files = 2;
 }
 message CompleteDirectoryResponse {
   // At most 50 absolute directories, sorted.
   repeated string directories = 1;
+  // With files set, at most 50 absolute files besides the directories, sorted.
+  repeated string files = 2;
 }
 
 message InstallRequest {

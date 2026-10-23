@@ -28,6 +28,9 @@ import {
 import { Switch } from "~/components/ui/switch.tsx";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group.tsx";
 import { Spinner } from "~/components/ui/spinner.tsx";
+import { shortPath } from "~/lib/path.ts";
+import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
+import { Daemon } from "~/daemon/Daemon.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
 import {
   type FieldPath,
@@ -635,6 +638,81 @@ const tagPlaceholder: Record<ValueTag, string> = {
   "!secret": "secret-id",
 };
 
+/** A text input offering values as it is typed, while taking any typed one. */
+function SuggestInput({
+  id,
+  value,
+  placeholder,
+  suggestions,
+  readOnly,
+  onChange,
+}: {
+  readonly id?: string | undefined;
+  readonly value: string;
+  readonly placeholder: string;
+  readonly suggestions: ReadonlyArray<string>;
+  readonly readOnly: boolean;
+  readonly onChange: (value: string) => void;
+}) {
+  return (
+    <Combobox
+      items={suggestions}
+      inputValue={value}
+      readOnly={readOnly}
+      onInputValueChange={onChange}
+    >
+      <ComboboxInput
+        id={id}
+        className="min-w-0 flex-1 font-mono"
+        spellCheck={false}
+        placeholder={placeholder}
+        showTrigger={suggestions.length > 0}
+      />
+      <ComboboxContent>
+        <ComboboxList>
+          {(item: string) => (
+            <ComboboxItem key={item} value={item} className="font-mono">
+              {item}
+            </ComboboxItem>
+          )}
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
+  );
+}
+
+/** The secrets configured, for a !secret value to name. */
+function useSecretIds(enabled: boolean): ReadonlyArray<string> {
+  const definitions = useDaemonQuery(
+    queryKeys.definitions,
+    Daemon.use((daemon) => daemon.definitions),
+    { enabled },
+  );
+  return (definitions.data ?? []).filter((d) => d.kind === "secrets").map((d) => d.id);
+}
+
+/**
+ * Paths completing what is typed, for a !file value: folders with a slash, to go on into, and
+ * files; under home as ~/….
+ */
+function usePathCompletions(value: string, enabled: boolean): ReadonlyArray<string> {
+  const configuration = useDaemonQuery(
+    queryKeys.configuration,
+    Daemon.use((daemon) => daemon.configuration),
+  );
+  const home = configuration.data?.home ?? "";
+  const prefix = value === "" ? "~/" : value;
+  const completions = useDaemonQuery(
+    queryKeys.completePath(prefix),
+    Daemon.use((daemon) => daemon.completePath(prefix)),
+    { enabled: enabled && (prefix.startsWith("/") || prefix.startsWith("~/")) },
+  );
+  return [
+    ...(completions.data?.directories ?? []).map((path) => `${shortPath(path, home)}/`),
+    ...(completions.data?.files ?? []).map((path) => shortPath(path, home)),
+  ];
+}
+
 function ValueInput({
   value,
   readOnly,
@@ -646,6 +724,9 @@ function ValueInput({
   readonly onChange: (value: TaggedValue) => void;
   readonly id?: string;
 }) {
+  const secrets = useSecretIds(value.tag === "!secret");
+  const paths = usePathCompletions(value.value, value.tag === "!file");
+  const suggestions = value.tag === "!secret" ? secrets : value.tag === "!file" ? paths : [];
   return (
     <div className="flex min-w-0 flex-1 gap-1">
       <Select
@@ -667,15 +748,26 @@ function ValueInput({
           </SelectGroup>
         </SelectContent>
       </Select>
-      <Input
-        id={id}
-        className="min-w-0 flex-1 font-mono"
-        spellCheck={false}
-        readOnly={readOnly}
-        placeholder={tagPlaceholder[value.tag]}
-        value={value.value}
-        onChange={(event) => onChange({ tag: value.tag, value: event.target.value })}
-      />
+      {value.tag === "!secret" || value.tag === "!file" ? (
+        <SuggestInput
+          id={id}
+          value={value.value}
+          placeholder={tagPlaceholder[value.tag]}
+          suggestions={suggestions}
+          readOnly={readOnly}
+          onChange={(next) => onChange({ tag: value.tag, value: next })}
+        />
+      ) : (
+        <Input
+          id={id}
+          className="min-w-0 flex-1 font-mono"
+          spellCheck={false}
+          readOnly={readOnly}
+          placeholder={tagPlaceholder[value.tag]}
+          value={value.value}
+          onChange={(event) => onChange({ tag: value.tag, value: event.target.value })}
+        />
+      )}
     </div>
   );
 }

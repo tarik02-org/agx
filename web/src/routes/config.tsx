@@ -355,7 +355,8 @@ function DefinitionEditor({
             </AlertDescription>
           </Alert>
         )}
-        {definition?.description !== undefined && definition.description !== "" && (
+        {/* An editable definition's form shows its description itself. */}
+        {readOnly && definition?.description !== undefined && definition.description !== "" && (
           <p className="text-muted-foreground text-xs">{definition.description}</p>
         )}
         {kind === "skills" && definition !== undefined && (

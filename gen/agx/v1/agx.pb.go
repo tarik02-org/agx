@@ -1467,7 +1467,9 @@ func (x *ConfigurationFile) GetLinkTarget() string {
 type CompleteDirectoryRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// An absolute path or one starting with ~/; the last segment is a name prefix.
-	Prefix        string `protobuf:"bytes,1,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	Prefix string `protobuf:"bytes,1,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	// Also lists files, for picking one.
+	Files         bool `protobuf:"varint,2,opt,name=files,proto3" json:"files,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1509,10 +1511,19 @@ func (x *CompleteDirectoryRequest) GetPrefix() string {
 	return ""
 }
 
+func (x *CompleteDirectoryRequest) GetFiles() bool {
+	if x != nil {
+		return x.Files
+	}
+	return false
+}
+
 type CompleteDirectoryResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// At most 50 absolute directories, sorted.
-	Directories   []string `protobuf:"bytes,1,rep,name=directories,proto3" json:"directories,omitempty"`
+	Directories []string `protobuf:"bytes,1,rep,name=directories,proto3" json:"directories,omitempty"`
+	// With files set, at most 50 absolute files besides the directories, sorted.
+	Files         []string `protobuf:"bytes,2,rep,name=files,proto3" json:"files,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1550,6 +1561,13 @@ func (*CompleteDirectoryResponse) Descriptor() ([]byte, []int) {
 func (x *CompleteDirectoryResponse) GetDirectories() []string {
 	if x != nil {
 		return x.Directories
+	}
+	return nil
+}
+
+func (x *CompleteDirectoryResponse) GetFiles() []string {
+	if x != nil {
+		return x.Files
 	}
 	return nil
 }
@@ -6931,11 +6949,13 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1b\n" +
 	"\tread_only\x18\x02 \x01(\bR\breadOnly\x12\x1f\n" +
 	"\vlink_target\x18\x03 \x01(\tR\n" +
-	"linkTarget\"2\n" +
+	"linkTarget\"H\n" +
 	"\x18CompleteDirectoryRequest\x12\x16\n" +
-	"\x06prefix\x18\x01 \x01(\tR\x06prefix\"=\n" +
+	"\x06prefix\x18\x01 \x01(\tR\x06prefix\x12\x14\n" +
+	"\x05files\x18\x02 \x01(\bR\x05files\"S\n" +
 	"\x19CompleteDirectoryResponse\x12 \n" +
-	"\vdirectories\x18\x01 \x03(\tR\vdirectories\"G\n" +
+	"\vdirectories\x18\x01 \x03(\tR\vdirectories\x12\x14\n" +
+	"\x05files\x18\x02 \x03(\tR\x05files\"G\n" +
 	"\x0eInstallRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x16\n" +

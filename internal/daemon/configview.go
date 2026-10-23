@@ -91,17 +91,19 @@ func (s *Server) CompleteDirectory(
 	}
 	// A parent that does not exist or cannot be read has no completions.
 	entries, _ := os.ReadDir(parent)
-	out := &v1.CompleteDirectoryResponse{Directories: []string{}}
+	out := &v1.CompleteDirectoryResponse{Directories: []string{}, Files: []string{}}
 	for _, entry := range entries {
 		entryName := entry.Name()
-		// Hidden directories show once the prefix asks for them.
-		if !entry.IsDir() || !strings.HasPrefix(entryName, name) ||
+		// Hidden entries show once the prefix asks for them.
+		if !strings.HasPrefix(entryName, name) ||
 			strings.HasPrefix(entryName, ".") && !strings.HasPrefix(name, ".") {
 			continue
 		}
-		out.Directories = append(out.Directories, filepath.Join(parent, entryName))
-		if len(out.Directories) == maxCompletions {
-			break
+		switch {
+		case entry.IsDir() && len(out.Directories) < maxCompletions:
+			out.Directories = append(out.Directories, filepath.Join(parent, entryName))
+		case !entry.IsDir() && req.Msg.Files && len(out.Files) < maxCompletions:
+			out.Files = append(out.Files, filepath.Join(parent, entryName))
 		}
 	}
 	return connect.NewResponse(out), nil

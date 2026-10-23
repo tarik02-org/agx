@@ -13,8 +13,10 @@ import {
 import {
   Sidebar,
   SidebarContent,
+  SidebarHeader,
   SidebarInset,
   SidebarProvider,
+  useSidebar,
 } from "~/components/ui/sidebar.tsx";
 import { Toaster } from "~/components/ui/toast.tsx";
 import { TooltipProvider } from "~/components/ui/tooltip.tsx";
@@ -61,59 +63,66 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
         >
           Skip to content
         </a>
-        <div className="[--header-height:--spacing(11)]">
-          <SidebarProvider className="flex flex-col">
-            <header className="sticky top-0 z-20 flex h-(--header-height) shrink-0 items-center gap-2 border-b bg-background px-2">
-              <span className="px-2 font-mono font-semibold">agx</span>
-              <NavigationMenu>
-                <NavigationMenuList>
-                  {sections.map((section) => (
-                    <NavigationMenuItem key={section.to}>
-                      <NavigationMenuLink
-                        render={
-                          <Link
-                            to={section.to}
-                            activeOptions={{ exact: section.to === "/" }}
-                            activeProps={{ "data-active": true, "aria-current": "page" }}
-                          />
-                        }
-                      >
-                        {section.label}
-                      </NavigationMenuLink>
-                    </NavigationMenuItem>
-                  ))}
-                </NavigationMenuList>
-              </NavigationMenu>
-              <div className="ml-auto flex items-center gap-2">
-                <ScopeSelector />
-                <Button variant="outline" size="sm" onClick={() => review(true)}>
-                  <GitCompareArrowsIcon data-icon="inline-start" />
-                  Staged changes
-                  {staged > 0 && <Badge>{staged}</Badge>}
-                </Button>
-              </div>
-            </header>
-            <div className="flex flex-1">
-              <Sidebar
-                collapsible="offcanvas"
-                className="top-(--header-height) h-[calc(100svh-var(--header-height))]!"
-              >
-                <SidebarContent className="py-1">
-                  <ConfigTree />
-                </SidebarContent>
-              </Sidebar>
-              <SidebarInset
-                id="main"
-                tabIndex={-1}
-                className="h-[calc(100svh-var(--header-height))] overflow-auto outline-none"
-              >
-                {children}
-              </SidebarInset>
+        <SidebarProvider className="[--header-height:--spacing(11)]">
+          {/* The sidebar runs the window's full height, beside the top bar. */}
+          <Sidebar collapsible="offcanvas">
+            <SidebarHeader className="h-(--header-height) shrink-0 flex-row items-center border-b px-4">
+              <span className="font-mono font-semibold">agx</span>
+            </SidebarHeader>
+            <SidebarContent className="py-1">
+              <ConfigTree />
+            </SidebarContent>
+          </Sidebar>
+          <SidebarInset className="h-svh overflow-hidden">
+            <TopBar staged={staged} onReview={() => review(true)} />
+            <div
+              id="main"
+              tabIndex={-1}
+              className="flex min-h-0 flex-1 flex-col overflow-auto outline-none"
+            >
+              {children}
             </div>
-            <ReviewChanges />
-          </SidebarProvider>
-        </div>
+          </SidebarInset>
+          <ReviewChanges />
+        </SidebarProvider>
       </TooltipProvider>
     </Toaster>
+  );
+}
+
+/** Page navigation, the scope, and staged changes; the name shows here while the sidebar is hidden. */
+function TopBar({ staged, onReview }: { readonly staged: number; readonly onReview: () => void }) {
+  const { open, isMobile } = useSidebar();
+  return (
+    <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b bg-background px-2">
+      {(!open || isMobile) && <span className="px-2 font-mono font-semibold">agx</span>}
+      <NavigationMenu>
+        <NavigationMenuList>
+          {sections.map((section) => (
+            <NavigationMenuItem key={section.to}>
+              <NavigationMenuLink
+                render={
+                  <Link
+                    to={section.to}
+                    activeOptions={{ exact: section.to === "/" }}
+                    activeProps={{ "data-active": true, "aria-current": "page" }}
+                  />
+                }
+              >
+                {section.label}
+              </NavigationMenuLink>
+            </NavigationMenuItem>
+          ))}
+        </NavigationMenuList>
+      </NavigationMenu>
+      <div className="ml-auto flex items-center gap-2">
+        <ScopeSelector />
+        <Button variant="outline" size="sm" onClick={onReview}>
+          <GitCompareArrowsIcon data-icon="inline-start" />
+          Staged changes
+          {staged > 0 && <Badge>{staged}</Badge>}
+        </Button>
+      </div>
+    </header>
   );
 }
