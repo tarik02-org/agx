@@ -10,6 +10,16 @@ import "google/protobuf/timestamp.proto";
 service ConfigurationService {
   rpc Validate(ValidateRequest) returns (ValidateResponse);
   rpc Resolve(ResolveRequest) returns (ResolveResponse);
+  // The configuration as loaded, for browsing it: harnesses, scope directories, and files.
+  rpc GetConfiguration(GetConfigurationRequest) returns (GetConfigurationResponse);
+  // Directories whose path starts with a prefix, for directory pickers.
+  rpc CompleteDirectory(CompleteDirectoryRequest) returns (CompleteDirectoryResponse);
+  // Every definition as configured, with the YAML that defines it.
+  rpc ListDefinitions(ListDefinitionsRequest) returns (ListDefinitionsResponse);
+  // A skill's files, for browsing and editing a local one.
+  rpc GetSkill(GetSkillRequest) returns (GetSkillResponse);
+  // One file of a configured skill or instructions definition, or of a configuration fragment.
+  rpc ReadFile(ReadFileRequest) returns (ReadFileResponse);
 }
 
 service PackageService {
@@ -47,6 +57,9 @@ service RuntimeService {
   // Lists the running stdio MCP server processes: shared ones, including idle ones still
   // warm, and those of single sessions.
   rpc ListMcpProcesses(ListMcpProcessesRequest) returns (ListMcpProcessesResponse);
+  // Stops one stdio MCP server process. Its sessions end, so harnesses reconnect and the next
+  // session starts it again; a shared process stops for every launch using it.
+  rpc StopMcpProcess(StopMcpProcessRequest) returns (StopMcpProcessResponse);
 }
 
 service SecretService {
@@ -157,6 +170,52 @@ message ResolveResponse {
   Snapshot snapshot = 1;
   repeated ResourceTrace traces = 2;
   repeated Diagnostic diagnostics = 3;
+  // The resolved native settings of the harness, one per leaf; empty without a harness.
+  repeated HarnessSetting settings = 4;
+}
+message HarnessSetting {
+  repeated string path = 1;
+  // The value as JSON.
+  string value_json = 2;
+  SourceLocation source = 3;
+}
+
+message GetConfigurationRequest {}
+message GetConfigurationResponse {
+  string root = 1;
+  repeated ConfiguredHarness harnesses = 2;
+  // Directories scope rules name, sorted, without duplicates.
+  repeated string scope_directories = 3;
+  repeated ConfigurationFile files = 4;
+  // The daemon user's home directory, for showing paths as ~/….
+  string home = 5;
+}
+message ConfiguredHarness {
+  string name = 1;
+  string builtin = 2;
+  // Empty for built-in harnesses.
+  string base = 3;
+  bool hidden = 4;
+}
+message ConfigurationFile {
+  string path = 1;
+  // A symlink, such as one Nix or Home Manager links from /nix/store, or a file agx cannot write.
+  bool read_only = 2;
+  // Where a symlink points; empty otherwise.
+  string link_target = 3;
+}
+
+message CompleteDirectoryRequest {
+  // An absolute path or one starting with ~/; the last segment is a name prefix.
+  string prefix = 1;
+  // Also lists files, for picking one.
+  bool files = 2;
+}
+message CompleteDirectoryResponse {
+  // At most 50 absolute directories, sorted.
+  repeated string directories = 1;
+  // With files set, at most 50 absolute files besides the directories, sorted.
+  repeated string files = 2;
 }
 
 message InstallRequest {
@@ -431,6 +490,10 @@ message McpProcess {
   // When an idle shared process stops; unset while sessions use it.
   google.protobuf.Timestamp stops_at = 9;
 }
+message StopMcpProcessRequest {
+  int64 pid = 1;
+}
+message StopMcpProcessResponse {}
 message ListToolsRequest {
   McpCallScope scope = 1;
   // One server, whose failure fails the request; empty lists every server in scope, each with
@@ -552,3 +615,48 @@ message LogoutRequest {
   string secret_id = 1;
 }
 message LogoutResponse {}
+
+// A definition kind is a configuration section: skills, instructions, mcp, secrets, bundles,
+// packages, or harnesses.
+message Definition {
+  string kind = 1;
+  string id = 2;
+  SourceLocation source = 3;
+  // The definition's value as written in its file; empty for one a package defines.
+  string yaml = 4;
+  // The package that defines it; empty for configuration fragments.
+  string package = 5;
+  // Its file is a symlink or not writable, or a package defines it.
+  bool read_only = 6;
+  // What it offers: a skill's or MCP server's description.
+  string description = 7;
+  // A skill's directory, or an instructions definition's file; empty otherwise.
+  string path = 8;
+}
+message ListDefinitionsRequest {}
+message ListDefinitionsResponse {
+  repeated Definition definitions = 1;
+}
+
+message GetSkillRequest {
+  string skill_id = 1;
+}
+message GetSkillResponse {
+  Definition definition = 1;
+  // SKILL.md as written.
+  string skill_md = 2;
+  // Files below the skill's directory, relative and /-separated, sorted.
+  repeated string files = 3;
+}
+
+message ReadFileRequest {
+  // A configuration fragment, or a file of a configured skill or instructions definition.
+  string path = 1;
+}
+message ReadFileResponse {
+  string path = 1;
+  string content = 2;
+  // A file larger than 1 MiB or not UTF-8 text is not returned.
+  bool binary = 3;
+  bool read_only = 4;
+}

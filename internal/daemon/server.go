@@ -961,6 +961,7 @@ func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 		}
 		out.Traces = append(out.Traces, trace)
 	}
+	out.Settings = harnessSettings(s)
 	return out
 }
 

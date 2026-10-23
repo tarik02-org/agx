@@ -325,3 +325,26 @@ func TestProcessesListSharedAndOwnProcesses(t *testing.T) {
 		t.Fatalf("unshared processes = %+v", own)
 	}
 }
+
+func TestStopProcess(t *testing.T) {
+	f := newSharedFixture(t, config.ShareGlobal)
+	session := connect(t, f.endpoint(""))
+	pid, _ := strconv.Atoi(call(t, session, tool("pid")))
+	if f.shared.StopProcess(pid + 1) {
+		t.Fatal("stopped a process that does not run")
+	}
+	if !f.shared.StopProcess(pid) || f.shared.Servers() != 0 {
+		t.Fatal("the shared process did not stop")
+	}
+
+	unshared := newSharedFixture(t, config.ShareNone)
+	e := unshared.endpoint("")
+	own := connect(t, e)
+	pid, _ = strconv.Atoi(call(t, own, tool("pid")))
+	if !e.StopProcess(pid) {
+		t.Fatal("the session's process did not stop")
+	}
+	if processes, _ := e.Processes(); len(processes) != 0 {
+		t.Fatalf("processes after stop = %+v", processes)
+	}
+}

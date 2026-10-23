@@ -3,6 +3,7 @@ package daemon
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"path/filepath"
 	"slices"
 
@@ -90,4 +91,28 @@ func (s *Server) ListMcpProcesses(
 		)
 	})
 	return connect.NewResponse(&v1.ListMcpProcessesResponse{Processes: processes}), nil
+}
+
+func (s *Server) StopMcpProcess(
+	_ context.Context,
+	req *connect.Request[v1.StopMcpProcessRequest],
+) (*connect.Response[v1.StopMcpProcessResponse], error) {
+	pid := int(req.Msg.Pid)
+	if s.shared.StopProcess(pid) {
+		return connect.NewResponse(&v1.StopMcpProcessResponse{}), nil
+	}
+	endpoints := s.clients.ownedEndpoints()
+	s.mu.Lock()
+	for _, l := range s.launches {
+		for _, endpoint := range l.endpoints {
+			endpoints = append(endpoints, endpoint)
+		}
+	}
+	s.mu.Unlock()
+	for _, endpoint := range endpoints {
+		if endpoint.StopProcess(pid) {
+			return connect.NewResponse(&v1.StopMcpProcessResponse{}), nil
+		}
+	}
+	return nil, rpcError(connect.CodeNotFound, fmt.Sprintf("no MCP server process %d", pid))
 }
