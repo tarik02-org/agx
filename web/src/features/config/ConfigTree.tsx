@@ -81,42 +81,41 @@ export function ConfigTree() {
       !scoped.has(definition.kind) ||
       enabledHere.has(`${definition.kind}/${definition.id}`),
   );
-  const expandedSkills = shown.filter(
-    (d) => d.kind === "skills" && expanded.has(`${label("skills")}/${d.id}`),
-  );
-  const expandedServers = shown.filter(
-    (d) => d.kind === "mcp" && expanded.has(`${label("mcp")}/${d.id}`),
-  );
+  // Every skill and server has its query, run once its folder is expanded; one a page already
+  // read, under the same key, shows at once, with the icon its server declares.
+  const allSkills = shown.filter((d) => d.kind === "skills");
+  const allServers = shown.filter((d) => d.kind === "mcp");
   const skills = useQueries({
-    queries: expandedSkills.map((d) => ({
+    queries: allSkills.map((d) => ({
       queryKey: queryKeys.skill(d.id),
       queryFn: ({ signal }: { readonly signal: AbortSignal }) =>
         run(
           Daemon.use((daemon) => daemon.skill(d.id)),
           { signal },
         ),
+      enabled: expanded.has(`${label("skills")}/${d.id}`),
     })),
   });
   const servers = useQueries({
-    queries: expandedServers.map((d) => ({
+    queries: allServers.map((d) => ({
       queryKey: queryKeys.tools(toolsDirectory, d.id),
       queryFn: ({ signal }: { readonly signal: AbortSignal }) =>
         run(
           Daemon.use((daemon) => daemon.tools(toolsDirectory, d.id)),
           { signal },
         ),
-      enabled: toolsDirectory !== "",
+      enabled: toolsDirectory !== "" && expanded.has(`${label("mcp")}/${d.id}`),
       retry: false,
     })),
   });
   const skillFiles = new Map<string, Loading<GetSkillResponse>>(
-    expandedSkills.flatMap((d, index) => {
+    allSkills.flatMap((d, index) => {
       const query = skills[index];
       return query === undefined ? [] : [[d.id, query]];
     }),
   );
   const serverTools = new Map<string, Loading<McpTools>>(
-    expandedServers.flatMap((d, index) => {
+    allServers.flatMap((d, index) => {
       const query = servers[index];
       return query === undefined ? [] : [[d.id, query]];
     }),
