@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -126,12 +127,33 @@ func (d *describer) definition(kind, id string) *v1.Definition {
 		if document, err := os.ReadFile(filepath.Join(skill.Path, "SKILL.md")); err == nil {
 			_, out.Description = config.FrontMatter(document)
 		}
+		out.Color = skillBrandColor(skill.Path)
 	case edit.Instructions:
 		out.Path = d.c.Instructions[config.ID(id)].Path
 	case edit.MCP:
 		out.Description = d.c.MCP[config.ID(id)].Description
 	}
 	return out
+}
+
+var brandColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+// skillBrandColor reads the brand color a skill's agents/openai.yaml, the interface metadata
+// Codex reads, declares; empty when there is none or it is not a #rrggbb color.
+func skillBrandColor(dir string) string {
+	document, err := os.ReadFile(filepath.Join(dir, "agents", "openai.yaml"))
+	if err != nil {
+		return ""
+	}
+	var metadata struct {
+		Interface struct {
+			BrandColor string `yaml:"brand_color"`
+		} `yaml:"interface"`
+	}
+	if yaml.Unmarshal(document, &metadata) != nil || !brandColor.MatchString(metadata.Interface.BrandColor) {
+		return ""
+	}
+	return metadata.Interface.BrandColor
 }
 
 func (d *describer) mode(path string) *v1.ConfigurationFile {

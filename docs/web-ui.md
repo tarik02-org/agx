@@ -9,7 +9,9 @@ on every page, is the configuration as a tree: every definition by kind,
 package skills under their package, and the configuration files. Expanding a
 skill lists its files, and expanding an MCP server starts it and lists its
 tools. When the UI is scoped, the tree shows only what a launch in that
-directory gets, or everything with one switch.
+directory gets, or everything with one switch. Icons hint at what each item does,
+from its name and description; a skill whose `agents/openai.yaml` declares an
+`interface.brand_color` is drawn in that color.
 
 Until the daemon answers, and whenever the page's session ends or the daemon
 stops answering, the whole window says so and how to fix it: run `agx ui` to

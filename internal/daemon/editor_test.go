@@ -399,3 +399,25 @@ func TestPreviewSource(t *testing.T) {
 		t.Fatalf("the added package's skills are not loaded: %v", c.Missing)
 	}
 }
+
+func TestSkillBrandColor(t *testing.T) {
+	for _, tc := range []struct {
+		name, metadata, want string
+	}{
+		{"declared", "interface:\n  display_name: Alpha\n  brand_color: \"#3B82F6\"\n", "#3B82F6"},
+		{"not a color", "interface:\n  brand_color: blue\n", ""},
+		{"no interface", "policy: {}\n", ""},
+		{"not YAML", "interface: [\n", ""},
+		{"no file", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if tc.metadata != "" {
+				writeFile(t, filepath.Join(dir, "agents", "openai.yaml"), tc.metadata)
+			}
+			if got := skillBrandColor(dir); got != tc.want {
+				t.Fatalf("skillBrandColor = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

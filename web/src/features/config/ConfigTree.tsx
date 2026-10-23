@@ -4,7 +4,7 @@ import { cn } from "cn";
 import { FilterIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
 
-import { NavTree } from "~/components/NavTree.tsx";
+import { NavTree, type TreeIcon } from "~/components/NavTree.tsx";
 import {
   InputGroup,
   InputGroupAddon,
@@ -17,35 +17,19 @@ import { DaemonError } from "~/daemon/error.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
 import { useRunEffect } from "~/effect/react.tsx";
 import { kinds } from "~/features/config/kinds.ts";
+import {
+  definitionIcon,
+  filesIcon,
+  namespaceIcon,
+  sectionIcon,
+  toolIcon,
+} from "~/features/config/treeIcons.ts";
 import { useInspectorDirectory } from "~/features/mcp/tools.ts";
 import { mcpStates } from "~/features/runtime/states.ts";
 import { useEnabledHere, useScopeDirectory } from "~/features/scope/scope.ts";
 import type { GetSkillResponse, McpTools } from "~/gen/agx/v1/agx_pb.ts";
 import { McpRuntime_State } from "~/gen/agx/v1/agx_pb.ts";
-import { iconMask } from "~/lib/iconMask.ts";
 import { shortPath } from "~/lib/path.ts";
-import { __iconData as blocks } from "lucide-react/dist/esm/icons/blocks.mjs";
-import { __iconData as bot } from "lucide-react/dist/esm/icons/bot.mjs";
-import { __iconData as boxes } from "lucide-react/dist/esm/icons/boxes.mjs";
-import { __iconData as fileCode } from "lucide-react/dist/esm/icons/file-code.mjs";
-import { __iconData as keyRound } from "lucide-react/dist/esm/icons/key-round.mjs";
-import { __iconData as packageIcon } from "lucide-react/dist/esm/icons/package.mjs";
-import { __iconData as scrollText } from "lucide-react/dist/esm/icons/scroll-text.mjs";
-import { __iconData as server } from "lucide-react/dist/esm/icons/server.mjs";
-
-/** Each section's icon, by its folder in the tree. */
-const sectionIcons: ReadonlyMap<string, string> = new Map(
-  Object.entries({
-    Skills: blocks,
-    "MCP servers": server,
-    Instructions: scrollText,
-    Secrets: keyRound,
-    Bundles: boxes,
-    Packages: packageIcon,
-    Harnesses: bot,
-    Files: fileCode,
-  }).map(([section, icon]) => [section, iconMask(icon)]),
-);
 
 /** Kinds a scope selects; the others apply wherever they are defined. */
 const scoped = new Set(["skills", "instructions", "mcp"]);
@@ -141,9 +125,34 @@ export function ConfigTree() {
   const targets = new Map<string, Target>();
   const lazy = new Map<string, boolean>();
   const decorations = new Map<string, string>();
+  const icons = new Map<string, TreeIcon>([["Files", filesIcon]]);
+  for (const { kind } of kinds) {
+    const icon = sectionIcon(kind);
+    if (icon !== undefined) {
+      icons.set(label(kind), icon);
+    }
+  }
   for (const definition of shown) {
     const here = enabledHere?.has(`${definition.kind}/${definition.id}`) === true;
     const path = `${label(definition.kind)}/${definition.id}`;
+    const icon = definitionIcon(
+      definition.kind,
+      definition.id,
+      definition.description,
+      definition.color,
+    );
+    if (icon !== undefined) {
+      icons.set(path, icon);
+    }
+    // Folders an ID's slashes make: a package's name, or a plain group.
+    const segments = definition.id.split("/");
+    for (let depth = 1; depth < segments.length; depth++) {
+      const prefix = segments.slice(0, depth).join("/");
+      icons.set(
+        `${label(definition.kind)}/${prefix}`,
+        namespaceIcon(prefix === definition.package),
+      );
+    }
     if (definition.readOnly && definition.package === "") {
       decorations.set(path, "read-only");
     } else if (here && !onlyHere) {
@@ -178,6 +187,7 @@ export function ConfigTree() {
           );
         }
         for (const tool of loaded?.data?.tools ?? []) {
+          icons.set(`${path}/${tool.name}`, toolIcon(tool.name));
           targets.set(`${path}/${tool.name}`, {
             page: "server",
             server: definition.id,
@@ -222,7 +232,7 @@ export function ConfigTree() {
       lazy={lazy}
       onExpand={(folder) => setExpanded((current) => new Set([...current, folder]))}
       order={[...kinds.map((k) => k.label), "Files"]}
-      folderIcons={sectionIcons}
+      icons={icons}
       selected={selected}
       decorations={decorations}
       onSelect={(path) => {

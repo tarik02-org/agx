@@ -8,6 +8,12 @@ import type {
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
 
+/** An icon for a row: a CSS mask image, such as iconMask makes, and the color to draw it in. */
+export interface TreeIcon {
+  readonly mask: string;
+  readonly color: string;
+}
+
 interface NavTreeProps {
   /** /-separated paths; a path's leading segments are its folders. */
   readonly paths: ReadonlyArray<string>;
@@ -26,8 +32,8 @@ interface NavTreeProps {
   readonly header?: ReactNode;
   /** Shows only rows matching this, and their folders; empty shows every row. */
   readonly query?: string;
-  /** CSS mask images, from iconMask, drawn before folders' names, by folder path. */
-  readonly folderIcons?: ReadonlyMap<string, string>;
+  /** Icons drawn for rows, by path, in place of the tree's own. */
+  readonly icons?: ReadonlyMap<string, TreeIcon>;
   /** Top-level folders in the order to show them, such as the configuration's sections. */
   readonly order?: ReadonlyArray<string>;
 }
@@ -49,27 +55,27 @@ const rootRowsAsHeadings = `
 const noDecorations: ReadonlyMap<string, string> = new Map();
 const noFolders: ReadonlyMap<string, boolean> = new Map();
 const noOrder: ReadonlyArray<string> = [];
-const noIcons: ReadonlyMap<string, string> = new Map();
+const noIcons: ReadonlyMap<string, TreeIcon> = new Map();
 
-/** Draws each folder's icon before its name; the tree reports folders' paths with a slash. */
-const folderIconRules = (icons: ReadonlyMap<string, string>): string =>
+const quoted = (path: string) => JSON.stringify(path);
+
+/**
+ * Rules drawing each row's icon. A folder's goes before its name, after the chevron; a leaf's
+ * replaces the tree's file icon. The tree reports folders' paths with a slash.
+ */
+const iconRules = (icons: ReadonlyMap<string, TreeIcon>): string =>
   [...icons]
-    .map(
-      ([folder, mask]) => `
-  [data-item-path="${folder}/"] [data-item-section="content"] {
-    display: flex;
-    align-items: center;
-  }
-  [data-item-path="${folder}/"] [data-item-section="content"]::before {
-    content: "";
-    flex-shrink: 0;
-    width: 12px;
-    height: 12px;
-    margin-right: 6px;
-    background-color: currentColor;
-    mask: ${mask} center / contain no-repeat;
-  }`,
-    )
+    .map(([path, { mask, color }]) => {
+      const draw = `content: ""; flex-shrink: 0; width: 12px; height: 12px; background-color: ${color}; mask: ${mask} center / contain no-repeat;`;
+      const folder = `[data-item-path=${quoted(`${path}/`)}] [data-item-section="content"]`;
+      const leaf = `[data-item-path=${quoted(path)}] [data-item-section="icon"]`;
+      return `
+  ${folder} { display: flex; align-items: center; }
+  ${folder}::before { ${draw} margin-right: 6px; }
+  ${leaf} > svg { display: none; }
+  ${leaf} { display: flex; align-items: center; justify-content: center; }
+  ${leaf}::before { ${draw} }`;
+    })
     .join("");
 
 // The tree reports folders with a trailing slash.
@@ -127,7 +133,7 @@ export function NavTree({
   decorations = noDecorations,
   header,
   query = "",
-  folderIcons = noIcons,
+  icons = noIcons,
   order = noOrder,
 }: NavTreeProps) {
   // Lazy folders are listed themselves, so one that loads empty stays.
@@ -152,7 +158,7 @@ export function NavTree({
     search: false,
     fileTreeSearchMode: "hide-non-matches",
     density: "compact",
-    unsafeCSS: rootRowsAsHeadings + folderIconRules(folderIcons),
+    unsafeCSS: rootRowsAsHeadings,
     sort: compareIn(order),
     onSelectionChange: (chosen) => {
       const path = chosen.map(bare).find((p) => !p.endsWith(`/${placeholder}`));
@@ -250,5 +256,27 @@ export function NavTree({
     model.setSearch(query === "" ? null : query);
   }, [model, query]);
 
-  return <FileTree model={model} header={header} className="file-tree h-full" />;
+  // Icons change as definitions load, but the tree takes its styles once; this keeps a style
+  // element of its own in the tree's shadow root.
+  const host = useRef<HTMLDivElement>(null);
+  const rules = iconRules(icons);
+  useEffect(() => {
+    const root = host.current?.querySelector("file-tree-container")?.shadowRoot;
+    if (root === null || root === undefined) {
+      return;
+    }
+    let style = root.querySelector<HTMLStyleElement>("style[data-agx-icons]");
+    if (style === null) {
+      style = document.createElement("style");
+      style.dataset["agxIcons"] = "";
+      root.append(style);
+    }
+    style.textContent = rules;
+  }, [rules]);
+
+  return (
+    <div ref={host} className="contents">
+      <FileTree model={model} header={header} className="file-tree h-full" />
+    </div>
+  );
 }

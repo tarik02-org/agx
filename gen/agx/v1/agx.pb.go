@@ -5072,7 +5072,10 @@ type Definition struct {
 	// What it offers: a skill's or MCP server's description.
 	Description string `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`
 	// A skill's directory, or an instructions definition's file; empty otherwise.
-	Path          string `protobuf:"bytes,8,opt,name=path,proto3" json:"path,omitempty"`
+	Path string `protobuf:"bytes,8,opt,name=path,proto3" json:"path,omitempty"`
+	// A #rrggbb color for the definition's icon: the brand color a skill's agents/openai.yaml
+	// declares for its interface; empty when there is none.
+	Color         string `protobuf:"bytes,9,opt,name=color,proto3" json:"color,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5159,6 +5162,13 @@ func (x *Definition) GetDescription() string {
 func (x *Definition) GetPath() string {
 	if x != nil {
 		return x.Path
+	}
+	return ""
+}
+
+func (x *Definition) GetColor() string {
+	if x != nil {
+		return x.Color
 	}
 	return ""
 }
@@ -6907,7 +6917,7 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x17CreateLoginCodeResponse\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x129\n" +
 	"\n" +
-	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xe1\x01\n" +
+	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xf7\x01\n" +
 	"\n" +
 	"Definition\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x0e\n" +
@@ -6917,7 +6927,8 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\apackage\x18\x05 \x01(\tR\apackage\x12\x1b\n" +
 	"\tread_only\x18\x06 \x01(\bR\breadOnly\x12 \n" +
 	"\vdescription\x18\a \x01(\tR\vdescription\x12\x12\n" +
-	"\x04path\x18\b \x01(\tR\x04path\"\x18\n" +
+	"\x04path\x18\b \x01(\tR\x04path\x12\x14\n" +
+	"\x05color\x18\t \x01(\tR\x05color\"\x18\n" +
 	"\x16ListDefinitionsRequest\"O\n" +
 	"\x17ListDefinitionsResponse\x124\n" +
 	"\vdefinitions\x18\x01 \x03(\v2\x12.agx.v1.DefinitionR\vdefinitions\",\n" +

@@ -651,6 +651,9 @@ message Definition {
   string description = 7;
   // A skill's directory, or an instructions definition's file; empty otherwise.
   string path = 8;
+  // A #rrggbb color for the definition's icon: the brand color a skill's agents/openai.yaml
+  // declares for its interface; empty when there is none.
+  string color = 9;
 }
 message ListDefinitionsRequest {}
 message ListDefinitionsResponse {
