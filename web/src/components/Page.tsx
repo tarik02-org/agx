@@ -1,5 +1,13 @@
 import { cn } from "cn";
-import { createContext, Fragment, type ReactElement, type ReactNode, use, useState } from "react";
+import {
+  createContext,
+  Fragment,
+  type ReactElement,
+  type ReactNode,
+  use,
+  useMemo,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 
 import {
@@ -13,8 +21,15 @@ import {
 import { SidebarTrigger } from "~/components/ui/sidebar.tsx";
 import { pageTitle } from "~/lib/title.ts";
 
-/** Where parts of a page, such as an editor, put their actions: the page header. */
-const PageActionsSlot = createContext<HTMLElement | null>(null);
+interface Slots {
+  /** Beside the breadcrumbs, for switching between views of what the page shows. */
+  readonly views: HTMLElement | null;
+  /** At the header's end, for actions. */
+  readonly actions: HTMLElement | null;
+}
+
+/** Where parts of a page, such as an editor, put their views and actions: the page header. */
+const PageSlots = createContext<Slots>({ views: null, actions: null });
 
 export interface Crumb {
   readonly label: ReactNode;
@@ -41,7 +56,9 @@ interface PageProps {
  * of the page add actions to the header with PageActions, so every action is at the top.
  */
 export function Page({ title, crumbs, actions, fill = false, className, children }: PageProps) {
-  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  const [views, setViews] = useState<HTMLElement | null>(null);
+  const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
+  const slots = useMemo(() => ({ views, actions: actionsSlot }), [views, actionsSlot]);
   const width = cn("mx-auto w-full max-w-5xl px-4", className);
   return (
     <>
@@ -84,25 +101,32 @@ export function Page({ title, crumbs, actions, fill = false, className, children
               ))}
             </BreadcrumbList>
           </Breadcrumb>
-          <div ref={setSlot} className="ml-auto flex shrink-0 items-center gap-2">
+          <div ref={setViews} className="flex shrink-0 items-center gap-2 empty:hidden" />
+          <div ref={setActionsSlot} className="ml-auto flex shrink-0 items-center gap-2">
             {actions}
           </div>
         </div>
       </header>
-      <PageActionsSlot value={slot}>
+      <PageSlots value={slots}>
         <div
           data-slot="page"
           className={cn(width, "flex flex-col gap-2 py-3", fill && "min-h-0 flex-1")}
         >
           {children}
         </div>
-      </PageActionsSlot>
+      </PageSlots>
     </>
   );
 }
 
 /** Actions of a part of the page, shown in the page header after the page's own. */
 export function PageActions({ children }: { readonly children: ReactNode }) {
-  const slot = use(PageActionsSlot);
+  const slot = use(PageSlots).actions;
+  return slot === null ? null : createPortal(children, slot);
+}
+
+/** Views of what the page shows, such as tabs, shown in the page header after the breadcrumbs. */
+export function PageViews({ children }: { readonly children: ReactNode }) {
+  const slot = use(PageSlots).views;
   return slot === null ? null : createPortal(children, slot);
 }

@@ -14,7 +14,7 @@ import { useState } from "react";
 
 import { ConfirmAction } from "~/components/ConfirmAction.tsx";
 import { UnsavedChanges } from "~/components/UnsavedChanges.tsx";
-import { type Crumb, Page, PageActions } from "~/components/Page.tsx";
+import { type Crumb, Page, PageActions, PageViews } from "~/components/Page.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
@@ -182,12 +182,12 @@ function ConfigPage() {
             className="flex min-h-0 flex-1 flex-col gap-3"
           >
             {!creating && (
-              <PageActions>
+              <PageViews>
                 <TabsList>
                   <TabsTrigger value="overview">Overview</TabsTrigger>
                   <TabsTrigger value="definition">Definition</TabsTrigger>
                 </TabsList>
-              </PageActions>
+              </PageViews>
             )}
             <TabsContent value="overview" className="flex flex-col gap-2">
               {search.id !== undefined && (
