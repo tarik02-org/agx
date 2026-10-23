@@ -3,6 +3,7 @@
   installShellFiles,
   lib,
   stdenv,
+  web,
 }:
 
 buildGoModule (finalAttrs: {
@@ -23,6 +24,11 @@ buildGoModule (finalAttrs: {
   vendorHash = "sha256-xv+hnHwNrafoZDxbLRjPL/DFyXVeIjOrzZyaaXzx/04=";
 
   subPackages = [ "cmd/agx" ];
+
+  # The binary embeds the web UI from internal/ui/dist.
+  preBuild = ''
+    cp -r ${web}/. internal/ui/dist/
+  '';
 
   nativeBuildInputs = [ installShellFiles ];
 

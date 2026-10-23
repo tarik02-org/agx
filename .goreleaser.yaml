@@ -3,6 +3,12 @@ version: 2
 
 project_name: agx
 
+before:
+  hooks:
+    # The binaries embed the web UI.
+    - pnpm --dir web install --frozen-lockfile
+    - pnpm --dir web build
+
 builds:
   - id: agx
     main: ./cmd/agx

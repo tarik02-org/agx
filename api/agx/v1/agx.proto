@@ -77,6 +77,12 @@ service RuntimeService {
   rpc StopMcpProcess(StopMcpProcessRequest) returns (StopMcpProcessResponse);
 }
 
+// The web UI's sign-in: agx ui exchanges the management credential for a one-time code, which
+// the browser trades for a session cookie at /ui/login.
+service UIService {
+  rpc CreateLoginCode(CreateLoginCodeRequest) returns (CreateLoginCodeResponse);
+}
+
 service SecretService {
   // Starts an OAuth login, or joins the one pending for the secret, and reports it until it
   // finishes. Ending the stream early withdraws this caller; the attempt is cancelled once no
@@ -632,6 +638,13 @@ message LogoutRequest {
   string secret_id = 1;
 }
 message LogoutResponse {}
+
+message CreateLoginCodeRequest {}
+message CreateLoginCodeResponse {
+  // Single use; open /ui/login?code=<code> before expires_at.
+  string code = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
 
 // A definition kind is a configuration section: skills, instructions, mcp, secrets, bundles,
 // packages, or harnesses.

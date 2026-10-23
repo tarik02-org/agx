@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -47,11 +48,12 @@ type callScope struct {
 
 // callScope authorizes a request and resolves the servers it reaches: a launch's, with its grant
 // or management authorization, or otherwise the directory's or all configured ones.
-func (s *Server) callScope(ctx context.Context, authorization string, msg *v1.McpCallScope) (*callScope, error) {
+func (s *Server) callScope(ctx context.Context, header http.Header, msg *v1.McpCallScope) (*callScope, error) {
 	if msg == nil {
 		msg = &v1.McpCallScope{}
 	}
-	management := equalBearer(authorization, s.discovery.Token)
+	authorization := header.Get("Authorization")
+	management := s.managed(header)
 	if msg.LaunchId != "" {
 		if msg.All {
 			return nil, rpcError(connect.CodeInvalidArgument, "all and launch_id exclude each other")
@@ -335,7 +337,7 @@ func (s *Server) ListTools(
 ) (*connect.Response[v1.ListToolsResponse], error) {
 	ctx, cancel := withDefaultTimeout(ctx, listToolsTimeout)
 	defer cancel()
-	scope, err := s.callScope(ctx, req.Header().Get("Authorization"), req.Msg.Scope)
+	scope, err := s.callScope(ctx, req.Header(), req.Msg.Scope)
 	if err != nil {
 		return nil, err
 	}
@@ -447,7 +449,7 @@ func (s *Server) CallTool(
 		}
 		arguments = json.RawMessage(msg.ArgumentsJson)
 	}
-	scope, err := s.callScope(ctx, req.Header().Get("Authorization"), msg.Scope)
+	scope, err := s.callScope(ctx, req.Header(), msg.Scope)
 	if err != nil {
 		return nil, err
 	}

@@ -105,6 +105,7 @@ In `--header` and `--env`, a value written `!secret <id>`, `!env NAME`, or
 
 | Command | Description |
 | --- | --- |
+| `agx ui [--print]` | open the web UI signed in and scoped to the current directory, or print the one-time sign-in link |
 | `agx doctor [dir] [--all] [--json]` | check configuration, harnesses, daemon, MCP servers, secrets, and shims |
 | `agx daemon start [--foreground] [--json]` | start the daemon |
 | `agx daemon status [--json]` | show whether it runs, its version, and its launches |
