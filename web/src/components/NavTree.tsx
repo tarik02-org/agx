@@ -24,6 +24,8 @@ interface NavTreeProps {
   /** Short notes after rows' names, such as a state, by path. */
   readonly decorations?: ReadonlyMap<string, string>;
   readonly header?: ReactNode;
+  /** Shows only rows matching this, and their folders; empty shows every row. */
+  readonly query?: string;
   /** Top-level folders in the order to show them, such as the configuration's sections. */
   readonly order?: ReadonlyArray<string>;
 }
@@ -87,6 +89,7 @@ export function NavTree({
   onSelect,
   decorations = noDecorations,
   header,
+  query = "",
   order = noOrder,
 }: NavTreeProps) {
   // Lazy folders are listed themselves, so one that loads empty stays.
@@ -107,7 +110,9 @@ export function NavTree({
     initialExpansion: 1,
     initialSelectedPaths: selected === undefined ? [] : [selected],
     flattenEmptyDirectories: false,
-    search: true,
+    // The caller draws the search field, in its own header.
+    search: false,
+    fileTreeSearchMode: "hide-non-matches",
     density: "compact",
     sort: compareIn(order),
     onSelectionChange: (chosen) => {
@@ -201,6 +206,10 @@ export function NavTree({
       revealed.current = selected;
     }
   });
+
+  useEffect(() => {
+    model.setSearch(query === "" ? null : query);
+  }, [model, query]);
 
   return <FileTree model={model} header={header} className="file-tree h-full" />;
 }

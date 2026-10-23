@@ -1,10 +1,17 @@
 import { useQueries } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { cn } from "cn";
+import { FilterIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
 
 import { NavTree } from "~/components/NavTree.tsx";
-import { Field, FieldLabel } from "~/components/ui/field.tsx";
-import { Switch } from "~/components/ui/switch.tsx";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "~/components/ui/input-group.tsx";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { DaemonError } from "~/daemon/error.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
@@ -53,6 +60,7 @@ export function ConfigTree() {
   const toolsDirectory = useInspectorDirectory() ?? "";
   const enabledHere = useEnabledHere();
   const [onlyHere, setOnlyHere] = useState(true);
+  const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const navigate = useNavigate();
   const search = useSearch({ strict: false });
@@ -218,23 +226,49 @@ export function ConfigTree() {
             void navigate({ to: "/config", search: { file: target.file } });
         }
       }}
+      query={query}
       header={
-        directory === "" ? undefined : (
-          <Field orientation="horizontal" className="px-4 py-1">
-            <Switch
-              id="tree-only-here"
-              size="sm"
-              checked={onlyHere}
-              onCheckedChange={setOnlyHere}
+        <div className="px-2 pt-1 pb-2">
+          <InputGroup>
+            <InputGroupAddon>
+              <SearchIcon />
+            </InputGroupAddon>
+            <InputGroupInput
+              type="search"
+              aria-label="Search the configuration"
+              placeholder="Search…"
+              autoComplete="off"
+              spellCheck={false}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
             />
-            <FieldLabel
-              htmlFor="tree-only-here"
-              className="min-w-0 font-normal text-muted-foreground text-xs"
-            >
-              <span className="truncate">Only what {shortPath(directory, home)} gets</span>
-            </FieldLabel>
-          </Field>
-        )
+            {directory !== "" && (
+              <InputGroupAddon align="inline-end">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <InputGroupButton
+                        size="icon-xs"
+                        variant={onlyHere ? "secondary" : "ghost"}
+                        aria-label="Only what the scope directory gets"
+                        aria-pressed={onlyHere}
+                        className={cn(onlyHere && "text-primary")}
+                        onClick={() => setOnlyHere((current) => !current)}
+                      >
+                        <FilterIcon />
+                      </InputGroupButton>
+                    }
+                  />
+                  <TooltipContent side="right">
+                    {onlyHere
+                      ? `Showing only what ${shortPath(directory, home)} gets`
+                      : `Show only what ${shortPath(directory, home)} gets`}
+                  </TooltipContent>
+                </Tooltip>
+              </InputGroupAddon>
+            )}
+          </InputGroup>
+        </div>
       }
     />
   );
