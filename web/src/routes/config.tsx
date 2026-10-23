@@ -44,6 +44,12 @@ import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
 import { CodeEditor } from "~/features/config/CodeEditor.tsx";
 import { DefinitionForm, hasForm } from "~/features/config/DefinitionForm.tsx";
+import {
+  BundleOverview,
+  InstructionsOverview,
+  PackageOverview,
+  SecretOverview,
+} from "~/features/config/DefinitionOverview.tsx";
 import { ScopeDialog } from "~/features/config/ScopeDialog.tsx";
 import { SettingsTree } from "~/features/explain/SettingsTree.tsx";
 import { resourceKey, Traces } from "~/features/explain/Traces.tsx";
@@ -198,6 +204,7 @@ function ConfigPage() {
                   path={search.path}
                   tool={search.tool}
                   home={home}
+                  definitions={definitions.data}
                 />
               )}
             </TabsContent>
@@ -238,6 +245,7 @@ function ItemOverview({
   path,
   tool,
   home,
+  definitions,
 }: {
   readonly kind: string;
   readonly id: string;
@@ -245,6 +253,7 @@ function ItemOverview({
   readonly path: string | undefined;
   readonly tool: string | undefined;
   readonly home: string;
+  readonly definitions: ReadonlyArray<Definition>;
 }) {
   if (kind === "mcp" && tool !== undefined) {
     return <ServerOverview key={tool} mcpId={id} toolName={tool} />;
@@ -262,6 +271,14 @@ function ItemOverview({
             <p className="text-muted-foreground text-xs">{definition.description}</p>
           )}
           {kind === "harnesses" && <HarnessSettings harness={id} home={home} />}
+          {kind === "packages" && (
+            <PackageOverview definition={definition} definitions={definitions} />
+          )}
+          {kind === "bundles" && (
+            <BundleOverview definition={definition} definitions={definitions} />
+          )}
+          {kind === "secrets" && <SecretOverview id={id} definitions={definitions} />}
+          {kind === "instructions" && <InstructionsOverview definition={definition} home={home} />}
         </>
       )}
     </>

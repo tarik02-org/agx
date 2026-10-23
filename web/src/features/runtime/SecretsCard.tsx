@@ -66,6 +66,58 @@ const loginOutcomes: Record<
 };
 
 function SecretTable({ secrets }: { readonly secrets: ReadonlyArray<SecretStatus> }) {
+  if (secrets.length === 0) {
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <KeyRoundIcon />
+          </EmptyMedia>
+          <EmptyTitle>No secrets</EmptyTitle>
+          <EmptyDescription>Secrets the configuration defines show up here.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Secret</TableHead>
+          <TableHead>Kind</TableHead>
+          <TableHead>State</TableHead>
+          <TableHead>Problem</TableHead>
+          <TableHead />
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {secrets.map((secret) => (
+          <TableRow key={secret.secretId}>
+            <TableCell>{secret.secretId}</TableCell>
+            <TableCell className="text-muted-foreground">
+              {secret.kind}
+              {secret.mcpId !== "" && ` · ${secret.mcpId}`}
+            </TableCell>
+            <TableCell>
+              <Badge variant={secretStates[secret.state].variant}>
+                {secretStates[secret.state].label}
+              </Badge>
+            </TableCell>
+            <TableCell className="text-muted-foreground">
+              {secret.diagnostics.map((d) => d.summary).join("; ")}
+            </TableCell>
+            <TableCell className="text-right">
+              <SecretActions secret={secret} />
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+/** What can be done about a secret here: set a keychain secret's value, or log in and out. */
+export function SecretActions({ secret }: { readonly secret: SecretStatus }) {
   const client = useQueryClient();
   const logout = useDaemonMutation(
     (secretId: string) => Daemon.use((daemon) => daemon.logout(secretId)),
@@ -122,91 +174,48 @@ function SecretTable({ secrets }: { readonly secrets: ReadonlyArray<SecretStatus
     [client],
   );
 
-  if (secrets.length === 0) {
-    return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <KeyRoundIcon />
-          </EmptyMedia>
-          <EmptyTitle>No secrets</EmptyTitle>
-          <EmptyDescription>Secrets the configuration defines show up here.</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Secret</TableHead>
-          <TableHead>Kind</TableHead>
-          <TableHead>State</TableHead>
-          <TableHead>Problem</TableHead>
-          <TableHead />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {secrets.map((secret) => (
-          <TableRow key={secret.secretId}>
-            <TableCell>{secret.secretId}</TableCell>
-            <TableCell className="text-muted-foreground">
-              {secret.kind}
-              {secret.mcpId !== "" && ` · ${secret.mcpId}`}
-            </TableCell>
-            <TableCell>
-              <Badge variant={secretStates[secret.state].variant}>
-                {secretStates[secret.state].label}
-              </Badge>
-            </TableCell>
-            <TableCell className="text-muted-foreground">
-              {secret.diagnostics.map((d) => d.summary).join("; ")}
-            </TableCell>
-            <TableCell className="text-right">
-              {secret.kind === "keychain" && (
-                <div className="flex justify-end">
-                  <SetSecretDialog secretId={secret.secretId} />
-                </div>
-              )}
-              {secret.kind === "oauth" && (
-                <div className="flex justify-end gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => login(secret.secretId, globalThis.open("about:blank", "_blank"))}
-                  >
-                    <LogInIcon data-icon="inline-start" />
-                    Log in
-                  </Button>
-                  {secret.state === SecretStatus_State.READY && (
-                    <ConfirmAction
-                      trigger={
-                        <Button variant="ghost" size="sm">
-                          <LogOutIcon data-icon="inline-start" />
-                          Log out
-                        </Button>
-                      }
-                      title={`Log out of ${secret.secretId}?`}
-                      description="agx forgets the stored tokens; MCP servers using them need a new login."
-                      action="Log out"
-                      onConfirm={() =>
-                        logout.mutate(secret.secretId, {
-                          onError: (error) =>
-                            toast.add({
-                              type: "error",
-                              title: "Logout failed",
-                              description: error.message,
-                            }),
-                        })
-                      }
-                    />
-                  )}
-                </div>
-              )}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <>
+      {secret.kind === "keychain" && (
+        <div className="flex justify-end">
+          <SetSecretDialog secretId={secret.secretId} />
+        </div>
+      )}
+      {secret.kind === "oauth" && (
+        <div className="flex justify-end gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => login(secret.secretId, globalThis.open("about:blank", "_blank"))}
+          >
+            <LogInIcon data-icon="inline-start" />
+            Log in
+          </Button>
+          {secret.state === SecretStatus_State.READY && (
+            <ConfirmAction
+              trigger={
+                <Button variant="ghost" size="sm">
+                  <LogOutIcon data-icon="inline-start" />
+                  Log out
+                </Button>
+              }
+              title={`Log out of ${secret.secretId}?`}
+              description="agx forgets the stored tokens; MCP servers using them need a new login."
+              action="Log out"
+              onConfirm={() =>
+                logout.mutate(secret.secretId, {
+                  onError: (error) =>
+                    toast.add({
+                      type: "error",
+                      title: "Logout failed",
+                      description: error.message,
+                    }),
+                })
+              }
+            />
+          )}
+        </div>
+      )}
+    </>
   );
 }

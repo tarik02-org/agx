@@ -30,8 +30,10 @@ Selecting an item in the tree opens its page. **Overview** shows what it is:
 a skill's card and SKILL.md, with a local skill's files editable; an MCP server's
 state, tools, and processes, starting servers without their own working
 directory in the scope directory; a tool's form, built from its input schema or
-raw JSON, with the result's content and recent calls kept in the browser; and a
-harness's resolved settings, grouped by key with where each was set. When the UI
+raw JSON, with the result's content and recent calls kept in the browser; a
+harness's resolved settings, grouped by key with where each was set; a package's
+source and what it provides; what a bundle adds; instructions' text; and a
+secret's state, with setting or logging in, and the MCP servers that use it. When the UI
 is scoped, it also says why the item is or is not part of a launch there, with
 the rules that added or removed it. **Definition** edits it with a form, or as
 YAML checked against the configuration schema. The tree's **Effective** mode,
