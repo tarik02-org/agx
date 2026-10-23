@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"time"
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
@@ -21,13 +23,16 @@ import (
 	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/configedit"
 	"github.com/tarik02-org/agx/internal/packages"
+	"github.com/tarik02-org/agx/internal/securefs"
 )
 
 const (
-	// maxFileContent is the largest file ReadFile returns.
+	// maxFileContent is the largest file ReadFile and ReadPreviewFile return.
 	maxFileContent = 1 << 20
 	// maxSkillFiles bounds a skill's file list.
 	maxSkillFiles = 2000
+	// previewLifetime is how long a previewed source stays readable.
+	previewLifetime = 30 * time.Minute
 )
 
 func (s *Server) ListDefinitions(
@@ -544,4 +549,200 @@ func editError(err error) error {
 		return rpcError(connect.CodeDeadlineExceeded, err.Error())
 	}
 	return rpcError(connect.CodeInternal, err.Error())
+}
+
+// listRefsTimeout bounds asking a Git server for its refs.
+const listRefsTimeout = 20 * time.Second
+
+// ListSourceRefs lists a Git source's branches and tags for picking a package's ref.
+func (s *Server) ListSourceRefs(
+	ctx context.Context,
+	req *connect.Request[v1.ListSourceRefsRequest],
+) (*connect.Response[v1.ListSourceRefsResponse], error) {
+	source := strings.TrimSpace(req.Msg.Git)
+	if source == "" {
+		return nil, rpcError(connect.CodeInvalidArgument, "git is required")
+	}
+	ctx, cancel := context.WithTimeout(ctx, listRefsTimeout)
+	defer cancel()
+	refs, err := packages.RemoteRefs(ctx, source)
+	if err != nil {
+		return nil, editError(err)
+	}
+	out := &v1.ListSourceRefsResponse{Refs: make([]*v1.SourceRef, 0, len(refs))}
+	for _, ref := range refs {
+		out.Refs = append(out.Refs, &v1.SourceRef{
+			Name:    ref.Name,
+			Tag:     ref.Tag,
+			Commit:  ref.Commit,
+			Default: ref.Default,
+		})
+	}
+	return connect.NewResponse(out), nil
+}
+
+// inspectTimeout bounds checking a Git source out.
+const inspectTimeout = 2 * time.Minute
+
+// InspectSource checks a Git source out at its pins, for filling in a package's revision, hash,
+// and subdirectory.
+func (s *Server) InspectSource(
+	ctx context.Context,
+	req *connect.Request[v1.InspectSourceRequest],
+) (*connect.Response[v1.InspectSourceResponse], error) {
+	source := strings.TrimSpace(req.Msg.Git)
+	if source == "" {
+		return nil, rpcError(connect.CodeInvalidArgument, "git is required")
+	}
+	ctx, cancel := context.WithTimeout(ctx, inspectTimeout)
+	defer cancel()
+	inspection, err := packages.Inspect(
+		ctx, s.paths.Cache, source, strings.TrimSpace(req.Msg.Ref), strings.TrimSpace(req.Msg.Rev),
+		strings.Trim(strings.TrimSpace(req.Msg.Subdir), "/"),
+	)
+	if err != nil {
+		return nil, editError(err)
+	}
+	return connect.NewResponse(&v1.InspectSourceResponse{
+		Revision:    inspection.Revision,
+		Hash:        inspection.Hash,
+		Directories: inspection.Directories,
+	}), nil
+}
+
+// preview is a fetched source and the directories of its skills.
+type preview struct {
+	source  *v1.PackageSource
+	skills  map[string]string
+	expires time.Time
+}
+
+// previews holds the sources PreviewSource fetched, until they expire.
+type previews struct {
+	mu    sync.Mutex
+	items map[string]*preview
+}
+
+func (p *previews) add(item *preview) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.prune(time.Now())
+	if p.items == nil {
+		p.items = map[string]*preview{}
+	}
+	id := securefs.Token()
+	p.items[id] = item
+	return id
+}
+
+func (p *previews) get(id string) *preview {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.prune(time.Now())
+	return p.items[id]
+}
+
+func (p *previews) prune(now time.Time) {
+	maps.DeleteFunc(p.items, func(_ string, item *preview) bool { return now.After(item.expires) })
+}
+
+func (s *Server) PreviewSource(
+	ctx context.Context,
+	req *connect.Request[v1.PreviewSourceRequest],
+) (*connect.Response[v1.PreviewSourceResponse], error) {
+	source, err := configedit.ParseSource(strings.TrimSpace(req.Msg.Source), configedit.GitHub, false)
+	if err != nil {
+		return nil, editError(err)
+	}
+	c, err := s.reload()
+	if err != nil {
+		return nil, configError(err)
+	}
+	session, err := configedit.New(s.paths, s.builtins, c)
+	if err != nil {
+		return nil, rpcError(connect.CodeInternal, err.Error())
+	}
+	id, err := configedit.PackageID(c, source, "")
+	if err != nil {
+		return nil, editError(err)
+	}
+	// A derived ID another source took gets a suffix, so the preview can be added as it is.
+	for base, n := id, 2; ; n++ {
+		p, exists := c.Packages[id]
+		if !exists || p.Git == source.Git && p.Ref == source.Ref && p.Subdir == source.Subdir {
+			break
+		}
+		id = config.ID(fmt.Sprintf("%s-%d", base, n))
+	}
+	if _, err := session.DeclarePackage(id, source, session.Root); err != nil {
+		return nil, editError(err)
+	}
+	if err := session.Install(ctx, session.Root); err != nil {
+		return nil, editError(err)
+	}
+	loaded, err := session.Load(session.Root)
+	if err != nil {
+		return nil, reasonError(
+			connect.CodeFailedPrecondition,
+			v1.ErrorDetail_REASON_CONFIG_INVALID,
+			fmt.Sprintf("package %s: %v", id, err),
+		)
+	}
+	item := &preview{
+		source:  &v1.PackageSource{Id: string(id), Git: source.Git, Ref: source.Ref, Subdir: source.Subdir},
+		skills:  map[string]string{},
+		expires: time.Now().Add(previewLifetime),
+	}
+	out := &v1.PreviewSourceResponse{Package: item.source, Skills: []*v1.PreviewSkill{}}
+	prefix := string(id) + "/"
+	for _, skillID := range slices.Sorted(maps.Keys(loaded.Skills)) {
+		name, ok := strings.CutPrefix(string(skillID), prefix)
+		skill := loaded.Skills[skillID]
+		if !ok || strings.Contains(name, "/") || skill.Generated() {
+			continue
+		}
+		found := &v1.PreviewSkill{Name: name}
+		if document, err := os.ReadFile(filepath.Join(skill.Path, "SKILL.md")); err == nil {
+			_, found.Description = config.FrontMatter(document)
+			found.SkillMd = string(document)
+		}
+		if found.Files, err = skillFiles(skill.Path); err != nil {
+			return nil, rpcError(connect.CodeInternal, fmt.Sprintf("skill %s: %v", skillID, err))
+		}
+		item.skills[name] = skill.Path
+		out.Skills = append(out.Skills, found)
+	}
+	out.PreviewId = s.previews.add(item)
+	return connect.NewResponse(out), nil
+}
+
+func (s *Server) ReadPreviewFile(
+	_ context.Context,
+	req *connect.Request[v1.ReadPreviewFileRequest],
+) (*connect.Response[v1.ReadPreviewFileResponse], error) {
+	item := s.previews.get(req.Msg.PreviewId)
+	if item == nil {
+		return nil, rpcError(connect.CodeNotFound, "unknown or expired preview; preview the source again")
+	}
+	dir, ok := item.skills[req.Msg.Skill]
+	if !ok {
+		return nil, rpcError(connect.CodeNotFound, "the preview has no skill "+req.Msg.Skill)
+	}
+	rel := filepath.FromSlash(req.Msg.Path)
+	if !filepath.IsLocal(rel) {
+		return nil, rpcError(connect.CodeInvalidArgument, "path must be relative to the skill, without ..")
+	}
+	root, err := config.Canonical(dir)
+	if err != nil {
+		return nil, rpcError(connect.CodeInternal, err.Error())
+	}
+	path, err := config.Canonical(filepath.Join(root, rel))
+	if err != nil || path == root || !config.Contains(root, path) {
+		return nil, rpcError(connect.CodeInvalidArgument, req.Msg.Path+" is outside the skill")
+	}
+	content, binary, err := readText(path)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1.ReadPreviewFileResponse{Content: content, Binary: binary}), nil
 }
