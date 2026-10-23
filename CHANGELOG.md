@@ -17,11 +17,15 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   edited with a form or YAML. Staged changes apply at once after showing their diff, skills
   are added from Git with a wizard, and the UI is scoped to the directory `agx ui` ran in.
   Release binaries and the Nix package embed it.
-- `ConfigurationService.PlanChanges` and `ApplyChanges`, and `PackageService.PreviewSource` and `ReadPreviewFile`: the editing the
-  CLI does, as a plan with per-file diffs and an apply that fails if a file changed since.
+- `PackageService.PreviewSource` fetches a Git source into the cache and lists its skills
+  without configuring anything; `ReadPreviewFile` reads one of their files.
 - `PackageService.ListSourceRefs` lists a Git source's branches and tags, with their commits,
   without fetching it; `InspectSource` checks one out at its pins for the commit, the content
   hash a pinned package records, and its directories.
+- `ConfigurationService.PlanChanges` and `ApplyChanges`: the edits the CLI makes (define,
+  undefine, enable, disable, a local skill's or instructions' file, and a Git package) as a
+  plan with a diff and SHA-256 per file, and an apply that writes all of it or nothing, and
+  fails when a file changed since the plan.
 - `ConfigurationService.GetConfiguration` (harnesses, scope directories, and files with
   whether each is writable), `CompleteDirectory`, `ListDefinitions` (every definition with the
   YAML that defines it), `GetSkill`, and `ReadFile` (configuration fragments and files of
