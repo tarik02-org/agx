@@ -1,4 +1,4 @@
-import { PlusIcon, XIcon } from "lucide-react";
+import { InfoIcon, LockIcon, PlusIcon, XIcon } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 
 import { Button } from "~/components/ui/button.tsx";
@@ -26,6 +26,7 @@ import {
 } from "~/components/ui/select.tsx";
 import { Switch } from "~/components/ui/switch.tsx";
 import { Textarea } from "~/components/ui/textarea.tsx";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group.tsx";
 import {
   type FieldPath,
@@ -60,11 +61,94 @@ interface FieldProps {
   readonly placeholder?: string;
   /** Overrides the schema's description. */
   readonly description?: ReactNode;
+  /** Why the field cannot change, shown behind a lock beside the label. */
+  readonly locked?: string | undefined;
 }
 
-function Described({ form, path, description }: Pick<FieldProps, "form" | "path" | "description">) {
-  const text = description ?? form.describe(path[0] ?? "");
-  return text === undefined ? null : <FieldDescription>{text}</FieldDescription>;
+// Words that say nothing about a field by themselves.
+const fillers = new Set(["the", "and", "for", "with", "its", "this", "that", "from", "are", "not"]);
+
+/**
+ * What a field means, when that says more than its label: the description, unless it mostly
+ * repeats the label, as "Git repository URL." does for Repository.
+ */
+const meaning = (
+  form: DefinitionText,
+  path: FieldPath,
+  label: string,
+  description: ReactNode,
+): ReactNode => {
+  if (description !== undefined) {
+    return description;
+  }
+  const text = form.describe(path[0] ?? "");
+  if (text === undefined) {
+    return undefined;
+  }
+  const said = new Set(label.toLowerCase().split(/[^a-z0-9]+/));
+  const news = text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 2 && !fillers.has(word) && !said.has(word));
+  return news.length >= 3 ? text : undefined;
+};
+
+const infoIcon = <InfoIcon />;
+
+/** A small icon whose tooltip tells more, beside a field's label. */
+export function LabelHint({
+  icon = infoIcon,
+  label,
+  children,
+}: {
+  readonly icon?: ReactNode;
+  readonly label: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            role="img"
+            tabIndex={0}
+            aria-label={label}
+            className="inline-flex text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground [&_svg]:size-3"
+          >
+            {icon}
+          </span>
+        }
+      />
+      <TooltipContent className="max-w-xs">{children}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** A field's label, with what the field means behind an info icon when that is not obvious. */
+export function HintedLabel({
+  htmlFor,
+  hint,
+  locked,
+  children,
+}: {
+  readonly htmlFor?: string;
+  readonly hint?: ReactNode;
+  readonly locked?: ReactNode;
+  readonly children: ReactNode;
+}) {
+  return (
+    <FieldLabel htmlFor={htmlFor} className="gap-1.5">
+      {children}
+      {hint !== undefined && hint !== null && (
+        <LabelHint label="About this field">{hint}</LabelHint>
+      )}
+      {locked !== undefined && locked !== null && (
+        <LabelHint icon={<LockIcon />} label="Fixed">
+          {locked}
+        </LabelHint>
+      )}
+    </FieldLabel>
+  );
 }
 
 // A field written as a map or list where a plain value is expected stays for the YAML tab.
@@ -77,14 +161,16 @@ function StructuredNote({ label }: { readonly label: string }) {
   );
 }
 
-export function TextField({ form, path, label, placeholder, description }: FieldProps) {
+export function TextField({ form, path, label, placeholder, description, locked }: FieldProps) {
   const id = useId();
   if (isStructured(form.text, path)) {
     return <StructuredNote label={label} />;
   }
   return (
     <Field>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <HintedLabel htmlFor={id} hint={meaning(form, path, label, description)} locked={locked}>
+        {label}
+      </HintedLabel>
       <Input
         id={id}
         className="font-mono"
@@ -94,7 +180,6 @@ export function TextField({ form, path, label, placeholder, description }: Field
         value={readString(form.text, path)}
         onChange={(event) => form.onChange(writeField(form.text, path, event.target.value))}
       />
-      <Described form={form} path={path} description={description} />
     </Field>
   );
 }
@@ -103,7 +188,9 @@ export function NumberField({ form, path, label, placeholder, description }: Fie
   const id = useId();
   return (
     <Field>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <HintedLabel htmlFor={id} hint={meaning(form, path, label, description)}>
+        {label}
+      </HintedLabel>
       <Input
         id={id}
         type="number"
@@ -116,7 +203,6 @@ export function NumberField({ form, path, label, placeholder, description }: Fie
           form.onChange(writeField(form.text, path, Number.isNaN(number) ? "" : number));
         }}
       />
-      <Described form={form} path={path} description={description} />
     </Field>
   );
 }
@@ -131,8 +217,9 @@ export function BooleanField({ form, path, label, description }: FieldProps) {
         checked={readBoolean(form.text, path)}
         onCheckedChange={(checked) => form.onChange(writeField(form.text, path, checked))}
       />
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <Described form={form} path={path} description={description} />
+      <HintedLabel htmlFor={id} hint={meaning(form, path, label, description)}>
+        {label}
+      </HintedLabel>
     </Field>
   );
 }
@@ -146,7 +233,9 @@ export function ListField({ form, path, label, placeholder, description }: Field
   }
   return (
     <Field>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <HintedLabel htmlFor={id} hint={meaning(form, path, label, description)}>
+        {label}
+      </HintedLabel>
       <Textarea
         id={id}
         // Remounts with what the YAML now holds once an edit is written.
@@ -166,7 +255,6 @@ export function ListField({ form, path, label, placeholder, description }: Field
           )
         }
       />
-      <Described form={form} path={path} description={description} />
     </Field>
   );
 }
@@ -201,7 +289,9 @@ export function TagsField({
   }
   return (
     <Field>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <HintedLabel htmlFor={id} hint={meaning(form, path, label, description)}>
+        {label}
+      </HintedLabel>
       <Combobox
         multiple
         autoHighlight
@@ -244,7 +334,6 @@ export function TagsField({
           </ComboboxList>
         </ComboboxContent>
       </Combobox>
-      <Described form={form} path={path} description={description} />
     </Field>
   );
 }
@@ -264,7 +353,9 @@ export function ChoiceField({
   const items = [...(empty === undefined ? [] : [{ value: "", label: empty }]), ...options];
   return (
     <Field>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <HintedLabel htmlFor={id} hint={meaning(form, path, label, description)}>
+        {label}
+      </HintedLabel>
       <Select
         items={items}
         value={readString(form.text, path)}
@@ -291,7 +382,6 @@ export function ChoiceField({
           </SelectGroup>
         </SelectContent>
       </Select>
-      <Described form={form} path={path} description={description} />
     </Field>
   );
 }
@@ -302,11 +392,12 @@ export function VariantField<V extends string>({
   value,
   options,
   readOnly,
-  description,
+  locked,
   onChange,
 }: {
   readonly label: string;
-  readonly description?: string | undefined;
+  /** Why the choice cannot change, shown behind a lock beside the label. */
+  readonly locked?: string | undefined;
   readonly value: V;
   readonly options: ReadonlyArray<{ readonly value: V; readonly label: string }>;
   readonly readOnly: boolean;
@@ -314,7 +405,7 @@ export function VariantField<V extends string>({
 }) {
   return (
     <Field>
-      <FieldLabel>{label}</FieldLabel>
+      <HintedLabel locked={locked}>{label}</HintedLabel>
       <ToggleGroup
         variant="outline"
         size="sm"
@@ -333,7 +424,6 @@ export function VariantField<V extends string>({
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
-      {description !== undefined && <FieldDescription>{description}</FieldDescription>}
     </Field>
   );
 }
@@ -405,14 +495,15 @@ export function ValueField({ form, path, label, description }: FieldProps) {
   }
   return (
     <Field>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <HintedLabel htmlFor={id} hint={meaning(form, path, label, description)}>
+        {label}
+      </HintedLabel>
       <ValueInput
         id={id}
         value={readValue(form.text, path)}
         readOnly={form.readOnly}
         onChange={(value) => form.onChange(writeValue(form.text, path, value))}
       />
-      <Described form={form} path={path} description={description} />
     </Field>
   );
 }
@@ -439,7 +530,7 @@ export function MapField({ form, path, label, placeholder, description }: FieldP
   };
   return (
     <Field>
-      <FieldLabel>{label}</FieldLabel>
+      <HintedLabel hint={meaning(form, path, label, description)}>{label}</HintedLabel>
       <div className="flex flex-col gap-1">
         {rows.map((row) => (
           <div key={row.row} className="flex items-center gap-1">
@@ -488,7 +579,6 @@ export function MapField({ form, path, label, placeholder, description }: FieldP
           </Button>
         </div>
       </div>
-      <Described form={form} path={path} description={description} />
     </Field>
   );
 }

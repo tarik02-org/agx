@@ -1,12 +1,6 @@
 import { useId } from "react";
 
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  FieldSeparator,
-} from "~/components/ui/field.tsx";
+import { Field, FieldGroup, FieldSeparator } from "~/components/ui/field.tsx";
 import { Input } from "~/components/ui/input.tsx";
 import {
   Select,
@@ -21,6 +15,7 @@ import {
   BooleanField,
   ChoiceField,
   type DefinitionText,
+  HintedLabel,
   ListField,
   TagsField,
   MapField,
@@ -76,7 +71,9 @@ const sourceForm = (form: DefinitionText): DefinitionText =>
   form.existing ? { ...form, readOnly: true } : form;
 
 const sourceNote = (form: DefinitionText) =>
-  form.existing ? "Fixed once configured; remove it and add it again to change it." : undefined;
+  form.existing
+    ? "Fixed once configured: remove it and add it again to take it from elsewhere."
+    : undefined;
 
 // Switching where a definition comes from drops the fields only the previous source had.
 const switchSource = (form: DefinitionText, drop: ReadonlyArray<string>) =>
@@ -175,7 +172,12 @@ function ShareField({ form }: { readonly form: DefinitionText }) {
   };
   return (
     <Field>
-      <FieldLabel htmlFor={typeId}>Share</FieldLabel>
+      <HintedLabel
+        htmlFor={typeId}
+        hint="Shared processes stay this long after their last session; 5m when empty."
+      >
+        Share
+      </HintedLabel>
       <div className="flex gap-2">
         <Select
           items={shares}
@@ -208,9 +210,6 @@ function ShareField({ form }: { readonly form: DefinitionText }) {
           />
         )}
       </div>
-      <FieldDescription>
-        Shared processes stay this long after their last session; 5m when empty.
-      </FieldDescription>
     </Field>
   );
 }
@@ -315,7 +314,7 @@ function PackageForm({ form }: { readonly form: DefinitionText }) {
         label="Source"
         value={source}
         readOnly={sourceForm(form).readOnly}
-        description={sourceNote(form)}
+        locked={sourceNote(form)}
         options={[
           { value: "git", label: "Git" },
           { value: "path", label: "local directory" },
@@ -328,6 +327,7 @@ function PackageForm({ form }: { readonly form: DefinitionText }) {
         <>
           <TextField
             form={sourceForm(form)}
+            locked={sourceNote(form)}
             path={["git"]}
             label="Repository"
             placeholder="https://github.com/owner/repo"
@@ -335,7 +335,12 @@ function PackageForm({ form }: { readonly form: DefinitionText }) {
           <PinFields form={form} />
         </>
       ) : (
-        <TextField form={sourceForm(form)} path={["path"]} label="Directory" />
+        <TextField
+          form={sourceForm(form)}
+          locked={sourceNote(form)}
+          path={["path"]}
+          label="Directory"
+        />
       )}
       <TextField form={form} path={["subdir"]} label="Subdirectory" />
       <BooleanField form={form} path={["override"]} label="Override" />
@@ -353,7 +358,7 @@ function SkillForm({ form }: { readonly form: DefinitionText }) {
         label="Source"
         value={source}
         readOnly={sourceForm(form).readOnly}
-        description={sourceNote(form)}
+        locked={sourceNote(form)}
         options={[
           { value: "path", label: "local directory" },
           { value: "git", label: "Git" },
@@ -387,6 +392,7 @@ function SkillForm({ form }: { readonly form: DefinitionText }) {
             <>
               <TextField
                 form={sourceForm(form)}
+                locked={sourceNote(form)}
                 path={["git"]}
                 label="Repository"
                 placeholder="https://github.com/owner/repo"
@@ -396,6 +402,7 @@ function SkillForm({ form }: { readonly form: DefinitionText }) {
           )}
           <TextField
             form={sourceForm(form)}
+            locked={sourceNote(form)}
             path={["path"]}
             label={source === "git" ? "Path in the checkout" : "Directory"}
           />
@@ -414,7 +421,7 @@ function InstructionsForm({ form }: { readonly form: DefinitionText }) {
         label="Source"
         value={source}
         readOnly={sourceForm(form).readOnly}
-        description={sourceNote(form)}
+        locked={sourceNote(form)}
         options={[
           { value: "path", label: "local file" },
           { value: "git", label: "Git" },
@@ -437,6 +444,7 @@ function InstructionsForm({ form }: { readonly form: DefinitionText }) {
             <>
               <TextField
                 form={sourceForm(form)}
+                locked={sourceNote(form)}
                 path={["git"]}
                 label="Repository"
                 placeholder="https://github.com/owner/repo"
@@ -446,6 +454,7 @@ function InstructionsForm({ form }: { readonly form: DefinitionText }) {
           )}
           <TextField
             form={sourceForm(form)}
+            locked={sourceNote(form)}
             path={["path"]}
             label={source === "git" ? "Path in the checkout" : "File"}
           />
