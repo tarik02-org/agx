@@ -33,7 +33,7 @@ import { queryKeys, useDaemonMutation, useDaemonQuery } from "~/daemon/query.ts"
 import type { McpProcess } from "~/gen/agx/v1/agx_pb.ts";
 
 // Processes have no stream of their own; a short poll keeps idle countdowns and sessions current.
-const refreshInterval = 2000;
+export const refreshInterval = 2000;
 
 export function ProcessesCard() {
   const processes = useDaemonQuery(
@@ -58,7 +58,14 @@ export function ProcessesCard() {
   );
 }
 
-function ProcessTable({ processes }: { readonly processes: ReadonlyArray<McpProcess> }) {
+/** Processes with restart; for one server's, its column is left out. */
+export function ProcessTable({
+  processes,
+  oneServer = false,
+}: {
+  readonly processes: ReadonlyArray<McpProcess>;
+  readonly oneServer?: boolean;
+}) {
   const stop = useDaemonMutation(
     (pid: bigint) => Daemon.use((daemon) => daemon.stopProcess(pid)),
     [queryKeys.processes],
@@ -82,7 +89,7 @@ function ProcessTable({ processes }: { readonly processes: ReadonlyArray<McpProc
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Server</TableHead>
+          {!oneServer && <TableHead>Server</TableHead>}
           <TableHead>PID</TableHead>
           <TableHead>Share</TableHead>
           <TableHead>Sessions</TableHead>
@@ -94,7 +101,7 @@ function ProcessTable({ processes }: { readonly processes: ReadonlyArray<McpProc
       <TableBody>
         {processes.map((process) => (
           <TableRow key={process.pid.toString()}>
-            <TableCell>{process.mcpId}</TableCell>
+            {!oneServer && <TableCell>{process.mcpId}</TableCell>}
             <TableCell className="font-mono">{process.pid.toString()}</TableCell>
             <TableCell className="text-muted-foreground">{process.share}</TableCell>
             <TableCell>

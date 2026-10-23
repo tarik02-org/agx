@@ -1,4 +1,4 @@
-import { InfoIcon, LockIcon, PlusIcon, XIcon } from "lucide-react";
+import { InfoIcon, LockIcon, XIcon } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 
 import { Button } from "~/components/ui/button.tsx";
@@ -28,7 +28,6 @@ import {
 import { Switch } from "~/components/ui/switch.tsx";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group.tsx";
 import { Spinner } from "~/components/ui/spinner.tsx";
-import { Textarea } from "~/components/ui/textarea.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
 import {
   type FieldPath,
@@ -252,37 +251,97 @@ export function BooleanField({ form, path, label, description }: FieldProps) {
   );
 }
 
-/** A list of strings, one per line; written when the field loses focus. */
+/** A row of a list or map editor, with an identity of its own while it is edited. */
+const newRowId = (): string => crypto.randomUUID();
+
+interface ListRow {
+  readonly row: string;
+  readonly value: string;
+}
+
+// A list's rows, with the empty one for adding at the end.
+const listRows = (values: ReadonlyArray<string>): ReadonlyArray<ListRow> => [
+  ...values.map((value) => ({ row: newRowId(), value })),
+  { row: newRowId(), value: "" },
+];
+
+// What a list's rows write: those not empty.
+const listValues = (rows: ReadonlyArray<ListRow>) =>
+  rows.map((row) => row.value).filter((value) => value !== "");
+
+/** Whether focus left a row for somewhere outside it, not for another of its inputs. */
+const leftRow = (event: React.FocusEvent<HTMLElement>) =>
+  !event.currentTarget.contains(event.relatedTarget);
+
+/**
+ * A list of strings, such as a command and its arguments, one input each. The last row is always
+ * empty, for adding one; a row emptied is dropped once focus leaves it.
+ */
 export function ListField({ form, path, label, placeholder, description }: FieldProps) {
   const id = useId();
   const items = readList(form.text, path);
+  const [rows, setRows] = useState(() => listRows(items));
+  // The YAML changed elsewhere, such as by Revert or on the YAML tab: show what it holds.
+  if (JSON.stringify(listValues(rows)) !== JSON.stringify(items)) {
+    setRows(listRows(items));
+  }
   if (items.length === 0 && isStructured(form.text, path)) {
     return <StructuredNote label={label} />;
   }
+  const examples = (placeholder ?? "").split("\n");
+  const write = (next: ReadonlyArray<{ readonly row: string; readonly value: string }>) => {
+    const last = next.at(-1);
+    setRows(
+      last === undefined || last.value !== ""
+        ? [...next, { row: newRowId(), value: "" }]
+        : [...next],
+    );
+    form.onChange(writeField(form.text, path, listValues(next)));
+  };
   return (
     <Field>
       <HintedLabel htmlFor={id} hint={meaning(form, path, label, description)}>
         {label}
       </HintedLabel>
-      <Textarea
-        id={id}
-        // Remounts with what the YAML now holds once an edit is written.
-        key={items.join("\n")}
-        className="min-h-16 font-mono"
-        spellCheck={false}
-        readOnly={form.readOnly}
-        placeholder={placeholder ?? "one per line"}
-        defaultValue={items.join("\n")}
-        onBlur={(event) =>
-          form.onChange(
-            writeField(
-              form.text,
-              path,
-              event.target.value.split("\n").filter((line) => line.trim() !== ""),
-            ),
-          )
-        }
-      />
+      <div className="flex flex-col gap-1">
+        {rows.map((row, index) => (
+          <div
+            key={row.row}
+            className="flex items-center gap-1"
+            onBlur={(event) => {
+              if (leftRow(event) && row.value === "" && index < rows.length - 1) {
+                setRows(rows.filter((r) => r.row !== row.row));
+              }
+            }}
+          >
+            <Input
+              id={index === 0 ? id : undefined}
+              aria-label={index === 0 ? undefined : `${label} ${index + 1}`}
+              className="font-mono"
+              spellCheck={false}
+              readOnly={form.readOnly}
+              placeholder={items.length === 0 ? (examples[index] ?? "") : ""}
+              value={row.value}
+              onChange={(event) =>
+                write(
+                  rows.map((r) => (r.row === row.row ? { ...r, value: event.target.value } : r)),
+                )
+              }
+            />
+            {index < rows.length - 1 && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Remove ${row.value}`}
+                disabled={form.readOnly}
+                onClick={() => write(rows.filter((r) => r.row !== row.row))}
+              >
+                <XIcon />
+              </Button>
+            )}
+          </div>
+        ))}
+      </div>
     </Field>
   );
 }
@@ -646,29 +705,56 @@ interface Row extends MapEntry {
   readonly row: string;
 }
 
-/** Names mapped to values, such as environment variables or request headers. */
+const emptyRow = (): Row => ({ row: newRowId(), key: "", value: { tag: "", value: "" } });
+
+const isEmptyRow = (row: Row) => row.key === "" && row.value.value === "";
+
+// A map's rows, with the empty one for adding at the end.
+const mapRows = (values: ReadonlyArray<MapEntry>): ReadonlyArray<Row> => [
+  ...values.map(({ key, value }) => ({ key, value, row: newRowId() })),
+  emptyRow(),
+];
+
+// A map's entries as plain tuples, to compare what rows hold with what the YAML holds.
+const entryKey = (entries: ReadonlyArray<MapEntry>) =>
+  JSON.stringify(entries.map(({ key, value }) => [key, value.tag, value.value]));
+
+// What a map's rows write: those with a name.
+const mapEntries = (rows: ReadonlyArray<Row>): ReadonlyArray<MapEntry> =>
+  rows.filter((row) => row.key !== "").map(({ key, value }) => ({ key, value }));
+
+/**
+ * Names mapped to values, such as environment variables or request headers. The last row is
+ * always empty, for adding one; a row emptied is dropped once focus leaves it.
+ */
 export function MapField({ form, path, label, placeholder, description }: FieldProps) {
-  // Rows keep an identity of their own while their names are edited.
-  const [rows, setRows] = useState<ReadonlyArray<Row>>(() =>
-    readMap(form.text, path).map(({ key, value }) => ({ key, value, row: crypto.randomUUID() })),
-  );
+  const entries = readMap(form.text, path);
+  const [rows, setRows] = useState(() => mapRows(entries));
+  // The YAML changed elsewhere, such as by Revert or on the YAML tab: show what it holds.
+  if (entryKey(mapEntries(rows)) !== entryKey(entries)) {
+    setRows(mapRows(entries));
+  }
   const write = (next: ReadonlyArray<Row>) => {
-    setRows(next);
-    form.onChange(
-      writeMap(
-        form.text,
-        path,
-        next.filter((row) => row.key !== ""),
-      ),
-    );
+    const last = next.at(-1);
+    setRows(last === undefined || !isEmptyRow(last) ? [...next, emptyRow()] : next);
+    form.onChange(writeMap(form.text, path, mapEntries(next)));
   };
   return (
     <Field>
       <HintedLabel hint={meaning(form, path, label, description)}>{label}</HintedLabel>
       <div className="flex flex-col gap-1">
-        {rows.map((row) => (
-          <div key={row.row} className="flex items-center gap-1">
+        {rows.map((row, index) => (
+          <div
+            key={row.row}
+            className="flex items-center gap-1"
+            onBlur={(event) => {
+              if (leftRow(event) && isEmptyRow(row) && index < rows.length - 1) {
+                setRows(rows.filter((r) => r.row !== row.row));
+              }
+            }}
+          >
             <Input
+              aria-label={`${label} name`}
               className="w-48 font-mono"
               spellCheck={false}
               readOnly={form.readOnly}
@@ -685,33 +771,21 @@ export function MapField({ form, path, label, placeholder, description }: FieldP
                 write(rows.map((r) => (r.row === row.row ? { ...r, value } : r)))
               }
             />
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Remove ${row.key}`}
-              disabled={form.readOnly}
-              onClick={() => write(rows.filter((r) => r.row !== row.row))}
-            >
-              <XIcon />
-            </Button>
+            {index < rows.length - 1 ? (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Remove ${row.key}`}
+                disabled={form.readOnly}
+                onClick={() => write(rows.filter((r) => r.row !== row.row))}
+              >
+                <XIcon />
+              </Button>
+            ) : (
+              <span className="size-6 shrink-0" />
+            )}
           </div>
         ))}
-        <div>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={form.readOnly}
-            onClick={() =>
-              setRows([
-                ...rows,
-                { row: crypto.randomUUID(), key: "", value: { tag: "", value: "" } },
-              ])
-            }
-          >
-            <PlusIcon data-icon="inline-start" />
-            Add
-          </Button>
-        </div>
       </div>
     </Field>
   );

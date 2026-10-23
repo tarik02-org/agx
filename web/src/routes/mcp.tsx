@@ -21,10 +21,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "~/components/ui/empty.tsx";
+import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "~/components/ui/item.tsx";
 import { Pending } from "~/components/Pending.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import type { DaemonError } from "~/daemon/error.ts";
-import { useDaemonMutation } from "~/daemon/query.ts";
+import { queryKeys, useDaemonMutation, useDaemonQuery } from "~/daemon/query.ts";
+import { ProcessTable, refreshInterval } from "~/features/runtime/ProcessesCard.tsx";
 import { mcpStates } from "~/features/runtime/states.ts";
 import { useCallHistory } from "~/features/mcp/history.ts";
 import { ToolForm } from "~/features/mcp/ToolForm.tsx";
@@ -130,28 +132,95 @@ function ServerView({
   );
 }
 
-/** A server's state, and why it has no tools to call when it has none. */
+/**
+ * A server at a glance: what it is and its state, what it offers, and the processes running it.
+ * Tools are what servers offer today; prompts and resources join them as sections.
+ */
 function ServerStatus({ server }: { readonly server: McpTools }) {
+  const processes = useDaemonQuery(
+    queryKeys.processes,
+    Daemon.use((daemon) => daemon.processes),
+    { refetchInterval: refreshInterval },
+  );
+  const running = (processes.data ?? []).filter((process) => process.mcpId === server.mcpId);
   return (
-    <Card size="sm">
-      <CardHeader>
-        {/* The top bar names the server. */}
-        <CardTitle className="flex items-center gap-2">
-          <Badge variant={mcpStates[server.state].variant}>{mcpStates[server.state].label}</Badge>
-          {server.load === McpTools_Load.ON_DEMAND && <Badge variant="secondary">on demand</Badge>}
-        </CardTitle>
-        <CardDescription>{server.description}</CardDescription>
-      </CardHeader>
-      <CardContent className="text-xs">
-        {server.message === "" ? (
-          <span className="text-muted-foreground">
-            {server.tools.length === 0 ? "It offers no tools." : "Pick one of its tools."}
-          </span>
-        ) : (
-          <span className="text-destructive">{server.message}</span>
+    <>
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle className="flex flex-wrap items-center gap-2">
+            {server.icon !== "" && <img src={server.icon} alt="" className="size-5" />}
+            {server.serverName !== "" && (
+              <span className="font-mono">
+                {server.serverName}
+                {server.serverVersion !== "" && (
+                  <span className="text-muted-foreground"> {server.serverVersion}</span>
+                )}
+              </span>
+            )}
+            <Badge variant={mcpStates[server.state].variant}>{mcpStates[server.state].label}</Badge>
+            {server.load === McpTools_Load.ON_DEMAND && (
+              <Badge variant="secondary">on demand</Badge>
+            )}
+          </CardTitle>
+          {server.description !== "" && <CardDescription>{server.description}</CardDescription>}
+        </CardHeader>
+        {server.message !== "" && (
+          <CardContent className="text-destructive text-xs">{server.message}</CardContent>
         )}
-      </CardContent>
-    </Card>
+      </Card>
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            Tools <Badge variant="secondary">{server.tools.length}</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {server.tools.length === 0 ? (
+            <p className="text-muted-foreground text-xs">It offers no tools.</p>
+          ) : (
+            <ItemGroup className="gap-1">
+              {server.tools.map((tool) => (
+                <Item
+                  key={tool.name}
+                  size="sm"
+                  variant="outline"
+                  render={<Link to="/mcp" search={{ server: server.mcpId, tool: tool.name }} />}
+                >
+                  <ItemContent>
+                    <ItemTitle className="font-mono">{tool.name}</ItemTitle>
+                    {(tool.title !== "" || tool.description !== "") && (
+                      <ItemDescription className="line-clamp-1">
+                        {tool.title !== "" ? tool.title : tool.description}
+                      </ItemDescription>
+                    )}
+                  </ItemContent>
+                </Item>
+              ))}
+            </ItemGroup>
+          )}
+        </CardContent>
+      </Card>
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            Processes <Badge variant="secondary">{running.length}</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {processes.isError ? (
+            <DaemonProblem error={processes.error} />
+          ) : running.length === 0 ? (
+            <p className="text-muted-foreground text-xs">
+              {server.load === McpTools_Load.ON_DEMAND
+                ? "None running; it starts when a session calls it."
+                : "None running; a local server starts with the first session that uses it."}
+            </p>
+          ) : (
+            <ProcessTable processes={running} oneServer />
+          )}
+        </CardContent>
+      </Card>
+    </>
   );
 }
 
