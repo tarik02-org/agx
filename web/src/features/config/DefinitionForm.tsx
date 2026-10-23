@@ -1,5 +1,6 @@
 import { useId } from "react";
 
+import { Badge } from "~/components/ui/badge.tsx";
 import { Field, FieldGroup, FieldSeparator } from "~/components/ui/field.tsx";
 import { Input } from "~/components/ui/input.tsx";
 import {
@@ -10,6 +11,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select.tsx";
+import { Daemon } from "~/daemon/Daemon.ts";
+import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
+import type { SourceRef } from "~/gen/agx/v1/agx_pb.ts";
 import { CodeEditor } from "~/features/config/CodeEditor.tsx";
 import {
   BooleanField,
@@ -17,6 +21,7 @@ import {
   type DefinitionText,
   HintedLabel,
   ListField,
+  SuggestField,
   TagsField,
   MapField,
   NumberField,
@@ -296,11 +301,53 @@ function SecretForm({ form }: { readonly form: DefinitionText }) {
   );
 }
 
+const refKind = (ref: SourceRef) => (ref.default ? "default" : ref.tag ? "tag" : "branch");
+
+/**
+ * Where a Git source is pinned. Ref and revision offer the repository's branches and tags, asked
+ * of it once its URL is filled in; a ref's commit is what a revision takes.
+ */
 function PinFields({ form }: { readonly form: DefinitionText }) {
+  const git = readString(form.text, ["git"]);
+  const refs = useDaemonQuery(
+    queryKeys.sourceRefs(git),
+    Daemon.use((daemon) => daemon.sourceRefs(git)),
+    { enabled: git !== "", staleTime: 60_000, retry: false },
+  );
+  const listed = refs.data ?? [];
   return (
     <>
-      <TextField form={form} path={["ref"]} label="Ref" placeholder="the default branch" />
-      <TextField form={form} path={["rev"]} label="Revision" />
+      <SuggestField
+        form={form}
+        path={["ref"]}
+        label="Ref"
+        placeholder="the default branch"
+        loading={refs.isFetching}
+        suggestions={listed.map((ref) => ({
+          value: ref.name,
+          detail: (
+            <>
+              <Badge variant="outline">{refKind(ref)}</Badge>
+              <span className="font-mono">{ref.commit.slice(0, 7)}</span>
+            </>
+          ),
+        }))}
+      />
+      <SuggestField
+        form={form}
+        path={["rev"]}
+        label="Revision"
+        loading={refs.isFetching}
+        suggestions={[...new Map(listed.map((ref) => [ref.commit, ref])).values()].map((ref) => ({
+          value: ref.commit,
+          detail: (
+            <>
+              <Badge variant="outline">{refKind(ref)}</Badge>
+              {ref.name}
+            </>
+          ),
+        }))}
+      />
       <TextField form={form} path={["hash"]} label="Hash" />
     </>
   );

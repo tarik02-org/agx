@@ -83,6 +83,9 @@ const (
 	// PackageServiceReadPreviewFileProcedure is the fully-qualified name of the PackageService's
 	// ReadPreviewFile RPC.
 	PackageServiceReadPreviewFileProcedure = "/agx.v1.PackageService/ReadPreviewFile"
+	// PackageServiceListSourceRefsProcedure is the fully-qualified name of the PackageService's
+	// ListSourceRefs RPC.
+	PackageServiceListSourceRefsProcedure = "/agx.v1.PackageService/ListSourceRefs"
 	// LaunchServicePrepareLaunchProcedure is the fully-qualified name of the LaunchService's
 	// PrepareLaunch RPC.
 	LaunchServicePrepareLaunchProcedure = "/agx.v1.LaunchService/PrepareLaunch"
@@ -442,6 +445,8 @@ type PackageServiceClient interface {
 	PreviewSource(context.Context, *connect.Request[v1.PreviewSourceRequest]) (*connect.Response[v1.PreviewSourceResponse], error)
 	// One file of a previewed skill.
 	ReadPreviewFile(context.Context, *connect.Request[v1.ReadPreviewFileRequest]) (*connect.Response[v1.ReadPreviewFileResponse], error)
+	// A Git source's branches and tags, without fetching it.
+	ListSourceRefs(context.Context, *connect.Request[v1.ListSourceRefsRequest]) (*connect.Response[v1.ListSourceRefsResponse], error)
 }
 
 // NewPackageServiceClient constructs a client for the agx.v1.PackageService service. By default, it
@@ -485,6 +490,12 @@ func NewPackageServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(packageServiceMethods.ByName("ReadPreviewFile")),
 			connect.WithClientOptions(opts...),
 		),
+		listSourceRefs: connect.NewClient[v1.ListSourceRefsRequest, v1.ListSourceRefsResponse](
+			httpClient,
+			baseURL+PackageServiceListSourceRefsProcedure,
+			connect.WithSchema(packageServiceMethods.ByName("ListSourceRefs")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -495,6 +506,7 @@ type packageServiceClient struct {
 	watchOperation  *connect.Client[v1.WatchOperationRequest, v1.WatchOperationResponse]
 	previewSource   *connect.Client[v1.PreviewSourceRequest, v1.PreviewSourceResponse]
 	readPreviewFile *connect.Client[v1.ReadPreviewFileRequest, v1.ReadPreviewFileResponse]
+	listSourceRefs  *connect.Client[v1.ListSourceRefsRequest, v1.ListSourceRefsResponse]
 }
 
 // Install calls agx.v1.PackageService.Install.
@@ -522,6 +534,11 @@ func (c *packageServiceClient) ReadPreviewFile(ctx context.Context, req *connect
 	return c.readPreviewFile.CallUnary(ctx, req)
 }
 
+// ListSourceRefs calls agx.v1.PackageService.ListSourceRefs.
+func (c *packageServiceClient) ListSourceRefs(ctx context.Context, req *connect.Request[v1.ListSourceRefsRequest]) (*connect.Response[v1.ListSourceRefsResponse], error) {
+	return c.listSourceRefs.CallUnary(ctx, req)
+}
+
 // PackageServiceHandler is an implementation of the agx.v1.PackageService service.
 type PackageServiceHandler interface {
 	Install(context.Context, *connect.Request[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error)
@@ -532,6 +549,8 @@ type PackageServiceHandler interface {
 	PreviewSource(context.Context, *connect.Request[v1.PreviewSourceRequest]) (*connect.Response[v1.PreviewSourceResponse], error)
 	// One file of a previewed skill.
 	ReadPreviewFile(context.Context, *connect.Request[v1.ReadPreviewFileRequest]) (*connect.Response[v1.ReadPreviewFileResponse], error)
+	// A Git source's branches and tags, without fetching it.
+	ListSourceRefs(context.Context, *connect.Request[v1.ListSourceRefsRequest]) (*connect.Response[v1.ListSourceRefsResponse], error)
 }
 
 // NewPackageServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -571,6 +590,12 @@ func NewPackageServiceHandler(svc PackageServiceHandler, opts ...connect.Handler
 		connect.WithSchema(packageServiceMethods.ByName("ReadPreviewFile")),
 		connect.WithHandlerOptions(opts...),
 	)
+	packageServiceListSourceRefsHandler := connect.NewUnaryHandler(
+		PackageServiceListSourceRefsProcedure,
+		svc.ListSourceRefs,
+		connect.WithSchema(packageServiceMethods.ByName("ListSourceRefs")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.PackageService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PackageServiceInstallProcedure:
@@ -583,6 +608,8 @@ func NewPackageServiceHandler(svc PackageServiceHandler, opts ...connect.Handler
 			packageServicePreviewSourceHandler.ServeHTTP(w, r)
 		case PackageServiceReadPreviewFileProcedure:
 			packageServiceReadPreviewFileHandler.ServeHTTP(w, r)
+		case PackageServiceListSourceRefsProcedure:
+			packageServiceListSourceRefsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -610,6 +637,10 @@ func (UnimplementedPackageServiceHandler) PreviewSource(context.Context, *connec
 
 func (UnimplementedPackageServiceHandler) ReadPreviewFile(context.Context, *connect.Request[v1.ReadPreviewFileRequest]) (*connect.Response[v1.ReadPreviewFileResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.PackageService.ReadPreviewFile is not implemented"))
+}
+
+func (UnimplementedPackageServiceHandler) ListSourceRefs(context.Context, *connect.Request[v1.ListSourceRefsRequest]) (*connect.Response[v1.ListSourceRefsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.PackageService.ListSourceRefs is not implemented"))
 }
 
 // LaunchServiceClient is a client for the agx.v1.LaunchService service.

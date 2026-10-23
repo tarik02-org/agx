@@ -19,6 +19,7 @@ import {
   type GetSkillResponse,
   type PlannedFile,
   type PreviewSourceResponse,
+  type SourceRef,
   type ReadFileResponse,
   type ReadPreviewFileResponse,
   LaunchService,
@@ -90,6 +91,8 @@ export class Daemon extends Context.Service<
     ) => Effect.Effect<ReadonlyArray<string>, DaemonError>;
     /** Fetches a Git source and lists the skills it would add. */
     readonly previewSource: (source: string) => Effect.Effect<PreviewSourceResponse, DaemonError>;
+    /** A Git source's branches and tags, without fetching it. */
+    readonly sourceRefs: (git: string) => Effect.Effect<ReadonlyArray<SourceRef>, DaemonError>;
     readonly readPreviewFile: (
       previewId: string,
       skill: string,
@@ -247,6 +250,10 @@ export const makeDaemon = (): Daemon["Service"] => {
       ).pipe(Effect.map((response) => response.written)),
     previewSource: (source) =>
       call("previewSource", (signal) => packages.previewSource({ source }, { signal })),
+    sourceRefs: (git) =>
+      call("listSourceRefs", (signal) => packages.listSourceRefs({ git }, { signal })).pipe(
+        Effect.map((response) => response.refs),
+      ),
     readPreviewFile: (previewId, skill, path) =>
       call("readPreviewFile", (signal) =>
         packages.readPreviewFile({ previewId, skill, path }, { signal }),

@@ -555,6 +555,36 @@ func editError(err error) error {
 	return rpcError(connect.CodeInternal, err.Error())
 }
 
+// listRefsTimeout bounds asking a Git server for its refs.
+const listRefsTimeout = 20 * time.Second
+
+// ListSourceRefs lists a Git source's branches and tags for picking a package's ref.
+func (s *Server) ListSourceRefs(
+	ctx context.Context,
+	req *connect.Request[v1.ListSourceRefsRequest],
+) (*connect.Response[v1.ListSourceRefsResponse], error) {
+	source := strings.TrimSpace(req.Msg.Git)
+	if source == "" {
+		return nil, rpcError(connect.CodeInvalidArgument, "git is required")
+	}
+	ctx, cancel := context.WithTimeout(ctx, listRefsTimeout)
+	defer cancel()
+	refs, err := packages.RemoteRefs(ctx, source)
+	if err != nil {
+		return nil, editError(err)
+	}
+	out := &v1.ListSourceRefsResponse{Refs: make([]*v1.SourceRef, 0, len(refs))}
+	for _, ref := range refs {
+		out.Refs = append(out.Refs, &v1.SourceRef{
+			Name:    ref.Name,
+			Tag:     ref.Tag,
+			Commit:  ref.Commit,
+			Default: ref.Default,
+		})
+	}
+	return connect.NewResponse(out), nil
+}
+
 // preview is a fetched source and the directories of its skills.
 type preview struct {
 	source  *v1.PackageSource

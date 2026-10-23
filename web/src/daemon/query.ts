@@ -16,6 +16,7 @@ export const queryKeys = {
   skill: (skillId: string) => ["skill", skillId],
   file: (path: string) => ["file", path],
   configSchema: ["config-schema"],
+  sourceRefs: (git: string) => ["source-refs", git],
 } as const satisfies Record<string, QueryKey | ((...args: ReadonlyArray<string>) => QueryKey)>;
 
 /**

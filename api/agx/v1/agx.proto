@@ -36,6 +36,8 @@ service PackageService {
   rpc PreviewSource(PreviewSourceRequest) returns (PreviewSourceResponse);
   // One file of a previewed skill.
   rpc ReadPreviewFile(ReadPreviewFileRequest) returns (ReadPreviewFileResponse);
+  // A Git source's branches and tags, without fetching it.
+  rpc ListSourceRefs(ListSourceRefsRequest) returns (ListSourceRefsResponse);
 }
 
 service LaunchService {
@@ -753,6 +755,24 @@ message ApplyChangesRequest {
 }
 message ApplyChangesResponse {
   repeated string written = 1;
+}
+
+message ListSourceRefsRequest {
+  // A Git URL or local repository, as a package's git field names it.
+  string git = 1;
+}
+message ListSourceRefsResponse {
+  // The default branch first, then the other branches by name, then tags, newest version first.
+  repeated SourceRef refs = 1;
+}
+message SourceRef {
+  // The name a ref field takes, such as main or v1.2.0.
+  string name = 1;
+  bool tag = 2;
+  // The commit it points to; an annotated tag's is the commit it tags.
+  string commit = 3;
+  // The branch the repository's HEAD names.
+  bool default = 4;
 }
 
 message PreviewSourceRequest {

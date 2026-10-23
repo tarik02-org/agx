@@ -9,6 +9,7 @@ import {
   ComboboxChipsInput,
   ComboboxContent,
   ComboboxEmpty,
+  ComboboxInput,
   ComboboxItem,
   ComboboxList,
   ComboboxValue,
@@ -25,6 +26,8 @@ import {
   SelectValue,
 } from "~/components/ui/select.tsx";
 import { Switch } from "~/components/ui/switch.tsx";
+import { InputGroupAddon } from "~/components/ui/input-group.tsx";
+import { Spinner } from "~/components/ui/spinner.tsx";
 import { Textarea } from "~/components/ui/textarea.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group.tsx";
@@ -264,6 +267,78 @@ interface Option {
   readonly label: string;
   /** A line under the label in the list, saying what the choice means. */
   readonly description?: string;
+}
+
+/** A value offered for a SuggestField: what it writes, and what the list shows beside it. */
+export interface Suggestion {
+  readonly value: string;
+  readonly detail?: ReactNode;
+}
+
+/**
+ * A text field that offers values, such as a repository's branches, while still taking any
+ * typed one.
+ */
+export function SuggestField({
+  form,
+  path,
+  label,
+  placeholder,
+  description,
+  suggestions,
+  loading = false,
+}: FieldProps & {
+  readonly suggestions: ReadonlyArray<Suggestion>;
+  readonly loading?: boolean;
+}) {
+  const id = useId();
+  const value = readString(form.text, path);
+  const details = new Map(suggestions.map((item) => [item.value, item.detail]));
+  if (isStructured(form.text, path)) {
+    return <StructuredNote label={label} />;
+  }
+  return (
+    <Field>
+      <HintedLabel htmlFor={id} hint={meaning(form, path, label, description)}>
+        {label}
+      </HintedLabel>
+      <Combobox
+        items={suggestions.map((item) => item.value)}
+        inputValue={value}
+        readOnly={form.readOnly}
+        onInputValueChange={(next) => form.onChange(writeField(form.text, path, next))}
+      >
+        <ComboboxInput
+          id={id}
+          className="font-mono"
+          spellCheck={false}
+          placeholder={placeholder}
+          showTrigger={suggestions.length > 0}
+        >
+          {loading && (
+            <InputGroupAddon align="inline-end">
+              <Spinner className="size-3" />
+            </InputGroupAddon>
+          )}
+        </ComboboxInput>
+        <ComboboxContent>
+          <ComboboxEmpty>Nothing matches; the typed value is kept.</ComboboxEmpty>
+          <ComboboxList>
+            {(item: string) => (
+              <ComboboxItem key={item} value={item}>
+                <span className="font-mono">{item}</span>
+                {details.get(item) !== undefined && (
+                  <span className="ml-auto flex items-center gap-1.5 text-muted-foreground text-xs">
+                    {details.get(item)}
+                  </span>
+                )}
+              </ComboboxItem>
+            )}
+          </ComboboxList>
+        </ComboboxContent>
+      </Combobox>
+    </Field>
+  );
 }
 
 /**
