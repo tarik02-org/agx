@@ -17,8 +17,9 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   edited with a form or YAML. Staged changes apply at once after showing their diff, skills
   are added from Git with a wizard, and the UI is scoped to the directory `agx ui` ran in.
   Release binaries and the Nix package embed it.
-- `PackageService.PreviewSource` fetches a Git source into the cache and lists its skills
-  without configuring anything; `ReadPreviewFile` reads one of their files.
+- `PackageService.PreviewSource` fetches a Git source (`owner/repo[@ref][/path]` or a URL)
+  into the cache and lists its skills with their SKILL.md and files, without configuring
+  anything; `ReadPreviewFile` reads one of their files for 30 minutes.
 - `PackageService.ListSourceRefs` lists a Git source's branches and tags, with their commits,
   without fetching it; `InspectSource` checks one out at its pins for the commit, the content
   hash a pinned package records, and its directories.
@@ -100,6 +101,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Changed
 
+- A failed package installation the daemon runs reports git's error, with credentials in
+  URLs redacted, instead of asking to retry `agx install` locally.
 - A package that is not installed, or changed since it was installed, no longer fails
   launches: they go on without its skills, instructions, and MCP servers, and warn once per
   package to run `agx install`; the daemon logs the same warning. `agx config validate`,
