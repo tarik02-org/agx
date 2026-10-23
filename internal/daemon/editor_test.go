@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -198,4 +200,104 @@ func TestReadFileRestrictions(t *testing.T) {
 	}
 	_, err := read(filepath.Join(dir, "skills", "alpha", "missing.md"))
 	wantReason(t, err, v1.ErrorDetail_REASON_NOT_FOUND)
+}
+
+func define(kind, id, yaml string) *v1.ConfigChange {
+	return &v1.ConfigChange{Change: &v1.ConfigChange_Define{Define: &v1.DefineChange{Kind: kind, Id: id, Yaml: yaml}}}
+}
+
+func enable(kind, id string) *v1.ConfigChange {
+	return &v1.ConfigChange{Change: &v1.ConfigChange_Enable{Enable: &v1.SelectionChange{Kind: kind, Id: id}}}
+}
+
+func TestPlanAndApplyChanges(t *testing.T) {
+	s, dir := editorServer(t, editorConfig)
+	changes := []*v1.ConfigChange{
+		define("mcp", "search", "url: https://example.com/search\n"),
+		enable("mcp", "search"),
+		{Change: &v1.ConfigChange_WriteFile{WriteFile: &v1.FileWrite{
+			Path:    filepath.Join(dir, "skills", "alpha", "SKILL.md"),
+			Content: "---\nname: alpha\ndescription: Edited.\n---\n",
+		}}},
+	}
+	planned, err := s.PlanChanges(t.Context(), connect.NewRequest(&v1.PlanChangesRequest{Changes: changes}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := planned.Msg.Files
+	sum := sha256.Sum256([]byte(editorConfig))
+	if len(files) != 2 || files[0].Path != s.paths.Config || files[0].BeforeSha256 != hex.EncodeToString(sum[:]) ||
+		!strings.Contains(files[0].Diff, "+  search:") || !strings.Contains(files[0].Diff, "+      mcp: [search]") ||
+		!strings.Contains(files[1].Diff, "+description: Edited.") {
+		t.Fatalf("plan = %+v", files)
+	}
+	if b, _ := os.ReadFile(s.paths.Config); string(b) != editorConfig {
+		t.Fatal("planning wrote the configuration")
+	}
+
+	// A file changed since the plan fails the apply.
+	stale := []*v1.PlannedFile{{Path: files[0].Path, BeforeSha256: strings.Repeat("0", 64)}, files[1]}
+	_, err = s.ApplyChanges(t.Context(), connect.NewRequest(&v1.ApplyChangesRequest{Changes: changes, Expected: stale}))
+	wantReason(t, err, v1.ErrorDetail_REASON_CONFLICT)
+
+	applied, err := s.ApplyChanges(
+		t.Context(),
+		connect.NewRequest(&v1.ApplyChangesRequest{Changes: changes, Expected: files}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(applied.Msg.Written) != 2 {
+		t.Fatalf("written = %v", applied.Msg.Written)
+	}
+	c, err := s.reload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.MCP["search"]; !ok {
+		t.Fatal("the daemon did not reload the applied configuration")
+	}
+
+	// Replaying the applied plan finds the files changed.
+	_, err = s.ApplyChanges(t.Context(), connect.NewRequest(&v1.ApplyChangesRequest{Changes: changes, Expected: files}))
+	wantReason(t, err, v1.ErrorDetail_REASON_CONFLICT)
+
+	undefine := &v1.ConfigChange{
+		Change: &v1.ConfigChange_Undefine{Undefine: &v1.UndefineChange{Kind: "skills", Id: "alpha"}},
+	}
+	planned, err = s.PlanChanges(
+		t.Context(),
+		connect.NewRequest(&v1.PlanChangesRequest{Changes: []*v1.ConfigChange{undefine}}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planned.Msg.Files) != 1 || !strings.Contains(planned.Msg.Files[0].Diff, "-    skills: [alpha]") {
+		t.Fatalf("undefine plan = %+v", planned.Msg.Files)
+	}
+
+	for name, test := range map[string]struct {
+		change *v1.ConfigChange
+		want   v1.ErrorDetail_Reason
+	}{
+		"invalid":     {define("mcp", "bad", "url: 5\ncommand: [x]\n"), v1.ErrorDetail_REASON_CONFIG_INVALID},
+		"unknown tag": {define("mcp", "bad", "url: !shell whoami\n"), v1.ErrorDetail_REASON_INVALID_REQUEST},
+		"sequence":    {define("mcp", "bad", "[a, b]\n"), v1.ErrorDetail_REASON_INVALID_REQUEST},
+		"unknown":     {enable("skills", "missing"), v1.ErrorDetail_REASON_CONFIG_INVALID},
+		"outside": {&v1.ConfigChange{Change: &v1.ConfigChange_WriteFile{WriteFile: &v1.FileWrite{
+			Path: filepath.Join(dir, "elsewhere.md"),
+		}}}, v1.ErrorDetail_REASON_INVALID_REQUEST},
+		"empty": {&v1.ConfigChange{}, v1.ErrorDetail_REASON_INVALID_REQUEST},
+	} {
+		_, err := s.PlanChanges(
+			t.Context(),
+			connect.NewRequest(&v1.PlanChangesRequest{Changes: []*v1.ConfigChange{test.change}}),
+		)
+		if err == nil {
+			t.Fatalf("%s: planned", name)
+		}
+		if _, got := reason(t, err); got != test.want {
+			t.Errorf("%s: %v: reason %v, want %v", name, err, got, test.want)
+		}
+	}
 }

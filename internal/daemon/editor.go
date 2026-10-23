@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
@@ -19,6 +20,7 @@ import (
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/configedit"
+	"github.com/tarik02-org/agx/internal/packages"
 )
 
 const (
@@ -282,4 +284,264 @@ func readText(path string) (string, bool, error) {
 		return "", true, nil
 	}
 	return string(b), false, nil
+}
+
+func (s *Server) PlanChanges(
+	ctx context.Context,
+	req *connect.Request[v1.PlanChangesRequest],
+) (*connect.Response[v1.PlanChangesResponse], error) {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	plan, err := s.plan(ctx, req.Msg.Changes)
+	if err != nil {
+		return nil, err
+	}
+	out := &v1.PlanChangesResponse{Files: []*v1.PlannedFile{}}
+	for _, f := range plan.Files {
+		out.Files = append(out.Files, &v1.PlannedFile{Path: f.Path, Diff: f.Diff(), BeforeSha256: f.BeforeSHA256()})
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *Server) ApplyChanges(
+	ctx context.Context,
+	req *connect.Request[v1.ApplyChangesRequest],
+) (*connect.Response[v1.ApplyChangesResponse], error) {
+	expected := map[string]string{}
+	for _, f := range req.Msg.Expected {
+		if _, ok := expected[f.Path]; ok {
+			return nil, rpcError(connect.CodeInvalidArgument, "expected names "+f.Path+" twice")
+		}
+		expected[f.Path] = f.BeforeSha256
+	}
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	plan, err := s.plan(ctx, req.Msg.Changes)
+	if err != nil {
+		return nil, err
+	}
+	if err := plan.Check(expected); err != nil {
+		return nil, editError(err)
+	}
+	written, err := plan.Write()
+	// The configuration's inputs changed, so this loads what was written.
+	_, _ = s.reload()
+	if err != nil {
+		var edited *configedit.Error
+		if errors.As(err, &edited) {
+			return nil, editError(err)
+		}
+		return nil, rpcError(
+			connect.CodeInternal,
+			fmt.Sprintf("writing the change failed after %d of %d files: %v", len(written), len(plan.Files), err),
+		)
+	}
+	return connect.NewResponse(&v1.ApplyChangesResponse{Written: written}), nil
+}
+
+// plan applies changes in order to a session over the current configuration and plans it.
+func (s *Server) plan(ctx context.Context, changes []*v1.ConfigChange) (*configedit.Plan, error) {
+	c, err := s.reload()
+	if err != nil {
+		return nil, configError(err)
+	}
+	session, err := configedit.New(s.paths, s.builtins, c)
+	if err != nil {
+		return nil, rpcError(connect.CodeInternal, err.Error())
+	}
+	// Definitions the changes create take their rules beside them, as the CLI's add commands do.
+	defined := map[string]string{}
+	for i, change := range changes {
+		if err := s.change(ctx, session, change, defined); err != nil {
+			return nil, editError(fmt.Errorf("change %d: %w", i+1, err))
+		}
+	}
+	plan, err := session.Plan()
+	if err != nil {
+		return nil, editError(err)
+	}
+	return plan, nil
+}
+
+func (s *Server) change(
+	ctx context.Context,
+	session *configedit.Session,
+	change *v1.ConfigChange,
+	defined map[string]string,
+) error {
+	switch change := change.Change.(type) {
+	case *v1.ConfigChange_Define:
+		d := change.Define
+		value, err := definitionValue(d.Yaml)
+		if err != nil {
+			return err
+		}
+		file := session.Root
+		if d.File != "" {
+			if file, err = absoluteFile(d.File); err != nil {
+				return err
+			}
+		}
+		if at, exists := configedit.Lookup(session.Config, d.Kind, d.Id); exists {
+			file = at.Source.Path
+		}
+		if err := session.Define(d.Kind, d.Id, value, file); err != nil {
+			return err
+		}
+		defined[d.Kind+"\x00"+d.Id] = file
+		return nil
+	case *v1.ConfigChange_Undefine:
+		return session.Undefine(change.Undefine.Kind, change.Undefine.Id)
+	case *v1.ConfigChange_Enable:
+		return selectionChange(session, change.Enable, true, defined)
+	case *v1.ConfigChange_Disable:
+		return selectionChange(session, change.Disable, false, defined)
+	case *v1.ConfigChange_WriteFile:
+		return session.WriteFile(change.WriteFile.Path, []byte(change.WriteFile.Content))
+	case *v1.ConfigChange_AddPackage:
+		p := change.AddPackage
+		if p.Git == "" {
+			return invalidf("add_package needs a git source")
+		}
+		source := configedit.Source{Git: p.Git, Ref: p.Ref, Subdir: p.Subdir, Name: config.RepositoryName(p.Git)}
+		id, err := configedit.PackageID(session.Config, source, p.Id)
+		if err != nil {
+			return err
+		}
+		if _, err := session.DeclarePackage(id, source, session.Root); err != nil {
+			return err
+		}
+		return session.Install(ctx, session.Root)
+	}
+	return invalidf("empty change")
+}
+
+func invalidf(format string, args ...any) error {
+	return &configedit.Error{Code: configedit.InvalidRequest, Err: fmt.Errorf(format, args...)}
+}
+
+// selectionChange enables or disables a resource as agx use and unuse do.
+func selectionChange(session *configedit.Session, c *v1.SelectionChange, enable bool, defined map[string]string) error {
+	if !slices.Contains(configedit.SelectionKinds, c.Kind) {
+		return invalidf("kind must be one of %s", strings.Join(configedit.SelectionKinds, ", "))
+	}
+	if c.Id == "" {
+		return invalidf("a selection change needs an ID")
+	}
+	directory := ""
+	if c.Directory != "" {
+		expanded, err := config.ExpandHome(c.Directory)
+		if err != nil || !filepath.IsAbs(expanded) {
+			return invalidf("directory must be absolute or start with ~/")
+		}
+		if directory, err = config.Canonical(expanded); err != nil {
+			return err
+		}
+		// Only a rule that enables needs its directory, so a mistyped one writes no dead rule.
+		if enable {
+			info, err := os.Stat(directory)
+			switch {
+			case errors.Is(err, fs.ErrNotExist):
+				return &configedit.Error{
+					Code: configedit.NotFound,
+					Err:  fmt.Errorf("scope directory %s does not exist", directory),
+				}
+			case err != nil:
+				return err
+			case !info.IsDir():
+				return invalidf("scope is not a directory: %s", directory)
+			}
+		}
+	}
+	target := configedit.NewScope(directory, c.Harnesses)
+	fallback, ok := defined[c.Kind+"\x00"+c.Id]
+	if !ok {
+		fallback = session.RuleFile(c.Kind, c.Id)
+	}
+	var err error
+	if enable {
+		_, err = session.Enable(c.Kind, c.Id, target, fallback)
+	} else {
+		_, err = session.Disable(c.Kind, c.Id, target, fallback)
+	}
+	return err
+}
+
+// absoluteFile resolves a fragment path a change names.
+func absoluteFile(path string) (string, error) {
+	expanded, err := config.ExpandHome(path)
+	if err != nil || !filepath.IsAbs(expanded) {
+		return "", invalidf("file must be absolute or start with ~/: %s", path)
+	}
+	return config.Canonical(expanded)
+}
+
+// allowedTags are the tags a definition may use besides YAML's own.
+var allowedTags = []string{"!env", "!file", "!secret"}
+
+// definitionValue parses a definition's YAML: a mapping or a scalar, tagged only with agx's tags.
+func definitionValue(text string) (*yaml.Node, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
+		return nil, invalidf("definition YAML: %v", err)
+	}
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) != 1 {
+		return nil, invalidf("definition YAML is empty")
+	}
+	value := doc.Content[0]
+	if value.Kind != yaml.MappingNode && value.Kind != yaml.ScalarNode {
+		return nil, invalidf("a definition is a mapping or a scalar")
+	}
+	var check func(*yaml.Node) error
+	check = func(n *yaml.Node) error {
+		if n.Kind == yaml.AliasNode || n.Anchor != "" {
+			return invalidf("definition YAML may not use anchors or aliases")
+		}
+		if strings.HasPrefix(n.Tag, "!") && !strings.HasPrefix(n.Tag, "!!") && !slices.Contains(allowedTags, n.Tag) {
+			return invalidf("definition YAML uses tag %s; only %s are allowed", n.Tag, strings.Join(allowedTags, ", "))
+		}
+		for _, child := range n.Content {
+			if err := check(child); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := check(value); err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+// editError maps an edit error to a Connect error whose reason the UI branches on.
+func editError(err error) error {
+	var connectErr *connect.Error
+	if errors.As(err, &connectErr) {
+		return connectErr
+	}
+	if code, ok := configedit.CodeOf(err); ok {
+		switch code {
+		case configedit.ConfigInvalid:
+			return reasonError(connect.CodeFailedPrecondition, v1.ErrorDetail_REASON_CONFIG_INVALID, err.Error())
+		case configedit.ReadOnly:
+			return rpcError(connect.CodeFailedPrecondition, err.Error())
+		case configedit.Conflict:
+			return rpcError(connect.CodeAborted, err.Error())
+		case configedit.NotFound:
+			return rpcError(connect.CodeNotFound, err.Error())
+		case configedit.InvalidRequest:
+			return rpcError(connect.CodeInvalidArgument, err.Error())
+		}
+	}
+	switch {
+	case errors.Is(err, packages.ErrBusy), errors.Is(err, packages.ErrStaleLock):
+		return rpcError(connect.CodeAborted, err.Error())
+	case errors.Is(err, packages.ErrUnknown):
+		return rpcError(connect.CodeNotFound, err.Error())
+	case errors.Is(err, packages.ErrFetch):
+		return rpcError(connect.CodeFailedPrecondition, err.Error())
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return rpcError(connect.CodeDeadlineExceeded, err.Error())
+	}
+	return rpcError(connect.CodeInternal, err.Error())
 }

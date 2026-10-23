@@ -176,6 +176,9 @@ type Server struct {
 	clients *clientPool
 	// shared runs the stdio MCP servers launches share.
 	shared *mcpruntime.Shared
+	// editMu serializes planning and applying configuration changes, so an apply checks and
+	// writes what no other apply is writing.
+	editMu sync.Mutex
 }
 
 // Serve runs the daemon until stop closes or a stop request arrives, then shuts down gracefully:
@@ -451,6 +454,8 @@ var startsWork = map[string]bool{
 	agxv1connect.LaunchServicePrepareThreadLaunchProcedure: true,
 	agxv1connect.PackageServiceInstallProcedure:            true,
 	agxv1connect.PackageServiceUpdateProcedure:             true,
+	agxv1connect.ConfigurationServicePlanChangesProcedure:  true,
+	agxv1connect.ConfigurationServiceApplyChangesProcedure: true,
 	agxv1connect.RuntimeServiceTestMcpServerProcedure:      true,
 	agxv1connect.RuntimeServiceListToolsProcedure:          true,
 	agxv1connect.RuntimeServiceCallToolProcedure:           true,

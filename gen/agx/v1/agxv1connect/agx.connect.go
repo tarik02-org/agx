@@ -62,6 +62,12 @@ const (
 	// ConfigurationServiceReadFileProcedure is the fully-qualified name of the ConfigurationService's
 	// ReadFile RPC.
 	ConfigurationServiceReadFileProcedure = "/agx.v1.ConfigurationService/ReadFile"
+	// ConfigurationServicePlanChangesProcedure is the fully-qualified name of the
+	// ConfigurationService's PlanChanges RPC.
+	ConfigurationServicePlanChangesProcedure = "/agx.v1.ConfigurationService/PlanChanges"
+	// ConfigurationServiceApplyChangesProcedure is the fully-qualified name of the
+	// ConfigurationService's ApplyChanges RPC.
+	ConfigurationServiceApplyChangesProcedure = "/agx.v1.ConfigurationService/ApplyChanges"
 	// PackageServiceInstallProcedure is the fully-qualified name of the PackageService's Install RPC.
 	PackageServiceInstallProcedure = "/agx.v1.PackageService/Install"
 	// PackageServiceUpdateProcedure is the fully-qualified name of the PackageService's Update RPC.
@@ -135,6 +141,11 @@ type ConfigurationServiceClient interface {
 	GetSkill(context.Context, *connect.Request[v1.GetSkillRequest]) (*connect.Response[v1.GetSkillResponse], error)
 	// One file of a configured skill or instructions definition, or of a configuration fragment.
 	ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error)
+	// Validates a set of changes against the configuration they would produce and returns their
+	// diff; writes nothing.
+	PlanChanges(context.Context, *connect.Request[v1.PlanChangesRequest]) (*connect.Response[v1.PlanChangesResponse], error)
+	// Writes a planned set of changes atomically, when no file changed since the plan.
+	ApplyChanges(context.Context, *connect.Request[v1.ApplyChangesRequest]) (*connect.Response[v1.ApplyChangesResponse], error)
 }
 
 // NewConfigurationServiceClient constructs a client for the agx.v1.ConfigurationService service. By
@@ -190,6 +201,18 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(configurationServiceMethods.ByName("ReadFile")),
 			connect.WithClientOptions(opts...),
 		),
+		planChanges: connect.NewClient[v1.PlanChangesRequest, v1.PlanChangesResponse](
+			httpClient,
+			baseURL+ConfigurationServicePlanChangesProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("PlanChanges")),
+			connect.WithClientOptions(opts...),
+		),
+		applyChanges: connect.NewClient[v1.ApplyChangesRequest, v1.ApplyChangesResponse](
+			httpClient,
+			baseURL+ConfigurationServiceApplyChangesProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ApplyChanges")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -202,6 +225,8 @@ type configurationServiceClient struct {
 	listDefinitions   *connect.Client[v1.ListDefinitionsRequest, v1.ListDefinitionsResponse]
 	getSkill          *connect.Client[v1.GetSkillRequest, v1.GetSkillResponse]
 	readFile          *connect.Client[v1.ReadFileRequest, v1.ReadFileResponse]
+	planChanges       *connect.Client[v1.PlanChangesRequest, v1.PlanChangesResponse]
+	applyChanges      *connect.Client[v1.ApplyChangesRequest, v1.ApplyChangesResponse]
 }
 
 // Validate calls agx.v1.ConfigurationService.Validate.
@@ -239,6 +264,16 @@ func (c *configurationServiceClient) ReadFile(ctx context.Context, req *connect.
 	return c.readFile.CallUnary(ctx, req)
 }
 
+// PlanChanges calls agx.v1.ConfigurationService.PlanChanges.
+func (c *configurationServiceClient) PlanChanges(ctx context.Context, req *connect.Request[v1.PlanChangesRequest]) (*connect.Response[v1.PlanChangesResponse], error) {
+	return c.planChanges.CallUnary(ctx, req)
+}
+
+// ApplyChanges calls agx.v1.ConfigurationService.ApplyChanges.
+func (c *configurationServiceClient) ApplyChanges(ctx context.Context, req *connect.Request[v1.ApplyChangesRequest]) (*connect.Response[v1.ApplyChangesResponse], error) {
+	return c.applyChanges.CallUnary(ctx, req)
+}
+
 // ConfigurationServiceHandler is an implementation of the agx.v1.ConfigurationService service.
 type ConfigurationServiceHandler interface {
 	Validate(context.Context, *connect.Request[v1.ValidateRequest]) (*connect.Response[v1.ValidateResponse], error)
@@ -253,6 +288,11 @@ type ConfigurationServiceHandler interface {
 	GetSkill(context.Context, *connect.Request[v1.GetSkillRequest]) (*connect.Response[v1.GetSkillResponse], error)
 	// One file of a configured skill or instructions definition, or of a configuration fragment.
 	ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error)
+	// Validates a set of changes against the configuration they would produce and returns their
+	// diff; writes nothing.
+	PlanChanges(context.Context, *connect.Request[v1.PlanChangesRequest]) (*connect.Response[v1.PlanChangesResponse], error)
+	// Writes a planned set of changes atomically, when no file changed since the plan.
+	ApplyChanges(context.Context, *connect.Request[v1.ApplyChangesRequest]) (*connect.Response[v1.ApplyChangesResponse], error)
 }
 
 // NewConfigurationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -304,6 +344,18 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 		connect.WithSchema(configurationServiceMethods.ByName("ReadFile")),
 		connect.WithHandlerOptions(opts...),
 	)
+	configurationServicePlanChangesHandler := connect.NewUnaryHandler(
+		ConfigurationServicePlanChangesProcedure,
+		svc.PlanChanges,
+		connect.WithSchema(configurationServiceMethods.ByName("PlanChanges")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceApplyChangesHandler := connect.NewUnaryHandler(
+		ConfigurationServiceApplyChangesProcedure,
+		svc.ApplyChanges,
+		connect.WithSchema(configurationServiceMethods.ByName("ApplyChanges")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.ConfigurationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ConfigurationServiceValidateProcedure:
@@ -320,6 +372,10 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 			configurationServiceGetSkillHandler.ServeHTTP(w, r)
 		case ConfigurationServiceReadFileProcedure:
 			configurationServiceReadFileHandler.ServeHTTP(w, r)
+		case ConfigurationServicePlanChangesProcedure:
+			configurationServicePlanChangesHandler.ServeHTTP(w, r)
+		case ConfigurationServiceApplyChangesProcedure:
+			configurationServiceApplyChangesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -355,6 +411,14 @@ func (UnimplementedConfigurationServiceHandler) GetSkill(context.Context, *conne
 
 func (UnimplementedConfigurationServiceHandler) ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.ReadFile is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) PlanChanges(context.Context, *connect.Request[v1.PlanChangesRequest]) (*connect.Response[v1.PlanChangesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.PlanChanges is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) ApplyChanges(context.Context, *connect.Request[v1.ApplyChangesRequest]) (*connect.Response[v1.ApplyChangesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.ApplyChanges is not implemented"))
 }
 
 // PackageServiceClient is a client for the agx.v1.PackageService service.
