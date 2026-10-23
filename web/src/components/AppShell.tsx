@@ -1,6 +1,6 @@
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link, useBlocker, useLocation } from "@tanstack/react-router";
 import { ActivityIcon, GitCompareArrowsIcon, type LucideIcon } from "lucide-react";
-import { type ReactNode, useEffect } from "react";
+import type { ReactNode } from "react";
 
 import {
   Sidebar,
@@ -40,15 +40,12 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   const staged = useStaging((state) => state.changes.length);
   const review = useStaging((state) => state.review);
   const pathname = useLocation({ select: (location) => location.pathname });
-  // Staged changes live only in this tab, so closing or reloading it asks first.
-  useEffect(() => {
-    if (staged === 0) {
-      return;
-    }
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [staged]);
+  // Staged changes live only in this tab, so closing or reloading it asks first; they survive
+  // moving between pages, so navigation is never blocked.
+  useBlocker({
+    shouldBlockFn: () => false,
+    enableBeforeUnload: () => useStaging.getState().changes.length > 0,
+  });
   return (
     <Toaster>
       <TooltipProvider>
