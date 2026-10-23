@@ -6,6 +6,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Added
 
+- Definitions carry an icon and color: a skill's from the `interface.icon_small` and
+  `interface.brand_color` its `agents/openai.yaml` declares, and an MCP server's from the
+  icons it declares when it starts (`McpTools.icon`), which the daemon keeps in
+  `mcp-icons.json` in its cache for while the server is not running.
 - `PackageService.PreviewSource` fetches a Git source (`owner/repo[@ref][/path]` or a URL)
   into the cache and lists its skills with their SKILL.md and files, without configuring
   anything; `ReadPreviewFile` reads one of their files for 30 minutes.
