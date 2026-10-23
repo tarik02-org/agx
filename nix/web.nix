@@ -26,7 +26,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     preFixup = ''
       rmdir "$storePath/v11/links" 2>/dev/null || true
     '';
-    hash = "sha256-UiULTnr1zIn9SLOwadx1YcbBL+MQyF3ufEVuYZsqoNA=";
+    hash = "sha256-tVWVTYsfdLGLN9DZ8rxID3/dA847q5dHNR5ollCssGY=";
   };
 
   nativeBuildInputs = [

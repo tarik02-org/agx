@@ -20,6 +20,7 @@ import { kinds } from "~/features/config/kinds.ts";
 import {
   definitionIcon,
   filesIcon,
+  harnessIcon,
   namespaceIcon,
   sectionIcon,
   toolIcon,
@@ -134,13 +135,18 @@ export function ConfigTree() {
   for (const definition of shown) {
     const here = enabledHere?.has(`${definition.kind}/${definition.id}`) === true;
     const path = `${label(definition.kind)}/${definition.id}`;
-    const icon = definitionIcon(
-      definition.kind,
-      definition.id,
-      definition.description,
-      definition.color,
-      definition.icon,
-    );
+    const builtin = configuration.data?.harnesses.find((h) => h.name === definition.id)?.builtin;
+    const icon =
+      (definition.kind === "harnesses" && builtin !== undefined
+        ? harnessIcon(builtin)
+        : undefined) ??
+      definitionIcon(
+        definition.kind,
+        definition.id,
+        definition.description,
+        definition.color,
+        definition.icon,
+      );
     if (icon !== undefined) {
       icons.set(path, icon);
     }

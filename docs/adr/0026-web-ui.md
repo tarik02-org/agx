@@ -77,6 +77,7 @@ Connecting to a remote daemon directly is out of scope.
 | State and effects | Effect 4 in a `ManagedRuntime` with `useFork`-style hooks, TanStack Query for cached queries (see below) |
 | Markdown | `react-markdown` 10 with `remark-gfm`, code blocks highlighted with Shiki, as T3 Code renders chat and pull request Markdown |
 | Diffs and file trees | `@pierre/diffs` (also Shiki highlighting) and `@pierre/trees` |
+| Harness logos | `@lobehub/icons-static-svg` (MIT), as SVG files |
 | Editors | forms for definitions and scopes (below); CodeMirror 6 for skill files and as the YAML fallback, validated and completed against the configuration JSON Schema the daemon serves at `/ui/schema.json` for its own version and harnesses |
 | Local state | Zustand for the staged changes, which live in the tab until applied |
 | Graphs | React Flow (`@xyflow/react`), only for the scope view (below) |

@@ -1,3 +1,6 @@
+import claudeLogo from "@lobehub/icons-static-svg/icons/claude-color.svg?raw";
+import codexLogo from "@lobehub/icons-static-svg/icons/codex-color.svg?raw";
+import piLogo from "@lobehub/icons-static-svg/icons/pi.svg?raw";
 import type { LucideIconData } from "lucide-react";
 import { __iconData as activity } from "lucide-react/dist/esm/icons/activity.mjs";
 import { __iconData as audioLines } from "lucide-react/dist/esm/icons/audio-lines.mjs";
@@ -179,3 +182,16 @@ export const definitionIcon = (
 /** An MCP server's tool: guessed from its name, a wrench otherwise; drawn plain, under its server. */
 export const toolIcon = (name: string): TreeIcon =>
   draw(hinted(name) ?? wrench, "var(--foreground)");
+
+const svgURI = (svg: string) => `data:image/svg+xml,${encodeURIComponent(svg)}`;
+
+// Built-in harnesses by their makers' logos: in color where the logo has its own, and in the
+// text color where it is a single shape.
+const harnessLogos: Readonly<Record<string, TreeIcon>> = {
+  claude: { image: svgURI(claudeLogo) },
+  codex: { image: svgURI(codexLogo) },
+  pi: { mask: `url(${JSON.stringify(svgURI(piLogo))})`, color: "var(--foreground)" },
+};
+
+/** A harness's icon: the logo of the built-in harness it is or extends, if one is known. */
+export const harnessIcon = (builtin: string): TreeIcon | undefined => harnessLogos[builtin];
