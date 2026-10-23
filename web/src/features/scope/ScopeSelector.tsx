@@ -50,8 +50,8 @@ export function ScopeSelector() {
           </Button>
         }
       />
-      <DialogContent className="gap-0 p-0 sm:max-w-md">
-        <DialogHeader className="p-4 pb-2">
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <DialogHeader className="border-b p-4">
           <DialogTitle>Scope</DialogTitle>
           <DialogDescription>
             Pages show what a launch in this directory gets, and enable things here.
@@ -63,6 +63,7 @@ export function ScopeSelector() {
           home={home}
           shortcuts={configuration.data?.scopeDirectories ?? []}
           everywhere
+          wide
           onPick={scopeTo}
         />
       </DialogContent>

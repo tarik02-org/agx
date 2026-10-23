@@ -6,14 +6,17 @@ import {
   FolderIcon,
   GlobeIcon,
   HouseIcon,
-  SearchIcon,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
 import { Button } from "~/components/ui/button.tsx";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group.tsx";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "~/components/ui/input-group.tsx";
 import { ScrollArea } from "~/components/ui/scroll-area.tsx";
-import { Separator } from "~/components/ui/separator.tsx";
 import { Spinner } from "~/components/ui/spinner.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
@@ -28,137 +31,171 @@ interface DirectoryBrowserProps {
   readonly shortcuts: ReadonlyArray<string>;
   /** Offers everywhere, the empty directory, among the shortcuts. */
   readonly everywhere?: boolean;
+  /** Shortcuts in a sidebar beside the folders, for a dialog; above them otherwise. */
+  readonly wide?: boolean;
   readonly onPick: (directory: string) => void;
 }
+
+const withSlash = (directory: string): string =>
+  directory.endsWith("/") ? directory : `${directory}/`;
+
+const withoutSlash = (path: string): string => path.replace(/(?<=.)\/+$/, "");
 
 const parentOf = (directory: string): string => {
   const parent = directory.slice(0, directory.lastIndexOf("/"));
   return parent === "" ? "/" : parent;
 };
 
-const isPath = (text: string): boolean => text.startsWith("/") || text.startsWith("~/");
-
 /**
- * Picks a directory: one of the shortcuts, or one found by browsing folders from the current one.
- * The filter narrows the folder list; a path typed there jumps to it.
+ * Picks a directory: one of the shortcuts, or one reached by browsing. The address bar is the
+ * folder being browsed, editable: typing narrows the folders to those starting with what follows
+ * the last slash, and a pasted path goes straight there.
  */
 export function DirectoryBrowser({
   value,
   home,
   shortcuts,
   everywhere = false,
+  wide = false,
   onPick,
 }: DirectoryBrowserProps) {
-  const [folder, setFolder] = useState(value === "" ? home : value);
-  const [filter, setFilter] = useState("");
-  // A typed path lists that path's parent, narrowed to its last segment.
-  const prefix = isPath(filter) ? filter : `${folder === "/" ? "" : folder}/${filter}`;
-  const children = useDaemonQuery(
-    queryKeys.completeDirectory(prefix),
-    Daemon.use((daemon) => daemon.completeDirectory(prefix)),
-    { enabled: folder !== "" },
+  // The address, as typed or browsed to, ~/… under home.
+  const [address, setAddress] = useState(withSlash(shortPath(value === "" ? home : value, home)));
+  const isPath = address.startsWith("/") || address.startsWith("~/");
+  const listing = useDaemonQuery(
+    queryKeys.completeDirectory(address),
+    Daemon.use((daemon) => daemon.completeDirectory(address)),
+    { enabled: isPath },
   );
-  const open = (next: string) => {
-    setFolder(next);
-    setFilter("");
-  };
+  const typed = absoluteDirectory(withoutSlash(address), home);
+  // A browsed folder ends in a slash; a typed one counts once the daemon lists it.
+  const folder =
+    isPath && (address.endsWith("/") || listing.data?.includes(typed) === true) ? typed : undefined;
+  const browse = (directory: string) => setAddress(withSlash(shortPath(directory, home)));
   const places = [
     ...new Set([home, ...shortcuts.map((directory) => absoluteDirectory(directory, home))]),
   ].filter((directory) => directory !== "");
 
-  return (
-    <div className="flex flex-col">
-      <div className="flex flex-col gap-px p-1">
-        {everywhere && (
-          <Place icon={<GlobeIcon />} picked={value === ""} onClick={() => onPick("")}>
-            Everywhere
-          </Place>
-        )}
-        {places.map((directory) => (
-          <Place
-            key={directory}
-            icon={directory === home ? <HouseIcon /> : <FolderIcon />}
-            picked={value === directory}
-            mono
-            onClick={() => onPick(directory)}
-          >
-            {shortPath(directory, home)}
-          </Place>
-        ))}
-      </div>
-      <Separator />
-      <div className="flex items-center gap-1 px-2 pt-2">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Parent folder"
-          disabled={folder === "/"}
-          onClick={() => open(parentOf(folder))}
+  const placeList = (
+    <div className="flex flex-col gap-px p-1">
+      {everywhere && (
+        <Place icon={<GlobeIcon />} picked={value === ""} onClick={() => onPick("")}>
+          Everywhere
+        </Place>
+      )}
+      {places.map((directory) => (
+        <Place
+          key={directory}
+          icon={directory === home ? <HouseIcon /> : <FolderIcon />}
+          picked={value === directory}
+          mono
+          onClick={() => (wide ? browse(directory) : onPick(directory))}
         >
-          <ArrowUpIcon />
-        </Button>
-        <span className="min-w-0 flex-1 truncate font-mono text-xs" title={folder}>
-          {shortPath(folder, home)}
-        </span>
-      </div>
-      <div className="px-2 pt-1.5 pb-1">
-        <InputGroup>
-          <InputGroupAddon>
-            <SearchIcon />
-          </InputGroupAddon>
-          <InputGroupInput
-            aria-label="Filter folders, or type a path"
-            placeholder="Filter, or type a path…"
-            autoComplete="off"
-            spellCheck={false}
-            className="font-mono"
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-            onKeyDown={(event) => {
-              // Enter opens the only match, or the typed path.
-              const only = children.data?.length === 1 ? children.data[0] : undefined;
-              if (event.key === "Enter" && only !== undefined) {
-                open(only);
-              } else if (event.key === "Enter" && isPath(filter)) {
-                open(absoluteDirectory(filter.replace(/\/+$/, ""), home) || "/");
-              }
-            }}
-          />
-          {children.isFetching && (
-            <InputGroupAddon align="inline-end">
-              <Spinner className="size-3" />
+          {shortPath(directory, home)}
+        </Place>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className={cn("flex min-h-0", wide ? "h-[28rem] flex-row" : "flex-col")}>
+      <nav
+        aria-label="Shortcuts"
+        className={cn(
+          "shrink-0",
+          wide ? "w-48 overflow-y-auto border-r bg-muted/30 py-1" : "border-b",
+        )}
+      >
+        {wide && (
+          <p className="px-3 pt-1.5 pb-1 text-[0.625rem] text-muted-foreground uppercase tracking-wider">
+            Scopes
+          </p>
+        )}
+        {placeList}
+      </nav>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="p-2">
+          <InputGroup>
+            <InputGroupAddon>
+              <InputGroupButton
+                size="icon-xs"
+                aria-label="Parent folder"
+                disabled={folder === "/" || !isPath}
+                onClick={() => browse(parentOf(typed))}
+              >
+                <ArrowUpIcon />
+              </InputGroupButton>
             </InputGroupAddon>
-          )}
-        </InputGroup>
-      </div>
-      <ScrollArea className="h-56">
-        <div className="flex flex-col gap-px p-1">
-          {(children.data ?? []).map((child) => (
-            <button
-              key={child}
-              type="button"
-              className="flex items-center gap-2 rounded-sm px-2 py-1 text-left font-mono text-xs hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
-              onClick={() => open(child)}
-            >
-              <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate">
-                {child.slice(child.lastIndexOf("/") + 1)}
-              </span>
-              <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground" />
-            </button>
-          ))}
-          {children.isSuccess && children.data.length === 0 && (
-            <p className="px-2 py-6 text-center text-muted-foreground text-xs">No folders here.</p>
-          )}
+            <InputGroupInput
+              aria-label="Path"
+              placeholder="/path/to/directory"
+              autoComplete="off"
+              spellCheck={false}
+              className="font-mono"
+              value={address}
+              onChange={(event) => setAddress(event.target.value)}
+              onKeyDown={(event) => {
+                // Enter goes into the typed folder, or the only one matching it.
+                const only = listing.data?.length === 1 ? listing.data[0] : undefined;
+                if (event.key === "Enter" && folder !== undefined) {
+                  browse(folder);
+                } else if (event.key === "Enter" && only !== undefined) {
+                  browse(only);
+                }
+              }}
+            />
+            {listing.isFetching && (
+              <InputGroupAddon align="inline-end">
+                <Spinner className="size-3" />
+              </InputGroupAddon>
+            )}
+          </InputGroup>
         </div>
-      </ScrollArea>
-      <Separator />
-      <div className="p-2">
-        <Button size="sm" className="w-full" onClick={() => onPick(folder)}>
-          <span className="min-w-0 truncate">
-            Use <span className="font-mono">{shortPath(folder, home)}</span>
-          </span>
-        </Button>
+        <ScrollArea className={cn("min-h-0", wide ? "flex-1" : "h-56")}>
+          <div className="flex flex-col gap-px px-1 pb-1">
+            {(listing.data ?? [])
+              .filter((child) => child !== typed)
+              .map((child) => (
+                <button
+                  key={child}
+                  type="button"
+                  className="flex items-center gap-2 rounded-sm px-2 py-1 text-left font-mono text-xs hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+                  onClick={() => browse(child)}
+                >
+                  <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {child.slice(child.lastIndexOf("/") + 1)}
+                  </span>
+                  <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                </button>
+              ))}
+            {listing.isSuccess && listing.data.filter((child) => child !== typed).length === 0 && (
+              <p className="px-2 py-6 text-center text-muted-foreground text-xs">
+                {address.endsWith("/") ? "No folders here." : "No matching folders."}
+              </p>
+            )}
+            {!isPath && (
+              <p className="px-2 py-6 text-center text-muted-foreground text-xs">
+                Paths start with / or ~/.
+              </p>
+            )}
+          </div>
+        </ScrollArea>
+        <div className="flex items-center gap-2 border-t p-2">
+          <Button
+            size="sm"
+            className={cn("min-w-0", !wide && "w-full", wide && "ml-auto")}
+            disabled={folder === undefined}
+            onClick={() => folder !== undefined && onPick(folder)}
+          >
+            <span className="min-w-0 truncate">
+              Use{" "}
+              <span className="font-mono">
+                {folder === undefined ? "…" : shortPath(folder, home)}
+              </span>
+            </span>
+          </Button>
+        </div>
       </div>
     </div>
   );

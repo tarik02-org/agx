@@ -177,70 +177,70 @@ function ToolPanel({
   );
   return (
     <>
-      <div className="flex flex-col gap-4 pr-3">
+      {/* The page's first section; the header above names the tool. */}
+      <Card size="sm">
+        {tool.title !== "" && (
+          <CardHeader>
+            <CardTitle>{tool.title}</CardTitle>
+          </CardHeader>
+        )}
+        <CardContent className="flex flex-col gap-2">
+          {tool.description !== "" && <Markdown>{tool.description}</Markdown>}
+          <ToolForm
+            schema={parseSchema(tool.inputSchemaJson)}
+            pending={call.isPending}
+            onCall={(argumentsJson) => {
+              setFailure(null);
+              call.mutate(argumentsJson, {
+                onSuccess: (response) => {
+                  setResult(response);
+                  history.record({
+                    server: server.mcpId,
+                    tool: tool.name,
+                    argumentsJson,
+                    isError: response.isError,
+                    at: Date.now(),
+                  });
+                },
+                onError: (error) => setFailure(error),
+              });
+            }}
+          />
+        </CardContent>
+      </Card>
+      {failure !== null && <DaemonProblem error={failure} />}
+      {result !== null && (
         <Card size="sm">
           <CardHeader>
-            {/* The top bar names the tool. */}
-            {tool.title !== "" && <CardTitle>{tool.title}</CardTitle>}
+            <CardTitle>Result</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {tool.description !== "" && <Markdown>{tool.description}</Markdown>}
-            <ToolForm
-              schema={parseSchema(tool.inputSchemaJson)}
-              pending={call.isPending}
-              onCall={(argumentsJson) => {
-                setFailure(null);
-                call.mutate(argumentsJson, {
-                  onSuccess: (response) => {
-                    setResult(response);
-                    history.record({
-                      server: server.mcpId,
-                      tool: tool.name,
-                      argumentsJson,
-                      isError: response.isError,
-                      at: Date.now(),
-                    });
-                  },
-                  onError: (error) => setFailure(error),
-                });
-              }}
-            />
+          <CardContent>
+            <ToolResult response={result} />
           </CardContent>
         </Card>
-        {failure !== null && <DaemonProblem error={failure} />}
-        {result !== null && (
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle>Result</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ToolResult response={result} />
-            </CardContent>
-          </Card>
-        )}
-        {own.length > 0 && (
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <HistoryIcon />
-                Earlier calls
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="flex flex-col gap-1">
-                {own.map((entry) => (
-                  <li key={entry.at} className="flex items-center gap-2 font-mono text-xs">
-                    <Badge variant={entry.isError ? "destructive" : "secondary"}>
-                      {new Date(entry.at).toLocaleTimeString()}
-                    </Badge>
-                    <span className="truncate text-muted-foreground">{entry.argumentsJson}</span>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+      )}
+      {own.length > 0 && (
+        <Card size="sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <HistoryIcon />
+              Earlier calls
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="flex flex-col gap-1">
+              {own.map((entry) => (
+                <li key={entry.at} className="flex items-center gap-2 font-mono text-xs">
+                  <Badge variant={entry.isError ? "destructive" : "secondary"}>
+                    {new Date(entry.at).toLocaleTimeString()}
+                  </Badge>
+                  <span className="truncate text-muted-foreground">{entry.argumentsJson}</span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 }
