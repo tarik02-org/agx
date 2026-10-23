@@ -1,22 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  CheckIcon,
-  CopyIcon,
-  KeyRoundIcon,
-  RotateCwIcon,
-  TerminalIcon,
-  UnplugIcon,
-} from "lucide-react";
+import { cn } from "cn";
+import { CheckIcon, CopyIcon, RotateCwIcon } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import { Badge } from "~/components/ui/badge.tsx";
 import { Button } from "~/components/ui/button.tsx";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput,
-} from "~/components/ui/input-group.tsx";
 import { Spinner } from "~/components/ui/spinner.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { type ConnectionLoss, useConnection } from "~/daemon/connection.ts";
@@ -66,26 +53,41 @@ export function ConnectionGate({ children }: { readonly children: ReactNode }) {
   return children;
 }
 
-/** The whole window, with one card in the middle: what happened above the rule, what to do below. */
+/** The whole window, on a grid that fades out around one panel. */
 function FullScreen({ children }: { readonly children: ReactNode }) {
   return (
     <main className="fixed inset-0 z-50 flex items-center justify-center bg-background p-6">
+      <div
+        aria-hidden
+        className="absolute inset-0 bg-[linear-gradient(to_right,var(--color-border)_1px,transparent_1px),linear-gradient(to_bottom,var(--color-border)_1px,transparent_1px)] bg-size-[2rem_2rem] mask-[radial-gradient(ellipse_at_center,black_10%,transparent_65%)] opacity-60"
+      />
       {/* A panel of its own; Card is a page section in this UI's density. */}
-      <section className="w-full max-w-md rounded-lg border bg-card text-xs shadow-lg">
+      <section className="relative w-full max-w-md overflow-hidden rounded-lg border bg-card shadow-2xl">
         {children}
       </section>
     </main>
   );
 }
 
-/** The card's top: the state at a glance. */
-function StateHeader({ icon, badge }: { readonly icon: ReactNode; readonly badge: ReactNode }) {
+// A state's colour tints the banner and outlines its word.
+const tones = {
+  primary: { banner: "bg-primary/5", word: "text-primary ring-primary/40" },
+  warning: { banner: "bg-warning/5", word: "text-warning ring-warning/40" },
+  destructive: { banner: "bg-destructive/5", word: "text-destructive ring-destructive/40" },
+} as const;
+
+/** The panel's top: the state as one word, boxed in its colour. */
+function StateBanner({ word, tone }: { readonly word: string; readonly tone: keyof typeof tones }) {
   return (
-    <header className="flex flex-col items-center gap-3 border-b p-6">
-      <div className="flex size-10 items-center justify-center rounded-md bg-muted text-muted-foreground [&_svg]:size-5">
-        {icon}
-      </div>
-      {badge}
+    <header className={cn("flex justify-center border-b px-6 py-7", tones[tone].banner)}>
+      <span
+        className={cn(
+          "rounded-md px-4 py-1.5 font-mono font-semibold text-3xl uppercase tracking-tight ring-1",
+          tones[tone].word,
+        )}
+      >
+        {word}
+      </span>
     </header>
   );
 }
@@ -101,8 +103,11 @@ function LoadingScreen() {
   }
   return (
     <FullScreen>
-      <StateHeader icon={<Spinner />} badge={<Badge variant="secondary">connecting</Badge>} />
-      <p className="p-6 text-center text-muted-foreground">Connecting to the agx daemon…</p>
+      <StateBanner word="agx" tone="primary" />
+      <p className="flex items-center justify-center gap-2 p-6 text-muted-foreground text-xs">
+        <Spinner className="size-3" />
+        Connecting to the daemon…
+      </p>
     </FullScreen>
   );
 }
@@ -110,8 +115,8 @@ function LoadingScreen() {
 const screens: Record<
   ConnectionLoss,
   {
-    readonly icon: ReactNode;
-    readonly badge: ReactNode;
+    readonly word: string;
+    readonly tone: keyof typeof tones;
     readonly title: string;
     readonly description: string;
     readonly command: string;
@@ -119,8 +124,8 @@ const screens: Record<
   }
 > = {
   "signed-out": {
-    icon: <KeyRoundIcon />,
-    badge: <Badge variant="warning">signed out</Badge>,
+    word: "Signed out",
+    tone: "warning",
     title: "This page's session ended",
     description:
       "The daemon restarted, or the page sat idle for 12 hours. Sign in again from a terminal; this page carries on by itself.",
@@ -128,8 +133,8 @@ const screens: Record<
     waiting: "Waiting for sign-in…",
   },
   unreachable: {
-    icon: <UnplugIcon />,
-    badge: <Badge variant="destructive">offline</Badge>,
+    word: "Offline",
+    tone: "destructive",
     title: "The daemon does not answer",
     description:
       "It stopped or is restarting. If it is not running, start it; this page carries on by itself.",
@@ -149,44 +154,42 @@ function ConnectionScreen({
   const [copied, setCopied] = useState(false);
   return (
     <FullScreen>
-      <StateHeader icon={screen.icon} badge={screen.badge} />
-      <div className="flex flex-col items-center gap-3 p-6 text-center">
-        <h1 className="font-heading font-semibold text-sm">{screen.title}</h1>
-        <p className="text-balance text-muted-foreground text-xs/relaxed">{screen.description}</p>
-        <InputGroup className="max-w-xs">
-          <InputGroupAddon>
-            <TerminalIcon />
-          </InputGroupAddon>
-          <InputGroupInput
-            readOnly
-            aria-label="Command"
-            value={screen.command}
-            className="font-mono"
-            onFocus={(event) => event.currentTarget.select()}
-          />
-          <InputGroupAddon align="inline-end">
-            <InputGroupButton
-              size="icon-xs"
-              aria-label={copied ? "Copied" : "Copy command"}
-              onClick={() =>
-                void navigator.clipboard.writeText(screen.command).then(() => setCopied(true))
-              }
-            >
-              {copied ? <CheckIcon /> : <CopyIcon />}
-            </InputGroupButton>
-          </InputGroupAddon>
-        </InputGroup>
-      </div>
-      <footer className="flex items-center justify-between gap-2 border-t bg-muted/30 px-4 py-2.5">
+      <StateBanner word={screen.word} tone={screen.tone} />
+      <div className="flex flex-col items-center gap-4 px-6 pt-6 pb-5 text-center">
+        <h1 className="font-heading font-semibold text-base tracking-tight">{screen.title}</h1>
+        <code className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-1.5 font-mono text-sm">
+          <span className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">
+            Run
+          </span>
+          {screen.command}
+        </code>
+        <p className="max-w-sm text-balance text-muted-foreground text-xs/relaxed">
+          {screen.description}
+        </p>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            onClick={() =>
+              void navigator.clipboard.writeText(screen.command).then(() => setCopied(true))
+            }
+          >
+            {copied ? (
+              <CheckIcon data-icon="inline-start" />
+            ) : (
+              <CopyIcon data-icon="inline-start" />
+            )}
+            {copied ? "Copied" : "Copy command"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={onRetry}>
+            <RotateCwIcon data-icon="inline-start" />
+            Try now
+          </Button>
+        </div>
         <span className="flex items-center gap-2 text-muted-foreground text-xs" aria-live="polite">
           <Spinner className="size-3" />
           {screen.waiting}
         </span>
-        <Button size="sm" variant="outline" onClick={onRetry}>
-          <RotateCwIcon data-icon="inline-start" />
-          Try now
-        </Button>
-      </footer>
+      </div>
     </FullScreen>
   );
 }
