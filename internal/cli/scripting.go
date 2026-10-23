@@ -19,6 +19,7 @@ import (
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/cli/ui"
+	"github.com/tarik02-org/agx/internal/configedit"
 	"github.com/tarik02-org/agx/internal/daemon"
 	"github.com/tarik02-org/agx/internal/packages"
 )
@@ -136,6 +137,7 @@ func codedf(code, format string, args ...any) error {
 func errorCode(err error) string {
 	var usage *usageError
 	var c *codedError
+	var edited *configedit.Error
 	var rpc *connect.Error
 	var netErr net.Error
 	switch {
@@ -143,6 +145,8 @@ func errorCode(err error) string {
 		return codeUsage
 	case errors.As(err, &c):
 		return c.code
+	case errors.As(err, &edited):
+		return string(edited.Code)
 	case errors.Is(err, daemon.ErrVersionMismatch), errors.Is(err, daemon.ErrNewerDiscovery):
 		return codeVersionMismatch
 	case errors.Is(err, daemon.ErrUnavailable):

@@ -297,7 +297,7 @@ func offerLogin(ctx context.Context, s *session, id, url string, browser bool) (
 		hint(id + " asks for an OAuth login; run " + later + " to log in.")
 		return true, nil
 	}
-	if !autostart(s.config) && !daemonReachable(s.paths) {
+	if !autostart(s.Config) && !daemonReachable(s.Paths) {
 		ui.Note(id + " asks for an OAuth login. Start the daemon with agx daemon start, then run " + later + ".")
 		return true, nil
 	}
@@ -309,7 +309,7 @@ func offerLogin(ctx context.Context, s *session, id, url string, browser bool) (
 		ui.Note("Run " + later + " to log in later.")
 		return true, nil
 	}
-	return true, login(ctx, s.paths, id, browser, autostart(s.config))
+	return true, login(ctx, s.Paths, id, browser, autostart(s.Config))
 }
 
 // daemonReachable reports whether a daemon of this version answers, so a login can run now.
@@ -542,8 +542,8 @@ func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind string
 					return err
 				}
 			}
-			_, isSkill := s.config.Skills[config.ID(id)]
-			isPackage := kind == edit.Skills && !isSkill && s.skillPackage(config.ID(id))
+			_, isSkill := s.Config.Skills[config.ID(id)]
+			isPackage := kind == edit.Skills && !isSkill && s.SkillPackage(config.ID(id))
 			switch {
 			case kind == "harnesses":
 				err = s.removeHarness(id, force)
