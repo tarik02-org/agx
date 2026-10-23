@@ -3,11 +3,16 @@
 package ui
 
 import (
+	"bytes"
+	"compress/gzip"
 	"embed"
 	"io/fs"
+	"mime"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
+	"sync"
 )
 
 //go:embed all:dist
@@ -55,9 +60,75 @@ func Handler(prefix string) http.Handler {
 		if strings.HasPrefix(name, "assets/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		}
+		if compressible(name) {
+			w.Header().Set("Vary", "Accept-Encoding")
+		}
+		if compressible(name) && acceptsGzip(r) {
+			content, err := gzipped(files, name)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(name)))
+			w.Header().Set("Content-Length", strconv.Itoa(len(content)))
+			_, _ = w.Write(content)
+			return
+		}
 		r.URL.Path = "/" + name
 		server.ServeHTTP(w, r)
 	}))
+}
+
+// compressible reports whether a file is text, which gzip shrinks to about a third; fonts and
+// images are compressed already.
+func compressible(name string) bool {
+	switch path.Ext(name) {
+	case ".js", ".css", ".svg", ".json", ".wasm":
+		return true
+	}
+	return false
+}
+
+// acceptsGzip reports whether the request lists gzip among its encodings, and not with q=0.
+func acceptsGzip(r *http.Request) bool {
+	for _, encoding := range strings.Split(r.Header.Get("Accept-Encoding"), ",") {
+		token, params, _ := strings.Cut(encoding, ";")
+		if strings.TrimSpace(token) != "gzip" {
+			continue
+		}
+		quality, found := strings.CutPrefix(strings.TrimSpace(params), "q=")
+		value, err := strconv.ParseFloat(quality, 64)
+		return !found || err != nil || value > 0
+	}
+	return false
+}
+
+// The embedded files are compressed once each, on first request, at the best level: they never
+// change while the daemon runs, and the browser caches the hashed assets for good.
+var compressed sync.Map
+
+func gzipped(files fs.FS, name string) ([]byte, error) {
+	if content, ok := compressed.Load(name); ok {
+		return content.([]byte), nil
+	}
+	content, err := fs.ReadFile(files, name)
+	if err != nil {
+		return nil, err
+	}
+	var buffer bytes.Buffer
+	writer, err := gzip.NewWriterLevel(&buffer, gzip.BestCompression)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := writer.Write(content); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	compressed.Store(name, buffer.Bytes())
+	return buffer.Bytes(), nil
 }
 
 const placeholder = `<!doctype html>

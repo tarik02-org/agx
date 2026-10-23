@@ -2,64 +2,20 @@ import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import * as NodeURL from "node:url";
-import { defineConfig, type Plugin } from "vite-plus";
+import { defineConfig } from "vite-plus";
 
 // `vp dev` serves the UI on its own port and forwards RPCs and the sign-in to a running daemon,
 // whose address agx daemon status prints. The daemon accepts only its own Origin.
 const daemon = process.env["AGX_DAEMON_URL"] ?? "http://127.0.0.1:7623";
 
-const source = (path: string) => NodeURL.fileURLToPath(new URL(path, import.meta.url));
-
-// The daemon binary embeds every chunk the build emits, lazy or not, so dependencies' code paths
-// the UI never takes are swapped out before they are bundled. @pierre/diffs loads these only for
-// highlighters other than its default "shiki-js" (its own engine, Shiki's WASM one) and for themes
-// not registered with it.
-const unusedModules = new Set([
-  "shiki/wasm",
-  "shiki/engine/oniguruma",
-  "@pierre/highlights/themes/loader",
-  "@pierre/theming/themes",
-]);
-
-const trimDependencies: Plugin = {
-  name: "agx:trim-dependencies",
-  enforce: "pre",
-  resolveId(source) {
-    return unusedModules.has(source) ? `\0unused:${source}` : null;
-  },
-  load(id) {
-    if (
-      id.startsWith("\0unused:") ||
-      id.endsWith("/@pierre/diffs/dist/highlighter/backends/highlights.js")
-    ) {
-      return 'throw new Error("not part of the agx UI build");';
-    }
-    // codemirror-json-schema renders hover documentation with markdown-it plus a Shiki 1
-    // highlighter it builds at import time, WASM engine included. Schema descriptions carry no code.
-    if (id.endsWith("/codemirror-json-schema/dist/utils/markdown.js")) {
-      return [
-        'import md from "markdown-it";',
-        "const renderer = md({ linkify: true, typographer: true });",
-        "export const renderMarkdown = (markdown, inline = true) =>",
-        "  inline ? renderer.renderInline(markdown) : renderer.render(markdown);",
-      ].join("\n");
-    }
-    return null;
-  },
-};
-
 export default defineConfig({
   base: "/ui/",
   resolve: {
-    alias: [
-      { find: "~", replacement: source("./src") },
-      { find: /^shiki\/langs$/, replacement: source("./src/lib/highlighter/languages.ts") },
-    ],
+    alias: { "~": NodeURL.fileURLToPath(new URL("./src", import.meta.url)) },
   },
   plugins: [
     tanstackRouter({ target: "react", autoCodeSplitting: true }),
     react({ compiler: true }),
-    trimDependencies,
     tailwindcss(),
   ],
   server: {
@@ -73,9 +29,9 @@ export default defineConfig({
     outDir: "../internal/ui/dist",
     emptyOutDir: true,
     assetsDir: "assets",
-    // The daemon serves these from localhost. The largest chunk, CodeMirror with its JSON Schema
-    // support, loads only once a YAML or Markdown editor shows.
-    chunkSizeWarningLimit: 900,
+    // The daemon serves these from localhost. The largest chunks load only when used: Shiki's
+    // grammars and WASM engine, and CodeMirror, whose JSON Schema support brings its own Shiki.
+    chunkSizeWarningLimit: 1100,
   },
   fmt: {
     ignorePatterns: [

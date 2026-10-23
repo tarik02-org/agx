@@ -1,9 +1,10 @@
 import { type ReactNode, useEffect, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { BundledLanguage } from "shiki";
 
-// Shiki loads on first use, so pages that render no code never fetch it.
-const highlighter = () => import("~/lib/highlighter/highlighter.ts");
+// Shiki loads its grammars on first use, so pages that render no code never fetch it.
+const highlighter = () => import("shiki");
 
 /** Code highlighted with Shiki once it loads, plain until then. */
 export function Code({ code, language }: { readonly code: string; readonly language: string }) {
@@ -11,7 +12,12 @@ export function Code({ code, language }: { readonly code: string; readonly langu
   useEffect(() => {
     let current = true;
     void highlighter()
-      .then(({ highlight }) => highlight(code, language))
+      .then(({ codeToHtml, bundledLanguages }) =>
+        codeToHtml(code, {
+          lang: language in bundledLanguages ? (language as BundledLanguage) : "text",
+          theme: "github-dark-default",
+        }),
+      )
       .then((rendered) => {
         if (current) {
           setHtml(rendered);
