@@ -126,6 +126,8 @@ tool whose author already writes Effect, and Aperture uses the same model.
 ## Layout and scope
 
 - A top bar navigates between pages and holds the scope and the staged changes.
+  Below it, each page's header holds its breadcrumbs and every action, an
+  editor's Stage and Revert included, so actions are always at the top.
 - The sidebar, the same on every page, is the configuration as a tree, not a
   list of pages: definitions by kind, package skills under their package, and
   the files. Skills hold their files and MCP servers their tools, loaded when

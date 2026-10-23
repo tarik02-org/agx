@@ -6,8 +6,8 @@ import { Button } from "~/components/ui/button.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
-import { DirectoryPicker } from "~/features/explain/DirectoryPicker.tsx";
-import { absoluteDirectory, useScopeDirectory } from "~/features/scope/scope.ts";
+import { DirectoryBrowser } from "~/features/scope/DirectoryBrowser.tsx";
+import { useScopeDirectory } from "~/features/scope/scope.ts";
 import { shortPath } from "~/lib/path.ts";
 
 /** Picks the directory every page is scoped to, or everywhere. */
@@ -43,20 +43,18 @@ export function ScopeSelector() {
           </Button>
         }
       />
-      <PopoverContent align="end" className="flex w-auto flex-col gap-2">
-        <span className="text-muted-foreground text-xs">
+      <PopoverContent align="end" className="w-80 gap-0 p-0">
+        <p className="px-3 pt-2.5 pb-1.5 text-muted-foreground text-xs">
           Pages show what a launch in this directory gets, and enable things here.
-        </span>
-        <DirectoryPicker
-          value={directory === "" ? "" : shortPath(directory, home)}
-          suggestions={configuration.data?.scopeDirectories ?? []}
-          onChange={(next) => scopeTo(absoluteDirectory(next, home))}
-          className="w-[28rem]"
+        </p>
+        <DirectoryBrowser
+          key={String(open)}
+          value={directory}
+          home={home}
+          shortcuts={configuration.data?.scopeDirectories ?? []}
+          everywhere
+          onPick={scopeTo}
         />
-        <Button variant="ghost" size="sm" disabled={directory === ""} onClick={() => scopeTo("")}>
-          <GlobeIcon data-icon="inline-start" />
-          Everywhere
-        </Button>
       </PopoverContent>
     </Popover>
   );

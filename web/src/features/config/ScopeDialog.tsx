@@ -1,3 +1,4 @@
+import { FolderIcon } from "lucide-react";
 import { useState } from "react";
 import type { ReactElement } from "react";
 
@@ -21,13 +22,15 @@ import {
   FieldLegend,
   FieldSet,
 } from "~/components/ui/field.tsx";
+import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover.tsx";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group.tsx";
 import { toast } from "~/components/ui/toast.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
 import { type Scope, scopeLabel, select, useStaging } from "~/features/config/staging.ts";
-import { DirectoryPicker } from "~/features/explain/DirectoryPicker.tsx";
+import { DirectoryBrowser } from "~/features/scope/DirectoryBrowser.tsx";
 import { useScopeDirectory } from "~/features/scope/scope.ts";
+import { shortPath } from "~/lib/path.ts";
 
 interface ScopePickerProps {
   readonly scope: Scope;
@@ -65,9 +68,10 @@ export function ScopePicker({ scope, onChange }: ScopePickerProps) {
           <ToggleGroupItem value="directory">Under a directory</ToggleGroupItem>
         </ToggleGroup>
         {!everywhere && (
-          <DirectoryPicker
+          <DirectoryField
             value={scope.directory}
-            suggestions={configuration.data?.scopeDirectories ?? []}
+            home={configuration.data?.home ?? ""}
+            shortcuts={configuration.data?.scopeDirectories ?? []}
             onChange={(directory) => onChange({ ...scope, directory })}
           />
         )}
@@ -98,6 +102,45 @@ export function ScopePicker({ scope, onChange }: ScopePickerProps) {
         </div>
       </FieldSet>
     </FieldGroup>
+  );
+}
+
+/** A directory, shown as a button that opens the directory browser. */
+function DirectoryField({
+  value,
+  home,
+  shortcuts,
+  onChange,
+}: {
+  readonly value: string;
+  readonly home: string;
+  readonly shortcuts: ReadonlyArray<string>;
+  readonly onChange: (directory: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={
+          <Button variant="outline" className="justify-start font-mono">
+            <FolderIcon data-icon="inline-start" />
+            <span className="truncate">{shortPath(value, home)}</span>
+          </Button>
+        }
+      />
+      <PopoverContent align="start" className="w-80 gap-0 p-0">
+        <DirectoryBrowser
+          key={String(open)}
+          value={value}
+          home={home}
+          shortcuts={shortcuts}
+          onPick={(directory) => {
+            setOpen(false);
+            onChange(directory);
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
 
