@@ -3,8 +3,8 @@ import * as Schema from "effect/Schema";
 
 import { ErrorDetail_Reason, ErrorDetailSchema } from "~/gen/agx/v1/agx_pb.ts";
 
-// The daemon's closed set of failure reasons (agx.v1.ErrorDetail), and `unreachable` when no
-// daemon answers. Pages branch on these, never on Connect codes or messages.
+// The daemon's closed set of failure reasons (agx.v1.ErrorDetail), `unreachable` when no daemon
+// answers, and `canceled` when the page itself gave up on a request. Pages branch on these, never on Connect codes or messages.
 export const DaemonFailure = Schema.Literals([
   "invalid_request",
   "not_found",
@@ -18,6 +18,7 @@ export const DaemonFailure = Schema.Literals([
   "internal",
   "mcp_failed",
   "unreachable",
+  "canceled",
 ]);
 export type DaemonFailure = typeof DaemonFailure.Type;
 
@@ -56,7 +57,7 @@ const fromReason = (reason: ErrorDetail_Reason): DaemonFailure | undefined => {
   }
 };
 
-// fromCode classifies errors the daemon sent without a detail, and transport failures.
+// fromCode classifies errors the daemon sent without a detail.
 const fromCode = (code: Code): DaemonFailure => {
   switch (code) {
     case Code.Unauthenticated:
@@ -75,11 +76,12 @@ const fromCode = (code: Code): DaemonFailure => {
     case Code.DeadlineExceeded:
       return "timeout";
     case Code.Unavailable:
-    case Code.Canceled:
-    case Code.Unknown:
       return "unreachable";
+    case Code.Canceled:
+      return "canceled";
     case Code.ResourceExhausted:
       return "unavailable";
+    case Code.Unknown:
     case Code.Unimplemented:
     case Code.Internal:
     case Code.DataLoss:
@@ -90,6 +92,11 @@ const fromCode = (code: Code): DaemonFailure => {
 /** Classifies a failed daemon call, which the Connect client reports as a thrown value. */
 export const daemonError = (operation: string, cause: unknown): DaemonError => {
   const error = ConnectError.from(cause);
+  // A request that never reached the daemon fails in fetch, which throws a TypeError; the
+  // Connect client wraps it as Unknown, the code a daemon's plain error also has.
+  if (error.cause instanceof TypeError) {
+    return new DaemonError({ operation, reason: "unreachable", message: error.rawMessage });
+  }
   const detail = error.findDetails(ErrorDetailSchema)[0];
   const reason =
     (detail === undefined ? undefined : fromReason(detail.reason)) ?? fromCode(error.code);

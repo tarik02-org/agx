@@ -40,18 +40,31 @@ export function Code({ code, language }: { readonly code: string; readonly langu
   );
 }
 
-// Code spans stay inline; fenced blocks with a language are highlighted.
+// A node of the HTML syntax tree react-markdown renders, as far as its text goes.
+interface TextNode {
+  readonly value?: string;
+  readonly children?: ReadonlyArray<TextNode>;
+}
+
+const nodeText = (node: TextNode): string =>
+  node.value ?? (node.children ?? []).map(nodeText).join("");
+
+// Fenced and indented blocks are highlighted, plain text without a language; code spans stay
+// inline. A block is told apart by its <pre>, since a block without a language has no class.
 const markdownComponents: Components = {
-  code: ({ className, children }): ReactNode => {
-    const language = /language-(\S+)/.exec(className ?? "")?.[1];
-    const text = String(children).replace(/\n$/, "");
-    return language === undefined ? (
-      <code className="rounded-sm bg-muted px-1">{text}</code>
-    ) : (
-      <Code code={text} language={language} />
-    );
+  code: ({ children }): ReactNode => <code className="rounded-sm bg-muted px-1">{children}</code>,
+  pre: ({ node }): ReactNode => {
+    const code = node?.children[0];
+    if (code === undefined || code.type !== "element" || code.tagName !== "code") {
+      return null;
+    }
+    const classes = code.properties["className"];
+    const language = (Array.isArray(classes) ? classes : [])
+      .map(String)
+      .find((name) => name.startsWith("language-"))
+      ?.slice("language-".length);
+    return <Code code={nodeText(code).replace(/\n$/, "")} language={language ?? "text"} />;
   },
-  pre: ({ children }) => <>{children}</>,
 };
 
 /** GitHub-flavored Markdown, as skills and MCP tools write it, with highlighted code blocks. */

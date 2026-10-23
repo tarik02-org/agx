@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   putFields,
+  readList,
   readMap,
   readString,
   readValue,
@@ -67,5 +68,12 @@ describe("yamlDocument", () => {
       value: "docs-token",
     });
     expect(readString(back, ["url"])).toBe("https://example.com/mcp");
+  });
+
+  it("reads no row for an empty list item", () => {
+    expect(readList("harnesses: [claude, ]\nargs:\n  - a\n  -\n", ["harnesses"])).toEqual([
+      "claude",
+    ]);
+    expect(readList("args:\n  - a\n  -\n", ["args"])).toEqual(["a"]);
   });
 });

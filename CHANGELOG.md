@@ -7,7 +7,7 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ### Added
 
 - `agx ui` opens a web UI the daemon serves on its own port, signed in with a one-time link
-  that the browser trades for a session cookie (`--print` prints the link). Its runtime page
+  that the browser trades for a session token (`--print` prints the link). Its runtime page
   shows launches live, MCP server processes, secrets, and package installation, with
   revoke, restart, OAuth login and logout, and install actions. A sidebar shows the
   configuration as a tree, with skills' files and MCP servers' tools loaded on expand, all of

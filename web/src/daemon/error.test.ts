@@ -38,4 +38,13 @@ describe("daemonError", () => {
       "unreachable",
     );
   });
+
+  it("keeps an error the daemon answered with apart from an unreachable daemon", () => {
+    expect(
+      daemonError("resolve", new ConnectError("open agx.yaml: denied", Code.Unknown)).reason,
+    ).toBe("internal");
+    expect(
+      daemonError("resolve", new ConnectError("the operation was aborted", Code.Canceled)).reason,
+    ).toBe("canceled");
+  });
 });

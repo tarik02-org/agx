@@ -54,7 +54,16 @@ export const readBoolean = (text: string, path: FieldPath): boolean =>
 
 export const readList = (text: string, path: FieldPath): ReadonlyArray<string> => {
   const node = parseDocument(text).getIn(path, true);
-  return isSeq(node) ? node.items.map((item) => (isScalar(item) ? String(item.value) : "")) : [];
+  if (!isSeq(node)) {
+    return [];
+  }
+  // An empty item (`[a, ]`, or `-` alone) is null and says nothing, so it is not a row.
+  return node.items.flatMap((item) => {
+    if (!isScalar(item)) {
+      return [""];
+    }
+    return item.value === null ? [] : [String(item.value)];
+  });
 };
 
 /** Whether a field is written, even empty. */

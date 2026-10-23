@@ -6,10 +6,13 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { useConnection } from "~/daemon/connection.ts";
+import { takeSession } from "~/daemon/session.ts";
 import { RuntimeProvider } from "~/effect/react.tsx";
 import { makeAgxRuntime } from "~/effect/runtime.ts";
 import { routeTree } from "~/routeTree.gen.ts";
 
+// Before the router reads the address, which carries a new session once.
+takeSession();
 const router = createRouter({ routeTree, basepath: "/ui", scrollRestoration: true });
 // Lives as long as the page; nothing to dispose.
 const runtime = makeAgxRuntime();

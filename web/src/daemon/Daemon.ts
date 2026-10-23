@@ -10,6 +10,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import { DaemonError, daemonError } from "~/daemon/error.ts";
+import { sessionHeaders } from "~/daemon/session.ts";
 import { ConfigSchema } from "~/lib/configSchema.ts";
 import {
   type ConfigChangeSchema,
@@ -39,7 +40,7 @@ import {
   type WatchOperationResponse,
 } from "~/gen/agx/v1/agx_pb.ts";
 
-// The daemon that serves the page, reached with the session cookie its sign-in set.
+// The daemon that serves the page, reached with the session its sign-in handed over.
 export class Daemon extends Context.Service<
   Daemon,
   {
@@ -152,7 +153,7 @@ const schemaFailure = (reason: DaemonError["reason"], message: string) =>
 const fetchSchema = (origin: string): Effect.Effect<ConfigSchema, DaemonError> =>
   Effect.gen(function* () {
     const response = yield* Effect.tryPromise({
-      try: (signal) => fetch(`${origin}/ui/schema.json`, { signal }),
+      try: (signal) => fetch(`${origin}/ui/schema.json`, { signal, headers: sessionHeaders() }),
       catch: () => schemaFailure("unreachable", "no daemon answered"),
     });
     if (response.status === 401) {
@@ -171,7 +172,17 @@ const fetchSchema = (origin: string): Effect.Effect<ConfigSchema, DaemonError> =
   });
 
 export const makeDaemon = (): Daemon["Service"] => {
-  const transport = createConnectTransport({ baseUrl: globalThis.location.origin });
+  const transport = createConnectTransport({
+    baseUrl: globalThis.location.origin,
+    interceptors: [
+      (next) => (request) => {
+        for (const [name, value] of Object.entries(sessionHeaders())) {
+          request.header.set(name, value);
+        }
+        return next(request);
+      },
+    ],
+  });
   const runtime = createClient(RuntimeService, transport);
   const launches = createClient(LaunchService, transport);
   const secrets = createClient(SecretService, transport);

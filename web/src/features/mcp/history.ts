@@ -23,7 +23,8 @@ const read = (): ReadonlyArray<HistoryEntry> =>
 export function useCallHistory() {
   const [entries, setEntries] = useState(read);
   const record = (entry: HistoryEntry) => {
-    const next = [entry, ...entries].slice(0, limit);
+    // Another tab may have recorded calls since this one read them.
+    const next = [entry, ...read()].slice(0, limit);
     globalThis.localStorage.setItem(storageKey, encodeHistory(next));
     setEntries(next);
   };

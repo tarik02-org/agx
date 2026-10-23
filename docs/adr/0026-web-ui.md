@@ -40,15 +40,20 @@ with the management credential, delivered without ever putting it in a URL:
 
 1. `agx ui` asks the daemon (with the management token) for a one-time code,
    valid for 60 seconds, and opens `/ui/login?code=<code>`.
-2. The daemon exchanges the code for a session cookie:
-   - `HttpOnly`, `SameSite=Strict`, path `/`, no `Secure` flag, since the
-     connection is plain HTTP on loopback;
-   - it expires with the daemon or after 12 hours of inactivity. Sessions live
+2. The daemon exchanges the code for a session token and redirects to
+   `/ui/#session=<token>`, without the code. Browsers never send the fragment
+   to a server; the page moves the token into its `localStorage`, which is
+   kept per origin and so per port, drops it from the address, and sends it as
+   `Authorization: Bearer`.
+   - Not a cookie: browsers scope cookies by host, not port, so a cookie on
+     `127.0.0.1` would reach every other local server the browser visits, and
+     two daemons on different ports would overwrite each other's.
+   - It expires with the daemon or after 12 hours of inactivity. Sessions live
      in the daemon's memory only: after a daemon restart the UI asks to run
      `agx ui` again.
-
-   The browser is then redirected to `/ui/` without the code.
-3. Requests carrying that cookie are authorized like the management token.
+   - A session cannot create login codes, which take the management token
+     only, so it cannot extend itself past its idle limit.
+3. Requests carrying a session token are authorized like the management token.
    The checks:
    - `Host` must be `127.0.0.1:<port>` or `localhost:<port>`, which stops DNS
      rebinding;
@@ -267,7 +272,7 @@ About three weeks, shippable after each step:
 
 1. `web/` scaffold:
    - toolchain configs, theme, shell layout, and the Effect RPC layer;
-   - login codes and cookie sessions, embedding, and the Nix and GoReleaser
+   - login codes and sessions, embedding, and the Nix and GoReleaser
      builds;
    - CI for all of it.
 

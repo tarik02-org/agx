@@ -35,7 +35,8 @@ func Handler(prefix string) http.Handler {
 		if name == "" || name == ".keep" {
 			name = "index.html"
 		}
-		if _, err := fs.Stat(files, name); err != nil {
+		// A directory is a route too: the file server would redirect it to a listing.
+		if info, err := fs.Stat(files, name); err != nil || info.IsDir() {
 			name = "index.html"
 		}
 		if name == "index.html" {

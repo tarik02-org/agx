@@ -5,7 +5,8 @@ import { fileLanguage } from "~/features/skills/SkillFiles.tsx";
 export const splitFrontmatter = (
   skillMd: string,
 ): { readonly frontmatter: string; readonly body: string } => {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(skillMd);
+  // The block may be empty, and its closing --- ends its line.
+  const match = /^---\r?\n(?:([\s\S]*?)\r?\n)?---(?:\r?\n|$)/.exec(skillMd);
   return match === null
     ? { frontmatter: "", body: skillMd }
     : { frontmatter: match[1] ?? "", body: skillMd.slice(match[0].length) };

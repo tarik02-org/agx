@@ -66,8 +66,10 @@ port, so only this machine can reach it.
 ## Signing in
 
 `agx ui` asks the daemon for a one-time sign-in link. The link works once and
-for one minute, and the browser trades it for a session cookie that the page
-keeps for 12 hours of use. The management token never appears in an address.
+for one minute, and the browser trades it for a session token that the page
+keeps in its own storage and that lasts for 12 hours of use. The management
+token never appears in an address, and the session never in a cookie, which
+browsers would send to every other local server.
 Sessions live in the daemon's memory, so after `agx daemon restart` the page
 says it is signed out: run `agx ui` again.
 

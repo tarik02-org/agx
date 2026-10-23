@@ -33,6 +33,9 @@ export function DaemonProblem({ error }: { readonly error: DaemonError }) {
           {error.message} Review the latest state and try again.
         </Problem>
       );
+    case "canceled":
+      // The page stopped waiting itself, as when leaving it; there is nothing to fix.
+      return null;
     case "failed_precondition":
       return <Problem title="Not possible here">{error.message}</Problem>;
     case "needs_login":
