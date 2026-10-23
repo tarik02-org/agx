@@ -531,6 +531,8 @@ message McpTools {
   string server_name = 6;
   string server_version = 7;
   repeated McpTool tools = 8;
+  // The icon the server declares, as a data URI; empty when it declares none.
+  string icon = 9;
 }
 message McpTool {
   string name = 1;
@@ -654,6 +656,9 @@ message Definition {
   // A #rrggbb color for the definition's icon: the brand color a skill's agents/openai.yaml
   // declares for its interface; empty when there is none.
   string color = 9;
+  // An image for the definition's icon, as a data URI: the icon_small a skill's
+  // agents/openai.yaml names, or the icon an MCP server declared when it last started.
+  string icon = 10;
 }
 message ListDefinitionsRequest {}
 message ListDefinitionsResponse {

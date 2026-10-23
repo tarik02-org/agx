@@ -134,7 +134,10 @@ const hinted = (text: string): LucideIconData | undefined => {
   )?.[1];
 };
 
-const draw = (icon: LucideIconData, color: string): TreeIcon => ({ mask: iconMask(icon), color });
+const draw = (icon: LucideIconData, color: string): TreeIcon => ({
+  mask: iconMask(icon),
+  color,
+});
 
 /** A section of the tree, such as Skills. */
 export const sectionIcon = (kind: string): TreeIcon | undefined => {
@@ -150,18 +153,23 @@ export const namespaceIcon = (isPackage: boolean): TreeIcon =>
   draw(isPackage ? packageIcon : folder, containerColor);
 
 /**
- * A definition's icon: guessed from its name, then its description, for kinds whose names say
- * what they do, and its kind's otherwise; drawn in the brand color it declares, if any.
+ * A definition's icon: the image it declares, if any; otherwise guessed from its name, then its
+ * description, for kinds whose names say what they do, and its kind's otherwise, drawn in the
+ * brand color it declares, if any.
  */
 export const definitionIcon = (
   kind: string,
   id: string,
   description: string,
   brandColor: string,
+  image: string,
 ): TreeIcon | undefined => {
   const style = kindStyles[kind];
   if (style === undefined) {
     return undefined;
+  }
+  if (image !== "") {
+    return { image };
   }
   const name = id.slice(id.lastIndexOf("/") + 1);
   const icon = style.guessed ? (hinted(name) ?? hinted(description) ?? style.item) : style.item;

@@ -377,6 +377,7 @@ func (s *Server) listTools(ctx context.Context, scope *callScope, id config.ID) 
 		out.Tools = out.Tools[:0]
 		if info := session.InitializeResult().ServerInfo; info != nil {
 			out.ServerName, out.ServerVersion = info.Name, info.Version
+			out.Icon = s.icons.update(ctx, string(id), info.Icons)
 		}
 		for tool, err := range session.Tools(ctx, nil) {
 			if err != nil {

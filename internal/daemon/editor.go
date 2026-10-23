@@ -8,7 +8,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -44,7 +43,7 @@ func (s *Server) ListDefinitions(
 	if err != nil {
 		return nil, configError(err)
 	}
-	d := newDescriber(c)
+	d := newDescriber(c, s.icons)
 	out := &v1.ListDefinitionsResponse{Definitions: []*v1.Definition{}}
 	for _, kind := range configedit.Kinds {
 		for _, id := range definitionIDs(c, kind) {
@@ -91,12 +90,18 @@ func names[V any](m map[config.ID]V) []string {
 // describer builds definitions, opening each fragment once.
 type describer struct {
 	c     *config.Config
+	icons *mcpIcons
 	files map[string]*edit.File
 	modes map[string]*v1.ConfigurationFile
 }
 
-func newDescriber(c *config.Config) *describer {
-	return &describer{c: c, files: map[string]*edit.File{}, modes: map[string]*v1.ConfigurationFile{}}
+func newDescriber(c *config.Config, icons *mcpIcons) *describer {
+	return &describer{
+		c:     c,
+		icons: icons,
+		files: map[string]*edit.File{},
+		modes: map[string]*v1.ConfigurationFile{},
+	}
 }
 
 func (d *describer) definition(kind, id string) *v1.Definition {
@@ -127,33 +132,14 @@ func (d *describer) definition(kind, id string) *v1.Definition {
 		if document, err := os.ReadFile(filepath.Join(skill.Path, "SKILL.md")); err == nil {
 			_, out.Description = config.FrontMatter(document)
 		}
-		out.Color = skillBrandColor(skill.Path)
+		out.Color, out.Icon = skillInterface(skill.Path)
 	case edit.Instructions:
 		out.Path = d.c.Instructions[config.ID(id)].Path
 	case edit.MCP:
 		out.Description = d.c.MCP[config.ID(id)].Description
+		out.Icon = d.icons.get(id)
 	}
 	return out
-}
-
-var brandColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
-
-// skillBrandColor reads the brand color a skill's agents/openai.yaml, the interface metadata
-// Codex reads, declares; empty when there is none or it is not a #rrggbb color.
-func skillBrandColor(dir string) string {
-	document, err := os.ReadFile(filepath.Join(dir, "agents", "openai.yaml"))
-	if err != nil {
-		return ""
-	}
-	var metadata struct {
-		Interface struct {
-			BrandColor string `yaml:"brand_color"`
-		} `yaml:"interface"`
-	}
-	if yaml.Unmarshal(document, &metadata) != nil || !brandColor.MatchString(metadata.Interface.BrandColor) {
-		return ""
-	}
-	return metadata.Interface.BrandColor
 }
 
 func (d *describer) mode(path string) *v1.ConfigurationFile {
@@ -201,7 +187,7 @@ func (s *Server) GetSkill(
 	if !ok {
 		return nil, rpcError(connect.CodeNotFound, "unknown skill "+req.Msg.SkillId)
 	}
-	out := &v1.GetSkillResponse{Definition: newDescriber(c).definition(edit.Skills, req.Msg.SkillId)}
+	out := &v1.GetSkillResponse{Definition: newDescriber(c, s.icons).definition(edit.Skills, req.Msg.SkillId)}
 	if skill.Generated() {
 		out.SkillMd = skill.Content
 		return connect.NewResponse(out), nil

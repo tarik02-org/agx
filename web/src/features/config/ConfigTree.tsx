@@ -140,6 +140,7 @@ export function ConfigTree() {
       definition.id,
       definition.description,
       definition.color,
+      definition.icon,
     );
     if (icon !== undefined) {
       icons.set(path, icon);
@@ -185,6 +186,10 @@ export function ConfigTree() {
             path,
             mcpStates[needsLogin ? McpRuntime_State.NEEDS_AUTH : McpRuntime_State.FAILED].label,
           );
+        }
+        // A running server's icon is the latest; the definition carries the one remembered.
+        if (loaded?.data !== undefined && loaded.data.icon !== "") {
+          icons.set(path, { image: loaded.data.icon });
         }
         for (const tool of loaded?.data?.tools ?? []) {
           icons.set(`${path}/${tool.name}`, toolIcon(tool.name));

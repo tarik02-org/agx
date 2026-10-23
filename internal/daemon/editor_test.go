@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"os"
@@ -400,23 +401,40 @@ func TestPreviewSource(t *testing.T) {
 	}
 }
 
-func TestSkillBrandColor(t *testing.T) {
+func TestSkillInterface(t *testing.T) {
+	png := []byte("\x89PNG\r\n\x1a\nicon")
 	for _, tc := range []struct {
-		name, metadata, want string
+		name, metadata      string
+		wantColor, wantIcon string
+		outside             bool
 	}{
-		{"declared", "interface:\n  display_name: Alpha\n  brand_color: \"#3B82F6\"\n", "#3B82F6"},
-		{"not a color", "interface:\n  brand_color: blue\n", ""},
-		{"no interface", "policy: {}\n", ""},
-		{"not YAML", "interface: [\n", ""},
-		{"no file", "", ""},
+		{
+			name:      "declared",
+			metadata:  "interface:\n  brand_color: \"#3B82F6\"\n  icon_small: ./assets/small.png\n",
+			wantColor: "#3B82F6",
+			wantIcon:  "data:image/png;base64," + base64.StdEncoding.EncodeToString(png),
+		},
+		{name: "not a color", metadata: "interface:\n  brand_color: blue\n"},
+		{name: "not an image", metadata: "interface:\n  icon_small: ./assets/small.txt\n"},
+		{name: "outside the skill", metadata: "interface:\n  icon_small: ../outside.png\n", outside: true},
+		{name: "no interface", metadata: "policy: {}\n"},
+		{name: "not YAML", metadata: "interface: [\n"},
+		{name: "no file"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
+			parent := t.TempDir()
+			dir := filepath.Join(parent, "skill")
+			writeFile(t, filepath.Join(dir, "assets", "small.png"), string(png))
+			writeFile(t, filepath.Join(dir, "assets", "small.txt"), "text")
+			if tc.outside {
+				writeFile(t, filepath.Join(parent, "outside.png"), string(png))
+			}
 			if tc.metadata != "" {
 				writeFile(t, filepath.Join(dir, "agents", "openai.yaml"), tc.metadata)
 			}
-			if got := skillBrandColor(dir); got != tc.want {
-				t.Fatalf("skillBrandColor = %q, want %q", got, tc.want)
+			color, icon := skillInterface(dir)
+			if color != tc.wantColor || icon != tc.wantIcon {
+				t.Fatalf("skillInterface = %q, %q; want %q, %q", color, icon, tc.wantColor, tc.wantIcon)
 			}
 		})
 	}

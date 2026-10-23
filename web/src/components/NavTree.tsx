@@ -8,11 +8,13 @@ import type {
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
 
-/** An icon for a row: a CSS mask image, such as iconMask makes, and the color to draw it in. */
-export interface TreeIcon {
-  readonly mask: string;
-  readonly color: string;
-}
+/**
+ * An icon for a row: a CSS mask image, such as iconMask makes, drawn in a color, or an image
+ * drawn as it is, as a data URI.
+ */
+export type TreeIcon =
+  | { readonly mask: string; readonly color: string }
+  | { readonly image: string };
 
 interface NavTreeProps {
   /** /-separated paths; a path's leading segments are its folders. */
@@ -65,8 +67,12 @@ const quoted = (path: string) => JSON.stringify(path);
  */
 const iconRules = (icons: ReadonlyMap<string, TreeIcon>): string =>
   [...icons]
-    .map(([path, { mask, color }]) => {
-      const draw = `content: ""; flex-shrink: 0; width: 12px; height: 12px; background-color: ${color}; mask: ${mask} center / contain no-repeat;`;
+    .map(([path, icon]) => {
+      const paint =
+        "image" in icon
+          ? `background: url(${JSON.stringify(icon.image)}) center / contain no-repeat;`
+          : `background-color: ${icon.color}; mask: ${icon.mask} center / contain no-repeat;`;
+      const draw = `content: ""; flex-shrink: 0; width: 12px; height: 12px; ${paint}`;
       const folder = `[data-item-path=${quoted(`${path}/`)}] [data-item-section="content"]`;
       const leaf = `[data-item-path=${quoted(path)}] [data-item-section="icon"]`;
       return `

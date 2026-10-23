@@ -4071,6 +4071,8 @@ type McpTools struct {
 	ServerName    string     `protobuf:"bytes,6,opt,name=server_name,json=serverName,proto3" json:"server_name,omitempty"`
 	ServerVersion string     `protobuf:"bytes,7,opt,name=server_version,json=serverVersion,proto3" json:"server_version,omitempty"`
 	Tools         []*McpTool `protobuf:"bytes,8,rep,name=tools,proto3" json:"tools,omitempty"`
+	// The icon the server declares, as a data URI; empty when it declares none.
+	Icon          string `protobuf:"bytes,9,opt,name=icon,proto3" json:"icon,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4159,6 +4161,13 @@ func (x *McpTools) GetTools() []*McpTool {
 		return x.Tools
 	}
 	return nil
+}
+
+func (x *McpTools) GetIcon() string {
+	if x != nil {
+		return x.Icon
+	}
+	return ""
 }
 
 type McpTool struct {
@@ -5075,7 +5084,10 @@ type Definition struct {
 	Path string `protobuf:"bytes,8,opt,name=path,proto3" json:"path,omitempty"`
 	// A #rrggbb color for the definition's icon: the brand color a skill's agents/openai.yaml
 	// declares for its interface; empty when there is none.
-	Color         string `protobuf:"bytes,9,opt,name=color,proto3" json:"color,omitempty"`
+	Color string `protobuf:"bytes,9,opt,name=color,proto3" json:"color,omitempty"`
+	// An image for the definition's icon, as a data URI: the icon_small a skill's
+	// agents/openai.yaml names, or the icon an MCP server declared when it last started.
+	Icon          string `protobuf:"bytes,10,opt,name=icon,proto3" json:"icon,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5169,6 +5181,13 @@ func (x *Definition) GetPath() string {
 func (x *Definition) GetColor() string {
 	if x != nil {
 		return x.Color
+	}
+	return ""
+}
+
+func (x *Definition) GetIcon() string {
+	if x != nil {
+		return x.Icon
 	}
 	return ""
 }
@@ -6837,7 +6856,7 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x05scope\x18\x01 \x01(\v2\x14.agx.v1.McpCallScopeR\x05scope\x12\x15\n" +
 	"\x06mcp_id\x18\x02 \x01(\tR\x05mcpId\"?\n" +
 	"\x11ListToolsResponse\x12*\n" +
-	"\aservers\x18\x01 \x03(\v2\x10.agx.v1.McpToolsR\aservers\"\xea\x02\n" +
+	"\aservers\x18\x01 \x03(\v2\x10.agx.v1.McpToolsR\aservers\"\xfe\x02\n" +
 	"\bMcpTools\x12\x15\n" +
 	"\x06mcp_id\x18\x01 \x01(\tR\x05mcpId\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12)\n" +
@@ -6847,7 +6866,8 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\vserver_name\x18\x06 \x01(\tR\n" +
 	"serverName\x12%\n" +
 	"\x0eserver_version\x18\a \x01(\tR\rserverVersion\x12%\n" +
-	"\x05tools\x18\b \x03(\v2\x0f.agx.v1.McpToolR\x05tools\"A\n" +
+	"\x05tools\x18\b \x03(\v2\x0f.agx.v1.McpToolR\x05tools\x12\x12\n" +
+	"\x04icon\x18\t \x01(\tR\x04icon\"A\n" +
 	"\x04Load\x12\x14\n" +
 	"\x10LOAD_UNSPECIFIED\x10\x00\x12\x0f\n" +
 	"\vLOAD_NATIVE\x10\x01\x12\x12\n" +
@@ -6917,7 +6937,7 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x17CreateLoginCodeResponse\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x129\n" +
 	"\n" +
-	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xf7\x01\n" +
+	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x8b\x02\n" +
 	"\n" +
 	"Definition\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x0e\n" +
@@ -6928,7 +6948,9 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\tread_only\x18\x06 \x01(\bR\breadOnly\x12 \n" +
 	"\vdescription\x18\a \x01(\tR\vdescription\x12\x12\n" +
 	"\x04path\x18\b \x01(\tR\x04path\x12\x14\n" +
-	"\x05color\x18\t \x01(\tR\x05color\"\x18\n" +
+	"\x05color\x18\t \x01(\tR\x05color\x12\x12\n" +
+	"\x04icon\x18\n" +
+	" \x01(\tR\x04icon\"\x18\n" +
 	"\x16ListDefinitionsRequest\"O\n" +
 	"\x17ListDefinitionsResponse\x124\n" +
 	"\vdefinitions\x18\x01 \x03(\v2\x12.agx.v1.DefinitionR\vdefinitions\",\n" +
