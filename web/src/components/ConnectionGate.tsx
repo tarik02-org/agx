@@ -1,15 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { KeyRoundIcon, UnplugIcon } from "lucide-react";
+import { cn } from "cn";
+import { CheckIcon, CopyIcon, RotateCwIcon } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "~/components/ui/empty.tsx";
+import { Button } from "~/components/ui/button.tsx";
 import { Spinner } from "~/components/ui/spinner.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { type ConnectionLoss, useConnection } from "~/daemon/connection.ts";
@@ -48,7 +42,7 @@ export function ConnectionGate({ children }: { readonly children: ReactNode }) {
     return (
       <>
         {configuration.data !== undefined && <div inert>{children}</div>}
-        <ConnectionScreen loss={lost} />
+        <ConnectionScreen loss={lost} onRetry={() => void configuration.refetch()} />
       </>
     );
   }
@@ -59,12 +53,34 @@ export function ConnectionGate({ children }: { readonly children: ReactNode }) {
   return children;
 }
 
+/** The whole window, on a faint grid, with one framed message in the middle. */
 function FullScreen({ children }: { readonly children: ReactNode }) {
   return (
-    <main className="fixed inset-0 z-50 flex flex-col bg-background">
-      <span className="px-4 py-3 font-mono font-semibold">agx</span>
-      {children}
+    <main className="fixed inset-0 z-50 flex items-center justify-center bg-background bg-[linear-gradient(to_right,var(--color-border)_1px,transparent_1px),linear-gradient(to_bottom,var(--color-border)_1px,transparent_1px)] bg-size-[2.5rem_2.5rem] p-6">
+      <div className="relative w-full max-w-lg border bg-background">
+        {/* Corner marks, as on a viewfinder. */}
+        <span className="absolute -top-px -left-px size-4 border-foreground/70 border-t-2 border-l-2" />
+        <span className="absolute -top-px -right-px size-4 border-foreground/70 border-t-2 border-r-2" />
+        <span className="absolute -bottom-px -left-px size-4 border-foreground/70 border-b-2 border-l-2" />
+        <span className="absolute -right-px -bottom-px size-4 border-foreground/70 border-r-2 border-b-2" />
+        {children}
+      </div>
     </main>
+  );
+}
+
+function Banner({ word, className }: { readonly word: string; readonly className: string }) {
+  return (
+    <div className="flex justify-center border-b px-6 py-6">
+      <span
+        className={cn(
+          "border-2 px-4 py-1 font-mono font-semibold text-3xl uppercase tracking-tight",
+          className,
+        )}
+      >
+        {word}
+      </span>
+    </div>
   );
 }
 
@@ -74,18 +90,16 @@ function LoadingScreen() {
     const timer = setTimeout(() => setShown(true), showLoadingAfterMs);
     return () => clearTimeout(timer);
   }, []);
+  if (!shown) {
+    return <main className="fixed inset-0 bg-background" aria-busy />;
+  }
   return (
     <FullScreen>
-      {shown && (
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia>
-              <Spinner />
-            </EmptyMedia>
-            <EmptyDescription>Connecting to the daemon…</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      )}
+      <Banner word="agx" className="border-primary" />
+      <p className="flex items-center justify-center gap-2 px-6 py-6 text-muted-foreground text-xs">
+        <Spinner className="size-3" />
+        Connecting to the daemon…
+      </p>
     </FullScreen>
   );
 }
@@ -93,7 +107,8 @@ function LoadingScreen() {
 const screens: Record<
   ConnectionLoss,
   {
-    readonly icon: ReactNode;
+    readonly word: string;
+    readonly accent: string;
     readonly title: string;
     readonly description: string;
     readonly command: string;
@@ -101,40 +116,70 @@ const screens: Record<
   }
 > = {
   "signed-out": {
-    icon: <KeyRoundIcon />,
-    title: "Signed out",
+    word: "Signed out",
+    accent: "border-warning",
+    title: "This page's session ended",
     description:
-      "This page's session with the daemon ended: the daemon restarted, or the page sat idle for 12 hours. Sign in again from a terminal:",
+      "The daemon restarted, or the page sat idle for 12 hours. Sign in again from a terminal; this page carries on by itself.",
     command: "agx ui",
-    waiting: "This page continues once you have signed in.",
+    waiting: "Waiting for sign-in…",
   },
   unreachable: {
-    icon: <UnplugIcon />,
-    title: "Daemon unreachable",
-    description: "The daemon does not answer. If it is not running, start it:",
+    word: "Offline",
+    accent: "border-destructive",
+    title: "The daemon does not answer",
+    description:
+      "It stopped or is restarting. If it is not running, start it; this page carries on by itself.",
     command: "agx daemon start",
     waiting: "Retrying…",
   },
 };
 
-function ConnectionScreen({ loss }: { readonly loss: ConnectionLoss }) {
+function ConnectionScreen({
+  loss,
+  onRetry,
+}: {
+  readonly loss: ConnectionLoss;
+  readonly onRetry: () => void;
+}) {
   const screen = screens[loss];
+  const [copied, setCopied] = useState(false);
   return (
     <FullScreen>
-      <Empty>
-        <EmptyHeader>
-          <EmptyMedia variant="icon">{screen.icon}</EmptyMedia>
-          <EmptyTitle>{screen.title}</EmptyTitle>
-          <EmptyDescription>{screen.description}</EmptyDescription>
-        </EmptyHeader>
-        <EmptyContent>
-          <code className="rounded-sm border bg-muted px-2 py-1 font-mono">{screen.command}</code>
-          <span className="flex items-center gap-2 text-muted-foreground" aria-live="polite">
-            <Spinner className="size-3" />
-            {screen.waiting}
-          </span>
-        </EmptyContent>
-      </Empty>
+      <Banner word={screen.word} className={screen.accent} />
+      <div className="flex flex-col items-center gap-4 px-6 py-6 text-center">
+        <h1 className="font-heading font-semibold text-base">{screen.title}</h1>
+        <code className="flex items-center gap-2 border px-3 py-1.5 font-mono text-sm">
+          <span className="text-muted-foreground text-xs uppercase">Run</span>
+          {screen.command}
+        </code>
+        <p className="max-w-sm text-balance text-muted-foreground text-xs/relaxed">
+          {screen.description}
+        </p>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            onClick={() =>
+              void navigator.clipboard.writeText(screen.command).then(() => setCopied(true))
+            }
+          >
+            {copied ? (
+              <CheckIcon data-icon="inline-start" />
+            ) : (
+              <CopyIcon data-icon="inline-start" />
+            )}
+            {copied ? "Copied" : "Copy command"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={onRetry}>
+            <RotateCwIcon data-icon="inline-start" />
+            Try now
+          </Button>
+        </div>
+        <span className="flex items-center gap-2 text-muted-foreground text-xs" aria-live="polite">
+          <Spinner className="size-3" />
+          {screen.waiting}
+        </span>
+      </div>
     </FullScreen>
   );
 }
