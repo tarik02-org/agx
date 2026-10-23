@@ -155,16 +155,19 @@ function ConnectionScreen({
           <code className="font-mono text-sm">{screen.command}</code>
           <CopyButton text={screen.command} />
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-3">
+          <span
+            className="flex items-center gap-2 text-muted-foreground text-xs"
+            aria-live="polite"
+          >
+            <Spinner className="size-3" />
+            {screen.waiting}
+          </span>
           <Button size="sm" variant="outline" onClick={onRetry}>
             <RotateCwIcon data-icon="inline-start" />
             Try now
           </Button>
         </div>
-        <span className="flex items-center gap-2 text-muted-foreground text-xs" aria-live="polite">
-          <Spinner className="size-3" />
-          {screen.waiting}
-        </span>
       </div>
     </FullScreen>
   );
