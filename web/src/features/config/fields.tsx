@@ -30,7 +30,6 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/in
 import { Spinner } from "~/components/ui/spinner.tsx";
 import { Textarea } from "~/components/ui/textarea.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
-import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group.tsx";
 import {
   type FieldPath,
   isStructured,
@@ -288,8 +287,8 @@ export function ListField({ form, path, label, placeholder, description }: Field
   );
 }
 
-interface Option {
-  readonly value: string;
+interface Option<V extends string = string> {
+  readonly value: V;
   readonly label: string;
   /** A line under the label in the list, saying what the choice means. */
   readonly description?: string;
@@ -447,6 +446,62 @@ export function TagsField({
 
 const noSuggestions: ReadonlyArray<string> = [];
 
+/**
+ * A select whose options may carry a line saying what they mean; the list may be wider than the
+ * trigger, so those lines wrap instead of running out of it.
+ */
+function OptionSelect<V extends string>({
+  id,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  readonly id?: string;
+  readonly value: V;
+  readonly options: ReadonlyArray<Option<V>>;
+  readonly disabled: boolean;
+  readonly onChange: (value: V) => void;
+}) {
+  return (
+    <Select
+      items={options.map(({ value: item, label }) => ({ value: item, label }))}
+      value={value}
+      disabled={disabled}
+      onValueChange={(next) => {
+        const picked = options.find((option) => option.value === next);
+        if (picked !== undefined) {
+          onChange(picked.value);
+        }
+      }}
+    >
+      <SelectTrigger id={id} className="w-64!">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent
+        alignItemWithTrigger={false}
+        align="start"
+        className="w-auto min-w-(--anchor-width) max-w-sm"
+      >
+        <SelectGroup>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value} className="whitespace-normal">
+              {option.description === undefined ? (
+                option.label
+              ) : (
+                <span className="flex flex-col gap-0.5 py-0.5">
+                  <span>{option.label}</span>
+                  <span className="text-muted-foreground text-xs">{option.description}</span>
+                </span>
+              )}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
 /** A choice among the schema's values; the empty choice removes the field. */
 export function ChoiceField({
   form,
@@ -457,38 +512,18 @@ export function ChoiceField({
   empty,
 }: FieldProps & { readonly options: ReadonlyArray<Option>; readonly empty?: string }) {
   const id = useId();
-  const items = [...(empty === undefined ? [] : [{ value: "", label: empty }]), ...options];
   return (
     <Field>
       <HintedLabel htmlFor={id} hint={meaning(form, path, label, description)}>
         {label}
       </HintedLabel>
-      <Select
-        items={items}
+      <OptionSelect
+        id={id}
         value={readString(form.text, path)}
+        options={[...(empty === undefined ? [] : [{ value: "", label: empty }]), ...options]}
         disabled={form.readOnly}
-        onValueChange={(next) => form.onChange(writeField(form.text, path, next ?? ""))}
-      >
-        <SelectTrigger id={id} className="w-64!">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false}>
-          <SelectGroup>
-            {items.map((item) => (
-              <SelectItem key={item.value} value={item.value}>
-                {"description" in item && item.description !== undefined ? (
-                  <span className="flex flex-col gap-0.5">
-                    <span>{item.label}</span>
-                    <span className="text-muted-foreground text-xs">{item.description}</span>
-                  </span>
-                ) : (
-                  item.label
-                )}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
+        onChange={(next) => form.onChange(writeField(form.text, path, next))}
+      />
     </Field>
   );
 }
@@ -506,31 +541,23 @@ export function VariantField<V extends string>({
   /** Why the choice cannot change, shown behind a lock beside the label. */
   readonly locked?: string | undefined;
   readonly value: V;
-  readonly options: ReadonlyArray<{ readonly value: V; readonly label: string }>;
+  readonly options: ReadonlyArray<Option<V>>;
   readonly readOnly: boolean;
   readonly onChange: (value: V) => void;
 }) {
+  const id = useId();
   return (
-    <Field>
-      <HintedLabel locked={locked}>{label}</HintedLabel>
-      <ToggleGroup
-        variant="outline"
-        size="sm"
-        value={[value]}
+    <Field className="w-auto">
+      <HintedLabel htmlFor={id} locked={locked}>
+        {label}
+      </HintedLabel>
+      <OptionSelect
+        id={id}
+        value={value}
+        options={options}
         disabled={readOnly}
-        onValueChange={(next) => {
-          const picked = options.find((option) => next.includes(option.value));
-          if (picked !== undefined) {
-            onChange(picked.value);
-          }
-        }}
-      >
-        {options.map((option) => (
-          <ToggleGroupItem key={option.value} value={option.value}>
-            {option.label}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+        onChange={onChange}
+      />
     </Field>
   );
 }

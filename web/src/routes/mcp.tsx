@@ -64,6 +64,7 @@ function InspectorPage() {
   }
   return (
     <Page
+      className="max-w-3xl"
       title={[
         search.server === undefined
           ? undefined

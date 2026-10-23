@@ -2,11 +2,13 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { cn } from "cn";
 import * as Schema from "effect/Schema";
 import {
+  ChevronDownIcon,
   FileCode2Icon,
   LinkIcon,
   ListChecksIcon,
   LockIcon,
   PackageIcon,
+  PlusIcon,
   RotateCcwIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -15,6 +17,13 @@ import { useState } from "react";
 import { ConfirmAction } from "~/components/ConfirmAction.tsx";
 import { UnsavedChanges } from "~/components/UnsavedChanges.tsx";
 import { Page, PageActions } from "~/components/Page.tsx";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
@@ -104,6 +113,7 @@ function ConfigPage() {
             ? [{ label }, { label: search.id ?? "new", mono: true }]
             : []),
       ]}
+      actions={<NewDefinitionMenu />}
       fill={
         search.file !== undefined ||
         (search.kind !== undefined && (search.view === "yaml" || !hasForm(search.kind)))
@@ -149,6 +159,47 @@ function ConfigPage() {
   );
 }
 
+/** Starts a new definition of any kind in the editor. */
+function NewDefinitionMenu() {
+  const navigate = useNavigate({ from: Route.fullPath });
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="outline" size="sm">
+            <PlusIcon data-icon="inline-start" />
+            New
+            <ChevronDownIcon data-icon="inline-end" />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="end">
+        <DropdownMenuGroup>
+          {kinds.map(({ kind, label }) => (
+            <DropdownMenuItem
+              key={kind}
+              onClick={() =>
+                void navigate({ search: (current) => ({ dir: current.dir, kind, create: true }) })
+              }
+            >
+              {label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// What a new definition starts as: skills and instructions written inline, the usual way to
+// start one; the form's source switch takes them elsewhere.
+const newDefinitions: Readonly<Record<string, string>> = {
+  skills: 'description: ""\ncontent: ""\n',
+  instructions: 'text: ""\n',
+  secrets: "kind: keychain\n",
+  mcp: "command: []\n",
+};
+
 interface DefinitionEditorProps {
   readonly kind: string;
   /** Undefined while writing a new definition. */
@@ -172,7 +223,7 @@ function DefinitionEditor({
   const [file, setFile] = useState(writable[0]?.path ?? "");
   const staged = useStagedDefinition(kind, id);
   const stagedChange = staged?.change.change;
-  const original = definition?.yaml ?? "";
+  const original = definition?.yaml ?? newDefinitions[kind] ?? "";
   const [text, setText] = useState(
     stagedChange?.case === "define" ? (stagedChange.value.yaml ?? original) : original,
   );
@@ -210,11 +261,11 @@ function DefinitionEditor({
           )}
           {readOnly && <Badge variant="outline">read-only</Badge>}
           {staged !== undefined && <Badge>{removing ? "removal staged" : "staged"}</Badge>}
-          <span className="font-mono text-muted-foreground text-xs">
-            {location === undefined
-              ? "new"
-              : `${shortPath(location.path, home)}${location.line > 0 ? `:${location.line}` : ""}`}
-          </span>
+          {location !== undefined && (
+            <span className="font-mono text-muted-foreground text-xs">
+              {`${shortPath(location.path, home)}${location.line > 0 ? `:${location.line}` : ""}`}
+            </span>
+          )}
         </span>
         {editable && (
           <TabsList>

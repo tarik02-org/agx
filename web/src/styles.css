@@ -197,6 +197,7 @@
 [data-slot="combobox-content"],
 [data-slot="popover-content"],
 [data-slot="tooltip-content"],
+[data-slot="dropdown-menu-content"],
 [data-slot="navigation-menu-popup"],
 [data-slot="navigation-menu-viewport"] {
   --tw-enter-scale: 1;

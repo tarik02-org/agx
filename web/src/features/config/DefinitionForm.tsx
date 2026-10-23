@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 import { HashIcon } from "lucide-react";
-import { useId, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 
 import { Badge } from "~/components/ui/badge.tsx";
 import { InputGroupButton } from "~/components/ui/input-group.tsx";
@@ -36,6 +36,8 @@ import {
   VariantField,
 } from "~/features/config/fields.tsx";
 import {
+  ensureField,
+  hasField,
   isStructured,
   readString,
   removeFields,
@@ -73,8 +75,8 @@ export function DefinitionForm({
   }
 }
 
-const has = (form: DefinitionText, field: string) =>
-  readString(form.text, [field]) !== "" || isStructured(form.text, [field]);
+// A field written at all marks the source, even empty while it is being filled in.
+const has = (form: DefinitionText, field: string) => hasField(form.text, [field]);
 
 // Where a configured definition comes from is fixed: a new source makes a different thing, so
 // it is removed and added again rather than edited. Its pins stay editable.
@@ -86,9 +88,14 @@ const sourceNote = (form: DefinitionText) =>
     ? "Fixed once configured: remove it and add it again to take it from elsewhere."
     : undefined;
 
-// Switching where a definition comes from drops the fields only the previous source had.
-const switchSource = (form: DefinitionText, drop: ReadonlyArray<string>) =>
-  form.onChange(removeFields(form.text, drop));
+// Switching where a definition comes from drops the fields only the previous source had and
+// writes the new source's own, empty, so the switch shows before it is filled in.
+const switchSource = (form: DefinitionText, drop: ReadonlyArray<string>, mark?: string) =>
+  form.onChange(
+    mark === undefined
+      ? removeFields(form.text, drop)
+      : ensureField(removeFields(form.text, drop), [mark]),
+  );
 
 function McpForm({ form }: { readonly form: DefinitionText }) {
   const transport = has(form, "url") ? "http" : "stdio";
@@ -100,8 +107,8 @@ function McpForm({ form }: { readonly form: DefinitionText }) {
         value={transport}
         readOnly={form.readOnly}
         options={[
-          { value: "stdio", label: "stdio command" },
-          { value: "http", label: "HTTP" },
+          { value: "stdio", label: "Command", description: "A local process agx starts." },
+          { value: "http", label: "HTTP", description: "A server at a URL." },
         ]}
         onChange={(next) =>
           switchSource(
@@ -109,6 +116,7 @@ function McpForm({ form }: { readonly form: DefinitionText }) {
             next === "http"
               ? ["command", "cwd", "environment", "transport", "share"]
               : ["url", "headers", "auth", "transport"],
+            next === "http" ? "url" : undefined,
           )
         }
       />
@@ -297,11 +305,6 @@ function SecretForm({ form }: { readonly form: DefinitionText }) {
           />
         </>
       )}
-      {kind === "keychain" && (
-        <p className="text-muted-foreground text-xs">
-          The value lives in the OS keychain; set it from the Runtime page once this is applied.
-        </p>
-      )}
       <BooleanField form={form} path={["override"]} label="Override" />
     </FieldGroup>
   );
@@ -459,11 +462,11 @@ function PackageForm({ form }: { readonly form: DefinitionText }) {
         readOnly={sourceForm(form).readOnly}
         locked={sourceNote(form)}
         options={[
-          { value: "git", label: "Git" },
-          { value: "path", label: "local directory" },
+          { value: "git", label: "Git", description: gitDescription },
+          { value: "path", label: "Local directory", description: "A directory on this machine." },
         ]}
         onChange={(next) =>
-          switchSource(form, next === "path" ? ["git", "ref", "rev", "hash"] : ["path"])
+          switchSource(form, next === "path" ? ["git", "ref", "rev", "hash"] : ["path"], next)
         }
       />
       {source === "git" ? (
@@ -493,36 +496,55 @@ function PackageForm({ form }: { readonly form: DefinitionText }) {
 
 const gitFields = ["git", "ref", "rev", "hash"];
 
+const gitDescription = "A repository, at a branch, tag, or commit.";
+
+/** A form's short settings side by side, above the fields that take room. */
+function SettingsRow({ children }: { readonly children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-end gap-x-6 gap-y-4 *:w-auto [&>[data-orientation=horizontal]]:h-7">
+      {children}
+    </div>
+  );
+}
+
 function SkillForm({ form }: { readonly form: DefinitionText }) {
   const source = has(form, "content") ? "content" : has(form, "git") ? "git" : "path";
   return (
     <FieldGroup>
-      <VariantField
-        label="Source"
-        value={source}
-        readOnly={sourceForm(form).readOnly}
-        locked={sourceNote(form)}
-        options={[
-          { value: "path", label: "local directory" },
-          { value: "git", label: "Git" },
-          { value: "content", label: "written here" },
-        ]}
-        onChange={(next) =>
-          switchSource(
-            form,
-            next === "content"
-              ? ["path", ...gitFields]
-              : [
-                  "content",
-                  "name",
-                  "description",
-                  "frontmatter",
-                  "files",
-                  ...(next === "path" ? gitFields : []),
-                ],
-          )
-        }
-      />
+      <SettingsRow>
+        <VariantField
+          label="Source"
+          value={source}
+          readOnly={sourceForm(form).readOnly}
+          locked={sourceNote(form)}
+          options={[
+            {
+              value: "path",
+              label: "Local directory",
+              description: "A directory on this machine.",
+            },
+            { value: "git", label: "Git", description: gitDescription },
+            { value: "content", label: "Inline", description: "Written in the configuration." },
+          ]}
+          onChange={(next) =>
+            switchSource(
+              form,
+              next === "content"
+                ? ["path", ...gitFields]
+                : [
+                    "content",
+                    "name",
+                    "description",
+                    "frontmatter",
+                    "files",
+                    ...(next === "path" ? gitFields : []),
+                  ],
+              next,
+            )
+          }
+        />
+        <BooleanField form={form} path={["override"]} label="Override" />
+      </SettingsRow>
       {source === "content" ? (
         <>
           <TextField form={form} path={["name"]} label="Name" placeholder="the ID's last segment" />
@@ -551,7 +573,6 @@ function SkillForm({ form }: { readonly form: DefinitionText }) {
           />
         </>
       )}
-      <BooleanField form={form} path={["override"]} label="Override" />
     </FieldGroup>
   );
 }
@@ -560,25 +581,30 @@ function InstructionsForm({ form }: { readonly form: DefinitionText }) {
   const source = has(form, "text") ? "text" : has(form, "git") ? "git" : "path";
   return (
     <FieldGroup>
-      <VariantField
-        label="Source"
-        value={source}
-        readOnly={sourceForm(form).readOnly}
-        locked={sourceNote(form)}
-        options={[
-          { value: "path", label: "local file" },
-          { value: "git", label: "Git" },
-          { value: "text", label: "written here" },
-        ]}
-        onChange={(next) =>
-          switchSource(
-            form,
-            next === "text"
-              ? ["path", ...gitFields]
-              : ["text", ...(next === "path" ? gitFields : [])],
-          )
-        }
-      />
+      <SettingsRow>
+        <VariantField
+          label="Source"
+          value={source}
+          readOnly={sourceForm(form).readOnly}
+          locked={sourceNote(form)}
+          options={[
+            { value: "path", label: "Local file", description: "A file on this machine." },
+            { value: "git", label: "Git", description: gitDescription },
+            { value: "text", label: "Inline", description: "Written in the configuration." },
+          ]}
+          onChange={(next) =>
+            switchSource(
+              form,
+              next === "text"
+                ? ["path", ...gitFields]
+                : ["text", ...(next === "path" ? gitFields : [])],
+              next,
+            )
+          }
+        />
+        <NumberField form={form} path={["order"]} label="Order" placeholder="0" />
+        <BooleanField form={form} path={["override"]} label="Override" />
+      </SettingsRow>
       {source === "text" ? (
         <MarkdownField form={form} field="text" label="Text" />
       ) : (
@@ -603,8 +629,6 @@ function InstructionsForm({ form }: { readonly form: DefinitionText }) {
           />
         </>
       )}
-      <NumberField form={form} path={["order"]} label="Order" placeholder="0" />
-      <BooleanField form={form} path={["override"]} label="Override" />
     </FieldGroup>
   );
 }

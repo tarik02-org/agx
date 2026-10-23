@@ -107,11 +107,11 @@ function AddSkillsPage() {
     <Page
       title={["Add from Git", "Skills"]}
       crumbs={[{ label: "Skills", link: <Link to="/skills" /> }, { label: "Add from Git" }]}
-      className="max-w-6xl"
+      className="max-w-3xl"
     >
       <Steps step={step} onStep={setStep} />
       {step === 0 && (
-        <Card size="sm" className="max-w-2xl">
+        <Card size="sm">
           <CardHeader>
             <CardTitle>Where are the skills?</CardTitle>
             <CardDescription>
@@ -246,7 +246,7 @@ function Wizard({
   }
   if (step === 2) {
     return (
-      <Card size="sm" className="max-w-2xl">
+      <Card size="sm">
         <CardHeader>
           <CardTitle>Where should they apply?</CardTitle>
           <CardDescription>

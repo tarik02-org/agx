@@ -7,6 +7,7 @@ import {
   ListChecksIcon,
   PackageIcon,
   PencilIcon,
+  PlusIcon,
   RotateCcwIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -109,6 +110,15 @@ function SkillsPage() {
               />
             </>
           )}
+          <ButtonLink
+            variant="outline"
+            size="sm"
+            to="/config"
+            search={{ kind: "skills", create: true }}
+          >
+            <PlusIcon data-icon="inline-start" />
+            New skill
+          </ButtonLink>
           <ButtonLink size="sm" to="/skills/add">
             <GitBranchPlusIcon data-icon="inline-start" />
             Add from Git

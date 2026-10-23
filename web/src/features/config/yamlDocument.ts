@@ -57,6 +57,19 @@ export const readList = (text: string, path: FieldPath): ReadonlyArray<string> =
   return isSeq(node) ? node.items.map((item) => (isScalar(item) ? String(item.value) : "")) : [];
 };
 
+/** Whether a field is written, even empty. */
+export const hasField = (text: string, path: FieldPath): boolean => parseDocument(text).hasIn(path);
+
+/** Writes a field as an empty string unless it is written already. */
+export const ensureField = (text: string, path: FieldPath): string => {
+  const document = parseDocument(text);
+  if (document.hasIn(path)) {
+    return text;
+  }
+  document.setIn(path, "");
+  return document.toString();
+};
+
 /** Whether a field holds a map or list where the form expects a plain value. */
 export const isStructured = (text: string, path: FieldPath): boolean => {
   const node = parseDocument(text).getIn(path, true);
