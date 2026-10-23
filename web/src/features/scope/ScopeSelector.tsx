@@ -6,7 +6,6 @@ import { Button } from "~/components/ui/button.tsx";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -51,11 +50,8 @@ export function ScopeSelector() {
         }
       />
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-3xl">
-        <DialogHeader className="border-b p-4">
+        <DialogHeader className="border-b px-4 py-3">
           <DialogTitle>Scope</DialogTitle>
-          <DialogDescription>
-            Pages show what a launch in this directory gets, and enable things here.
-          </DialogDescription>
         </DialogHeader>
         <DirectoryBrowser
           key={String(open)}

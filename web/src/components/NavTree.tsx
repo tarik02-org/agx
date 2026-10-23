@@ -31,6 +31,19 @@ interface NavTreeProps {
 }
 
 const placeholder = "loading…";
+
+// Top-level folders are sections, such as the configuration's kinds: set as small headings so
+// what they hold stands out. The tree draws in a shadow root; custom properties reach it.
+const rootRowsAsHeadings = `
+  [data-type="item"][aria-level="1"] {
+    color: var(--muted-foreground);
+    font-family: var(--font-sans);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+`;
 const noDecorations: ReadonlyMap<string, string> = new Map();
 const noFolders: ReadonlyMap<string, boolean> = new Map();
 const noOrder: ReadonlyArray<string> = [];
@@ -114,6 +127,7 @@ export function NavTree({
     search: false,
     fileTreeSearchMode: "hide-non-matches",
     density: "compact",
+    unsafeCSS: rootRowsAsHeadings,
     sort: compareIn(order),
     onSelectionChange: (chosen) => {
       const path = chosen.map(bare).find((p) => !p.endsWith(`/${placeholder}`));

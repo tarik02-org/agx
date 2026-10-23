@@ -2,6 +2,18 @@ import { PlusIcon, XIcon } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 
 import { Button } from "~/components/ui/button.tsx";
+import {
+  Combobox,
+  ComboboxChip,
+  ComboboxChips,
+  ComboboxChipsInput,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxValue,
+  useComboboxAnchor,
+} from "~/components/ui/combobox.tsx";
 import { Field, FieldDescription, FieldLabel } from "~/components/ui/field.tsx";
 import { Input } from "~/components/ui/input.tsx";
 import {
@@ -163,6 +175,79 @@ interface Option {
   /** A line under the label in the list, saying what the choice means. */
   readonly description?: string;
 }
+
+/**
+ * A set of words, such as OAuth scopes, as chips: pick from suggestions or type one and press
+ * Enter to add it.
+ */
+export function TagsField({
+  form,
+  path,
+  label,
+  placeholder,
+  description,
+  suggestions = noSuggestions,
+}: FieldProps & { readonly suggestions?: ReadonlyArray<string> }) {
+  const id = useId();
+  const anchor = useComboboxAnchor();
+  const values = readList(form.text, path);
+  const [query, setQuery] = useState("");
+  const typed = query.trim();
+  const items = [...new Set([...(typed === "" ? [] : [typed]), ...values, ...suggestions])];
+  if (values.length === 0 && isStructured(form.text, path)) {
+    return <StructuredNote label={label} />;
+  }
+  return (
+    <Field>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <Combobox
+        multiple
+        autoHighlight
+        items={items}
+        value={values}
+        inputValue={query}
+        disabled={form.readOnly}
+        onInputValueChange={setQuery}
+        onValueChange={(next: ReadonlyArray<string>) => {
+          setQuery("");
+          form.onChange(writeField(form.text, path, [...next]));
+        }}
+      >
+        <ComboboxChips ref={anchor}>
+          <ComboboxValue>
+            {(picked: ReadonlyArray<string>) =>
+              picked.map((value) => (
+                <ComboboxChip key={value} className="font-mono">
+                  {value}
+                </ComboboxChip>
+              ))
+            }
+          </ComboboxValue>
+          <ComboboxChipsInput
+            id={id}
+            className="font-mono"
+            placeholder={values.length === 0 ? (placeholder ?? "Type to add…") : undefined}
+          />
+        </ComboboxChips>
+        <ComboboxContent anchor={anchor}>
+          <ComboboxEmpty>Type to add one.</ComboboxEmpty>
+          <ComboboxList>
+            {(item: string) => (
+              <ComboboxItem key={item} value={item} className="font-mono">
+                {item === typed && !values.includes(item) && !suggestions.includes(item)
+                  ? `Add “${item}”`
+                  : item}
+              </ComboboxItem>
+            )}
+          </ComboboxList>
+        </ComboboxContent>
+      </Combobox>
+      <Described form={form} path={path} description={description} />
+    </Field>
+  );
+}
+
+const noSuggestions: ReadonlyArray<string> = [];
 
 /** A choice among the schema's values; the empty choice removes the field. */
 export function ChoiceField({

@@ -1,4 +1,5 @@
 import { useBlocker } from "@tanstack/react-router";
+import { useState } from "react";
 
 import {
   AlertDialog,
@@ -41,12 +42,21 @@ export function UnsavedChanges({ dirty, ignore = nothingIgnored }: UnsavedChange
     enableBeforeUnload: dirty,
     withResolver: true,
   });
+  // Leaving unmounts the editor and this dialog with it, so the dialog closes first and the
+  // navigation proceeds once its closing transition has finished.
+  const [discarding, setDiscarding] = useState(false);
   return (
     <AlertDialog
-      open={blocker.status === "blocked"}
+      open={blocker.status === "blocked" && !discarding}
       onOpenChange={(open) => {
         if (!open) {
           blocker.reset?.();
+        }
+      }}
+      onOpenChangeComplete={(open) => {
+        if (!open && discarding) {
+          setDiscarding(false);
+          blocker.proceed?.();
         }
       }}
     >
@@ -59,7 +69,7 @@ export function UnsavedChanges({ dirty, ignore = nothingIgnored }: UnsavedChange
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Keep editing</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={() => blocker.proceed?.()}>
+          <AlertDialogAction variant="destructive" onClick={() => setDiscarding(true)}>
             Discard
           </AlertDialogAction>
         </AlertDialogFooter>

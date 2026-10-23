@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { cn } from "cn";
 import * as Schema from "effect/Schema";
 import {
   FileCode2Icon,
@@ -278,70 +279,71 @@ function DefinitionEditor({
           </>
         )}
       </PageActions>
-      {readOnly && (
-        <Alert>
-          <LockIcon />
-          <AlertTitle>
-            {definition?.package === "" ? "Its file is read-only" : "A package defines this"}
-          </AlertTitle>
-          <AlertDescription>
-            {definition?.package === ""
-              ? "The file is a link, such as one Home Manager manages, or agx cannot write it. Change it where it comes from."
-              : "Override it in your own configuration, or change the package."}
-          </AlertDescription>
-        </Alert>
-      )}
-      {definition?.description !== undefined && definition.description !== "" && (
-        <p className="text-muted-foreground text-xs">{definition.description}</p>
-      )}
-      {kind === "skills" && definition !== undefined && (
-        <Link
-          to="/skills"
-          search={{ skill: definition.id }}
-          className="text-primary text-xs underline"
-        >
-          Open in Skills
-        </Link>
-      )}
-      {definition === undefined && (
-        <FieldGroup className="max-w-xl">
-          <Field>
-            <FieldLabel htmlFor="definition-id">ID</FieldLabel>
-            <Input
-              id="definition-id"
-              className="font-mono"
-              placeholder="id"
-              spellCheck={false}
-              value={id}
-              onChange={(event) => setId(event.target.value)}
-            />
-          </Field>
-          <Field>
-            <FieldLabel>Write to</FieldLabel>
-            <Select
-              items={writable.map((f) => ({ value: f.path, label: shortPath(f.path, home) }))}
-              value={file}
-              onValueChange={(next) => setFile(next ?? "")}
-            >
-              <SelectTrigger className="font-mono">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {writable.map((f) => (
-                    <SelectItem key={f.path} value={f.path} className="font-mono">
-                      {shortPath(f.path, home)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-        </FieldGroup>
-      )}
-      {editable && (
-        <>
-          <TabsContent value="form" className="max-w-xl">
+      {/* A form reads best narrow and centered; YAML takes the page. */}
+      <div className={cn("flex w-full flex-col gap-3", tab === "form" && "mx-auto max-w-xl")}>
+        {readOnly && (
+          <Alert>
+            <LockIcon />
+            <AlertTitle>
+              {definition?.package === "" ? "Its file is read-only" : "A package defines this"}
+            </AlertTitle>
+            <AlertDescription>
+              {definition?.package === ""
+                ? "The file is a link, such as one Home Manager manages, or agx cannot write it. Change it where it comes from."
+                : "Override it in your own configuration, or change the package."}
+            </AlertDescription>
+          </Alert>
+        )}
+        {definition?.description !== undefined && definition.description !== "" && (
+          <p className="text-muted-foreground text-xs">{definition.description}</p>
+        )}
+        {kind === "skills" && definition !== undefined && (
+          <Link
+            to="/skills"
+            search={{ skill: definition.id }}
+            className="text-primary text-xs underline"
+          >
+            Open in Skills
+          </Link>
+        )}
+        {definition === undefined && (
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="definition-id">ID</FieldLabel>
+              <Input
+                id="definition-id"
+                className="font-mono"
+                placeholder="id"
+                spellCheck={false}
+                value={id}
+                onChange={(event) => setId(event.target.value)}
+              />
+            </Field>
+            <Field>
+              <FieldLabel>Write to</FieldLabel>
+              <Select
+                items={writable.map((f) => ({ value: f.path, label: shortPath(f.path, home) }))}
+                value={file}
+                onValueChange={(next) => setFile(next ?? "")}
+              >
+                <SelectTrigger className="font-mono">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {writable.map((f) => (
+                      <SelectItem key={f.path} value={f.path} className="font-mono">
+                        {shortPath(f.path, home)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          </FieldGroup>
+        )}
+        {editable && (
+          <TabsContent value="form">
             <DefinitionForm
               kind={kind}
               form={{
@@ -352,6 +354,10 @@ function DefinitionEditor({
               }}
             />
           </TabsContent>
+        )}
+      </div>
+      {editable && (
+        <>
           <TabsContent value="yaml" className="flex min-h-0 flex-1 flex-col gap-2">
             <CodeEditor
               language="yaml"

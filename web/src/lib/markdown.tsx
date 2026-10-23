@@ -57,7 +57,7 @@ const markdownComponents: Components = {
 /** GitHub-flavored Markdown, as skills and MCP tools write it, with highlighted code blocks. */
 export function Markdown({ children }: { readonly children: string }) {
   return (
-    <div className="flex flex-col gap-2 text-sm/relaxed [&_a]:text-primary [&_a]:underline [&_code]:font-mono [&_h1]:font-semibold [&_h1]:text-base [&_h2]:font-semibold [&_h3]:font-medium [&_li]:ml-4 [&_ol]:list-decimal [&_table]:text-xs [&_td]:border [&_td]:px-2 [&_th]:border [&_th]:px-2 [&_ul]:list-disc">
+    <div className="flex flex-col gap-2 text-sm/relaxed [&_a]:text-primary [&_a]:underline [&_code]:font-mono [&_h1]:font-semibold [&_h1]:text-base [&_h2]:font-semibold [&_h3]:font-medium [&_li]:ml-4 [&_ol]:list-decimal [&_table]:w-auto [&_table]:max-w-full [&_table]:border-collapse [&_table]:text-xs [&_td]:border [&_td]:px-2.5 [&_td]:py-1 [&_th]:border [&_th]:bg-muted/50 [&_th]:px-2.5 [&_th]:py-1 [&_th]:text-left [&_th]:font-medium [&_ul]:list-disc">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
         {children}
       </ReactMarkdown>

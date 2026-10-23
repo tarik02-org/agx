@@ -47,7 +47,8 @@ const parentOf = (directory: string): string => {
 };
 
 /**
- * Picks a directory: one of the shortcuts, or one reached by browsing. The address bar is the
+ * Picks a directory: one of the shortcuts, or one reached by browsing; Use, or a double click,
+ * applies it. The address bar is the
  * folder being browsed, editable: typing narrows the folders to those starting with what follows
  * the last slash, and a pasted path goes straight there.
  */
@@ -61,6 +62,8 @@ export function DirectoryBrowser({
 }: DirectoryBrowserProps) {
   // The address, as typed or browsed to, ~/… under home.
   const [address, setAddress] = useState(withSlash(shortPath(value === "" ? home : value, home)));
+  // Everywhere is a choice like a folder; browsing anywhere chooses that folder instead.
+  const [everywhereChosen, setEverywhereChosen] = useState(everywhere && value === "");
   const isPath = address.startsWith("/") || address.startsWith("~/");
   const listing = useDaemonQuery(
     queryKeys.completeDirectory(address),
@@ -71,7 +74,11 @@ export function DirectoryBrowser({
   // A browsed folder ends in a slash; a typed one counts once the daemon lists it.
   const folder =
     isPath && (address.endsWith("/") || listing.data?.includes(typed) === true) ? typed : undefined;
-  const browse = (directory: string) => setAddress(withSlash(shortPath(directory, home)));
+  const browse = (directory: string) => {
+    setEverywhereChosen(false);
+    setAddress(withSlash(shortPath(directory, home)));
+  };
+  const chosen = everywhereChosen ? "" : folder;
   const places = [
     ...new Set([home, ...shortcuts.map((directory) => absoluteDirectory(directory, home))]),
   ].filter((directory) => directory !== "");
@@ -79,7 +86,12 @@ export function DirectoryBrowser({
   const placeList = (
     <div className="flex flex-col gap-px p-1">
       {everywhere && (
-        <Place icon={<GlobeIcon />} picked={value === ""} onClick={() => onPick("")}>
+        <Place
+          icon={<GlobeIcon />}
+          picked={everywhereChosen}
+          onClick={() => setEverywhereChosen(true)}
+          onDoubleClick={() => onPick("")}
+        >
           Everywhere
         </Place>
       )}
@@ -87,9 +99,10 @@ export function DirectoryBrowser({
         <Place
           key={directory}
           icon={directory === home ? <HouseIcon /> : <FolderIcon />}
-          picked={value === directory}
+          picked={!everywhereChosen && folder === directory}
           mono
-          onClick={() => (wide ? browse(directory) : onPick(directory))}
+          onClick={() => browse(directory)}
+          onDoubleClick={() => onPick(directory)}
         >
           {shortPath(directory, home)}
         </Place>
@@ -133,7 +146,10 @@ export function DirectoryBrowser({
               spellCheck={false}
               className="font-mono"
               value={address}
-              onChange={(event) => setAddress(event.target.value)}
+              onChange={(event) => {
+                setEverywhereChosen(false);
+                setAddress(event.target.value);
+              }}
               onKeyDown={(event) => {
                 // Enter goes into the typed folder, or the only one matching it.
                 const only = listing.data?.length === 1 ? listing.data[0] : undefined;
@@ -161,6 +177,7 @@ export function DirectoryBrowser({
                   type="button"
                   className="flex items-center gap-2 rounded-sm px-2 py-1 text-left font-mono text-xs hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
                   onClick={() => browse(child)}
+                  onDoubleClick={() => onPick(child)}
                 >
                   <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1 truncate">
@@ -185,14 +202,18 @@ export function DirectoryBrowser({
           <Button
             size="sm"
             className={cn("min-w-0", !wide && "w-full", wide && "ml-auto")}
-            disabled={folder === undefined}
-            onClick={() => folder !== undefined && onPick(folder)}
+            disabled={chosen === undefined}
+            onClick={() => chosen !== undefined && onPick(chosen)}
           >
             <span className="min-w-0 truncate">
               Use{" "}
-              <span className="font-mono">
-                {folder === undefined ? "…" : shortPath(folder, home)}
-              </span>
+              {chosen === "" ? (
+                "everywhere"
+              ) : (
+                <span className="font-mono">
+                  {chosen === undefined ? "…" : shortPath(chosen, home)}
+                </span>
+              )}
             </span>
           </Button>
         </div>
@@ -206,12 +227,14 @@ function Place({
   picked,
   mono = false,
   onClick,
+  onDoubleClick,
   children,
 }: {
   readonly icon: ReactNode;
   readonly picked: boolean;
   readonly mono?: boolean;
   readonly onClick: () => void;
+  readonly onDoubleClick: () => void;
   readonly children: ReactNode;
 }) {
   return (
@@ -223,6 +246,7 @@ function Place({
         mono && "font-mono",
       )}
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
     >
       {icon}
       <span className="min-w-0 flex-1 truncate">{children}</span>

@@ -22,6 +22,7 @@ import {
   ChoiceField,
   type DefinitionText,
   ListField,
+  TagsField,
   MapField,
   NumberField,
   TextField,
@@ -206,6 +207,9 @@ function ShareField({ form }: { readonly form: DefinitionText }) {
   );
 }
 
+// Scopes many providers know; any other can be typed.
+const oauthScopes = ["openid", "profile", "email", "offline_access", "read", "write"];
+
 const secretKinds = [
   {
     value: "keychain",
@@ -266,7 +270,13 @@ function SecretForm({ form }: { readonly form: DefinitionText }) {
           <TextField form={form} path={["issuer"]} label="Issuer" placeholder="discovered" />
           <TextField form={form} path={["client_id"]} label="Client ID" />
           <TextField form={form} path={["resource"]} label="Resource" />
-          <ListField form={form} path={["scopes"]} label="Scopes" />
+          <TagsField
+            form={form}
+            path={["scopes"]}
+            label="Scopes"
+            placeholder="read, openid…"
+            suggestions={oauthScopes}
+          />
         </>
       )}
       {kind === "keychain" && (
