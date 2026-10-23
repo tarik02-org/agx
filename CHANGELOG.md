@@ -17,17 +17,17 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   edited with a form or YAML. Staged changes apply at once after showing their diff, skills
   are added from Git with a wizard, and the UI is scoped to the directory `agx ui` ran in.
   Release binaries and the Nix package embed it.
-- `ConfigurationService.GetConfiguration` and `CompleteDirectory`, and harness settings in
-  `ResolveResponse`.
-- `ConfigurationService.ListDefinitions`, `GetSkill`, `ReadFile`, `PlanChanges`, and
-  `ApplyChanges`, and `PackageService.PreviewSource` and `ReadPreviewFile`: the editing the
+- `ConfigurationService.PlanChanges` and `ApplyChanges`, and `PackageService.PreviewSource` and `ReadPreviewFile`: the editing the
   CLI does, as a plan with per-file diffs and an apply that fails if a file changed since.
 - `PackageService.ListSourceRefs` lists a Git source's branches and tags, with their commits,
   without fetching it; `InspectSource` checks one out at its pins for the commit, the content
   hash a pinned package records, and its directories.
+- `ConfigurationService.GetConfiguration` (harnesses, scope directories, and files with
+  whether each is writable), `CompleteDirectory`, `ListDefinitions` (every definition with the
+  YAML that defines it), `GetSkill`, and `ReadFile` (configuration fragments and files of
+  configured skills and instructions only), and harness settings in `ResolveResponse`.
 - `agx mcp stop <pid>` and `RuntimeService.StopMcpProcess` stop a local MCP server process;
   its sessions reconnect and the next one starts it again.
-
 - Harness definitions take `settings:` in the harness's own configuration schema. Codex gets
   one `-c` override per setting, encoded as TOML; Claude Code gets a per-launch file passed
   with `--settings`; Pi definitions reject them. Settings merge along the base chain with
