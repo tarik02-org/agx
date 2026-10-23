@@ -60,6 +60,24 @@ export const readList = (text: string, path: FieldPath): ReadonlyArray<string> =
 /** Whether a field is written, even empty. */
 export const hasField = (text: string, path: FieldPath): boolean => parseDocument(text).hasIn(path);
 
+/** Top-level fields as written, comments and tags included, for putFields to put back. */
+export type TakenFields = ReadonlyArray<readonly [string, unknown]>;
+
+export const takeFields = (text: string, fields: ReadonlyArray<string>): TakenFields => {
+  const document = parseDocument(text);
+  return fields.flatMap((field) =>
+    document.has(field) ? [[field, document.get(field, true)] as const] : [],
+  );
+};
+
+export const putFields = (text: string, fields: TakenFields): string => {
+  const document = parseDocument(text);
+  for (const [field, node] of fields) {
+    document.set(field, node);
+  }
+  return document.toString();
+};
+
 /** Writes a field as an empty string unless it is written already. */
 export const ensureField = (text: string, path: FieldPath): string => {
   const document = parseDocument(text);

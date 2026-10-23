@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  putFields,
   readMap,
   readString,
   readValue,
+  removeFields,
+  takeFields,
   writeField,
   writeMap,
   writeValue,
@@ -51,5 +54,18 @@ describe("yamlDocument", () => {
 
   it("starts an empty definition", () => {
     expect(writeField("", ["command"], ["npx", "server"])).toBe("command:\n  - npx\n  - server\n");
+  });
+
+  it("puts back fields taken out, with their comments and tags", () => {
+    const text =
+      "url: https://example.com/mcp\nheaders:\n  # The token.\n  X-Token: !secret docs-token\n";
+    const taken = takeFields(text, ["url", "headers"]);
+    const back = putFields(removeFields(text, ["url", "headers"]), taken);
+    expect(back).toContain("# The token.");
+    expect(readValue(back, ["headers", "X-Token"])).toEqual({
+      tag: "!secret",
+      value: "docs-token",
+    });
+    expect(readString(back, ["url"])).toBe("https://example.com/mcp");
   });
 });

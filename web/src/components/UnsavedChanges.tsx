@@ -1,16 +1,16 @@
 import { useBlocker } from "@tanstack/react-router";
 import { useState } from "react";
 
+import { Button } from "~/components/ui/button.tsx";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "~/components/ui/alert-dialog.tsx";
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog.tsx";
 
 // Where a location points, apart from search parameters that only change how a page shows it.
 const target = (
@@ -46,7 +46,7 @@ export function UnsavedChanges({ dirty, ignore = nothingIgnored }: UnsavedChange
   // navigation proceeds once its closing transition has finished.
   const [discarding, setDiscarding] = useState(false);
   return (
-    <AlertDialog
+    <Dialog
       open={blocker.status === "blocked" && !discarding}
       onOpenChange={(open) => {
         if (!open) {
@@ -60,20 +60,20 @@ export function UnsavedChanges({ dirty, ignore = nothingIgnored }: UnsavedChange
         }
       }}
     >
-      <AlertDialogContent size="sm">
-        <AlertDialogHeader>
-          <AlertDialogTitle>Discard your edits?</AlertDialogTitle>
-          <AlertDialogDescription>
+      <DialogContent className="sm:max-w-sm" showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Discard your edits?</DialogTitle>
+          <DialogDescription>
             They are not staged. Stage them to keep them until you apply.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Keep editing</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={() => setDiscarding(true)}>
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline">Keep editing</Button>} />
+          <Button variant="destructive" onClick={() => setDiscarding(true)}>
             Discard
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

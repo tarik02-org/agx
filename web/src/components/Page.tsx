@@ -84,7 +84,7 @@ export function Page({ title, crumbs, actions, fill = false, className, children
               ))}
             </BreadcrumbList>
           </Breadcrumb>
-          <div ref={setSlot} className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          <div ref={setSlot} className="ml-auto flex shrink-0 items-center gap-2">
             {actions}
           </div>
         </div>

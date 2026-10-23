@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 import { HashIcon } from "lucide-react";
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useId, useRef, useState } from "react";
 
 import { Badge } from "~/components/ui/badge.tsx";
 import { InputGroupButton } from "~/components/ui/input-group.tsx";
@@ -9,14 +9,6 @@ import { toast } from "~/components/ui/toast.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
 import { Field, FieldGroup, FieldSeparator } from "~/components/ui/field.tsx";
 import { Input } from "~/components/ui/input.tsx";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "~/components/ui/select.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonMutation, useDaemonQuery } from "~/daemon/query.ts";
 import type { SourceRef } from "~/gen/agx/v1/agx_pb.ts";
@@ -27,6 +19,8 @@ import {
   type DefinitionText,
   HintedLabel,
   ListField,
+  type Option,
+  OptionSelect,
   SuggestField,
   TagsField,
   MapField,
@@ -37,6 +31,9 @@ import {
 } from "~/features/config/fields.tsx";
 import {
   ensureField,
+  putFields,
+  type TakenFields,
+  takeFields,
   hasField,
   isStructured,
   readString,
@@ -88,17 +85,27 @@ const sourceNote = (form: DefinitionText) =>
     ? "Fixed once configured: remove it and add it again to take it from elsewhere."
     : undefined;
 
-// Switching where a definition comes from drops the fields only the previous source had and
-// writes the new source's own, empty, so the switch shows before it is filled in.
-const switchSource = (form: DefinitionText, drop: ReadonlyArray<string>, mark?: string) =>
-  form.onChange(
-    mark === undefined
-      ? removeFields(form.text, drop)
-      : ensureField(removeFields(form.text, drop), [mark]),
-  );
+/**
+ * Switches where a definition comes from: drops the fields only the previous source had, keeping
+ * them to put back if the source is switched back, and writes the new source's own field, empty,
+ * so the switch shows before it is filled in.
+ */
+const useSourceSwitch = (form: DefinitionText) => {
+  const kept = useRef(new Map<string, TakenFields>());
+  return (from: string, to: string, drop: ReadonlyArray<string>, mark?: string) => {
+    kept.current.set(from, takeFields(form.text, drop));
+    let text = removeFields(form.text, drop);
+    const back = kept.current.get(to);
+    if (back !== undefined) {
+      text = putFields(text, back);
+    }
+    form.onChange(mark === undefined ? text : ensureField(text, [mark]));
+  };
+};
 
 function McpForm({ form }: { readonly form: DefinitionText }) {
   const transport = has(form, "url") ? "http" : "stdio";
+  const switchSource = useSourceSwitch(form);
   return (
     <FieldGroup>
       <TextField form={form} path={["description"]} label="Description" />
@@ -112,7 +119,8 @@ function McpForm({ form }: { readonly form: DefinitionText }) {
         ]}
         onChange={(next) =>
           switchSource(
-            form,
+            transport,
+            next,
             next === "http"
               ? ["command", "cwd", "environment", "transport", "share"]
               : ["url", "headers", "auth", "transport"],
@@ -164,11 +172,11 @@ function McpForm({ form }: { readonly form: DefinitionText }) {
   );
 }
 
-const shares = [
-  { value: "none", label: "none: a process per session" },
-  { value: "directory", label: "directory: one per launch directory" },
-  { value: "repo", label: "repo: one per repository" },
-  { value: "global", label: "global: one everywhere" },
+const shares: ReadonlyArray<Option> = [
+  { value: "none", label: "None (default)", description: "A process for each session." },
+  { value: "directory", label: "Directory", description: "One for every launch in a directory." },
+  { value: "repo", label: "Repository", description: "One for every launch in a repository." },
+  { value: "global", label: "Global", description: "One for every launch, wherever it runs." },
 ];
 
 // share is a type, or {type, idle} when it also sets how long the process stays.
@@ -198,25 +206,13 @@ function ShareField({ form }: { readonly form: DefinitionText }) {
         Share
       </HintedLabel>
       <div className="flex gap-2">
-        <Select
-          items={shares}
+        <OptionSelect
+          id={typeId}
           value={type}
+          options={shares}
           disabled={form.readOnly}
-          onValueChange={(next) => write(next ?? "none", idle)}
-        >
-          <SelectTrigger id={typeId} className="w-72">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent alignItemWithTrigger={false}>
-            <SelectGroup>
-              {shares.map((share) => (
-                <SelectItem key={share.value} value={share.value}>
-                  {share.label}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
+          onChange={(next) => write(next, idle)}
+        />
         {type !== "none" && (
           <Input
             id={idleId}
@@ -454,6 +450,7 @@ function SubdirectoryField({ form }: { readonly form: DefinitionText }) {
 
 function PackageForm({ form }: { readonly form: DefinitionText }) {
   const source = has(form, "path") ? "path" : "git";
+  const switchSource = useSourceSwitch(form);
   return (
     <FieldGroup>
       <VariantField
@@ -466,7 +463,12 @@ function PackageForm({ form }: { readonly form: DefinitionText }) {
           { value: "path", label: "Local directory", description: "A directory on this machine." },
         ]}
         onChange={(next) =>
-          switchSource(form, next === "path" ? ["git", "ref", "rev", "hash"] : ["path"], next)
+          switchSource(
+            source,
+            next,
+            next === "path" ? ["git", "ref", "rev", "hash"] : ["path"],
+            next,
+          )
         }
       />
       {source === "git" ? (
@@ -509,6 +511,7 @@ function SettingsRow({ children }: { readonly children: ReactNode }) {
 
 function SkillForm({ form }: { readonly form: DefinitionText }) {
   const source = has(form, "content") ? "content" : has(form, "git") ? "git" : "path";
+  const switchSource = useSourceSwitch(form);
   return (
     <FieldGroup>
       <SettingsRow>
@@ -528,7 +531,8 @@ function SkillForm({ form }: { readonly form: DefinitionText }) {
           ]}
           onChange={(next) =>
             switchSource(
-              form,
+              source,
+              next,
               next === "content"
                 ? ["path", ...gitFields]
                 : [
@@ -579,6 +583,7 @@ function SkillForm({ form }: { readonly form: DefinitionText }) {
 
 function InstructionsForm({ form }: { readonly form: DefinitionText }) {
   const source = has(form, "text") ? "text" : has(form, "git") ? "git" : "path";
+  const switchSource = useSourceSwitch(form);
   return (
     <FieldGroup>
       <SettingsRow>
@@ -594,7 +599,8 @@ function InstructionsForm({ form }: { readonly form: DefinitionText }) {
           ]}
           onChange={(next) =>
             switchSource(
-              form,
+              source,
+              next,
               next === "text"
                 ? ["path", ...gitFields]
                 : ["text", ...(next === "path" ? gitFields : [])],

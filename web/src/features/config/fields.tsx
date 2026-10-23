@@ -346,7 +346,7 @@ export function ListField({ form, path, label, placeholder, description }: Field
   );
 }
 
-interface Option<V extends string = string> {
+export interface Option<V extends string = string> {
   readonly value: V;
   readonly label: string;
   /** A line under the label in the list, saying what the choice means. */
@@ -509,7 +509,7 @@ const noSuggestions: ReadonlyArray<string> = [];
  * A select whose options may carry a line saying what they mean; the list may be wider than the
  * trigger, so those lines wrap instead of running out of it.
  */
-function OptionSelect<V extends string>({
+export function OptionSelect<V extends string>({
   id,
   value,
   options,

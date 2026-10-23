@@ -439,3 +439,10 @@ func TestSkillInterface(t *testing.T) {
 		})
 	}
 }
+
+func TestInstallFailureRedactsCredentials(t *testing.T) {
+	got := installFailure(errors.New("clone https://user:ghp_secret@github.com/acme/skills: denied"))
+	if strings.Contains(got, "ghp_secret") || !strings.Contains(got, "https://***@github.com/acme/skills") {
+		t.Fatalf("installFailure = %q", got)
+	}
+}

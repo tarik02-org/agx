@@ -159,6 +159,13 @@ function ConfigPage() {
   );
 }
 
+/**
+ * Where a definition is written, for showing: under its package for one a package defines, whose
+ * files live in the cache under the package's hash, and as ~/… otherwise.
+ */
+const definedAt = (path: string, home: string): string =>
+  /\/packages\/[0-9a-f]{64}\/(.+)$/.exec(path)?.[1] ?? shortPath(path, home);
+
 /** Starts a new definition of any kind in the editor. */
 function NewDefinitionMenu() {
   const navigate = useNavigate({ from: Route.fullPath });
@@ -262,8 +269,11 @@ function DefinitionEditor({
           {readOnly && <Badge variant="outline">read-only</Badge>}
           {staged !== undefined && <Badge>{removing ? "removal staged" : "staged"}</Badge>}
           {location !== undefined && (
-            <span className="font-mono text-muted-foreground text-xs">
-              {`${shortPath(location.path, home)}${location.line > 0 ? `:${location.line}` : ""}`}
+            <span
+              className="max-w-64 truncate font-mono text-muted-foreground text-xs"
+              title={location.path}
+            >
+              {`${definedAt(location.path, home)}${location.line > 0 ? `:${location.line}` : ""}`}
             </span>
           )}
         </span>
