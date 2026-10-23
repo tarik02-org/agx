@@ -1,13 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import {
-  ActivityIcon,
-  BlocksIcon,
-  GitCompareArrowsIcon,
-  type LucideIcon,
-  PlugIcon,
-  ScanSearchIcon,
-  Settings2Icon,
-} from "lucide-react";
+import { ActivityIcon, GitCompareArrowsIcon, type LucideIcon } from "lucide-react";
 import { type ReactNode, useEffect } from "react";
 
 import {
@@ -32,17 +24,12 @@ import { ScopeSelector } from "~/features/scope/ScopeSelector.tsx";
 
 interface Section {
   readonly label: string;
-  readonly to: "/" | "/explain" | "/mcp" | "/skills" | "/config";
+  readonly to: "/";
   readonly icon: LucideIcon;
 }
 
-const sections: ReadonlyArray<Section> = [
-  { label: "Runtime", to: "/", icon: ActivityIcon },
-  { label: "Explain", to: "/explain", icon: ScanSearchIcon },
-  { label: "MCP inspector", to: "/mcp", icon: PlugIcon },
-  { label: "Skills", to: "/skills", icon: BlocksIcon },
-  { label: "Configuration", to: "/config", icon: Settings2Icon },
-];
+// Pages that are not one item of the configuration; every item opens from the tree.
+const sections: ReadonlyArray<Section> = [{ label: "Runtime", to: "/", icon: ActivityIcon }];
 
 /**
  * Everything global lives in the sidebar, at fixed places: the name and scope at its top, the
@@ -74,16 +61,16 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
         <SidebarProvider>
           <Sidebar collapsible="offcanvas">
             <SidebarHeader className="gap-2 px-3 pt-3">
-              <span className="px-1 font-mono font-semibold">agx</span>
+              <Link to="/" className="self-start px-1 font-mono font-semibold">
+                agx
+              </Link>
               <ScopeSelector />
             </SidebarHeader>
             <SidebarMenu className="px-2 py-1">
               {sections.map((section) => (
                 <SidebarMenuItem key={section.to}>
                   <SidebarMenuButton
-                    isActive={
-                      section.to === "/" ? pathname === "/" : pathname.startsWith(section.to)
-                    }
+                    isActive={pathname === section.to}
                     render={<Link to={section.to} />}
                   >
                     <section.icon />

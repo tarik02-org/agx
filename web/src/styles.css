@@ -218,7 +218,11 @@ body,
   --tw-exit-translate-y: 0;
 }
 /* The page header's border already sits above a page's first section. */
-[data-slot="page"] > [data-slot="card"]:not([data-slot="card"] ~ [data-slot="card"]) {
+[data-slot="page"] > [data-slot="card"]:not([data-slot="card"] ~ [data-slot="card"]),
+[data-slot="page"]
+  > [data-slot="tabs"]
+  > [data-slot="tabs-content"]
+  > [data-slot="card"]:first-child {
   border-top: 0;
 }
 [data-slot="card-header"],

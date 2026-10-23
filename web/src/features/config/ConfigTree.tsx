@@ -1,16 +1,28 @@
 import { useQueries } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { cn } from "cn";
-import { FilterIcon, SearchIcon } from "lucide-react";
+import { GitBranchPlusIcon, PlusIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
 
 import { NavTree, type TreeIcon } from "~/components/NavTree.tsx";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group.tsx";
+import { Button } from "~/components/ui/button.tsx";
 import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput,
-} from "~/components/ui/input-group.tsx";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu.tsx";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select.tsx";
+import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { DaemonError } from "~/daemon/error.ts";
@@ -27,7 +39,7 @@ import {
 } from "~/features/config/treeIcons.ts";
 import { useInspectorDirectory } from "~/features/mcp/tools.ts";
 import { mcpStates } from "~/features/runtime/states.ts";
-import { useEnabledHere, useScopeDirectory } from "~/features/scope/scope.ts";
+import { useEnabledHere, useScopeDirectory, useScopeHarness } from "~/features/scope/scope.ts";
 import type { GetSkillResponse, McpTools } from "~/gen/agx/v1/agx_pb.ts";
 import { McpRuntime_State } from "~/gen/agx/v1/agx_pb.ts";
 import { shortPath } from "~/lib/path.ts";
@@ -218,22 +230,21 @@ export function ConfigTree() {
     }
   }
   // A skill's file or a server's tool is selected before it loads, so its folder opens for it.
+  const itemLabel = search.kind === undefined ? undefined : label(search.kind);
   const selected =
-    search.skill !== undefined
-      ? `${label("skills")}/${search.skill}${search.file === undefined ? "" : `/${search.file}`}`
-      : search.server !== undefined
-        ? `${label("mcp")}/${search.server}${search.tool === undefined ? "" : `/${search.tool}`}`
-        : [...targets].find(([, target]) => {
-            switch (target.page) {
-              case "skill":
-              case "server":
-                return false;
-              case "definition":
-                return search.kind === target.kind && search.id === target.id;
-              case "file":
-                return search.file === target.file;
-            }
-          })?.[0];
+    search.file !== undefined
+      ? [...targets].find(
+          ([, target]) => target.page === "file" && target.file === search.file,
+        )?.[0]
+      : itemLabel === undefined || search.id === undefined
+        ? undefined
+        : `${itemLabel}/${search.id}${
+            search.kind === "skills" && search.path !== undefined
+              ? `/${search.path}`
+              : search.kind === "mcp" && search.tool !== undefined
+                ? `/${search.tool}`
+                : ""
+          }`;
 
   return (
     <NavTree
@@ -250,21 +261,29 @@ export function ConfigTree() {
         if (target === undefined) {
           return;
         }
+        // Moving between definitions keeps the tab, so several can be edited in a row.
+        const tab = search.tab === "definition" ? { tab: "definition" as const } : {};
         switch (target.page) {
           case "skill":
             void navigate({
-              to: "/skills",
-              search: target.file === undefined ? { skill: target.skill } : { ...target },
+              to: "/config",
+              search:
+                target.file === undefined || target.file === "SKILL.md"
+                  ? { kind: "skills", id: target.skill, ...tab }
+                  : { kind: "skills", id: target.skill, path: target.file },
             });
             return;
           case "server":
             void navigate({
-              to: "/mcp",
-              search: target.tool === undefined ? { server: target.server } : { ...target },
+              to: "/config",
+              search:
+                target.tool === undefined
+                  ? { kind: "mcp", id: target.server, ...tab }
+                  : { kind: "mcp", id: target.server, tool: target.tool },
             });
             return;
           case "definition":
-            void navigate({ to: "/config", search: { kind: target.kind, id: target.id } });
+            void navigate({ to: "/config", search: { kind: target.kind, id: target.id, ...tab } });
             return;
           case "file":
             void navigate({ to: "/config", search: { file: target.file } });
@@ -272,7 +291,39 @@ export function ConfigTree() {
       }}
       query={query}
       header={
-        <div className="px-2 pt-1 pb-2">
+        <div className="flex flex-col gap-1.5 px-2 pt-1 pb-2">
+          <div className="flex items-center gap-1">
+            {directory !== "" && (
+              <ToggleGroup
+                variant="outline"
+                size="sm"
+                className="flex-1 *:flex-1"
+                value={[onlyHere ? "effective" : "all"]}
+                onValueChange={(next) => {
+                  if (next.length > 0) {
+                    setOnlyHere(next.includes("effective"));
+                  }
+                }}
+              >
+                <Tooltip>
+                  <TooltipTrigger render={<ToggleGroupItem value="all">All</ToggleGroupItem>} />
+                  <TooltipContent side="bottom">Everything configured</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={<ToggleGroupItem value="effective">Effective</ToggleGroupItem>}
+                  />
+                  <TooltipContent side="bottom">
+                    What a launch in {shortPath(directory, home)} gets
+                  </TooltipContent>
+                </Tooltip>
+              </ToggleGroup>
+            )}
+            <div className="ml-auto">
+              <NewItemMenu />
+            </div>
+          </div>
+          {directory !== "" && onlyHere && <HarnessPicker />}
           <InputGroup>
             <InputGroupAddon>
               <SearchIcon />
@@ -286,34 +337,95 @@ export function ConfigTree() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
-            {directory !== "" && (
-              <InputGroupAddon align="inline-end">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <InputGroupButton
-                        size="icon-xs"
-                        variant={onlyHere ? "secondary" : "ghost"}
-                        aria-label="Only what the scope directory gets"
-                        aria-pressed={onlyHere}
-                        className={cn(onlyHere && "text-primary")}
-                        onClick={() => setOnlyHere((current) => !current)}
-                      >
-                        <FilterIcon />
-                      </InputGroupButton>
-                    }
-                  />
-                  <TooltipContent side="right">
-                    {onlyHere
-                      ? `Showing only what ${shortPath(directory, home)} gets`
-                      : `Show only what ${shortPath(directory, home)} gets`}
-                  </TooltipContent>
-                </Tooltip>
-              </InputGroupAddon>
-            )}
           </InputGroup>
         </div>
       }
     />
+  );
+}
+
+/** Which harness the Effective view is for: every harness, or one, which removes what it removes. */
+function HarnessPicker() {
+  const configuration = useDaemonQuery(
+    queryKeys.configuration,
+    Daemon.use((daemon) => daemon.configuration),
+  );
+  const harness = useScopeHarness();
+  const navigate = useNavigate();
+  const options = [
+    { value: "", label: "Any harness" },
+    ...(configuration.data?.harnesses ?? [])
+      .filter((h) => !h.hidden)
+      .map((h) => ({ value: h.name, label: h.name })),
+  ];
+  return (
+    <Select
+      items={options}
+      value={harness}
+      onValueChange={(next) =>
+        void navigate({
+          to: ".",
+          search: (current) => ({
+            ...current,
+            harness: next === null || next === "" ? undefined : next,
+          }),
+        })
+      }
+    >
+      <SelectTrigger size="sm" className="w-full" aria-label="Harness">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent alignItemWithTrigger={false}>
+        <SelectGroup>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** Starts something new: a definition of any kind, or skills from a Git repository. */
+function NewItemMenu() {
+  const navigate = useNavigate();
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <DropdownMenuTrigger
+              render={
+                <Button variant="ghost" size="icon-sm" aria-label="New">
+                  <PlusIcon />
+                </Button>
+              }
+            />
+          }
+        />
+        <TooltipContent side="bottom">New</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end" className="w-auto">
+        <DropdownMenuGroup>
+          {kinds.map(({ kind, one }) => (
+            <DropdownMenuItem
+              key={kind}
+              onClick={() => void navigate({ to: "/config", search: { kind, create: true } })}
+            >
+              {one}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuItem onClick={() => void navigate({ to: "/skills/add" })}>
+            <GitBranchPlusIcon />
+            Skills from Git…
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

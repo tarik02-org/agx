@@ -127,7 +127,7 @@ tool whose author already writes Effect, and Aperture uses the same model.
 ## Layout and scope
 
 - Everything global lives in the sidebar, at fixed places: the name and the
-  scope at its top, the pages, the configuration tree, and the staged changes
+  scope at its top, the runtime page, the configuration tree, and the staged changes
   at its foot. Each page has one header, with the sidebar's toggle, its
   breadcrumbs, and every action, an editor's Stage and Revert included, so
   actions are always at the top.
@@ -135,8 +135,13 @@ tool whose author already writes Effect, and Aperture uses the same model.
   list of pages: definitions by kind, package skills under their package, and
   the files. Skills hold their files and MCP servers their tools, loaded when
   first expanded, so a server starts only when someone looks inside it.
-  Selecting an entry opens it in the skills page, the MCP inspector, or the
-  editor; pages keep no navigation of their own.
+  Selecting an entry opens its page, with an overview of what it is and does
+  and its definition on a second tab; there are no pages per kind, since each
+  would need an item picked anyway, and pages keep no navigation of their own.
+- The tree shows either all of the configuration or, by default when scoped,
+  only what is effective in the scope directory for any harness or one picked.
+  This replaces a separate explain page: why an item is or is not effective is
+  on the item's overview, and a harness's resolved settings on the harness's.
 - The scope is a directory, or everywhere, kept in the address (`?dir=`) that
   every link carries. `agx ui` passes its working directory with the sign-in
   code, and the sign-in redirect keeps it only as a query value of the UI's own

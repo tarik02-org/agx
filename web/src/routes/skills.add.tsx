@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -106,7 +106,7 @@ function AddSkillsPage() {
   return (
     <Page
       title={["Add from Git", "Skills"]}
-      crumbs={[{ label: "Skills", link: <Link to="/skills" /> }, { label: "Add from Git" }]}
+      crumbs={[{ label: "Skills" }, { label: "Add from Git" }]}
       className="max-w-3xl"
     >
       <Steps step={step} onStep={setStep} />
@@ -290,6 +290,7 @@ function Wizard({
   return (
     <Review
       changes={staged}
+      packageId={id}
       summary={`Package ${id}${
         chosen.length === 0
           ? ""
@@ -304,11 +305,13 @@ function Wizard({
 /** The diff the package and its enabled skills make, applied now or staged with other edits. */
 function Review({
   changes,
+  packageId,
   summary,
   scope,
   onBack,
 }: {
   readonly changes: ReadonlyArray<StagedChange>;
+  readonly packageId: string;
   readonly summary: string;
   readonly scope: Scope;
   readonly onBack: () => void;
@@ -325,7 +328,7 @@ function Review({
     true,
   );
   const apply = useApply(changes.map((change) => change.change));
-  const done = () => void navigate({ to: "/skills" });
+  const done = () => void navigate({ to: "/config", search: { kind: "packages", id: packageId } });
   return (
     <Card size="sm">
       <CardHeader>

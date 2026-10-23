@@ -9,12 +9,13 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - `agx ui` opens a web UI the daemon serves on its own port, signed in with a one-time link
   that the browser trades for a session cookie (`--print` prints the link). Its runtime page
   shows launches live, MCP server processes, secrets, and package installation, with
-  revoke, restart, OAuth login and logout, and install actions; its explain page shows what a
-  directory gets for a harness and why; its MCP inspector calls tools with schema-built forms;
-  its skills page previews and adds skills from Git with a wizard; its configuration page edits
-  every definition with forms or YAML and applies staged changes at once after showing their
-  diff. A sidebar shows the configuration as a tree, with skills' files and MCP servers' tools
-  loaded on expand, and the UI is scoped to the directory `agx ui` ran in.
+  revoke, restart, OAuth login and logout, and install actions. A sidebar shows the
+  configuration as a tree, with skills' files and MCP servers' tools loaded on expand, all of
+  it or only what a directory gets for a harness. Each item has a page: an overview (a skill's
+  files, a server's tools and processes, a tool called with a schema-built form, a harness's
+  resolved settings, and why the item is part of a launch in the scope) and its definition,
+  edited with a form or YAML. Staged changes apply at once after showing their diff, skills
+  are added from Git with a wizard, and the UI is scoped to the directory `agx ui` ran in.
   Release binaries and the Nix package embed it.
 - `ConfigurationService.GetConfiguration` and `CompleteDirectory`, and harness settings in
   `ResolveResponse`.

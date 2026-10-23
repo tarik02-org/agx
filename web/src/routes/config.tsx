@@ -2,13 +2,11 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { cn } from "cn";
 import * as Schema from "effect/Schema";
 import {
-  ChevronDownIcon,
   FileCode2Icon,
   LinkIcon,
   ListChecksIcon,
   LockIcon,
   PackageIcon,
-  PlusIcon,
   RotateCcwIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -16,18 +14,12 @@ import { useState } from "react";
 
 import { ConfirmAction } from "~/components/ConfirmAction.tsx";
 import { UnsavedChanges } from "~/components/UnsavedChanges.tsx";
-import { Page, PageActions } from "~/components/Page.tsx";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu.tsx";
+import { type Crumb, Page, PageActions } from "~/components/Page.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
 import { Button } from "~/components/ui/button.tsx";
+import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card.tsx";
 import {
   Empty,
   EmptyDescription,
@@ -53,6 +45,11 @@ import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
 import { CodeEditor } from "~/features/config/CodeEditor.tsx";
 import { DefinitionForm, hasForm } from "~/features/config/DefinitionForm.tsx";
 import { ScopeDialog } from "~/features/config/ScopeDialog.tsx";
+import { SettingsTree } from "~/features/explain/SettingsTree.tsx";
+import { resourceKey, Traces } from "~/features/explain/Traces.tsx";
+import { ServerOverview } from "~/features/mcp/ServerOverview.tsx";
+import { useResolution, useScopeDirectory, useScopeHarness } from "~/features/scope/scope.ts";
+import { SkillOverview } from "~/features/skills/SkillOverview.tsx";
 import {
   define,
   undefine,
@@ -75,6 +72,12 @@ const ConfigSearch = Schema.Struct({
   file: Schema.optional(Schema.String),
   /** How the definition is edited, so a link opens the same editor. */
   view: Schema.optional(Schema.Literals(["form", "yaml"])),
+  /** The item's overview, or its definition to edit. */
+  tab: Schema.optional(Schema.Literals(["overview", "definition"])),
+  /** A skill's file, relative to its directory; SKILL.md when absent. */
+  path: Schema.optional(Schema.String),
+  /** An MCP server's tool to call. */
+  tool: Schema.optional(Schema.String),
 });
 
 export const Route = createFileRoute("/config")({
@@ -82,6 +85,10 @@ export const Route = createFileRoute("/config")({
   component: ConfigPage,
 });
 
+/**
+ * An item of the configuration: a definition, with an overview of what it is and does here and
+ * its definition to edit, or a configuration file.
+ */
 function ConfigPage() {
   const configuration = useDaemonQuery(
     queryKeys.configuration,
@@ -97,26 +104,54 @@ function ConfigPage() {
     { staleTime: Number.POSITIVE_INFINITY },
   );
   const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
   const home = configuration.data?.home ?? "";
   const label = kinds.find((k) => k.kind === search.kind)?.label ?? search.kind;
   const definition = definitions.data?.find(
     (candidate) => candidate.kind === search.kind && candidate.id === search.id,
   );
+  const creating = search.create === true;
+  const tab = creating ? "definition" : (search.tab ?? "overview");
+  const crumbs: Array<Crumb> =
+    search.file !== undefined
+      ? [{ label: "Files" }, { label: shortPath(search.file, home), mono: true }]
+      : label === undefined
+        ? [{ label: "Configuration" }]
+        : [
+            { label },
+            {
+              label: search.id ?? "new",
+              mono: true,
+              link: <Link to="/config" search={{ kind: search.kind, id: search.id }} />,
+            },
+            ...(search.tool === undefined ? [] : [{ label: search.tool, mono: true }]),
+            ...(search.path === undefined ? [] : [{ label: search.path, mono: true }]),
+          ];
   return (
     <Page
-      title={[search.id ?? search.file?.split("/").at(-1), "Configuration"]}
-      crumbs={[
-        { label: "Configuration" },
-        ...(search.file !== undefined
-          ? [{ label: shortPath(search.file, home), mono: true }]
-          : label !== undefined
-            ? [{ label }, { label: search.id ?? "new", mono: true }]
-            : []),
-      ]}
-      actions={<NewDefinitionMenu />}
+      title={[search.tool ?? search.id ?? search.file?.split("/").at(-1), label]}
+      crumbs={crumbs}
+      {...(search.file === undefined && tab === "overview" ? { className: "max-w-3xl" } : {})}
+      actions={
+        definition !== undefined &&
+        selectable.has(definition.kind) && (
+          <ScopeDialog
+            kind={definition.kind}
+            id={definition.id}
+            trigger={
+              <Button variant="outline" size="sm">
+                <ListChecksIcon data-icon="inline-start" />
+                Enable or disable…
+              </Button>
+            }
+          />
+        )
+      }
       fill={
         search.file !== undefined ||
-        (search.kind !== undefined && (search.view === "yaml" || !hasForm(search.kind)))
+        (tab === "definition" &&
+          search.kind !== undefined &&
+          (search.view === "yaml" || !hasForm(search.kind)))
       }
     >
       {(configuration.isPending || definitions.isPending) && <Pending className="h-64" />}
@@ -132,23 +167,59 @@ function ConfigPage() {
             home={configuration.data.home}
             schema={schema.data}
           />
-        ) : search.kind !== undefined && (search.id !== undefined || search.create === true) ? (
-          <DefinitionEditor
-            key={`${search.kind}/${search.id ?? ""}/${String(search.create)}`}
-            kind={search.kind}
-            definition={definition}
-            initialId={search.id ?? ""}
-            files={configuration.data.files}
-            home={configuration.data.home}
-            schema={schema.data}
-          />
+        ) : search.kind !== undefined && (search.id !== undefined || creating) ? (
+          <Tabs
+            value={tab}
+            onValueChange={(next) =>
+              void navigate({
+                search: (current) => ({
+                  ...current,
+                  tab: next === "definition" ? "definition" : undefined,
+                }),
+                replace: true,
+              })
+            }
+            className="flex min-h-0 flex-1 flex-col gap-3"
+          >
+            {!creating && (
+              <PageActions>
+                <TabsList>
+                  <TabsTrigger value="overview">Overview</TabsTrigger>
+                  <TabsTrigger value="definition">Definition</TabsTrigger>
+                </TabsList>
+              </PageActions>
+            )}
+            <TabsContent value="overview" className="flex flex-col gap-2">
+              {search.id !== undefined && (
+                <ItemOverview
+                  kind={search.kind}
+                  id={search.id}
+                  definition={definition}
+                  path={search.path}
+                  tool={search.tool}
+                  home={home}
+                />
+              )}
+            </TabsContent>
+            <TabsContent value="definition" className="flex min-h-0 flex-1 flex-col">
+              <DefinitionEditor
+                key={`${search.kind}/${search.id ?? ""}/${String(creating)}`}
+                kind={search.kind}
+                definition={definition}
+                initialId={search.id ?? ""}
+                files={configuration.data.files}
+                home={configuration.data.home}
+                schema={schema.data}
+              />
+            </TabsContent>
+          </Tabs>
         ) : (
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 <FileCode2Icon />
               </EmptyMedia>
-              <EmptyTitle>Pick a definition or file in the sidebar</EmptyTitle>
+              <EmptyTitle>Pick something in the sidebar</EmptyTitle>
               <EmptyDescription>
                 Edits are staged; review and apply them together from Staged changes.
               </EmptyDescription>
@@ -159,44 +230,141 @@ function ConfigPage() {
   );
 }
 
+/** What an item is and does, and why a launch in the scope directory gets it or not. */
+function ItemOverview({
+  kind,
+  id,
+  definition,
+  path,
+  tool,
+  home,
+}: {
+  readonly kind: string;
+  readonly id: string;
+  readonly definition: Definition | undefined;
+  readonly path: string | undefined;
+  readonly tool: string | undefined;
+  readonly home: string;
+}) {
+  if (kind === "mcp" && tool !== undefined) {
+    return <ServerOverview key={tool} mcpId={id} toolName={tool} />;
+  }
+  return (
+    <>
+      <WhyHere kind={kind} id={id} home={home} />
+      {kind === "skills" ? (
+        <SkillOverview key={`${id}/${path ?? ""}`} skillId={id} file={path} home={home} />
+      ) : kind === "mcp" ? (
+        <ServerOverview key={id} mcpId={id} toolName={undefined} />
+      ) : (
+        <>
+          {definition?.description !== undefined && definition.description !== "" && (
+            <p className="text-muted-foreground text-xs">{definition.description}</p>
+          )}
+          {kind === "harnesses" && <HarnessSettings harness={id} home={home} />}
+        </>
+      )}
+    </>
+  );
+}
+
+// The resolution's names for the kinds a scope selects.
+const resolvedKinds: Readonly<Record<string, string>> = {
+  skills: "skill",
+  instructions: "instructions",
+  mcp: "mcp",
+};
+
+/** Whether a launch in the scope directory gets the item, and the rules that decided it. */
+function WhyHere({
+  kind,
+  id,
+  home,
+}: {
+  readonly kind: string;
+  readonly id: string;
+  readonly home: string;
+}) {
+  const directory = useScopeDirectory();
+  const harness = useScopeHarness();
+  const resolved = useResolution();
+  const resolvedKind = resolvedKinds[kind];
+  if (resolvedKind === undefined || directory === "") {
+    return null;
+  }
+  const trace = resolved.data?.traces.find((candidate) => {
+    const key = resourceKey(candidate.resource);
+    return key.kind === resolvedKind && key.id === id;
+  });
+  const selected = new Set(
+    (resolved.data?.snapshot?.resources ?? []).map((ref) => {
+      const key = resourceKey(ref);
+      return `${key.kind}/${key.id}`;
+    }),
+  );
+  return (
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle>
+          In <span className="font-mono">{shortPath(directory, home)}</span>
+          {harness !== "" && (
+            <>
+              {" "}
+              with <span className="font-mono">{harness}</span>
+            </>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {resolved.isPending ? (
+          <Pending className="h-10" />
+        ) : resolved.isError ? (
+          <DaemonProblem error={resolved.error} />
+        ) : trace === undefined ? (
+          <p className="text-muted-foreground text-xs">
+            No rule names it here, so launches go without it.
+          </p>
+        ) : (
+          <Traces traces={[trace]} selected={selected} home={home} />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** A harness's settings as a launch gets them, in the scope directory or else at home. */
+function HarnessSettings({ harness, home }: { readonly harness: string; readonly home: string }) {
+  const scope = useScopeDirectory();
+  const directory = scope === "" ? home : scope;
+  const resolved = useDaemonQuery(
+    queryKeys.resolve(directory, harness),
+    Daemon.use((daemon) => daemon.resolve(directory, harness)),
+    { enabled: directory !== "" },
+  );
+  if (resolved.isPending) {
+    return <Pending className="h-16" />;
+  }
+  if (resolved.isError) {
+    return <DaemonProblem error={resolved.error} />;
+  }
+  return resolved.data.settings.length === 0 ? null : (
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle>Settings</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <SettingsTree settings={resolved.data.settings} home={home} />
+      </CardContent>
+    </Card>
+  );
+}
+
 /**
  * Where a definition is written, for showing: under its package for one a package defines, whose
  * files live in the cache under the package's hash, and as ~/… otherwise.
  */
 const definedAt = (path: string, home: string): string =>
   /\/packages\/[0-9a-f]{64}\/(.+)$/.exec(path)?.[1] ?? shortPath(path, home);
-
-/** Starts a new definition of any kind in the editor. */
-function NewDefinitionMenu() {
-  const navigate = useNavigate({ from: Route.fullPath });
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button variant="outline" size="sm">
-            <PlusIcon data-icon="inline-start" />
-            New
-            <ChevronDownIcon data-icon="inline-end" />
-          </Button>
-        }
-      />
-      <DropdownMenuContent align="end">
-        <DropdownMenuGroup>
-          {kinds.map(({ kind, label }) => (
-            <DropdownMenuItem
-              key={kind}
-              onClick={() =>
-                void navigate({ search: (current) => ({ dir: current.dir, kind, create: true }) })
-              }
-            >
-              {label}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
 
 // What a new definition starts as: skills and instructions written inline, the usual way to
 // start one; the form's source switch takes them elsewhere.
@@ -285,18 +453,6 @@ function DefinitionEditor({
             <TabsTrigger value="yaml">YAML</TabsTrigger>
           </TabsList>
         )}
-        {definition !== undefined && selectable.has(kind) && (
-          <ScopeDialog
-            kind={kind}
-            id={definition.id}
-            trigger={
-              <Button variant="outline" size="sm">
-                <ListChecksIcon data-icon="inline-start" />
-                Enable or disable…
-              </Button>
-            }
-          />
-        )}
         {!readOnly && (
           <>
             {definition !== undefined && (
@@ -358,15 +514,6 @@ function DefinitionEditor({
         {/* An editable definition's form shows its description itself. */}
         {readOnly && definition?.description !== undefined && definition.description !== "" && (
           <p className="text-muted-foreground text-xs">{definition.description}</p>
-        )}
-        {kind === "skills" && definition !== undefined && (
-          <Link
-            to="/skills"
-            search={{ skill: definition.id }}
-            className="text-primary text-xs underline"
-          >
-            Open in Skills
-          </Link>
         )}
         {definition === undefined && (
           <FieldGroup>

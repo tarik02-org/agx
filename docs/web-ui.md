@@ -3,14 +3,13 @@
 The daemon serves a web UI for what is easier to see than to read in a
 terminal. The sidebar holds what is global: the **scope**, a directory or
 everywhere, picked from the directories scope rules name or by browsing
-folders; the pages; and the staged changes. Each page has one header with where
+folders; the runtime page; and the staged changes. Each page has one header with where
 it is and every action it offers. `agx ui` scopes the UI to the directory it runs in, and the scope
 stays in the address, so a scoped page can be shared and reloaded. The sidebar,
 on every page, is the configuration as a tree: every definition by kind,
 package skills under their package, and the configuration files. Expanding a
 skill lists its files, and expanding an MCP server starts it and lists its
-tools. When the UI is scoped, the tree shows only what a launch in that
-directory gets, or everything with one switch. Icons hint at what each item does,
+tools. Icons hint at what each item does,
 from its name and description. A skill draws the `interface.icon_small` and
 `interface.brand_color` its `agents/openai.yaml` declares, and an MCP server the
 icon it declared when it last started, which the daemon keeps in its cache.
@@ -27,27 +26,25 @@ The runtime page shows:
 - secrets with their state, and OAuth login and logout;
 - installing the configuration's packages, with progress.
 
-The explain page answers what `agx explain` does for the scope directory and
-optionally a harness: every resource with the rules that added or removed it,
-the harness's resolved settings grouped by key with where each was set, and
-packages it goes without.
+Selecting an item in the tree opens its page. **Overview** shows what it is:
+a skill's card and SKILL.md, with a local skill's files editable; an MCP server's
+state, tools, and processes, starting servers without their own working
+directory in the scope directory; a tool's form, built from its input schema or
+raw JSON, with the result's content and recent calls kept in the browser; and a
+harness's resolved settings, grouped by key with where each was set. When the UI
+is scoped, it also says why the item is or is not part of a launch there, with
+the rules that added or removed it. **Definition** edits it with a form, or as
+YAML checked against the configuration schema. The tree's **Effective** mode,
+the default when scoped, shows only what a launch in the scope directory gets,
+for any harness or the one picked; **All** shows everything. Its **+** menu
+creates a definition of any kind or adds skills from Git.
 
-The MCP inspector shows the server or tool picked in the tree, starting servers
-without their own working directory in the scope directory, and calls a tool
-with a form built from its input schema, or raw JSON, showing the result's
-content and keeping recent calls in the browser.
-
-The skills page shows the skill or skill file picked in the tree, editing a
-local skill's files, and where to enable it.
 Adding skills is a wizard: a Git source (`owner/repo[@ref][/path]` or a URL),
 which the daemon fetches without configuring anything; the skills to enable,
 with their SKILL.md and files; where to enable them, starting with the scope;
 and the diff, applied at once or added to the staged changes.
 
-The configuration page edits every definition (MCP servers, skills,
-instructions, secrets, bundles, packages, and harnesses) with a form, or as
-YAML checked against the configuration schema, and edits configuration files
-directly. Secrets stored in the keychain get their value from the runtime page.
+Configuration files are edited directly from the tree's files. Secrets stored in the keychain get their value from the runtime page.
 
 Nothing is written while you edit. Changes are staged, and **Staged changes**
 lists them, with the diff of every file they touch on a second tab; **Apply** writes them all at once,
