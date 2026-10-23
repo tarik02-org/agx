@@ -49,6 +49,8 @@ export interface DefinitionText {
   readonly onChange: (text: string) => void;
   readonly describe: (field: string) => string | undefined;
   readonly readOnly: boolean;
+  /** The definition is already configured, so where it comes from is fixed. */
+  readonly existing: boolean;
 }
 
 interface FieldProps {
@@ -300,9 +302,11 @@ export function VariantField<V extends string>({
   value,
   options,
   readOnly,
+  description,
   onChange,
 }: {
   readonly label: string;
+  readonly description?: string | undefined;
   readonly value: V;
   readonly options: ReadonlyArray<{ readonly value: V; readonly label: string }>;
   readonly readOnly: boolean;
@@ -329,6 +333,7 @@ export function VariantField<V extends string>({
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
+      {description !== undefined && <FieldDescription>{description}</FieldDescription>}
     </Field>
   );
 }

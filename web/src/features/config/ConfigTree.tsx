@@ -22,7 +22,30 @@ import { mcpStates } from "~/features/runtime/states.ts";
 import { useEnabledHere, useScopeDirectory } from "~/features/scope/scope.ts";
 import type { GetSkillResponse, McpTools } from "~/gen/agx/v1/agx_pb.ts";
 import { McpRuntime_State } from "~/gen/agx/v1/agx_pb.ts";
+import { iconMask } from "~/lib/iconMask.ts";
 import { shortPath } from "~/lib/path.ts";
+import { __iconData as blocks } from "lucide-react/dist/esm/icons/blocks.mjs";
+import { __iconData as bot } from "lucide-react/dist/esm/icons/bot.mjs";
+import { __iconData as boxes } from "lucide-react/dist/esm/icons/boxes.mjs";
+import { __iconData as fileCode } from "lucide-react/dist/esm/icons/file-code.mjs";
+import { __iconData as keyRound } from "lucide-react/dist/esm/icons/key-round.mjs";
+import { __iconData as packageIcon } from "lucide-react/dist/esm/icons/package.mjs";
+import { __iconData as scrollText } from "lucide-react/dist/esm/icons/scroll-text.mjs";
+import { __iconData as server } from "lucide-react/dist/esm/icons/server.mjs";
+
+/** Each section's icon, by its folder in the tree. */
+const sectionIcons: ReadonlyMap<string, string> = new Map(
+  Object.entries({
+    Skills: blocks,
+    "MCP servers": server,
+    Instructions: scrollText,
+    Secrets: keyRound,
+    Bundles: boxes,
+    Packages: packageIcon,
+    Harnesses: bot,
+    Files: fileCode,
+  }).map(([section, icon]) => [section, iconMask(icon)]),
+);
 
 /** Kinds a scope selects; the others apply wherever they are defined. */
 const scoped = new Set(["skills", "instructions", "mcp"]);
@@ -199,6 +222,7 @@ export function ConfigTree() {
       lazy={lazy}
       onExpand={(folder) => setExpanded((current) => new Set([...current, folder]))}
       order={[...kinds.map((k) => k.label), "Files"]}
+      folderIcons={sectionIcons}
       selected={selected}
       decorations={decorations}
       onSelect={(path) => {

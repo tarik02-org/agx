@@ -350,6 +350,7 @@ function DefinitionEditor({
                 text,
                 onChange: setText,
                 readOnly,
+                existing: definition !== undefined,
                 describe: (field) => fieldDescription(schema, kind, field),
               }}
             />

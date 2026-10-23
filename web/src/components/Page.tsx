@@ -10,6 +10,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "~/components/ui/breadcrumb.tsx";
+import { SidebarTrigger } from "~/components/ui/sidebar.tsx";
 import { pageTitle } from "~/lib/title.ts";
 
 /** Where parts of a page, such as an editor, put their actions: the page header. */
@@ -45,8 +46,13 @@ export function Page({ title, crumbs, actions, fill = false, className, children
   return (
     <>
       <title>{pageTitle(...title)}</title>
-      <header className="sticky top-0 z-10 border-b bg-background">
-        <div className={cn(width, "flex h-11 items-center gap-2")}>
+      <header className="sticky top-0 z-10 flex items-center border-b bg-background">
+        {/* At the sidebar's edge, beside what it hides; an equal gap on the right keeps the
+            header's content centered over the page's. */}
+        <div className="flex w-10 shrink-0 justify-center">
+          <SidebarTrigger />
+        </div>
+        <div className={cn(width, "flex h-11 min-w-0 items-center gap-2")}>
           <Breadcrumb className="min-w-0">
             <BreadcrumbList className="flex-nowrap">
               {crumbs.map((crumb, index) => (
@@ -82,6 +88,7 @@ export function Page({ title, crumbs, actions, fill = false, className, children
             {actions}
           </div>
         </div>
+        <div className="w-10 shrink-0" />
       </header>
       <PageActionsSlot value={slot}>
         <div

@@ -26,6 +26,8 @@ interface NavTreeProps {
   readonly header?: ReactNode;
   /** Shows only rows matching this, and their folders; empty shows every row. */
   readonly query?: string;
+  /** CSS mask images, from iconMask, drawn before folders' names, by folder path. */
+  readonly folderIcons?: ReadonlyMap<string, string>;
   /** Top-level folders in the order to show them, such as the configuration's sections. */
   readonly order?: ReadonlyArray<string>;
 }
@@ -47,6 +49,28 @@ const rootRowsAsHeadings = `
 const noDecorations: ReadonlyMap<string, string> = new Map();
 const noFolders: ReadonlyMap<string, boolean> = new Map();
 const noOrder: ReadonlyArray<string> = [];
+const noIcons: ReadonlyMap<string, string> = new Map();
+
+/** Draws each folder's icon before its name; the tree reports folders' paths with a slash. */
+const folderIconRules = (icons: ReadonlyMap<string, string>): string =>
+  [...icons]
+    .map(
+      ([folder, mask]) => `
+  [data-item-path="${folder}/"] [data-item-section="content"] {
+    display: flex;
+    align-items: center;
+  }
+  [data-item-path="${folder}/"] [data-item-section="content"]::before {
+    content: "";
+    flex-shrink: 0;
+    width: 12px;
+    height: 12px;
+    margin-right: 6px;
+    background-color: currentColor;
+    mask: ${mask} center / contain no-repeat;
+  }`,
+    )
+    .join("");
 
 // The tree reports folders with a trailing slash.
 const bare = (path: string) => (path.endsWith("/") ? path.slice(0, -1) : path);
@@ -103,6 +127,7 @@ export function NavTree({
   decorations = noDecorations,
   header,
   query = "",
+  folderIcons = noIcons,
   order = noOrder,
 }: NavTreeProps) {
   // Lazy folders are listed themselves, so one that loads empty stays.
@@ -127,7 +152,7 @@ export function NavTree({
     search: false,
     fileTreeSearchMode: "hide-non-matches",
     density: "compact",
-    unsafeCSS: rootRowsAsHeadings,
+    unsafeCSS: rootRowsAsHeadings + folderIconRules(folderIcons),
     sort: compareIn(order),
     onSelectionChange: (chosen) => {
       const path = chosen.map(bare).find((p) => !p.endsWith(`/${placeholder}`));

@@ -10,13 +10,11 @@ import {
   NavigationMenuLink,
   NavigationMenuList,
 } from "~/components/ui/navigation-menu.tsx";
-import { Separator } from "~/components/ui/separator.tsx";
 import {
   Sidebar,
   SidebarContent,
   SidebarInset,
   SidebarProvider,
-  SidebarTrigger,
 } from "~/components/ui/sidebar.tsx";
 import { Toaster } from "~/components/ui/toast.tsx";
 import { TooltipProvider } from "~/components/ui/tooltip.tsx";
@@ -66,9 +64,7 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
         <div className="[--header-height:--spacing(11)]">
           <SidebarProvider className="flex flex-col">
             <header className="sticky top-0 z-20 flex h-(--header-height) shrink-0 items-center gap-2 border-b bg-background px-2">
-              <SidebarTrigger />
-              <Separator orientation="vertical" className="h-4" />
-              <span className="px-1 font-mono font-semibold">agx</span>
+              <span className="px-2 font-mono font-semibold">agx</span>
               <NavigationMenu>
                 <NavigationMenuList>
                   {sections.map((section) => (

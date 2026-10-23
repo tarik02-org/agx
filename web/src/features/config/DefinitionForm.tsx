@@ -70,6 +70,14 @@ export function DefinitionForm({
 const has = (form: DefinitionText, field: string) =>
   readString(form.text, [field]) !== "" || isStructured(form.text, [field]);
 
+// Where a configured definition comes from is fixed: a new source makes a different thing, so
+// it is removed and added again rather than edited. Its pins stay editable.
+const sourceForm = (form: DefinitionText): DefinitionText =>
+  form.existing ? { ...form, readOnly: true } : form;
+
+const sourceNote = (form: DefinitionText) =>
+  form.existing ? "Fixed once configured; remove it and add it again to change it." : undefined;
+
 // Switching where a definition comes from drops the fields only the previous source had.
 const switchSource = (form: DefinitionText, drop: ReadonlyArray<string>) =>
   form.onChange(removeFields(form.text, drop));
@@ -306,7 +314,8 @@ function PackageForm({ form }: { readonly form: DefinitionText }) {
       <VariantField
         label="Source"
         value={source}
-        readOnly={form.readOnly}
+        readOnly={sourceForm(form).readOnly}
+        description={sourceNote(form)}
         options={[
           { value: "git", label: "Git" },
           { value: "path", label: "local directory" },
@@ -318,7 +327,7 @@ function PackageForm({ form }: { readonly form: DefinitionText }) {
       {source === "git" ? (
         <>
           <TextField
-            form={form}
+            form={sourceForm(form)}
             path={["git"]}
             label="Repository"
             placeholder="https://github.com/owner/repo"
@@ -326,7 +335,7 @@ function PackageForm({ form }: { readonly form: DefinitionText }) {
           <PinFields form={form} />
         </>
       ) : (
-        <TextField form={form} path={["path"]} label="Directory" />
+        <TextField form={sourceForm(form)} path={["path"]} label="Directory" />
       )}
       <TextField form={form} path={["subdir"]} label="Subdirectory" />
       <BooleanField form={form} path={["override"]} label="Override" />
@@ -343,7 +352,8 @@ function SkillForm({ form }: { readonly form: DefinitionText }) {
       <VariantField
         label="Source"
         value={source}
-        readOnly={form.readOnly}
+        readOnly={sourceForm(form).readOnly}
+        description={sourceNote(form)}
         options={[
           { value: "path", label: "local directory" },
           { value: "git", label: "Git" },
@@ -376,7 +386,7 @@ function SkillForm({ form }: { readonly form: DefinitionText }) {
           {source === "git" && (
             <>
               <TextField
-                form={form}
+                form={sourceForm(form)}
                 path={["git"]}
                 label="Repository"
                 placeholder="https://github.com/owner/repo"
@@ -385,7 +395,7 @@ function SkillForm({ form }: { readonly form: DefinitionText }) {
             </>
           )}
           <TextField
-            form={form}
+            form={sourceForm(form)}
             path={["path"]}
             label={source === "git" ? "Path in the checkout" : "Directory"}
           />
@@ -403,7 +413,8 @@ function InstructionsForm({ form }: { readonly form: DefinitionText }) {
       <VariantField
         label="Source"
         value={source}
-        readOnly={form.readOnly}
+        readOnly={sourceForm(form).readOnly}
+        description={sourceNote(form)}
         options={[
           { value: "path", label: "local file" },
           { value: "git", label: "Git" },
@@ -425,7 +436,7 @@ function InstructionsForm({ form }: { readonly form: DefinitionText }) {
           {source === "git" && (
             <>
               <TextField
-                form={form}
+                form={sourceForm(form)}
                 path={["git"]}
                 label="Repository"
                 placeholder="https://github.com/owner/repo"
@@ -434,7 +445,7 @@ function InstructionsForm({ form }: { readonly form: DefinitionText }) {
             </>
           )}
           <TextField
-            form={form}
+            form={sourceForm(form)}
             path={["path"]}
             label={source === "git" ? "Path in the checkout" : "File"}
           />
