@@ -38,6 +38,9 @@ service PackageService {
   rpc ReadPreviewFile(ReadPreviewFileRequest) returns (ReadPreviewFileResponse);
   // A Git source's branches and tags, without fetching it.
   rpc ListSourceRefs(ListSourceRefsRequest) returns (ListSourceRefsResponse);
+  // Checks a Git source out at a ref or revision without configuring it: the commit it resolves
+  // to, the content hash a package pinned to it records, and its directories.
+  rpc InspectSource(InspectSourceRequest) returns (InspectSourceResponse);
 }
 
 service LaunchService {
@@ -773,6 +776,25 @@ message SourceRef {
   string commit = 3;
   // The branch the repository's HEAD names.
   bool default = 4;
+}
+
+message InspectSourceRequest {
+  // A Git URL or local repository, as a package's git field names it.
+  string git = 1;
+  // Empty checks out the default branch.
+  string ref = 2;
+  // A commit, which wins over ref.
+  string rev = 3;
+  // The directory whose content is hashed; empty for the whole source.
+  string subdir = 4;
+}
+message InspectSourceResponse {
+  // The commit the ref or revision resolves to.
+  string revision = 1;
+  // The content hash of the subdirectory, as a package's hash field takes it.
+  string hash = 2;
+  // The source's directories, relative and /-separated, sorted, without Git metadata.
+  repeated string directories = 3;
 }
 
 message PreviewSourceRequest {

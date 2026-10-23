@@ -20,6 +20,8 @@ import {
   type PlannedFile,
   type PreviewSourceResponse,
   type SourceRef,
+  type InspectSourceResponse,
+  InspectSourceRequestSchema,
   type ReadFileResponse,
   type ReadPreviewFileResponse,
   LaunchService,
@@ -93,6 +95,10 @@ export class Daemon extends Context.Service<
     readonly previewSource: (source: string) => Effect.Effect<PreviewSourceResponse, DaemonError>;
     /** A Git source's branches and tags, without fetching it. */
     readonly sourceRefs: (git: string) => Effect.Effect<ReadonlyArray<SourceRef>, DaemonError>;
+    /** A Git source checked out at its pins: its commit, content hash, and directories. */
+    readonly inspectSource: (
+      request: MessageInitShape<typeof InspectSourceRequestSchema>,
+    ) => Effect.Effect<InspectSourceResponse, DaemonError>;
     readonly readPreviewFile: (
       previewId: string,
       skill: string,
@@ -250,6 +256,8 @@ export const makeDaemon = (): Daemon["Service"] => {
       ).pipe(Effect.map((response) => response.written)),
     previewSource: (source) =>
       call("previewSource", (signal) => packages.previewSource({ source }, { signal })),
+    inspectSource: (request) =>
+      call("inspectSource", (signal) => packages.inspectSource(request, { signal })),
     sourceRefs: (git) =>
       call("listSourceRefs", (signal) => packages.listSourceRefs({ git }, { signal })).pipe(
         Effect.map((response) => response.refs),

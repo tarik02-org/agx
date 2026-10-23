@@ -77,7 +77,7 @@ function ExplainPage() {
           <SelectTrigger size="sm" className="w-44" aria-label="Harness">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent alignItemWithTrigger={false}>
             <SelectGroup>
               {harnesses.map((item) => (
                 <SelectItem key={item.value} value={item.value}>

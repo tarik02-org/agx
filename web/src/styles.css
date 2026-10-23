@@ -192,6 +192,20 @@
   box-shadow: none;
   --tw-ring-shadow: 0 0 #0000;
 }
+/* Popups only fade: the components' zoom and slide make a list look as if it shifts into place. */
+[data-slot="select-content"],
+[data-slot="combobox-content"],
+[data-slot="popover-content"],
+[data-slot="tooltip-content"],
+[data-slot="navigation-menu-popup"],
+[data-slot="navigation-menu-viewport"] {
+  --tw-enter-scale: 1;
+  --tw-exit-scale: 1;
+  --tw-enter-translate-x: 0;
+  --tw-enter-translate-y: 0;
+  --tw-exit-translate-x: 0;
+  --tw-exit-translate-y: 0;
+}
 /* The top bar's border already sits above a page's first section. */
 [data-slot="page"] > [data-slot="card"]:not([data-slot="card"] ~ [data-slot="card"]) {
   border-top: 0;

@@ -235,7 +235,7 @@ function ArgumentInput({ id, schema, value, invalid, onChange }: ArgumentInputPr
         <SelectTrigger id={id} className="w-64">
           <SelectValue />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent alignItemWithTrigger={false}>
           <SelectGroup>
             {items.map((item) => (
               <SelectItem key={item.value} value={item.value}>

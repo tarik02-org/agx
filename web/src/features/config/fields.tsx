@@ -26,7 +26,7 @@ import {
   SelectValue,
 } from "~/components/ui/select.tsx";
 import { Switch } from "~/components/ui/switch.tsx";
-import { InputGroupAddon } from "~/components/ui/input-group.tsx";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group.tsx";
 import { Spinner } from "~/components/ui/spinner.tsx";
 import { Textarea } from "~/components/ui/textarea.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
@@ -164,7 +164,18 @@ function StructuredNote({ label }: { readonly label: string }) {
   );
 }
 
-export function TextField({ form, path, label, placeholder, description, locked }: FieldProps) {
+export function TextField({
+  form,
+  path,
+  label,
+  placeholder,
+  description,
+  locked,
+  action,
+}: FieldProps & {
+  /** A button inside the field, such as one filling it in. */
+  readonly action?: ReactNode;
+}) {
   const id = useId();
   if (isStructured(form.text, path)) {
     return <StructuredNote label={label} />;
@@ -174,15 +185,30 @@ export function TextField({ form, path, label, placeholder, description, locked 
       <HintedLabel htmlFor={id} hint={meaning(form, path, label, description)} locked={locked}>
         {label}
       </HintedLabel>
-      <Input
-        id={id}
-        className="font-mono"
-        spellCheck={false}
-        readOnly={form.readOnly}
-        placeholder={placeholder}
-        value={readString(form.text, path)}
-        onChange={(event) => form.onChange(writeField(form.text, path, event.target.value))}
-      />
+      {action === undefined ? (
+        <Input
+          id={id}
+          className="font-mono"
+          spellCheck={false}
+          readOnly={form.readOnly}
+          placeholder={placeholder}
+          value={readString(form.text, path)}
+          onChange={(event) => form.onChange(writeField(form.text, path, event.target.value))}
+        />
+      ) : (
+        <InputGroup>
+          <InputGroupInput
+            id={id}
+            className="font-mono"
+            spellCheck={false}
+            readOnly={form.readOnly}
+            placeholder={placeholder}
+            value={readString(form.text, path)}
+            onChange={(event) => form.onChange(writeField(form.text, path, event.target.value))}
+          />
+          <InputGroupAddon align="inline-end">{action}</InputGroupAddon>
+        </InputGroup>
+      )}
     </Field>
   );
 }
@@ -287,9 +313,12 @@ export function SuggestField({
   description,
   suggestions,
   loading = false,
+  onOpenChange,
 }: FieldProps & {
   readonly suggestions: ReadonlyArray<Suggestion>;
   readonly loading?: boolean;
+  /** Told when the list opens, for loading suggestions only once they are wanted. */
+  readonly onOpenChange?: (open: boolean) => void;
 }) {
   const id = useId();
   const value = readString(form.text, path);
@@ -307,13 +336,14 @@ export function SuggestField({
         inputValue={value}
         readOnly={form.readOnly}
         onInputValueChange={(next) => form.onChange(writeField(form.text, path, next))}
+        {...(onOpenChange === undefined ? {} : { onOpenChange })}
       >
         <ComboboxInput
           id={id}
           className="font-mono"
           spellCheck={false}
           placeholder={placeholder}
-          showTrigger={suggestions.length > 0}
+          showTrigger={suggestions.length > 0 || onOpenChange !== undefined}
         >
           {loading && (
             <InputGroupAddon align="inline-end">
@@ -322,7 +352,9 @@ export function SuggestField({
           )}
         </ComboboxInput>
         <ComboboxContent>
-          <ComboboxEmpty>Nothing matches; the typed value is kept.</ComboboxEmpty>
+          <ComboboxEmpty>
+            {loading ? "Loading…" : "Nothing matches; the typed value is kept."}
+          </ComboboxEmpty>
           <ComboboxList>
             {(item: string) => (
               <ComboboxItem key={item} value={item}>
@@ -440,7 +472,7 @@ export function ChoiceField({
         <SelectTrigger id={id} className="w-64!">
           <SelectValue />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent alignItemWithTrigger={false}>
           <SelectGroup>
             {items.map((item) => (
               <SelectItem key={item.value} value={item.value}>
@@ -539,7 +571,7 @@ function ValueInput({
         <SelectTrigger className="w-24 font-mono">
           <SelectValue />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent alignItemWithTrigger={false}>
           <SelectGroup>
             {tags.map((tag) => (
               <SelectItem key={tag.value} value={tag.value} className="font-mono">

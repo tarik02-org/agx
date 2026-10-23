@@ -585,6 +585,35 @@ func (s *Server) ListSourceRefs(
 	return connect.NewResponse(out), nil
 }
 
+// inspectTimeout bounds checking a Git source out.
+const inspectTimeout = 2 * time.Minute
+
+// InspectSource checks a Git source out at its pins, for filling in a package's revision, hash,
+// and subdirectory.
+func (s *Server) InspectSource(
+	ctx context.Context,
+	req *connect.Request[v1.InspectSourceRequest],
+) (*connect.Response[v1.InspectSourceResponse], error) {
+	source := strings.TrimSpace(req.Msg.Git)
+	if source == "" {
+		return nil, rpcError(connect.CodeInvalidArgument, "git is required")
+	}
+	ctx, cancel := context.WithTimeout(ctx, inspectTimeout)
+	defer cancel()
+	inspection, err := packages.Inspect(
+		ctx, s.paths.Cache, source, strings.TrimSpace(req.Msg.Ref), strings.TrimSpace(req.Msg.Rev),
+		strings.Trim(strings.TrimSpace(req.Msg.Subdir), "/"),
+	)
+	if err != nil {
+		return nil, editError(err)
+	}
+	return connect.NewResponse(&v1.InspectSourceResponse{
+		Revision:    inspection.Revision,
+		Hash:        inspection.Hash,
+		Directories: inspection.Directories,
+	}), nil
+}
+
 // preview is a fetched source and the directories of its skills.
 type preview struct {
 	source  *v1.PackageSource

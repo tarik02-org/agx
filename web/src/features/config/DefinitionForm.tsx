@@ -1,6 +1,12 @@
-import { useId } from "react";
+import * as Effect from "effect/Effect";
+import { HashIcon } from "lucide-react";
+import { useId, useState } from "react";
 
 import { Badge } from "~/components/ui/badge.tsx";
+import { InputGroupButton } from "~/components/ui/input-group.tsx";
+import { Spinner } from "~/components/ui/spinner.tsx";
+import { toast } from "~/components/ui/toast.tsx";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
 import { Field, FieldGroup, FieldSeparator } from "~/components/ui/field.tsx";
 import { Input } from "~/components/ui/input.tsx";
 import {
@@ -12,7 +18,7 @@ import {
   SelectValue,
 } from "~/components/ui/select.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
-import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
+import { queryKeys, useDaemonMutation, useDaemonQuery } from "~/daemon/query.ts";
 import type { SourceRef } from "~/gen/agx/v1/agx_pb.ts";
 import { CodeEditor } from "~/features/config/CodeEditor.tsx";
 import {
@@ -193,7 +199,7 @@ function ShareField({ form }: { readonly form: DefinitionText }) {
           <SelectTrigger id={typeId} className="w-72">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent alignItemWithTrigger={false}>
             <SelectGroup>
               {shares.map((share) => (
                 <SelectItem key={share.value} value={share.value}>
@@ -348,8 +354,98 @@ function PinFields({ form }: { readonly form: DefinitionText }) {
           ),
         }))}
       />
-      <TextField form={form} path={["hash"]} label="Hash" />
+      <HashField form={form} />
     </>
+  );
+}
+
+/** The content hash, with a button computing it from the source at its pins. */
+function HashField({ form }: { readonly form: DefinitionText }) {
+  const compute = useDaemonMutation(
+    (request: { git: string; ref: string; rev: string; subdir: string }) =>
+      Daemon.use((daemon) => daemon.inspectSource(request)),
+    [],
+  );
+  const read = (field: string) => readString(form.text, [field]);
+  return (
+    <TextField
+      form={form}
+      path={["hash"]}
+      label="Hash"
+      action={
+        !form.readOnly && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <InputGroupButton
+                  size="icon-xs"
+                  aria-label="Compute the hash from the source"
+                  disabled={read("git") === "" || compute.isPending}
+                  onClick={() =>
+                    compute.mutate(
+                      {
+                        git: read("git"),
+                        ref: read("ref"),
+                        rev: read("rev"),
+                        subdir: read("subdir"),
+                      },
+                      {
+                        onSuccess: (inspection) =>
+                          form.onChange(writeField(form.text, ["hash"], inspection.hash)),
+                        onError: (error) =>
+                          toast.add({
+                            type: "error",
+                            title: "Could not compute the hash",
+                            description: error.message,
+                          }),
+                      },
+                    )
+                  }
+                >
+                  {compute.isPending ? <Spinner /> : <HashIcon />}
+                </InputGroupButton>
+              }
+            />
+            <TooltipContent side="left">
+              Compute from the source at its ref or revision
+            </TooltipContent>
+          </Tooltip>
+        )
+      }
+    />
+  );
+}
+
+/** A package's subdirectory, offering the source's directories once the list is opened. */
+function SubdirectoryField({ form }: { readonly form: DefinitionText }) {
+  const [wanted, setWanted] = useState(false);
+  const git = readString(form.text, ["git"]);
+  const ref = readString(form.text, ["ref"]);
+  const rev = readString(form.text, ["rev"]);
+  // Listing means checking the source out, so it waits until someone opens the list.
+  const directories = useDaemonQuery(
+    queryKeys.sourceDirectories(git, ref, rev),
+    Daemon.use((daemon) =>
+      daemon.inspectSource({ git, ref, rev, subdir: "" }).pipe(Effect.map((i) => i.directories)),
+    ),
+    { enabled: wanted && git !== "", staleTime: 300_000, retry: false },
+  );
+  return git === "" ? (
+    <TextField form={form} path={["subdir"]} label="Subdirectory" />
+  ) : (
+    <SuggestField
+      form={form}
+      path={["subdir"]}
+      label="Subdirectory"
+      placeholder="the whole repository"
+      loading={directories.isFetching}
+      suggestions={(directories.data ?? []).map((value) => ({ value }))}
+      onOpenChange={(open) => {
+        if (open) {
+          setWanted(true);
+        }
+      }}
+    />
   );
 }
 
@@ -389,7 +485,7 @@ function PackageForm({ form }: { readonly form: DefinitionText }) {
           label="Directory"
         />
       )}
-      <TextField form={form} path={["subdir"]} label="Subdirectory" />
+      <SubdirectoryField form={form} />
       <BooleanField form={form} path={["override"]} label="Override" />
     </FieldGroup>
   );

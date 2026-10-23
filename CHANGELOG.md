@@ -22,7 +22,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   `ApplyChanges`, and `PackageService.PreviewSource` and `ReadPreviewFile`: the editing the
   CLI does, as a plan with per-file diffs and an apply that fails if a file changed since.
 - `PackageService.ListSourceRefs` lists a Git source's branches and tags, with their commits,
-  without fetching it.
+  without fetching it; `InspectSource` checks one out at its pins for the commit, the content
+  hash a pinned package records, and its directories.
 - `agx mcp stop <pid>` and `RuntimeService.StopMcpProcess` stop a local MCP server process;
   its sessions reconnect and the next one starts it again.
 

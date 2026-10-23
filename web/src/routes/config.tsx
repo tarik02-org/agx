@@ -329,7 +329,7 @@ function DefinitionEditor({
                 <SelectTrigger className="font-mono">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent alignItemWithTrigger={false}>
                   <SelectGroup>
                     {writable.map((f) => (
                       <SelectItem key={f.path} value={f.path} className="font-mono">

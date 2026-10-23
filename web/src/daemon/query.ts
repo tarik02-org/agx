@@ -17,6 +17,12 @@ export const queryKeys = {
   file: (path: string) => ["file", path],
   configSchema: ["config-schema"],
   sourceRefs: (git: string) => ["source-refs", git],
+  sourceDirectories: (git: string, ref: string, rev: string) => [
+    "source-directories",
+    git,
+    ref,
+    rev,
+  ],
 } as const satisfies Record<string, QueryKey | ((...args: ReadonlyArray<string>) => QueryKey)>;
 
 /**
