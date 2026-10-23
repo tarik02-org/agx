@@ -192,6 +192,18 @@
   box-shadow: none;
   --tw-ring-shadow: 0 0 #0000;
 }
+/* Nothing bounces or hands its scrolling on: the window stays put, and an editor or list that
+   reaches its end stops there instead of scrolling the page around it. */
+html,
+body,
+#main {
+  overscroll-behavior: none;
+}
+.cm-scroller,
+[data-slot="scroll-area-viewport"] {
+  overscroll-behavior: contain;
+}
+
 /* Popups only fade: the components' zoom and slide make a list look as if it shifts into place. */
 [data-slot="select-content"],
 [data-slot="combobox-content"],
