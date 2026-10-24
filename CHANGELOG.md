@@ -99,8 +99,7 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ### Changed
 
 - Every `master` commit that passes CI publishes its own nightly prerelease, tagged
-  `nightly-<version>.<commits>-<commit>`, instead of replacing one rolling `nightly` release;
-  the 10 newest are kept.
+  `nightly-<version>.<commits>-<commit>`, instead of replacing one rolling `nightly` release.
 - A failed package installation the daemon runs reports git's error, with credentials in
   URLs redacted, instead of asking to retry `agx install` locally.
 - A package that is not installed, or changed since it was installed, no longer fails

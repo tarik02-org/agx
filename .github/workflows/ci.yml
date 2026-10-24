@@ -109,8 +109,6 @@ jobs:
       cancel-in-progress: false
     env:
       GH_TOKEN: ${{ github.token }}
-      # Older nightlies are deleted with their tags.
-      KEEP_NIGHTLIES: 10
     steps:
       - uses: actions/checkout@v7
         with:
@@ -144,11 +142,3 @@ jobs:
           # With assets, gh creates a draft, uploads them, then publishes it.
           gh release create "$NIGHTLY_TAG" dist/*.tar.gz dist/*.zip dist/checksums.txt \
             --prerelease --target "$GITHUB_SHA" --title "Nightly $NIGHTLY_VERSION" --notes "$notes"
-      - name: Delete old nightlies
-        run: |
-          gh release list --limit 1000 --json tagName,createdAt --jq '
-            [.[] | select(.tagName | test("^nightly(-|$)"))]
-            | sort_by(.createdAt) | reverse | .[env.KEEP_NIGHTLIES | tonumber:][].tagName
-          ' | while read -r tag; do
-            gh release delete "$tag" --yes --cleanup-tag
-          done
