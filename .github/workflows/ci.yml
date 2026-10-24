@@ -97,7 +97,7 @@ jobs:
       - run: nix build .#agx
       - run: nix flake check
 
-  # Every push to master that passes CI replaces the rolling nightly prerelease.
+  # Every push to master that passes CI publishes its own nightly prerelease.
   nightly:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs: [test, lint, generate, nix]
@@ -126,33 +126,19 @@ jobs:
             base=0.0.0
             count=$(git rev-list --count HEAD)
           fi
-          echo "NIGHTLY_VERSION=$base+nightly.$count.$(git rev-parse --short HEAD)" >>"$GITHUB_ENV"
+          short=$(git rev-parse --short HEAD)
+          echo "NIGHTLY_VERSION=$base+nightly.$count.$short" >>"$GITHUB_ENV"
+          echo "NIGHTLY_TAG=nightly-$base.$count-$short" >>"$GITHUB_ENV"
+      - name: Forget nightly tags
+        # GoReleaser would take one as the current or previous tag.
+        run: git tag --list 'nightly*' | xargs --no-run-if-empty git tag --delete
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
           args: release --snapshot --clean
       - name: Publish
         run: |
-          # A newer push may have finished first; never move nightly backwards.
-          git fetch --quiet origin master
-          if [ "$(git rev-parse origin/master)" != "$GITHUB_SHA" ] &&
-            git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
-            echo "master moved on; its own run publishes the nightly"
-            exit 0
-          fi
-          git tag --force nightly "$GITHUB_SHA"
-          git push --force origin refs/tags/nightly
           notes="Built from $GITHUB_SHA on master. Version $NIGHTLY_VERSION; not a stable release."
-          if gh release view nightly >/dev/null 2>&1; then
-            gh release edit nightly --prerelease --title "Nightly $NIGHTLY_VERSION" --notes "$notes"
-          else
-            gh release create nightly --prerelease --verify-tag --title "Nightly $NIGHTLY_VERSION" --notes "$notes"
-          fi
-          assets=(dist/*.tar.gz dist/*.zip dist/checksums.txt)
-          gh release upload nightly "${assets[@]}" --clobber
-          # Drop assets this build no longer produces.
-          for name in $(gh release view nightly --json assets --jq '.assets[].name'); do
-            if [ ! -e "dist/$name" ]; then
-              gh release delete-asset nightly "$name" --yes
-            fi
-          done
+          # With assets, gh creates a draft, uploads them, then publishes it.
+          gh release create "$NIGHTLY_TAG" dist/*.tar.gz dist/*.zip dist/checksums.txt \
+            --prerelease --target "$GITHUB_SHA" --title "Nightly $NIGHTLY_VERSION" --notes "$notes"

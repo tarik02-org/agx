@@ -19,7 +19,7 @@ builds:
 archives:
   - id: agx
     ids: [agx]
-    # Nightly assets keep stable names, so their download URLs stay the same between builds.
+    # A nightly's version lives in its release title; its archives are named agx_nightly_*.
     name_template: >-
       {{ .ProjectName }}_{{ if .IsSnapshot }}nightly{{ else }}{{ .Version }}{{ end }}_{{ .Os }}_{{ .Arch }}
     formats: [tar.gz]
@@ -40,10 +40,6 @@ checksum:
 snapshot:
   # The nightly job computes <last release>+nightly.<commits since>.<short sha>.
   version_template: '{{ envOrDefault "NIGHTLY_VERSION" (printf "%s-snapshot" .ShortCommit) }}'
-
-git:
-  # The rolling nightly tag is never a previous release.
-  ignore_tags: [nightly]
 
 changelog:
   use: git
