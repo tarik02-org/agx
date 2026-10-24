@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"sort"
@@ -142,6 +143,35 @@ func (s *Server) Logout(
 	}
 	s.resetUsers(id)
 	return connect.NewResponse(&v1.LogoutResponse{}), nil
+}
+
+func (s *Server) RotateSecret(
+	ctx context.Context,
+	req *connect.Request[v1.RotateSecretRequest],
+) (*connect.Response[v1.RotateSecretResponse], error) {
+	secret, err := s.secret(req.Msg.SecretId)
+	if err != nil {
+		return nil, err
+	}
+	if secret.Kind != "oauth" {
+		return nil, rpcError(
+			connect.CodeFailedPrecondition,
+			fmt.Sprintf("secret %s uses %s; only OAuth logins can be rotated", req.Msg.SecretId, secret.Kind),
+		)
+	}
+	expires, err := s.manager.Rotate(ctx, config.ID(req.Msg.SecretId), secret)
+	switch {
+	case errors.Is(err, auth.ErrRefreshFailed):
+		return nil, reasonError(connect.CodeUnavailable, v1.ErrorDetail_REASON_NETWORK, err.Error())
+	case err != nil:
+		// Without a login, or with a refresh token the server refused, only a new login helps.
+		return nil, reasonError(connect.CodeFailedPrecondition, v1.ErrorDetail_REASON_NEEDS_LOGIN, err.Error())
+	}
+	out := &v1.RotateSecretResponse{}
+	if !expires.IsZero() {
+		out.ExpiresAt = timestamppb.New(expires)
+	}
+	return connect.NewResponse(out), nil
 }
 
 func (s *Server) Login(

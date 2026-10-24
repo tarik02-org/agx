@@ -137,6 +137,9 @@ const (
 	SecretServiceGetSecretStatusProcedure = "/agx.v1.SecretService/GetSecretStatus"
 	// SecretServiceLogoutProcedure is the fully-qualified name of the SecretService's Logout RPC.
 	SecretServiceLogoutProcedure = "/agx.v1.SecretService/Logout"
+	// SecretServiceRotateSecretProcedure is the fully-qualified name of the SecretService's
+	// RotateSecret RPC.
+	SecretServiceRotateSecretProcedure = "/agx.v1.SecretService/RotateSecret"
 )
 
 // ConfigurationServiceClient is a client for the agx.v1.ConfigurationService service.
@@ -1160,6 +1163,11 @@ type SecretServiceClient interface {
 	SetSecret(context.Context, *connect.Request[v1.SetSecretRequest]) (*connect.Response[v1.SetSecretResponse], error)
 	GetSecretStatus(context.Context, *connect.Request[v1.GetSecretStatusRequest]) (*connect.Response[v1.GetSecretStatusResponse], error)
 	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error)
+	// Renews an OAuth secret's access token with its refresh token now, whether or not it
+	// expired. A missing login, or a refresh token the authorization server refuses, fails with
+	// REASON_NEEDS_LOGIN; an authorization server that cannot be reached or fails with
+	// REASON_NETWORK.
+	RotateSecret(context.Context, *connect.Request[v1.RotateSecretRequest]) (*connect.Response[v1.RotateSecretResponse], error)
 }
 
 // NewSecretServiceClient constructs a client for the agx.v1.SecretService service. By default, it
@@ -1197,6 +1205,12 @@ func NewSecretServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(secretServiceMethods.ByName("Logout")),
 			connect.WithClientOptions(opts...),
 		),
+		rotateSecret: connect.NewClient[v1.RotateSecretRequest, v1.RotateSecretResponse](
+			httpClient,
+			baseURL+SecretServiceRotateSecretProcedure,
+			connect.WithSchema(secretServiceMethods.ByName("RotateSecret")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1206,6 +1220,7 @@ type secretServiceClient struct {
 	setSecret       *connect.Client[v1.SetSecretRequest, v1.SetSecretResponse]
 	getSecretStatus *connect.Client[v1.GetSecretStatusRequest, v1.GetSecretStatusResponse]
 	logout          *connect.Client[v1.LogoutRequest, v1.LogoutResponse]
+	rotateSecret    *connect.Client[v1.RotateSecretRequest, v1.RotateSecretResponse]
 }
 
 // Login calls agx.v1.SecretService.Login.
@@ -1228,6 +1243,11 @@ func (c *secretServiceClient) Logout(ctx context.Context, req *connect.Request[v
 	return c.logout.CallUnary(ctx, req)
 }
 
+// RotateSecret calls agx.v1.SecretService.RotateSecret.
+func (c *secretServiceClient) RotateSecret(ctx context.Context, req *connect.Request[v1.RotateSecretRequest]) (*connect.Response[v1.RotateSecretResponse], error) {
+	return c.rotateSecret.CallUnary(ctx, req)
+}
+
 // SecretServiceHandler is an implementation of the agx.v1.SecretService service.
 type SecretServiceHandler interface {
 	// Starts an OAuth login, or joins the one pending for the secret, and reports it until it
@@ -1237,6 +1257,11 @@ type SecretServiceHandler interface {
 	SetSecret(context.Context, *connect.Request[v1.SetSecretRequest]) (*connect.Response[v1.SetSecretResponse], error)
 	GetSecretStatus(context.Context, *connect.Request[v1.GetSecretStatusRequest]) (*connect.Response[v1.GetSecretStatusResponse], error)
 	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error)
+	// Renews an OAuth secret's access token with its refresh token now, whether or not it
+	// expired. A missing login, or a refresh token the authorization server refuses, fails with
+	// REASON_NEEDS_LOGIN; an authorization server that cannot be reached or fails with
+	// REASON_NETWORK.
+	RotateSecret(context.Context, *connect.Request[v1.RotateSecretRequest]) (*connect.Response[v1.RotateSecretResponse], error)
 }
 
 // NewSecretServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1270,6 +1295,12 @@ func NewSecretServiceHandler(svc SecretServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(secretServiceMethods.ByName("Logout")),
 		connect.WithHandlerOptions(opts...),
 	)
+	secretServiceRotateSecretHandler := connect.NewUnaryHandler(
+		SecretServiceRotateSecretProcedure,
+		svc.RotateSecret,
+		connect.WithSchema(secretServiceMethods.ByName("RotateSecret")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.SecretService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SecretServiceLoginProcedure:
@@ -1280,6 +1311,8 @@ func NewSecretServiceHandler(svc SecretServiceHandler, opts ...connect.HandlerOp
 			secretServiceGetSecretStatusHandler.ServeHTTP(w, r)
 		case SecretServiceLogoutProcedure:
 			secretServiceLogoutHandler.ServeHTTP(w, r)
+		case SecretServiceRotateSecretProcedure:
+			secretServiceRotateSecretHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1303,4 +1336,8 @@ func (UnimplementedSecretServiceHandler) GetSecretStatus(context.Context, *conne
 
 func (UnimplementedSecretServiceHandler) Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.SecretService.Logout is not implemented"))
+}
+
+func (UnimplementedSecretServiceHandler) RotateSecret(context.Context, *connect.Request[v1.RotateSecretRequest]) (*connect.Response[v1.RotateSecretResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.SecretService.RotateSecret is not implemented"))
 }

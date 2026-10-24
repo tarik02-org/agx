@@ -117,6 +117,7 @@ In `--header` and `--env`, a value written `!secret <id>`, `!env NAME`, or
 | `agx secret set <secret-id> --stdin [--json]` | store a keychain secret read from stdin |
 | `agx secret login <secret-id> [--no-browser] [--json]` | log in to an OAuth secret |
 | `agx secret logout <secret-id> [--json]` | delete a stored secret or OAuth login |
+| `agx secret rotate <secret-id> [--json]` | renew an OAuth secret's access token now |
 
 See [The daemon](daemon.md) and [Secrets](secrets.md).
 

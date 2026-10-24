@@ -350,21 +350,9 @@ func (m *Manager) oauthToken(
 	lock.Lock()
 	defer lock.Unlock()
 
-	m.mu.Lock()
-	saved, cached := m.unpersisted[k]
-	refused, wasRefused := m.refused[k]
-	m.mu.Unlock()
-	if !cached {
-		data, err := keychainGet(k)
-		if errors.Is(err, keyring.ErrNotFound) {
-			return "", fmt.Errorf("secret %s needs login; run agx secret login %s: %w", id, id, ErrNoCredential)
-		}
-		if err != nil {
-			return "", fmt.Errorf("secret %s: %w", id, err)
-		}
-		if err := json.Unmarshal([]byte(data), &saved); err != nil || saved.Token == nil {
-			return "", fmt.Errorf("invalid stored OAuth credential for %s", id)
-		}
+	saved, err := m.stored(k, id)
+	if err != nil {
+		return "", err
 	}
 	if saved.Origin != origin {
 		return "", fmt.Errorf("secret %s is logged in to another server origin; run agx secret login %s", id, id)
@@ -375,9 +363,70 @@ func (m *Manager) oauthToken(
 	if saved.Token.RefreshToken == "" {
 		return "", fmt.Errorf("secret %s expired and has no refresh token; run agx secret login %s", id, id)
 	}
+	m.mu.Lock()
+	refused, wasRefused := m.refused[k]
+	m.mu.Unlock()
 	if wasRefused {
 		return "", fmt.Errorf("secret %s cannot be refreshed: %s; run agx secret login %s", id, refused, id)
 	}
+	token, err := m.renew(ctx, k, id, saved)
+	if err != nil {
+		return "", err
+	}
+	return token.AccessToken, nil
+}
+
+// Rotate renews OAuth secret a, named id, with its refresh token now, whether or not its access
+// token expired, and returns the new token's expiry, zero when the server did not say. Unlike a
+// renewal on use, it tries a refresh token the server refused before, in case it accepts it now.
+func (m *Manager) Rotate(ctx context.Context, id config.ID, a config.Secret) (time.Time, error) {
+	if a.Kind != "oauth" {
+		return time.Time{}, fmt.Errorf("secret %s uses %s; only OAuth logins can be rotated", id, a.Kind)
+	}
+	k := key(id, a)
+	lock := m.credentialLock(k)
+	lock.Lock()
+	defer lock.Unlock()
+
+	saved, err := m.stored(k, id)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if saved.Token.RefreshToken == "" {
+		return time.Time{}, fmt.Errorf("secret %s has no refresh token; run agx secret login %s", id, id)
+	}
+	token, err := m.renew(ctx, k, id, saved)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return token.Expiry, nil
+}
+
+// stored returns the OAuth credential under key k, a refreshed one the keychain refused first;
+// callers hold the credential's lock.
+func (m *Manager) stored(k string, id config.ID) (credential, error) {
+	m.mu.Lock()
+	saved, cached := m.unpersisted[k]
+	m.mu.Unlock()
+	if cached {
+		return saved, nil
+	}
+	data, err := keychainGet(k)
+	if errors.Is(err, keyring.ErrNotFound) {
+		return credential{}, fmt.Errorf("secret %s needs login; run agx secret login %s: %w", id, id, ErrNoCredential)
+	}
+	if err != nil {
+		return credential{}, fmt.Errorf("secret %s: %w", id, err)
+	}
+	if err := json.Unmarshal([]byte(data), &saved); err != nil || saved.Token == nil {
+		return credential{}, fmt.Errorf("invalid stored OAuth credential for %s", id)
+	}
+	return saved, nil
+}
+
+// renew refreshes saved and stores the result under key k; callers hold the credential's lock.
+// A refused refresh is recorded, so renewals on use stop sending the refresh token.
+func (m *Manager) renew(ctx context.Context, k string, id config.ID, saved credential) (*oauth2.Token, error) {
 	token, refusal, err := m.refresh(ctx, saved)
 	if err != nil {
 		slog.Warn("OAuth refresh failed", "secret", id, "refused", refusal, "error", err)
@@ -385,15 +434,18 @@ func (m *Manager) oauthToken(
 			m.mu.Lock()
 			m.refused[k] = err.Error()
 			m.mu.Unlock()
-			return "", fmt.Errorf("secret %s cannot be refreshed: %w; run agx secret login %s", id, err, id)
+			return nil, fmt.Errorf("secret %s cannot be refreshed: %w; run agx secret login %s", id, err, id)
 		}
-		return "", fmt.Errorf("secret %s: %w: %w", id, ErrRefreshFailed, err)
+		return nil, fmt.Errorf("secret %s: %w: %w", id, ErrRefreshFailed, err)
 	}
 	saved.Token = token
 	data, err := json.Marshal(saved)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+	m.mu.Lock()
+	delete(m.refused, k)
+	m.mu.Unlock()
 	if err := keychainSet(k, string(data)); err != nil {
 		// The refresh token may have rotated; dropping it would force a new login.
 		m.mu.Lock()
@@ -406,12 +458,12 @@ func (m *Manager) oauthToken(
 			"error",
 			err,
 		)
-		return token.AccessToken, nil
+		return token, nil
 	}
 	m.mu.Lock()
 	delete(m.unpersisted, k)
 	m.mu.Unlock()
-	return token.AccessToken, nil
+	return token, nil
 }
 
 // refresh is done by hand because oauth2.TokenSource cannot send the RFC 8707
