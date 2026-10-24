@@ -607,6 +607,7 @@ func (m *Manager) Callback(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	delete(m.unpersisted, k)
 	delete(m.required, k)
+	delete(m.refused, k)
 	m.finishLocked(p, nil)
 	m.mu.Unlock()
 	_, _ = fmt.Fprintf(w, "Logged in to %s. You can close this window.\n", p.SecretID)

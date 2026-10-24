@@ -888,18 +888,58 @@ func (e *Endpoint) serveRemote(w http.ResponseWriter, r *http.Request) {
 			forget()
 		}
 		e.mu.Unlock()
-		if errors.As(err, &needsAuth{}) {
+		switch {
+		case errors.As(err, &needsAuth{}):
 			http.Error(w, "upstream credential unavailable; see agx secret status", http.StatusUnauthorized)
-		} else {
+		case errors.Is(err, auth.ErrRefreshFailed):
+			http.Error(w, "upstream credential refresh failed; see agx launch show", http.StatusServiceUnavailable)
+		default:
 			http.Error(w, "upstream header unavailable; see agx launch show", http.StatusBadGateway)
 		}
 		return
 	}
+	secretID := e.definition.Auth.Secret
+	secret := e.secrets[secretID]
+	// A 401 for an OAuth token is answered by refreshing it once and resending the request, so
+	// the body must be replayable; MCP POSTs are single JSON-RPC messages.
+	refreshable := secret.Kind == "oauth" && credential != ""
+	if refreshable && r.Body != nil && r.Body != http.NoBody {
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "cannot read request", http.StatusBadRequest)
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(data))
+		r.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(data)), nil }
+	}
+	// refreshErr holds why a rejected token could not be renewed, for the 401's explanation.
+	var refreshErr error
+	transport := roundTripper(func(req *http.Request) (*http.Response, error) {
+		resp, err := http.DefaultTransport.RoundTrip(req)
+		if err != nil || resp.StatusCode != http.StatusUnauthorized || !refreshable {
+			return resp, err
+		}
+		var renewed string
+		renewed, refreshErr = e.auth.Refresh(req.Context(), secretID, secret, origin, credential)
+		if refreshErr == nil {
+			retry := req.Clone(req.Context())
+			if req.GetBody != nil {
+				// The buffered body above cannot fail to replay.
+				retry.Body, _ = req.GetBody()
+			}
+			retry.Header.Set("Authorization", "Bearer "+renewed)
+			_ = resp.Body.Close()
+			credential = renewed
+			return http.DefaultTransport.RoundTrip(retry)
+		}
+		return resp, nil
+	})
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	stop := context.AfterFunc(e.ctx, cancel)
 	defer stop()
 	proxy := &httputil.ReverseProxy{
+		Transport: transport,
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
 			// SetURL appends the incoming launch path; the upstream is the configured URL itself.
@@ -928,7 +968,7 @@ func (e *Endpoint) serveRemote(w http.ResponseWriter, r *http.Request) {
 			resp.Header.Del("WWW-Authenticate")
 			var unauthorized error
 			if resp.StatusCode == http.StatusUnauthorized {
-				unauthorized = e.unauthorized(resp.Request.Context(), credential, challenge)
+				unauthorized = e.unauthorized(resp.Request.Context(), credential, challenge, refreshErr)
 			}
 			success := resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices
 			e.mu.Lock()
@@ -1018,6 +1058,8 @@ func (e *Endpoint) remoteCredentials(
 			credential = value
 		case secret.Implicit && errors.Is(err, auth.ErrNoCredential):
 			// On-demand OAuth sends no credential until the server asks for a login.
+		case errors.Is(err, auth.ErrRefreshFailed):
+			return "", nil, fmt.Errorf("mcp %s auth: %w", e.id, err)
 		default:
 			return "", nil, needsAuth{fmt.Errorf("mcp %s auth: %w", e.id, err)}
 		}
@@ -1040,7 +1082,7 @@ func (e *Endpoint) remoteCredentials(
 // unauthorized classifies an upstream 401 as needing authorization when the server has an auth
 // secret. On-demand OAuth applies only once the server advertises OAuth discovery; otherwise,
 // as for servers without auth, the 401 is an ordinary upstream failure and nil is returned.
-func (e *Endpoint) unauthorized(ctx context.Context, credential, challenge string) error {
+func (e *Endpoint) unauthorized(ctx context.Context, credential, challenge string, refreshErr error) error {
 	id := e.definition.Auth.Secret
 	if id == "" {
 		return nil
@@ -1058,8 +1100,15 @@ func (e *Endpoint) unauthorized(ctx context.Context, credential, challenge strin
 	if credential == "" {
 		return needsAuth{fmt.Errorf("MCP server %s requires login; run agx secret login %s", e.id, id)}
 	}
+	if refreshErr != nil {
+		return needsAuth{fmt.Errorf("MCP server %s rejected its login: %w", e.id, refreshErr)}
+	}
 	return needsAuth{fmt.Errorf("MCP server %s rejected its login; run agx secret login %s", e.id, id)}
 }
+
+type roundTripper func(*http.Request) (*http.Response, error)
+
+func (f roundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 // validHeaderValue follows RFC 9110 field values: no control characters except tab.
 func validHeaderValue(value string) bool {

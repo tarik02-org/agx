@@ -26,7 +26,9 @@ type provider struct {
 	*httptest.Server
 	challenge string
 	refreshes atomic.Int32
-	failures  chan string
+	// refuse makes refreshes fail like a revoked refresh token.
+	refuse   atomic.Bool
+	failures chan string
 }
 
 func newProvider(t *testing.T) *provider {
@@ -67,6 +69,11 @@ func newProvider(t *testing.T) *provider {
 				fail("wrong refresh token")
 			}
 			p.refreshes.Add(1)
+			if p.refuse.Load() {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_grant", "error_description": "revoked"})
+				return
+			}
 			time.Sleep(50 * time.Millisecond)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"access_token": "refreshed", "refresh_token": "rotated", "token_type": "Bearer", "expires_in": 3600,
@@ -440,5 +447,98 @@ func TestLoginWithoutClientRegistration(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
 		}
+	}
+}
+
+// login completes an OAuth login of secret fixture against p.
+func login(t *testing.T, manager *auth.Manager, callback string, p *provider, secret config.Secret) {
+	t.Helper()
+	attempt, err := manager.Begin(t.Context(), "fixture", secret, p.URL+"/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Release(attempt)
+	q := query(t, attempt)
+	p.challenge = q.Get("code_challenge")
+	if code := get(t, callback+"?state="+q.Get("state")+"&code=fixture"); code != http.StatusOK {
+		t.Fatalf("callback = %d", code)
+	}
+	if err := manager.Wait(t.Context(), attempt); err != nil {
+		t.Fatalf("login outcome: %v", err)
+	}
+}
+
+func TestRefreshRejectedToken(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	manager, callback := newManager(t)
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	login(t, manager, callback, p, secret)
+
+	// The server rejected a token agx still considers valid.
+	value, err := manager.Refresh(t.Context(), "fixture", secret, p.URL, "initial")
+	if err != nil || value != "refreshed" {
+		t.Fatalf("Refresh = %q, %v", value, err)
+	}
+	// A request that saw the old token rejected too reuses the renewed one.
+	value, err = manager.Refresh(t.Context(), "fixture", secret, p.URL, "initial")
+	if err != nil || value != "refreshed" || p.refreshes.Load() != 1 {
+		t.Fatalf("second Refresh = %q, %v after %d refreshes", value, err, p.refreshes.Load())
+	}
+	p.check(t)
+}
+
+func TestRefusedRefresh(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	manager, callback := newManager(t)
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	login(t, manager, callback, p, secret)
+	if status := manager.Status("fixture", secret, nil); status.State != "ready" || !status.Refreshable {
+		t.Fatalf("status after login = %+v", status)
+	}
+
+	p.refuse.Store(true)
+	time.Sleep(1100 * time.Millisecond)
+	_, err := manager.Value(t.Context(), "fixture", secret, nil, nil, p.URL)
+	if err == nil || errors.Is(err, auth.ErrRefreshFailed) ||
+		!strings.Contains(err.Error(), "HTTP 400 (invalid_grant)") ||
+		!strings.Contains(err.Error(), "agx secret login fixture") ||
+		strings.Contains(err.Error(), "revoked") {
+		t.Fatalf("refused refresh: %v", err)
+	}
+	status := manager.Status("fixture", secret, nil)
+	if status.State != "needs_login" || !strings.Contains(status.Problem, "invalid_grant") {
+		t.Fatalf("status after a refused refresh = %+v", status)
+	}
+	// A refused refresh token is not sent again.
+	if _, err := manager.Value(t.Context(), "fixture", secret, nil, nil, p.URL); err == nil || p.refreshes.Load() != 1 {
+		t.Fatalf("after %d refreshes: %v", p.refreshes.Load(), err)
+	}
+
+	p.refuse.Store(false)
+	login(t, manager, callback, p, secret)
+	if status := manager.Status("fixture", secret, nil); status.State != "ready" {
+		t.Fatalf("status after a new login = %+v", status)
+	}
+	p.check(t)
+}
+
+func TestUnreachableRefresh(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	manager, callback := newManager(t)
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	login(t, manager, callback, p, secret)
+
+	origin := p.URL
+	p.Close()
+	time.Sleep(1100 * time.Millisecond)
+	_, err := manager.Value(t.Context(), "fixture", secret, nil, nil, origin)
+	if !errors.Is(err, auth.ErrRefreshFailed) || !strings.Contains(err.Error(), "cannot reach the token endpoint") {
+		t.Fatalf("unreachable token endpoint: %v", err)
+	}
+	if status := manager.Status("fixture", secret, nil); status.State != "ready" || !status.Refreshable {
+		t.Fatalf("a failed refresh changed the status: %+v", status)
 	}
 }
