@@ -109,11 +109,12 @@ func (s *Server) GetSecretStatus(
 			continue
 		}
 		message := &v1.SecretStatus{
-			SecretId: string(id),
-			State:    state,
-			Kind:     secret.Kind,
-			McpId:    string(secret.Owner),
-			OnDemand: secret.Implicit,
+			SecretId:    string(id),
+			State:       state,
+			Kind:        secret.Kind,
+			McpId:       string(secret.Owner),
+			OnDemand:    secret.Implicit,
+			Refreshable: status.Refreshable,
 		}
 		if status.Problem != "" {
 			message.Diagnostics = append(message.Diagnostics, diagnostic("secret_unavailable", status.Problem))

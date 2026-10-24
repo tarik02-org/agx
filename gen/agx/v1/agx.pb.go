@@ -4830,7 +4830,10 @@ type SecretStatus struct {
 	// Set for a secret declared inline in this MCP server's auth; equal to secret_id.
 	McpId string `protobuf:"bytes,6,opt,name=mcp_id,json=mcpId,proto3" json:"mcp_id,omitempty"`
 	// OAuth an HTTP MCP server without auth uses once the server asks for it.
-	OnDemand      bool `protobuf:"varint,7,opt,name=on_demand,json=onDemand,proto3" json:"on_demand,omitempty"`
+	OnDemand bool `protobuf:"varint,7,opt,name=on_demand,json=onDemand,proto3" json:"on_demand,omitempty"`
+	// An OAuth login with a refresh token: an access token past expires_at is renewed when it is
+	// next used.
+	Refreshable   bool `protobuf:"varint,8,opt,name=refreshable,proto3" json:"refreshable,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4910,6 +4913,13 @@ func (x *SecretStatus) GetMcpId() string {
 func (x *SecretStatus) GetOnDemand() bool {
 	if x != nil {
 		return x.OnDemand
+	}
+	return false
+}
+
+func (x *SecretStatus) GetRefreshable() bool {
+	if x != nil {
+		return x.Refreshable
 	}
 	return false
 }
@@ -7140,7 +7150,7 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x16GetSecretStatusRequest\x12\x1b\n" +
 	"\tsecret_id\x18\x01 \x01(\tR\bsecretId\"K\n" +
 	"\x17GetSecretStatusResponse\x120\n" +
-	"\bstatuses\x18\x01 \x03(\v2\x14.agx.v1.SecretStatusR\bstatuses\"\xa1\x03\n" +
+	"\bstatuses\x18\x01 \x03(\v2\x14.agx.v1.SecretStatusR\bstatuses\"\xc3\x03\n" +
 	"\fSecretStatus\x12\x1b\n" +
 	"\tsecret_id\x18\x01 \x01(\tR\bsecretId\x120\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x1a.agx.v1.SecretStatus.StateR\x05state\x129\n" +
@@ -7149,7 +7159,8 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\vdiagnostics\x18\x04 \x03(\v2\x12.agx.v1.DiagnosticR\vdiagnostics\x12\x12\n" +
 	"\x04kind\x18\x05 \x01(\tR\x04kind\x12\x15\n" +
 	"\x06mcp_id\x18\x06 \x01(\tR\x05mcpId\x12\x1b\n" +
-	"\ton_demand\x18\a \x01(\bR\bonDemand\"\x88\x01\n" +
+	"\ton_demand\x18\a \x01(\bR\bonDemand\x12 \n" +
+	"\vrefreshable\x18\b \x01(\bR\vrefreshable\"\x88\x01\n" +
 	"\x05State\x12\x15\n" +
 	"\x11STATE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12STATE_UNCONFIGURED\x10\x01\x12\x11\n" +

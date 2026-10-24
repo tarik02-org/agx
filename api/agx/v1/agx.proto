@@ -626,6 +626,9 @@ message SecretStatus {
   string mcp_id = 6;
   // OAuth an HTTP MCP server without auth uses once the server asks for it.
   bool on_demand = 7;
+  // An OAuth login with a refresh token: an access token past expires_at is renewed when it is
+  // next used.
+  bool refreshable = 8;
 }
 
 message LogoutRequest {
