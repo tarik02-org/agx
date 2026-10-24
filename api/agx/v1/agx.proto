@@ -85,6 +85,11 @@ service SecretService {
   rpc SetSecret(SetSecretRequest) returns (SetSecretResponse);
   rpc GetSecretStatus(GetSecretStatusRequest) returns (GetSecretStatusResponse);
   rpc Logout(LogoutRequest) returns (LogoutResponse);
+  // Renews an OAuth secret's access token with its refresh token now, whether or not it
+  // expired. A missing login, or a refresh token the authorization server refuses, fails with
+  // REASON_NEEDS_LOGIN; an authorization server that cannot be reached or fails with
+  // REASON_NETWORK.
+  rpc RotateSecret(RotateSecretRequest) returns (RotateSecretResponse);
 }
 
 message ResourceRef {
@@ -139,6 +144,9 @@ message ErrorDetail {
     REASON_INTERNAL = 10;
     // An MCP server failed the request, or could not be reached or started.
     REASON_MCP_FAILED = 11;
+    // A service the daemon depends on, such as an OAuth authorization server, could not be
+    // reached or failed; retrying later may succeed.
+    REASON_NETWORK = 12;
   }
   Reason reason = 1;
 }
@@ -635,6 +643,14 @@ message LogoutRequest {
   string secret_id = 1;
 }
 message LogoutResponse {}
+
+message RotateSecretRequest {
+  string secret_id = 1;
+}
+message RotateSecretResponse {
+  // When the new access token expires; unset when the authorization server did not say.
+  google.protobuf.Timestamp expires_at = 1;
+}
 
 // A definition kind is a configuration section: skills, instructions, mcp, secrets, bundles,
 // packages, or harnesses.

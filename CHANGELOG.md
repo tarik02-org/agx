@@ -6,6 +6,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Added
 
+- `agx secret rotate <secret-id>` and `SecretService.RotateSecret` renew an OAuth secret's
+  access token with its refresh token now, whether or not it expired, and report when the new
+  one expires. A refused refresh token fails with `needs_login`, an authorization server that
+  cannot be reached with `network` (the new `REASON_NETWORK`).
 - Definitions carry an icon and color: a skill's from the `interface.icon_small` and
   `interface.brand_color` its `agents/openai.yaml` declares, and an MCP server's from the
   icons it declares when it starts (`McpTools.icon`), which the daemon keeps in

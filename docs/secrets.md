@@ -103,7 +103,16 @@ agx secret status docs-key
 agx secret set docs-key --stdin
 agx secret login team-login  # OAuth; agx mcp login <id> does the same for a server
 agx secret logout docs-key   # delete the stored value or OAuth tokens
+agx secret rotate team-login # renew an OAuth access token now
 ```
+
+`agx secret rotate` renews an OAuth secret's access token with its refresh
+token, whether or not it expired, and prints when the new one expires. agx
+renews tokens on its own when they expire or a server rejects them; rotating is
+for replacing a token you suspect leaked, or for checking that the refresh
+token still works. When the authorization server refuses the refresh token, the
+command fails with `needs_login`; when the server cannot be reached, with
+`network`.
 
 Secret IDs are the IDs under `secrets`, and for an MCP server whose `auth` is
 written inline or omitted, the server's ID.

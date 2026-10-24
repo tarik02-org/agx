@@ -764,6 +764,13 @@ type secretLogoutJSON struct {
 	LoggedOut bool   `json:"logged_out"`
 }
 
+type secretRotateJSON struct {
+	SecretID string `json:"secret_id"`
+	Rotated  bool   `json:"rotated"`
+	// ExpiresAt is when the new access token expires, or null when the server did not say.
+	ExpiresAt *string `json:"expires_at"`
+}
+
 // Login events, one per line: started, then finished.
 
 type loginStartedJSON struct {

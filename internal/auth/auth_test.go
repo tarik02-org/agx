@@ -65,7 +65,7 @@ func newProvider(t *testing.T) *provider {
 				})
 				return
 			}
-			if r.Form.Get("refresh_token") != "refresh-fixture" {
+			if token := r.Form.Get("refresh_token"); token != "refresh-fixture" && token != "rotated" {
 				fail("wrong refresh token")
 			}
 			p.refreshes.Add(1)
@@ -541,4 +541,55 @@ func TestUnreachableRefresh(t *testing.T) {
 	if status := manager.Status("fixture", secret, nil); status.State != "ready" || !status.Refreshable {
 		t.Fatalf("a failed refresh changed the status: %+v", status)
 	}
+}
+
+func TestRotate(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	manager, callback := newManager(t)
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	if _, err := manager.Rotate(t.Context(), "fixture", secret); !errors.Is(err, auth.ErrNoCredential) {
+		t.Fatalf("rotate before login: %v", err)
+	}
+	if _, err := manager.Rotate(t.Context(), "fixture", config.Secret{Kind: "keychain"}); err == nil {
+		t.Fatal("a keychain secret was rotated")
+	}
+	login(t, manager, callback, p, secret)
+
+	// The access token is still valid; rotating renews it anyway.
+	expires, err := manager.Rotate(t.Context(), "fixture", secret)
+	if err != nil || time.Until(expires) < 59*time.Minute {
+		t.Fatalf("Rotate = %v, %v", expires, err)
+	}
+	if value, err := manager.Value(
+		t.Context(),
+		"fixture",
+		secret,
+		nil,
+		nil,
+		p.URL,
+	); err != nil ||
+		value != "refreshed" {
+		t.Fatalf("value after rotating = %q, %v", value, err)
+	}
+
+	// A refused refresh token is tried again on request, and a success clears the refusal.
+	p.refuse.Store(true)
+	if _, err := manager.Rotate(t.Context(), "fixture", secret); err == nil || errors.Is(err, auth.ErrRefreshFailed) {
+		t.Fatalf("refused rotation: %v", err)
+	}
+	if state := manager.Status("fixture", secret, nil).State; state != "needs_login" {
+		t.Fatalf("status after a refused rotation = %s", state)
+	}
+	p.refuse.Store(false)
+	if _, err := manager.Rotate(t.Context(), "fixture", secret); err != nil {
+		t.Fatalf("rotation after the server accepts again: %v", err)
+	}
+	if state := manager.Status("fixture", secret, nil).State; state != "ready" {
+		t.Fatalf("status after a successful rotation = %s", state)
+	}
+	if n := p.refreshes.Load(); n != 3 {
+		t.Fatalf("%d refreshes, want 3", n)
+	}
+	p.check(t)
 }

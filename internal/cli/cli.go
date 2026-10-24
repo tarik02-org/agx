@@ -994,6 +994,42 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 	}
 	jsonFlag(logout)
 	command.AddCommand(logout)
+	rotate := &cobra.Command{
+		Use:   "rotate <secret-id>",
+		Short: "Renew an OAuth secret's access token now with its refresh token",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
+			if err != nil {
+				return err
+			}
+			ctx, cancel := context.WithTimeout(cmd.Context(), callTimeout)
+			defer cancel()
+			response, err := c.secrets.RotateSecret(
+				ctx,
+				request(&v1.RotateSecretRequest{SecretId: args[0]}, c.discovery.Token),
+			)
+			if err != nil {
+				return explainSecretTimeout(err)
+			}
+			if scripting.enabled {
+				return printJSON(secretRotateJSON{
+					SecretID:  args[0],
+					Rotated:   true,
+					ExpiresAt: jsonTimestamp(response.Msg.ExpiresAt),
+				})
+			}
+			out := ui.Stdout
+			message := "Rotated " + args[0] + "."
+			if expires := timestamp(response.Msg.ExpiresAt); expires != "" {
+				message = "Rotated " + args[0] + "; the new access token expires " + expires + "."
+			}
+			_, err = fmt.Fprintln(out, out.Status(ui.OK, message))
+			return err
+		},
+	}
+	jsonFlag(rotate)
+	command.AddCommand(rotate)
 	noBrowser := false
 	login := &cobra.Command{
 		Use:   "login <secret-id>",

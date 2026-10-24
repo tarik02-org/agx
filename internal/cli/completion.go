@@ -408,6 +408,7 @@ func (k *completer) registerCompletions(root *cobra.Command) {
 	set(k.resources, "unuse")
 	set(firstArg(k.secrets("oauth")), "secret", "login")
 	set(firstArg(k.secrets("oauth", "keychain")), "secret", "logout")
+	set(firstArg(k.secrets("oauth")), "secret", "rotate")
 	set(firstArg(k.secrets("keychain")), "secret", "set")
 	set(firstArg(k.secrets()), "secret", "status")
 	set(k.packages, "update")
