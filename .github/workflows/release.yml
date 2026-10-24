@@ -21,6 +21,10 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+      - name: Forget nightly tags
+        # GoReleaser would take one on the same commit, or the last one, as the current or
+        # previous tag.
+        run: git tag --list 'nightly*' | xargs --no-run-if-empty git tag --delete
       - name: Test
         run: |
           go test ./...
