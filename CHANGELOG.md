@@ -146,6 +146,15 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Fixed
 
+- An HTTP MCP server that rejects an OAuth access token with 401 before its recorded expiry,
+  or one issued without `expires_in`, gets the request again with a refreshed token instead of
+  asking for `agx secret login`.
+- A failed OAuth refresh says why: the token endpoint's HTTP status and OAuth error code, or
+  that it could not be reached, and the daemon logs it. A refresh token the authorization
+  server refuses shows the secret as `needs_login` and is not sent again; an unreachable
+  token endpoint fails the request without asking for a login.
+- `agx secret status` marks an expired OAuth token that renews on its next use, and
+  `SecretStatus.refreshable` reports it.
 - Without a root configuration file, harness launches and other commands that
   start the daemon work again with an empty configuration (or only `agx.d`
   fragments); the daemon no longer receives the path as a `--config` that must

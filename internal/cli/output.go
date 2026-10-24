@@ -625,8 +625,11 @@ func printSecretStatuses(statuses []*v1.SecretStatus) error {
 			v1.SecretStatus_STATE_UNAVAILABLE: ui.Error,
 		}[s.State]
 		expires := timestamp(s.ExpiresAt)
-		if expires == "" {
+		switch {
+		case expires == "":
 			expires = "-"
+		case s.Refreshable && s.ExpiresAt.AsTime().Before(time.Now()):
+			expires += " " + out.Muted("(expired; renews on next use)")
 		}
 		kind := s.Kind
 		switch {

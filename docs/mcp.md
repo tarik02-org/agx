@@ -53,7 +53,11 @@ This opens the authorization page in your browser and waits until you finish.
 of yours; the browser must still be able to reach `127.0.0.1` on this machine,
 since that is where the login returns. Tokens are stored in the OS keychain
 (macOS Keychain, Windows Credential Manager, or the Secret Service on Linux) and
-refreshed automatically.
+refreshed automatically: an expired access token is renewed when the server is
+next used, and one the server rejects early, with 401, is renewed and the request
+sent again. `agx secret status` shows such a token as "renews on next use". When
+the authorization server refuses the refresh token itself, the secret reports
+`needs_login` with the server's error code until you log in again.
 
 Until you log in, the server reports `needs-auth`, and tool calls from the
 harness fail with an error telling you to run the login.

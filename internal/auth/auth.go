@@ -39,12 +39,20 @@ type Manager struct {
 	// server URL to the protected resource metadata URL its 401 challenge named.
 	required map[string]bool
 	hints    map[string]string
+	// refused maps credential keys whose refresh token the authorization server refused to the
+	// reason, until a new login or logout; refreshing again could not succeed.
+	refused  map[string]string
 	client   *http.Client
 	callback string
 }
 
-// ErrNoCredential reports that no OAuth credential is stored for a secret.
-var ErrNoCredential = errors.New("no stored credential")
+var (
+	// ErrNoCredential reports that no OAuth credential is stored for a secret.
+	ErrNoCredential = errors.New("no stored credential")
+	// ErrRefreshFailed reports an OAuth refresh that failed for a reason a retry may outlast,
+	// such as an unreachable authorization server; every other OAuth failure needs a login.
+	ErrRefreshFailed = errors.New("refresh failed")
+)
 
 type credential struct {
 	Token    *oauth2.Token   `json:"token"`
@@ -58,7 +66,11 @@ type Status struct {
 	ID      config.ID
 	State   string
 	Expires time.Time
-	// Problem explains an unavailable state; it never contains a secret value.
+	// Refreshable reports an OAuth login whose access token is renewed when it is next used
+	// after Expires.
+	Refreshable bool
+	// Problem explains an unavailable state or a refused refresh; it never contains a secret
+	// value.
 	Problem string
 }
 
@@ -71,6 +83,7 @@ func New(callback string) *Manager {
 		generation:  map[string]uint64{},
 		required:    map[string]bool{},
 		hints:       map[string]string{},
+		refused:     map[string]string{},
 		client: &http.Client{
 			Timeout:       20 * time.Second,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
@@ -311,6 +324,27 @@ func (b *limitedBuffer) Bytes() []byte {
 }
 
 func (m *Manager) oauthValue(ctx context.Context, id config.ID, a config.Secret, origin string) (string, error) {
+	return m.oauthToken(ctx, id, a, origin, "")
+}
+
+// Refresh renews the access token after the server rejected it as rejected, whatever its
+// recorded expiry: servers revoke tokens early, and a token response without expires_in never
+// expires on its own. A stored token that already differs from rejected, renewed by a concurrent
+// request or a new login, is returned without refreshing again.
+func (m *Manager) Refresh(ctx context.Context, id config.ID, a config.Secret, origin, rejected string) (string, error) {
+	if a.Kind != "oauth" {
+		return "", fmt.Errorf("secret %s uses %s, not OAuth", id, a.Kind)
+	}
+	return m.oauthToken(ctx, id, a, origin, rejected)
+}
+
+// oauthToken returns the stored access token, refreshing it when it expired or equals rejected.
+func (m *Manager) oauthToken(
+	ctx context.Context,
+	id config.ID,
+	a config.Secret,
+	origin, rejected string,
+) (string, error) {
 	k := key(id, a)
 	lock := m.credentialLock(k)
 	lock.Lock()
@@ -318,6 +352,7 @@ func (m *Manager) oauthValue(ctx context.Context, id config.ID, a config.Secret,
 
 	m.mu.Lock()
 	saved, cached := m.unpersisted[k]
+	refused, wasRefused := m.refused[k]
 	m.mu.Unlock()
 	if !cached {
 		data, err := keychainGet(k)
@@ -334,15 +369,25 @@ func (m *Manager) oauthValue(ctx context.Context, id config.ID, a config.Secret,
 	if saved.Origin != origin {
 		return "", fmt.Errorf("secret %s is logged in to another server origin; run agx secret login %s", id, id)
 	}
-	if saved.Token.Valid() {
+	if saved.Token.Valid() && (rejected == "" || saved.Token.AccessToken != rejected) {
 		return saved.Token.AccessToken, nil
 	}
 	if saved.Token.RefreshToken == "" {
-		return "", fmt.Errorf("secret %s needs login; run agx secret login %s", id, id)
+		return "", fmt.Errorf("secret %s expired and has no refresh token; run agx secret login %s", id, id)
 	}
-	token, err := m.refresh(ctx, saved)
+	if wasRefused {
+		return "", fmt.Errorf("secret %s cannot be refreshed: %s; run agx secret login %s", id, refused, id)
+	}
+	token, refusal, err := m.refresh(ctx, saved)
 	if err != nil {
-		return "", fmt.Errorf("secret %s refresh failed; run agx secret login %s", id, id)
+		slog.Warn("OAuth refresh failed", "secret", id, "refused", refusal, "error", err)
+		if refusal {
+			m.mu.Lock()
+			m.refused[k] = err.Error()
+			m.mu.Unlock()
+			return "", fmt.Errorf("secret %s cannot be refreshed: %w; run agx secret login %s", id, err, id)
+		}
+		return "", fmt.Errorf("secret %s: %w: %w", id, ErrRefreshFailed, err)
 	}
 	saved.Token = token
 	data, err := json.Marshal(saved)
@@ -370,10 +415,11 @@ func (m *Manager) oauthValue(ctx context.Context, id config.ID, a config.Secret,
 }
 
 // refresh is done by hand because oauth2.TokenSource cannot send the RFC 8707
-// resource parameter.
-func (m *Manager) refresh(ctx context.Context, saved credential) (*oauth2.Token, error) {
+// resource parameter. refused reports that the authorization server rejected the refresh token
+// or the client (RFC 6749 section 5.2), so only a new login helps; other failures may pass.
+func (m *Manager) refresh(ctx context.Context, saved credential) (token *oauth2.Token, refused bool, err error) {
 	if err := secureURL(saved.Endpoint.TokenURL); err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	form := url.Values{
 		"grant_type":    {"refresh_token"},
@@ -390,17 +436,27 @@ func (m *Manager) refresh(ctx context.Context, saved credential) (*oauth2.Token,
 		strings.NewReader(form.Encode()),
 	)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	resp, err := m.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, false, fmt.Errorf("cannot reach the token endpoint: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token endpoint returned HTTP %d", resp.StatusCode)
+		// Only the error code is kept: the description is free text from the server.
+		var failure struct {
+			Error string `json:"error"`
+		}
+		_ = json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&failure)
+		err := fmt.Errorf("token endpoint returned HTTP %d", resp.StatusCode)
+		if code := failure.Error; code != "" && isErrorCode(code) {
+			err = fmt.Errorf("token endpoint returned HTTP %d (%s)", resp.StatusCode, code)
+		}
+		refused := resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnauthorized
+		return nil, refused, err
 	}
 	var body struct {
 		AccessToken  string `json:"access_token"`
@@ -411,16 +467,29 @@ func (m *Manager) refresh(ctx context.Context, saved credential) (*oauth2.Token,
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1024*1024)).
 		Decode(&body); err != nil ||
 		body.AccessToken == "" {
-		return nil, fmt.Errorf("invalid token response")
+		return nil, false, fmt.Errorf("invalid token response")
 	}
-	token := &oauth2.Token{AccessToken: body.AccessToken, TokenType: body.TokenType, RefreshToken: body.RefreshToken}
+	token = &oauth2.Token{AccessToken: body.AccessToken, TokenType: body.TokenType, RefreshToken: body.RefreshToken}
 	if token.RefreshToken == "" {
 		token.RefreshToken = saved.Token.RefreshToken
 	}
 	if body.ExpiresIn > 0 {
 		token.Expiry = time.Now().Add(time.Duration(body.ExpiresIn) * time.Second)
 	}
-	return token, nil
+	return token, false, nil
+}
+
+// isErrorCode reports whether code has the RFC 6749 error code syntax, so it is safe to show.
+func isErrorCode(code string) bool {
+	if len(code) > 64 {
+		return false
+	}
+	for _, c := range code {
+		if c < 0x20 || c > 0x7e || c == '"' || c == '\\' {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *Manager) Set(id config.ID, a config.Secret, secret []byte) error {
@@ -461,6 +530,7 @@ func (m *Manager) Logout(id config.ID, a config.Secret) error {
 	m.mu.Lock()
 	m.generation[k]++
 	delete(m.unpersisted, k)
+	delete(m.refused, k)
 	for _, p := range m.pending {
 		if p.SecretID == id {
 			m.finishLocked(p, errors.New("logged out while authorizing"))
@@ -495,6 +565,7 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 	}
 	required := m.required[k]
 	memory, inMemory := m.unpersisted[k]
+	refused, wasRefused := m.refused[k]
 	m.mu.Unlock()
 	switch a.Kind {
 	case "environment":
@@ -529,9 +600,15 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 			s.State = "ready"
 		}
 	case "keychain", "oauth":
+		if wasRefused {
+			s.State = "needs_login"
+			s.Problem = "secret " + string(id) + " cannot be refreshed: " + refused
+			break
+		}
 		if inMemory {
 			s.State = "ready"
 			s.Expires = memory.Token.Expiry
+			s.Refreshable = memory.Token.RefreshToken != ""
 			break
 		}
 		data, err := keychainGet(k)
@@ -551,6 +628,7 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 					s.State = "unavailable"
 				} else {
 					s.Expires = c.Token.Expiry
+					s.Refreshable = c.Token.RefreshToken != ""
 					if !c.Token.Valid() && c.Token.RefreshToken == "" {
 						s.State = "needs_login"
 					}
