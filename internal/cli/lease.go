@@ -58,6 +58,38 @@ type lease struct {
 	client    *client
 	// restore holds what RestoreLaunch resends, per launch: the wrapper's own and its threads'.
 	restore map[string]*v1.RestoreLaunchRequest
+	// started is when the wrapper last started a daemon to replace a crashed one.
+	started time.Time
+}
+
+// crashRestartInterval spaces the daemons a wrapper starts for a crashed one.
+const crashRestartInterval = 10 * time.Second
+
+// replaceCrashed starts a daemon when the one discovery names is gone without having stopped:
+// a stopping daemon removes its discovery file last, so one that stays behind unanswered was
+// killed. Nothing else would start a daemon for the harness, whose MCP requests go straight to
+// the port. It reports whether a daemon answers afterwards.
+func (l *lease) replaceCrashed(ctx context.Context) bool {
+	if time.Since(l.started) < crashRestartInterval {
+		return false
+	}
+	c, err := newAnyVersionClient(l.paths)
+	if err != nil {
+		return false
+	}
+	probe, cancel := context.WithTimeout(ctx, time.Second)
+	_, err = c.runtime.GetRuntime(probe, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
+	cancel()
+	if err == nil || connect.CodeOf(err) != connect.CodeUnavailable {
+		return false
+	}
+	l.started = time.Now()
+	ui.Diagnose(ui.Warn, "the agx daemon stopped answering without shutting down; starting a new one")
+	if _, err := startDaemon(context.WithoutCancel(ctx), l.paths); err != nil {
+		ui.Diagnose(ui.Warn, "cannot start a new agx daemon: %v", err)
+		return false
+	}
+	return l.reconnect(l.current())
 }
 
 func newLease(paths platform.Paths, c *client, launch, lifecycle string) *lease {
@@ -87,6 +119,31 @@ func (l *lease) remember(id string, inputs map[string]string, native []string, e
 		NativeArguments:   native,
 		Executable:        executable,
 	}
+}
+
+// rememberLaunch keeps the wrapper's own launch and grant, with which a daemon that lost the
+// launch takes it back (reattach).
+func (l *lease) rememberLaunch(launch *v1.Launch, grant string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if restore := l.restore[launch.Id]; restore != nil {
+		restore.Launch, restore.Grant = launch, grant
+	}
+}
+
+// reattach hands the wrapper's own launch to a daemon that does not hold it, or let it expire,
+// as when the daemon holding it was killed before saving it.
+func (l *lease) reattach(ctx context.Context) error {
+	l.mu.Lock()
+	restore := l.restore[l.launch]
+	l.mu.Unlock()
+	if restore == nil || restore.Launch == nil {
+		return errors.New("the launch cannot be re-attached")
+	}
+	return l.call(func(c *client) error {
+		_, err := c.launches.RestoreLaunch(ctx, request(restore, c.discovery.Token))
+		return err
+	})
 }
 
 func (l *lease) forget(id string) {

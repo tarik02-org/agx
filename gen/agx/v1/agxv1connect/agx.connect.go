@@ -686,7 +686,9 @@ type LaunchServiceClient interface {
 	// the parent's lease and lifecycle token and ends with it.
 	PrepareThreadLaunch(context.Context, *connect.Request[v1.PrepareThreadLaunchRequest]) (*connect.Response[v1.PrepareThreadLaunchResponse], error)
 	// Resends what a daemon restored after a restart does not keep: the environment inputs of a
-	// launch, or one of its thread launches, and the native arguments of the launch itself.
+	// launch, or one of its thread launches, and the native arguments of the launch itself. With
+	// the launch and its grant, it also re-attaches a launch the daemon lost or let expire while
+	// its wrapper still runs.
 	RestoreLaunch(context.Context, *connect.Request[v1.RestoreLaunchRequest]) (*connect.Response[v1.RestoreLaunchResponse], error)
 }
 
@@ -804,7 +806,9 @@ type LaunchServiceHandler interface {
 	// the parent's lease and lifecycle token and ends with it.
 	PrepareThreadLaunch(context.Context, *connect.Request[v1.PrepareThreadLaunchRequest]) (*connect.Response[v1.PrepareThreadLaunchResponse], error)
 	// Resends what a daemon restored after a restart does not keep: the environment inputs of a
-	// launch, or one of its thread launches, and the native arguments of the launch itself.
+	// launch, or one of its thread launches, and the native arguments of the launch itself. With
+	// the launch and its grant, it also re-attaches a launch the daemon lost or let expire while
+	// its wrapper still runs.
 	RestoreLaunch(context.Context, *connect.Request[v1.RestoreLaunchRequest]) (*connect.Response[v1.RestoreLaunchResponse], error)
 }
 

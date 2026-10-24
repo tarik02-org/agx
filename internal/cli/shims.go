@@ -1,9 +1,13 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 
@@ -244,5 +248,27 @@ func warnShims(dir, target string, names []string) {
 		} else {
 			ui.Diagnose(ui.Warn, "the %s shim shadows %s", c.Name, c.Path)
 		}
+	}
+}
+
+// handOff runs a harness definition through the current agx for a shim that still holds an older
+// build, as a script shim does, and returns its exit status. Console interrupts reach both
+// processes; the shim leaves them to the current agx.
+func handOff(current, name string, args []string) int {
+	cmd := exec.CommandContext(context.Background(), current, append([]string{name}, args...)...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	interrupts := make(chan os.Signal, 1)
+	signal.Notify(interrupts, platform.Interrupts()...)
+	defer signal.Stop(interrupts)
+	err := cmd.Run()
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+		return 0
+	case errors.As(err, &exit) && exit.ExitCode() >= 0:
+		return exit.ExitCode()
+	default:
+		ui.Diagnose(ui.Error, "%s: cannot run the current agx %s: %v", name, current, err)
+		return 1
 	}
 }

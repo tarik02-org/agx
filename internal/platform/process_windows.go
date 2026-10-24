@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,25 @@ import (
 // unlike DETACHED_PROCESS, console children it spawns share that console instead of opening windows.
 func Isolate(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &windows.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_NO_WINDOW}
+}
+
+// StartDetached starts the daemon command that build makes outside the job object of its caller,
+// with a hidden console of its own. Node-based parents, such as editors and agent harnesses, keep
+// their children in a job that kills them when the parent exits, which would kill a daemon an agx
+// command in such a process tree started, before it saved its launches. Where the job forbids
+// breaking away, a second command starts inside it, as before.
+func StartDetached(build func() *exec.Cmd) (*exec.Cmd, error) {
+	cmd := build()
+	cmd.SysProcAttr = &windows.SysProcAttr{
+		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_NO_WINDOW | windows.CREATE_BREAKAWAY_FROM_JOB,
+	}
+	err := cmd.Start()
+	if !errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+		return cmd, err
+	}
+	cmd = build()
+	Isolate(cmd)
+	return cmd, cmd.Start()
 }
 
 func IsolateOwned(cmd *exec.Cmd) {

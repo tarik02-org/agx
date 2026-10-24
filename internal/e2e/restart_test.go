@@ -337,6 +337,60 @@ func TestDaemonRestart(t *testing.T) {
 		}
 	})
 
+	t.Run("killed daemon without saved state", func(t *testing.T) {
+		e := restartEnv(t)
+		t.Cleanup(func() { e.stopDaemon(true) })
+		h := e.hold(binaries.agx)
+		id := launchID(h.endpoint())
+		// The daemon dies without saving, as when the job of the process that started it closes.
+		killDaemon(t, e)
+		if err := os.Remove(filepath.Join(e.dir, "state", "daemon-state.json")); err != nil {
+			t.Fatal(err)
+		}
+		// No command runs: the wrapper starts the next daemon, which takes the launch back.
+		awaitServing(t, h.endpoint(), h.grant())
+		tools, _ := h.call()
+		if tools["agx-echo"] != want {
+			t.Fatalf("echo after the daemon was killed = %q\n%s", tools["agx-echo"], h.stderr.String())
+		}
+		if got := e.launches()[id]; got != "running" {
+			t.Fatalf("re-attached launch is %q", got)
+		}
+		if !strings.Contains(h.stderr.String(), "starting a new one") {
+			t.Errorf("the wrapper did not say it replaced the daemon:\n%s", h.stderr.String())
+		}
+		log, err := os.ReadFile(filepath.Join(e.dir, "cache", "runtime", "daemon.log"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(log), "launch re-attached by its wrapper") {
+			t.Errorf("the daemon log does not show the re-attachment:\n%s", log)
+		}
+	})
+
+	t.Run("lease expired while no daemon ran", func(t *testing.T) {
+		e := restartEnv(t)
+		config, err := os.ReadFile(filepath.Join(e.dir, "config", "agx.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.write(
+			"config/agx.yaml",
+			strings.Replace(string(config), "renew_seconds: 1}", "renew_seconds: 1, lease_seconds: 3}", 1),
+		)
+		t.Cleanup(func() { e.stopDaemon(true) })
+		h := e.hold(binaries.agx)
+		e.stopDaemon(false)
+		time.Sleep(4 * time.Second)
+		// The next daemon drops the expired launch, and its wrapper takes it back.
+		e.ok("secret", "status")
+		awaitServing(t, h.endpoint(), h.grant())
+		tools, _ := h.call()
+		if tools["agx-echo"] != want {
+			t.Fatalf("echo after the lease ran out = %q\n%s", tools["agx-echo"], h.stderr.String())
+		}
+	})
+
 	t.Run("taken port", func(t *testing.T) {
 		e := restartEnv(t)
 		t.Cleanup(func() { e.stopDaemon(true) })
@@ -400,4 +454,27 @@ func daemonURL(t *testing.T, e *env) *url.URL {
 		t.Fatal(err)
 	}
 	return u
+}
+
+// killDaemon ends the daemon at once, without letting it shut down.
+func killDaemon(t *testing.T, e *env) {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(e.dir, "cache", "runtime", "daemon.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var discovery struct {
+		PID int `json:"pid"`
+	}
+	if err := json.Unmarshal(b, &discovery); err != nil || discovery.PID == 0 {
+		t.Fatalf("no daemon PID in discovery: %v", err)
+	}
+	process, err := os.FindProcess(discovery.PID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = process.Wait()
 }

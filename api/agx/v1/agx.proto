@@ -54,7 +54,9 @@ service LaunchService {
   // the parent's lease and lifecycle token and ends with it.
   rpc PrepareThreadLaunch(PrepareThreadLaunchRequest) returns (PrepareThreadLaunchResponse);
   // Resends what a daemon restored after a restart does not keep: the environment inputs of a
-  // launch, or one of its thread launches, and the native arguments of the launch itself.
+  // launch, or one of its thread launches, and the native arguments of the launch itself. With
+  // the launch and its grant, it also re-attaches a launch the daemon lost or let expire while
+  // its wrapper still runs.
   rpc RestoreLaunch(RestoreLaunchRequest) returns (RestoreLaunchResponse);
 }
 
@@ -398,6 +400,12 @@ message RestoreLaunchRequest {
   repeated string native_arguments = 4;
   // The native executable the launch was prepared with; empty for a thread launch.
   string executable = 5;
+  // Re-attaches a launch this daemon does not hold, or let expire, as when the daemon that held
+  // it was killed before saving it: the launch as PrepareLaunch returned it. Thread launches
+  // cannot be re-attached. Ignored for a launch the daemon restored.
+  Launch launch = 6;
+  // Sensitive: the launch's MCP grant, required with launch, so the harness keeps using it.
+  string grant = 7;
 }
 message RestoreLaunchResponse {}
 

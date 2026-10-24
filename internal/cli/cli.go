@@ -25,6 +25,7 @@ import (
 	"github.com/tarik02-org/agx/internal/daemon"
 	"github.com/tarik02-org/agx/internal/packages"
 	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/shims"
 )
 
 func Main() int {
@@ -292,6 +293,11 @@ func run(osArgs []string, stdout io.Writer) int {
 	}
 	builtins = registry.Builtins(reserved)
 	if name := invokedName(osArgs[0]); name != root.Name() {
+		if self, err := os.Executable(); err == nil {
+			if current, outdated := shims.Outdated(self); outdated {
+				return handOff(current, name, osArgs[1:])
+			}
+		}
 		harnesses = loadHarnesses(paths.Config, builtins)
 		if slices.Contains(harnesses.config.HarnessNames(), name) {
 			return exitCode(runHarness(context.Background(), paths, registry, harnesses, name, osArgs[1:], ""))

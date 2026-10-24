@@ -46,6 +46,7 @@ Connect clients with `@connectrpc/connect`. Generator versions are pinned in
 Pushing a `v*` tag runs `.github/workflows/release.yml`, which tests and
 publishes a GitHub release with GoReleaser (`.goreleaser.yaml`). Every `master`
 commit that passes CI publishes its own `nightly-<version>.<commits>-<commit>`
-prerelease. Run
+prerelease and moves the rolling `nightly` prerelease, which installers that
+follow one tag use, to it. Run
 `goreleaser build --snapshot --clean` to build every target locally. Bump the
 version in `package.nix` and `CHANGELOG.md` together with the tag.

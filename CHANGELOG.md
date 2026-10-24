@@ -152,6 +152,22 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Fixed
 
+- Launches survive a daemon that dies without saving them: a wrapper whose daemon no longer
+  holds its launch, or let its lease run out, re-attaches it with its ID and grant
+  (`RestoreLaunch` with `launch` and `grant`), and a wrapper whose daemon was killed starts the
+  next one itself, on the same port. Revoked launches stay revoked across restarts. Wrappers no
+  longer give up while their harness runs; they report when MCP access pauses and comes back.
+- On Windows the daemon starts outside the job object of the process that started it, so the
+  exit of an editor or agent harness that ran an agx command no longer kills it; on Unix it
+  starts in a session of its own.
+- A hard-link or copy shim left with an older agx build by an in-place update runs the current
+  agx instead, so launches through it no longer replace the daemon with the old build. The
+  daemon runs from agx itself rather than from a shim.
+- The daemon log records daemon starts and stops, launches it does not restore and why, launches
+  that expire or are revoked, and re-attached launches; discovery carries the daemon's PID.
+  Temporary files a killed process left in the state directory are removed at startup.
+- Every master build also moves the rolling `nightly` prerelease again, which installers that
+  follow one tag, such as mise, update from.
 - An HTTP MCP server that rejects an OAuth access token with 401 before its recorded expiry,
   or one issued without `expires_in`, gets the request again with a refreshed token instead of
   asking for `agx secret login`.

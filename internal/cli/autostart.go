@@ -22,6 +22,7 @@ import (
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/daemon"
 	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/shims"
 )
 
 const (
@@ -175,6 +176,9 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if origin, ok := shims.Origin(executable); ok {
+		executable = origin
+	}
 	if err := os.MkdirAll(paths.Runtime, 0o700); err != nil {
 		return "", err
 	}
@@ -188,22 +192,24 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 		return "", err
 	}
 	defer func() { _ = log.Close() }()
-	// The daemon must outlive this command, so its process is not tied to the command's cancellation.
-	child := exec.CommandContext(context.WithoutCancel(ctx), executable, "daemon", "start", "--foreground")
-	// On macOS the executable path is the link this command ran through, such as a shim named
-	// after a harness definition; with that name as argv[0] the child would launch the harness,
-	// which starts a daemon again, without end. The daemon always runs as agx.
-	child.Args[0] = "agx"
-	// The paths travel as environment rather than as --config, which must name an existing file:
-	// a root configuration that does not exist yet is an empty one, as it is for the caller.
-	child.Env = append(os.Environ(), "AGX_CONFIG="+paths.Config, "AGX_CACHE="+paths.Cache)
-	// A daemon started from a launch must not hold that project directory open, nor write
-	// into a harness's protocol streams.
-	child.Dir = paths.Runtime
-	child.Stdout = log
-	child.Stderr = log
-	platform.Isolate(child)
-	if err := child.Start(); err != nil {
+	child, err := platform.StartDetached(func() *exec.Cmd {
+		// The daemon must outlive this command, so its process is not tied to the command's cancellation.
+		child := exec.CommandContext(context.WithoutCancel(ctx), executable, "daemon", "start", "--foreground")
+		// On macOS the executable path is the link this command ran through, such as a shim named
+		// after a harness definition; with that name as argv[0] the child would launch the harness,
+		// which starts a daemon again, without end. The daemon always runs as agx.
+		child.Args[0] = "agx"
+		// The paths travel as environment rather than as --config, which must name an existing file:
+		// a root configuration that does not exist yet is an empty one, as it is for the caller.
+		child.Env = append(os.Environ(), "AGX_CONFIG="+paths.Config, "AGX_CACHE="+paths.Cache)
+		// A daemon started from a launch must not hold that project directory open, nor write
+		// into a harness's protocol streams.
+		child.Dir = paths.Runtime
+		child.Stdout = log
+		child.Stderr = log
+		return child
+	})
+	if err != nil {
 		return "", err
 	}
 	exited := make(chan struct{})

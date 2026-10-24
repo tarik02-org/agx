@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -39,7 +40,14 @@ type savedState struct {
 	// Config is the root configuration the launches were resolved from.
 	Config   string        `json:"config"`
 	Launches []savedLaunch `json:"launches"`
+	// Revoked lists launches revoked within revokedRetention, whose wrappers must not re-attach
+	// them; it maps a launch ID to when it was revoked.
+	Revoked map[string]time.Time `json:"revoked,omitempty"`
 }
+
+// revokedRetention is how long a revoked launch stays refused for re-attaching. A wrapper renews
+// within seconds of a daemon coming back, so this outlasts any daemon downtime that matters.
+const revokedRetention = 7 * 24 * time.Hour
 
 type savedLaunch struct {
 	ID string `json:"id"`
@@ -186,20 +194,34 @@ func decodeState(path string, b []byte) (savedState, error) {
 // still active, parents before their thread launches, and drops expired ones, those of another
 // configuration, and thread launches whose parent is gone. A missing file holds nothing; a file
 // of a newer format version is a newerState error, and one that does not decode an invalidState.
-func loadState(path, config string, now time.Time) (int, []restoredLaunch, error) {
+func loadState(path, config string, now time.Time) (int, []restoredLaunch, map[string]time.Time, error) {
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return 0, nil, nil
+		return 0, nil, nil, nil
 	}
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	saved, err := decodeState(path, b)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
+	}
+	revoked := map[string]time.Time{}
+	for id, at := range saved.Revoked {
+		if now.Sub(at) < revokedRetention {
+			revoked[id] = at
+		}
 	}
 	if saved.Config != config {
-		return saved.Port, nil, nil
+		if len(saved.Launches) > 0 {
+			slog.Warn(
+				"not restoring launches saved for another configuration",
+				"launches", len(saved.Launches),
+				"saved", saved.Config,
+				"config", config,
+			)
+		}
+		return saved.Port, nil, revoked, nil
 	}
 	kept := map[string]bool{}
 	restored := []restoredLaunch{}
@@ -214,10 +236,19 @@ func loadState(path, config string, now time.Time) (int, []restoredLaunch, error
 		r := restoredLaunch{saved: l, state: state}
 		grant, grantErr := hex.DecodeString(l.Grant)
 		lifecycle, lifecycleErr := hex.DecodeString(l.Lifecycle)
+		reason := ""
 		switch {
-		case state == v1.Launch_STATE_UNSPECIFIED, !now.Before(l.Expires), l.ID == "", l.LeaseSeconds <= 0,
-			grantErr != nil, lifecycleErr != nil, len(grant) != len(r.grant), len(lifecycle) != len(r.lifecycle),
-			l.Parent != "" && !kept[l.Parent]:
+		case !now.Before(l.Expires):
+			reason = "its lease expired at " + l.Expires.Format(time.RFC3339)
+		case l.Parent != "" && !kept[l.Parent]:
+			reason = "its parent launch is not restored"
+		case state == v1.Launch_STATE_UNSPECIFIED, l.ID == "", l.LeaseSeconds <= 0,
+			grantErr != nil, lifecycleErr != nil, len(grant) != len(r.grant), len(lifecycle) != len(r.lifecycle):
+			reason = "its saved entry is invalid"
+		}
+		if reason != "" {
+			// Its wrapper can still re-attach it while the harness runs.
+			slog.Warn("not restoring launch", "launch", shortID(l.ID), "harness", l.Harness, "reason", reason)
 			continue
 		}
 		copy(r.grant[:], grant)
@@ -225,7 +256,15 @@ func loadState(path, config string, now time.Time) (int, []restoredLaunch, error
 		kept[l.ID] = true
 		restored = append(restored, r)
 	}
-	return saved.Port, restored, nil
+	return saved.Port, restored, revoked, nil
+}
+
+// shortID abbreviates a launch ID for the log, as git does commits.
+func shortID(id string) string {
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
 }
 
 // stateStore writes the state file. Writes carry the generation of the state they hold, so a

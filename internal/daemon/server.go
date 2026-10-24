@@ -9,11 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime/debug"
 	"sort"
 	"strconv"
@@ -92,6 +94,8 @@ type Discovery struct {
 	// RestoresLaunches marks a daemon that keeps its active launches for the next one when it
 	// stops without force, so replacing it does not end their MCP access.
 	RestoresLaunches bool `json:"restores_launches,omitempty"`
+	// PID is the daemon's process, for diagnosing one that stopped answering.
+	PID int `json:"pid,omitempty"`
 }
 
 type launch struct {
@@ -158,6 +162,9 @@ type Server struct {
 	stop              chan struct{}
 	// forced is set by a stop that revokes active launches instead of keeping them.
 	forced bool
+	// revoked maps launches revoked within revokedRetention, by this daemon or one before it, to
+	// when; their wrappers cannot re-attach them.
+	revoked map[string]time.Time
 	// grace, when set by a stop, replaces daemon.shutdown_grace_seconds.
 	grace time.Duration
 	drain *drain
@@ -209,6 +216,15 @@ func Serve(
 	}
 	defer func() { _ = lock.Unlock() }()
 	discoveryPath := filepath.Join(paths.Runtime, "daemon.json")
+	// Discovery left by a daemon that was killed names the port its launches' harnesses use, which
+	// the state file may lack when that daemon could not save it.
+	previousPort := 0
+	if previous, err := ReadDiscovery(paths); err == nil || errors.Is(err, ErrVersionMismatch) {
+		if u, err := url.Parse(previous.URL); err == nil {
+			previousPort, _ = strconv.Atoi(u.Port())
+		}
+		slog.Warn("the previous daemon stopped without shutting down", "pid", previous.PID, "url", previous.URL)
+	}
 	// The startup lock makes stale discovery replacement safe.
 	if err := os.Remove(discoveryPath); err != nil && !os.IsNotExist(err) {
 		return err
@@ -218,7 +234,9 @@ func Serve(
 		return err
 	}
 	store := &stateStore{path: StatePath(paths), interval: renewalWriteInterval}
-	port, restored, err := loadState(store.path, paths.Config, time.Now())
+	// Holding the startup lock, no other daemon writes these directories.
+	removeAbandonedTemporaries(filepath.Dir(store.path), time.Now())
+	port, restored, revoked, err := loadState(store.path, paths.Config, time.Now())
 	// Without a readable state, launch files may still belong to launches a daemon could restore.
 	sweep := err == nil
 	var newer newerState
@@ -241,6 +259,9 @@ func Serve(
 	case err != nil:
 		fmt.Fprintf(os.Stderr, "agx daemon: ignoring saved launches: %v\n", err)
 	}
+	if port == 0 {
+		port = previousPort
+	}
 	listener, err := listen(ctx, port)
 	if err != nil {
 		return err
@@ -258,6 +279,7 @@ func Serve(
 		Token:            securefs.Token(),
 		Config:           paths.Config,
 		RestoresLaunches: true,
+		PID:              os.Getpid(),
 	}
 	s := &Server{
 		paths:             paths,
@@ -275,6 +297,7 @@ func Serve(
 		operations:        map[string]*operation{},
 		operationRequests: map[string]*operation{},
 		store:             store,
+		revoked:           revoked,
 		port:              listener.Addr().(*net.TCPAddr).Port,
 		clients:           newClientPool(),
 		icons:             newMCPIcons(filepath.Join(paths.Cache, "mcp-icons.json")),
@@ -290,6 +313,14 @@ func Serve(
 		)
 	}
 	s.restore(restored, sweep)
+	slog.Info(
+		"daemon started",
+		"version", Version,
+		"build", Build(),
+		"pid", os.Getpid(),
+		"url", discovery.URL,
+		"restored", len(restored),
+	)
 	s.manager = auth.New(discovery.URL + "/oauth/callback")
 	mux := http.NewServeMux()
 	interceptor := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
@@ -554,6 +585,16 @@ func (s *Server) end(l *launch, state v1.Launch_State) {
 	l.view.State = state
 	l.ended = time.Now()
 	l.cancel()
+	if state == v1.Launch_STATE_REVOKED {
+		if s.revoked == nil {
+			s.revoked = map[string]time.Time{}
+		}
+		s.revoked[l.view.Id] = l.ended
+	}
+	// A finished launch is the normal outcome; the others cut a running harness off.
+	if state != v1.Launch_STATE_FINISHED && l.view.ParentLaunchId == "" {
+		slog.Info("launch ended", "launch", shortID(l.view.Id), "harness", l.view.Harness, "state", savedEnd(state))
+	}
 	s.clients.closeLaunch(l.view.Id)
 	go s.release(l.view.Id, l.endpoints)
 	for _, child := range s.children(l) {
@@ -615,10 +656,12 @@ func (s *Server) flush() []*launch {
 		}
 		launches = append(launches, l)
 	}
+	forced := s.forced
 	s.mu.Unlock()
 	// Requests still in flight must not rewrite the state once it holds what the next daemon gets.
 	s.persist(false)
 	s.store.freeze()
+	slog.Info("daemon stopping", "launches", len(launches), "forced", forced)
 	return launches
 }
 
@@ -662,7 +705,18 @@ func (s *Server) persist(renewal bool) {
 	s.mu.Lock()
 	s.generation++
 	generation := s.generation
-	state := savedState{Version: stateVersion, Port: s.port, Config: s.paths.Config, Launches: []savedLaunch{}}
+	state := savedState{
+		Version:  stateVersion,
+		Port:     s.port,
+		Config:   s.paths.Config,
+		Launches: []savedLaunch{},
+		Revoked:  map[string]time.Time{},
+	}
+	for id, at := range s.revoked {
+		if time.Since(at) < revokedRetention {
+			state.Revoked[id] = at.UTC()
+		}
+	}
 	parents := []*launch{}
 	for _, l := range s.launches {
 		if active(l.view.State) && l.view.ParentLaunchId == "" {
@@ -1051,4 +1105,43 @@ func configError(err error) error {
 		v1.ErrorDetail_REASON_CONFIG_INVALID,
 		"daemon configuration invalid: "+err.Error(),
 	)
+}
+
+// savedEnd names how a launch ended, for the log.
+func savedEnd(state v1.Launch_State) string {
+	switch state {
+	case v1.Launch_STATE_REVOKED:
+		return "revoked"
+	case v1.Launch_STATE_EXPIRED:
+		return "expired"
+	case v1.Launch_STATE_FINISHED:
+		return "finished"
+	case v1.Launch_STATE_UNSPECIFIED, v1.Launch_STATE_PREPARED, v1.Launch_STATE_RUNNING:
+	}
+	return "unknown"
+}
+
+// abandonedTemporary matches the temporary files securefs.Write creates; one that outlives its
+// write was left by a process killed mid-write.
+var abandonedTemporary = regexp.MustCompile(`^\.agx-[0-9]+$`)
+
+// removeAbandonedTemporaries deletes temporary files in dir that a killed process left. Commands
+// write launch records there too, so only files older than any write could take are removed.
+func removeAbandonedTemporaries(dir string, now time.Time) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() || !abandonedTemporary.MatchString(entry.Name()) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || now.Sub(info.ModTime()) < 10*time.Minute {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, entry.Name())); err == nil {
+			slog.Info("removed a file an interrupted write left", "file", filepath.Join(dir, entry.Name()))
+		}
+	}
 }

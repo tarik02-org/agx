@@ -13,6 +13,14 @@ import (
 
 func Isolate(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} }
 
+// StartDetached starts the daemon command that build makes in a session of its own, so neither the terminal nor the process
+// group of the command that started it, such as an agent harness's shell, can stop it with theirs.
+func StartDetached(build func() *exec.Cmd) (*exec.Cmd, error) {
+	cmd := build()
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	return cmd, cmd.Start()
+}
+
 func Own(cmd *exec.Cmd) (func(), error) {
 	return func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }, nil
 }
