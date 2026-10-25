@@ -297,7 +297,7 @@ func (m *Manager) challenge(ctx context.Context, serverURL string) string {
 // recognizes one: it answers a request without a credential with 401 and advertises protected
 // resource metadata. Only reaching the server is an error; any other answer means no login.
 func NeedsLogin(ctx context.Context, serverURL string) (bool, error) {
-	m := New("")
+	m := New("", nil)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL, nil)
 	if err != nil {
 		return false, err
@@ -600,7 +600,7 @@ func (m *Manager) Callback(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusConflict, errors.New("logged out while authorizing; run the login again"))
 		return
 	}
-	if err := keychainSet(k, string(data)); err != nil {
+	if err := m.store.Set(k, string(data)); err != nil {
 		fail(http.StatusServiceUnavailable, fmt.Errorf("the credential was not stored: %w", err))
 		return
 	}

@@ -321,7 +321,7 @@ func Serve(
 		"url", discovery.URL,
 		"restored", len(restored),
 	)
-	s.manager = auth.New(discovery.URL + "/oauth/callback")
+	s.manager = auth.New(discovery.URL+"/oauth/callback", auth.OpenStore(paths.State))
 	mux := http.NewServeMux()
 	interceptor := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {

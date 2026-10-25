@@ -70,7 +70,7 @@ func TestSopsExtract(t *testing.T) {
 		{config.SecretKey{"a.b", "c"}, "dotted", `["a.b"]["c"]`},
 	} {
 		secret := config.Secret{Kind: "sops", File: file, Key: tc.key}
-		got, err := auth.LocalValue(t.Context(), "gh", secret, nil, noEnv)
+		got, err := auth.LocalValue(t.Context(), auth.OpenStore(t.TempDir()), "gh", secret, nil, noEnv)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -89,7 +89,14 @@ func TestSopsWholeFile(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "app.env")
 	writeFile(t, file, "A=1\nB=2\n\n")
 
-	got, err := auth.LocalValue(t.Context(), "env", config.Secret{Kind: "sops", File: file}, nil, noEnv)
+	got, err := auth.LocalValue(
+		t.Context(),
+		auth.OpenStore(t.TempDir()),
+		"env",
+		config.Secret{Kind: "sops", File: file},
+		nil,
+		noEnv,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +110,7 @@ func TestSopsCache(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "secrets.json")
 	writeFile(t, file, `{"token": "one"}`)
 	secret := config.Secret{Kind: "sops", File: file, Key: config.SecretKey{"token"}}
-	manager := auth.New("http://127.0.0.1:1/callback")
+	manager := auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir()))
 	value := func() string {
 		t.Helper()
 		got, err := manager.Value(t.Context(), "token", secret, nil, nil, "")
@@ -149,7 +156,7 @@ func TestSopsEnvironment(t *testing.T) {
 	t.Setenv("SOPS_FAKE_FORBIDDEN", "UNRELATED_TOKEN")
 
 	secret := config.Secret{Kind: "sops", File: file, Key: config.SecretKey{"token"}}
-	if _, err := auth.LocalValue(t.Context(), "token", secret, nil, noEnv); err != nil {
+	if _, err := auth.LocalValue(t.Context(), auth.OpenStore(t.TempDir()), "token", secret, nil, noEnv); err != nil {
 		t.Fatalf("SOPS_ variables pass and others stay out: %v", err)
 	}
 }
@@ -163,7 +170,7 @@ func TestSopsFailures(t *testing.T) {
 	t.Run("missing executable", func(t *testing.T) {
 		t.Setenv("PATH", t.TempDir())
 		secret := config.Secret{Kind: "sops", File: file, Key: config.SecretKey{"token"}}
-		_, err := auth.LocalValue(t.Context(), "token", secret, nil, noEnv)
+		_, err := auth.LocalValue(t.Context(), auth.OpenStore(t.TempDir()), "token", secret, nil, noEnv)
 		if err == nil || !strings.Contains(err.Error(), "sops executable not found") {
 			t.Fatalf("err = %v", err)
 		}
@@ -187,12 +194,13 @@ func TestSopsFailures(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := auth.LocalValue(t.Context(), "token", tc.secret, nil, noEnv)
+			_, err := auth.LocalValue(t.Context(), auth.OpenStore(t.TempDir()), "token", tc.secret, nil, noEnv)
 			want := "secret token: sops cannot decrypt " + tc.secret.File + ": " + tc.reason
 			if err == nil || err.Error() != want {
 				t.Fatalf("err = %v, want %s", err, want)
 			}
-			status := auth.New("http://127.0.0.1:1/callback").Status("token", tc.secret, nil)
+			status := auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir())).
+				Status("token", tc.secret, nil)
 			if status.State != "unavailable" || status.Problem != want {
 				t.Fatalf("status = %+v", status)
 			}
@@ -202,7 +210,7 @@ func TestSopsFailures(t *testing.T) {
 
 func TestSopsCannotBeSet(t *testing.T) {
 	secret := config.Secret{Kind: "sops", File: "/config/secrets.yaml"}
-	err := auth.New("http://127.0.0.1:1/callback").Set("token", secret, []byte("value"))
+	err := auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir())).Set("token", secret, []byte("value"))
 	if err == nil || !strings.Contains(err.Error(), "edit it with sops /config/secrets.yaml") {
 		t.Fatalf("err = %v", err)
 	}
@@ -244,7 +252,7 @@ func TestSopsAge(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
 	secret := config.Secret{Kind: "sops", File: file, Key: config.SecretKey{"github", "token"}}
-	got, err := auth.LocalValue(ctx, "github", secret, nil, noEnv)
+	got, err := auth.LocalValue(ctx, auth.OpenStore(t.TempDir()), "github", secret, nil, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +268,7 @@ func TestSopsAge(t *testing.T) {
 	}
 	keyring.MockInit()
 	age := config.Secret{Kind: "keychain"}
-	manager := auth.New("http://127.0.0.1:1/callback")
+	manager := auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir()))
 	if err := manager.Set("age", age, identity); err != nil {
 		t.Fatal(err)
 	}
@@ -310,8 +318,7 @@ func TestSopsAgeKey(t *testing.T) {
 				}
 				return "", false
 			}
-			if got, err := auth.LocalValue(
-				t.Context(),
+			if got, err := auth.LocalValue(t.Context(), auth.OpenStore(t.TempDir()),
 				"token",
 				secret,
 				tc.secrets,
@@ -321,7 +328,7 @@ func TestSopsAgeKey(t *testing.T) {
 				t.Fatalf("local value = %q, %v", got, err)
 			}
 			inputs := map[string]string{"AGE_IDENTITY": "AGE-SECRET-KEY-ENV"}
-			manager := auth.New("http://127.0.0.1:1/callback")
+			manager := auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir()))
 			if got, err := manager.Value(
 				t.Context(),
 				"token",
@@ -346,7 +353,7 @@ func TestSopsAgeKey(t *testing.T) {
 			Key:    config.SecretKey{"token"},
 			AgeKey: config.Value{Secret: "age"},
 		}
-		manager := auth.New("http://127.0.0.1:1/callback")
+		manager := auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir()))
 
 		status := manager.Status("token", secret, secrets)
 		if status.State != "unavailable" || !strings.Contains(status.Problem, "keychain secret age is not stored") {
@@ -362,7 +369,7 @@ func TestSopsAgeKey(t *testing.T) {
 
 	t.Run("caller environment", func(t *testing.T) {
 		secret := config.Secret{Kind: "sops", File: file, AgeKey: config.Value{Env: "AGE_IDENTITY"}}
-		status := auth.New("http://127.0.0.1:1/callback").Status("token", secret, nil)
+		status := auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir())).Status("token", secret, nil)
 		if status.State != "unconfigured" {
 			t.Fatalf("an age key from the caller's environment resolves at launch: %+v", status)
 		}
@@ -374,7 +381,7 @@ func TestSopsAgeKey(t *testing.T) {
 		secret := config.Secret{Kind: "sops", File: cached, AgeKey: config.Value{Env: "AGE_IDENTITY"}}
 		decrypt := func(key string) error {
 			env := func(string) (string, bool) { return key, true }
-			_, err := auth.LocalValue(t.Context(), "token", secret, nil, env)
+			_, err := auth.LocalValue(t.Context(), auth.OpenStore(t.TempDir()), "token", secret, nil, env)
 			return err
 		}
 		before := len(runs(t, log))

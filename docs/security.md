@@ -32,7 +32,8 @@ program running as you can read it.
 **Secret values stay out of files and output.** Values from `!secret`, `!env`,
 and `!file` are resolved at launch and kept in memory. They are not written to
 agx's generated files, lockfiles, logs, `explain`, `--json` output, or error
-messages. Keychain secrets and OAuth tokens live in the OS keychain; there is no
+messages. Keychain secrets and OAuth tokens live in `secrets.json` in the state
+directory, encrypted under a key that the OS keychain holds; there is no
 plaintext fallback.
 
 **MCP credentials stay in the daemon.** Harnesses never receive the API keys or
