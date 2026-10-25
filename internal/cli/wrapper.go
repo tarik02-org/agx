@@ -114,7 +114,7 @@ func runHarness(
 	mode := adapter.Classify(args)
 	if mode == config.ModePassthrough {
 		// Without a managed launch there is no daemon to ask, so secrets resolve here when their
-		// kind allows it: environment, command, keychain, or sops.
+		// kind allows it: command, keychain, or sops.
 		harnessArgs, harnessEnv, err := h.Resolve(mode, os.LookupEnv, func(id config.ID) (string, error) {
 			secret, ok := harnesses.config.Secrets[id]
 			if !ok {
