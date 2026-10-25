@@ -313,8 +313,11 @@ func testMCP(ctx context.Context, paths platform.Paths, builtins config.Builtins
 func mcpRows(c *config.Config) ([]string, [][]string, any) {
 	out := ui.Stdout
 	rows := [][]string{}
+	servers := map[config.ID]config.MCPServer{}
 	for _, id := range slices.Sorted(maps.Keys(c.MCP)) {
 		server := c.MCP[id]
+		server.Environment, server.Headers = redact(server.Environment), redact(server.Headers)
+		servers[id] = server
 		target := server.URL
 		if server.Transport == "stdio" {
 			target = strings.Join(server.Command, " ")
@@ -341,7 +344,21 @@ func mcpRows(c *config.Config) ([]string, [][]string, any) {
 			out.Path(location(c, server.Source)),
 		})
 	}
-	return []string{"ID", "TRANSPORT", "TARGET", "AUTH", "LOAD", "SHARE", "SOURCE"}, rows, c.MCP
+	return []string{"ID", "TRANSPORT", "TARGET", "AUTH", "LOAD", "SHARE", "SOURCE"}, rows, servers
+}
+
+// redact leaves literal values out of output, since they may be credentials typed into the
+// configuration; tagged values keep their reference.
+func redact(values map[string]config.Value) map[string]config.Value {
+	if values == nil {
+		return nil
+	}
+	out := map[string]config.Value{}
+	for key, value := range values {
+		value.Literal = ""
+		out[key] = value
+	}
+	return out
 }
 
 func location(c *config.Config, source config.Source) string {

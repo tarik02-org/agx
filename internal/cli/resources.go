@@ -249,6 +249,7 @@ func harnessRows(c *config.Config) ([]string, [][]string, any) {
 			source = location(c, def.Source)
 		}
 		rows = append(rows, []string{out.ID(name), base, h.Builtin, ui.ShortPath(h.Executable, ""), out.Path(source)})
+		h.Environment = redact(h.Environment)
 		items = append(items, h)
 	}
 	return []string{"NAME", "BASE", "BUILT-IN", "EXECUTABLE", "SOURCE"}, rows, items
