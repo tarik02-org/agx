@@ -130,7 +130,7 @@ func (s *Server) attachProcess(ctx context.Context, msg *v1.AttachLaunchRequest)
 	l := s.newLaunch(view, b, msg.Grant, msg.LifecycleToken, nil)
 	inputs := map[string]string{}
 	if !stale || b.threadServer {
-		if inputs, err = launchInputs(b.snapshot, msg.EnvironmentInputs, b.adapter.Forwarded()); err != nil {
+		if inputs, err = launchInputs(b.snapshot, msg.EnvironmentInputs, adapters.Forwarded(b.adapter)); err != nil {
 			l.cancel()
 			return nil, err
 		}

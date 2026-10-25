@@ -14,7 +14,6 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
-	"github.com/tarik02-org/agx/internal/adapters/codex"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/shims"
 )
@@ -79,21 +78,6 @@ func TestPackageChecks(t *testing.T) {
 	}
 }
 
-func TestCodexChecks(t *testing.T) {
-	rows := codexChecks(codex.PluginState{Disabled: "Codex plugins are disabled (features.plugins = false in x)"}, nil)
-	if len(rows) != 1 || rows[0].Status != checkWarn || !strings.Contains(rows[0].Detail, "features.plugins = false") {
-		t.Errorf("disabled = %+v", rows)
-	}
-	rows = codexChecks(codex.PluginState{Registered: true, Installed: []string{"review"}}, nil)
-	if len(rows) != 3 || rows[1].Status != checkPass || rows[2].Status != checkPass {
-		t.Errorf("installed = %+v", rows)
-	}
-	rows = codexChecks(codex.PluginState{Missing: []string{"review"}}, nil)
-	if rows[1].Status != checkWarn || rows[2].Status != checkWarn || rows[2].Detail != "not installed: review" {
-		t.Errorf("missing = %+v", rows)
-	}
-}
-
 // Each Codex-based definition is checked with its own CODEX_HOME and arguments.
 func TestCodexDefinitionChecks(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -148,7 +132,7 @@ harnesses:
 	t.Setenv("CODEX_HOME", filepath.Join(dir, "caller-codex"))
 	statuses := map[string]checkStatus{}
 	details := map[string]string{}
-	for _, row := range codexDefinitionChecks(t.Context(), c, registry, filepath.Join(dir, "cache")) {
+	for _, row := range definitionChecks(t.Context(), c, registry, filepath.Join(dir, "cache")) {
 		statuses[row.Name], details[row.Name] = row.Status, row.Detail
 	}
 	if statuses["plugins feature"] != checkPass || !strings.Contains(details["plugins feature"], "caller-codex") {

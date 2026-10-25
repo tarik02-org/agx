@@ -46,7 +46,7 @@ func (s *Server) PrepareLaunch(
 		return nil, rpcError(connect.CodeAborted, "snapshot changed; resolve again before forwarding credentials")
 	}
 	warnMissing(snapshot)
-	inputs, err := launchInputs(snapshot, msg.EnvironmentInputs, adapter.Forwarded())
+	inputs, err := launchInputs(snapshot, msg.EnvironmentInputs, adapters.Forwarded(adapter))
 	if err != nil {
 		return nil, err
 	}

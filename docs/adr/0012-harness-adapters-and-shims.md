@@ -15,9 +15,17 @@ type Adapter interface {
 	Executable(configured string) (string, error)
 	Directory(args []string, cwd string) (string, []string, error)
 	Arguments(launch Launch) ([]string, error)
-	Install(ctx context.Context, c *config.Config, cache string) error
+	Sessions(ctx context.Context, files SessionFiles) ([]Session, error)
+	Resume(session Session) []string
 }
 ```
+
+What only some harnesses need is an optional interface an adapter may also
+implement: `Installer` (native installation), `Forwarder` (caller variables that
+locate the harness's configuration), `SettingsAdapter` (native settings), and
+`Doctor` (checks `agx doctor` runs per definition). Only Codex implements
+`Installer`, `Forwarder`, and `Doctor`, so other adapters carry no stubs and
+`agx doctor` names no harness.
 
 `internal/adapters/{codex,claude,pi}` hold everything harness-specific: the mode
 set and classification, passthrough commands, working-directory flags, how

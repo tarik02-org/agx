@@ -182,3 +182,14 @@ func Timestamp(value string) time.Time {
 	}
 	return t
 }
+
+// ContainsAny reports whether line contains one of markers, which spares parsing lines that
+// cannot hold what a store scan looks for.
+func ContainsAny(line []byte, markers [][]byte) bool {
+	for _, m := range markers {
+		if bytes.Contains(line, m) {
+			return true
+		}
+	}
+	return false
+}

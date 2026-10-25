@@ -185,7 +185,7 @@ func runHarness(
 	}
 	// The harness inherits this environment, so the daemon reads its configuration from here;
 	// an empty value tells the daemon the variable is unset.
-	for _, name := range adapter.Forwarded() {
+	for _, name := range adapters.Forwarded(adapter) {
 		inputs[name] = os.Getenv(name)
 	}
 	prepare := &v1.PrepareLaunchRequest{

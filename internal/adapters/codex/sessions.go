@@ -135,7 +135,7 @@ func parseRollout(f *os.File, info fs.FileInfo) (adapters.Session, bool, error) 
 			session.Started = adapters.Timestamp(meta.Timestamp)
 			return true
 		}
-		if !containsAny(line, userMarkers) {
+		if !adapters.ContainsAny(line, userMarkers) {
 			return true
 		}
 		var l rolloutLine
@@ -180,13 +180,4 @@ func firstText(items []contentItem) string {
 		}
 	}
 	return ""
-}
-
-func containsAny(line []byte, markers [][]byte) bool {
-	for _, m := range markers {
-		if bytes.Contains(line, m) {
-			return true
-		}
-	}
-	return false
 }
