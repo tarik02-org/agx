@@ -34,20 +34,18 @@ func (s *Server) threadParent(id string) (threadParent, error) {
 	}
 	s.mu.Lock()
 	l := s.launches[id]
+	var target adapters.Target
+	running := false
+	if l != nil {
+		running = active(l.view.State) && l.view.ParentLaunchId == ""
+		target = l.target
+	}
 	s.mu.Unlock()
 	if l == nil {
 		return threadParent{}, rpcError(connect.CodeNotFound, "unknown launch")
 	}
-	s.mu.Lock()
-	running := active(l.view.State) && l.view.ParentLaunchId == ""
-	target, restored := l.target, l.restored
-	s.mu.Unlock()
 	if !running {
 		return threadParent{}, rpcError(connect.CodeFailedPrecondition, "launch has ended or is a thread launch")
-	}
-	if restored {
-		// The harness process is known again once its wrapper resends its environment.
-		return threadParent{}, rpcError(connect.CodeUnavailable, errAwaitingWrapper.Error())
 	}
 	harness, err := c.Harness(l.view.Harness)
 	if err != nil {
@@ -173,6 +171,7 @@ func (s *Server) PrepareThreadLaunch(
 			DisabledPlugins: plan.DisabledPlugins,
 		},
 		Warnings: plan.Warnings,
+		Grant:    grant,
 	}
 	if err := s.addThreadLaunch(p.launch, &launch{
 		view:      view,
@@ -190,7 +189,6 @@ func (s *Server) PrepareThreadLaunch(
 		discard()
 		return nil, err
 	}
-	s.persist(false)
 	return connect.NewResponse(response), nil
 }
 
@@ -198,8 +196,8 @@ func (s *Server) addThreadLaunch(parent, l *launch) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	switch {
-	case s.flushed:
-		// The state the next daemon restores is final; the relay retries with that daemon.
+	case s.stopped:
+		// The relay retries with the next daemon.
 		return refusal()
 	case !active(parent.view.State):
 		return rpcError(connect.CodeFailedPrecondition, "launch has ended")
@@ -210,5 +208,6 @@ func (s *Server) addThreadLaunch(parent, l *launch) error {
 		)
 	}
 	s.launches[l.view.Id] = l
+	s.changed.notify()
 	return nil
 }

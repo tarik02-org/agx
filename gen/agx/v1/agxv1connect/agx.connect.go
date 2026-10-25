@@ -100,9 +100,9 @@ const (
 	// LaunchServicePrepareThreadLaunchProcedure is the fully-qualified name of the LaunchService's
 	// PrepareThreadLaunch RPC.
 	LaunchServicePrepareThreadLaunchProcedure = "/agx.v1.LaunchService/PrepareThreadLaunch"
-	// LaunchServiceRestoreLaunchProcedure is the fully-qualified name of the LaunchService's
-	// RestoreLaunch RPC.
-	LaunchServiceRestoreLaunchProcedure = "/agx.v1.LaunchService/RestoreLaunch"
+	// LaunchServiceAttachLaunchProcedure is the fully-qualified name of the LaunchService's
+	// AttachLaunch RPC.
+	LaunchServiceAttachLaunchProcedure = "/agx.v1.LaunchService/AttachLaunch"
 	// RuntimeServiceGetRuntimeProcedure is the fully-qualified name of the RuntimeService's GetRuntime
 	// RPC.
 	RuntimeServiceGetRuntimeProcedure = "/agx.v1.RuntimeService/GetRuntime"
@@ -632,11 +632,10 @@ type LaunchServiceClient interface {
 	// Prepares the resources of one such thread as a launch under the process's launch. It shares
 	// the parent's lease and lifecycle token and ends with it.
 	PrepareThreadLaunch(context.Context, *connect.Request[v1.PrepareThreadLaunchRequest]) (*connect.Response[v1.PrepareThreadLaunchResponse], error)
-	// Resends what a daemon restored after a restart does not keep: the environment inputs of a
-	// launch, or one of its thread launches, and the native arguments of the launch itself. With
-	// the launch and its grant, it also re-attaches a launch the daemon lost or let expire while
-	// its wrapper still runs.
-	RestoreLaunch(context.Context, *connect.Request[v1.RestoreLaunchRequest]) (*connect.Response[v1.RestoreLaunchResponse], error)
+	// Hands a daemon that does not hold a launch, or let it expire, everything its wrapper keeps,
+	// so the launch serves again under its ID and grant: after a restart, an upgrade, or a crash.
+	// Attaching a launch the daemon holds changes nothing; a revoked launch cannot come back.
+	AttachLaunch(context.Context, *connect.Request[v1.AttachLaunchRequest]) (*connect.Response[v1.AttachLaunchResponse], error)
 }
 
 // NewLaunchServiceClient constructs a client for the agx.v1.LaunchService service. By default, it
@@ -686,10 +685,10 @@ func NewLaunchServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(launchServiceMethods.ByName("PrepareThreadLaunch")),
 			connect.WithClientOptions(opts...),
 		),
-		restoreLaunch: connect.NewClient[v1.RestoreLaunchRequest, v1.RestoreLaunchResponse](
+		attachLaunch: connect.NewClient[v1.AttachLaunchRequest, v1.AttachLaunchResponse](
 			httpClient,
-			baseURL+LaunchServiceRestoreLaunchProcedure,
-			connect.WithSchema(launchServiceMethods.ByName("RestoreLaunch")),
+			baseURL+LaunchServiceAttachLaunchProcedure,
+			connect.WithSchema(launchServiceMethods.ByName("AttachLaunch")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -703,7 +702,7 @@ type launchServiceClient struct {
 	revokeLaunch        *connect.Client[v1.RevokeLaunchRequest, v1.RevokeLaunchResponse]
 	resolveThread       *connect.Client[v1.ResolveThreadRequest, v1.ResolveThreadResponse]
 	prepareThreadLaunch *connect.Client[v1.PrepareThreadLaunchRequest, v1.PrepareThreadLaunchResponse]
-	restoreLaunch       *connect.Client[v1.RestoreLaunchRequest, v1.RestoreLaunchResponse]
+	attachLaunch        *connect.Client[v1.AttachLaunchRequest, v1.AttachLaunchResponse]
 }
 
 // PrepareLaunch calls agx.v1.LaunchService.PrepareLaunch.
@@ -736,9 +735,9 @@ func (c *launchServiceClient) PrepareThreadLaunch(ctx context.Context, req *conn
 	return c.prepareThreadLaunch.CallUnary(ctx, req)
 }
 
-// RestoreLaunch calls agx.v1.LaunchService.RestoreLaunch.
-func (c *launchServiceClient) RestoreLaunch(ctx context.Context, req *connect.Request[v1.RestoreLaunchRequest]) (*connect.Response[v1.RestoreLaunchResponse], error) {
-	return c.restoreLaunch.CallUnary(ctx, req)
+// AttachLaunch calls agx.v1.LaunchService.AttachLaunch.
+func (c *launchServiceClient) AttachLaunch(ctx context.Context, req *connect.Request[v1.AttachLaunchRequest]) (*connect.Response[v1.AttachLaunchResponse], error) {
+	return c.attachLaunch.CallUnary(ctx, req)
 }
 
 // LaunchServiceHandler is an implementation of the agx.v1.LaunchService service.
@@ -752,11 +751,10 @@ type LaunchServiceHandler interface {
 	// Prepares the resources of one such thread as a launch under the process's launch. It shares
 	// the parent's lease and lifecycle token and ends with it.
 	PrepareThreadLaunch(context.Context, *connect.Request[v1.PrepareThreadLaunchRequest]) (*connect.Response[v1.PrepareThreadLaunchResponse], error)
-	// Resends what a daemon restored after a restart does not keep: the environment inputs of a
-	// launch, or one of its thread launches, and the native arguments of the launch itself. With
-	// the launch and its grant, it also re-attaches a launch the daemon lost or let expire while
-	// its wrapper still runs.
-	RestoreLaunch(context.Context, *connect.Request[v1.RestoreLaunchRequest]) (*connect.Response[v1.RestoreLaunchResponse], error)
+	// Hands a daemon that does not hold a launch, or let it expire, everything its wrapper keeps,
+	// so the launch serves again under its ID and grant: after a restart, an upgrade, or a crash.
+	// Attaching a launch the daemon holds changes nothing; a revoked launch cannot come back.
+	AttachLaunch(context.Context, *connect.Request[v1.AttachLaunchRequest]) (*connect.Response[v1.AttachLaunchResponse], error)
 }
 
 // NewLaunchServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -802,10 +800,10 @@ func NewLaunchServiceHandler(svc LaunchServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(launchServiceMethods.ByName("PrepareThreadLaunch")),
 		connect.WithHandlerOptions(opts...),
 	)
-	launchServiceRestoreLaunchHandler := connect.NewUnaryHandler(
-		LaunchServiceRestoreLaunchProcedure,
-		svc.RestoreLaunch,
-		connect.WithSchema(launchServiceMethods.ByName("RestoreLaunch")),
+	launchServiceAttachLaunchHandler := connect.NewUnaryHandler(
+		LaunchServiceAttachLaunchProcedure,
+		svc.AttachLaunch,
+		connect.WithSchema(launchServiceMethods.ByName("AttachLaunch")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/agx.v1.LaunchService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -822,8 +820,8 @@ func NewLaunchServiceHandler(svc LaunchServiceHandler, opts ...connect.HandlerOp
 			launchServiceResolveThreadHandler.ServeHTTP(w, r)
 		case LaunchServicePrepareThreadLaunchProcedure:
 			launchServicePrepareThreadLaunchHandler.ServeHTTP(w, r)
-		case LaunchServiceRestoreLaunchProcedure:
-			launchServiceRestoreLaunchHandler.ServeHTTP(w, r)
+		case LaunchServiceAttachLaunchProcedure:
+			launchServiceAttachLaunchHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -857,8 +855,8 @@ func (UnimplementedLaunchServiceHandler) PrepareThreadLaunch(context.Context, *c
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.PrepareThreadLaunch is not implemented"))
 }
 
-func (UnimplementedLaunchServiceHandler) RestoreLaunch(context.Context, *connect.Request[v1.RestoreLaunchRequest]) (*connect.Response[v1.RestoreLaunchResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.RestoreLaunch is not implemented"))
+func (UnimplementedLaunchServiceHandler) AttachLaunch(context.Context, *connect.Request[v1.AttachLaunchRequest]) (*connect.Response[v1.AttachLaunchResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.AttachLaunch is not implemented"))
 }
 
 // RuntimeServiceClient is a client for the agx.v1.RuntimeService service.
@@ -879,8 +877,8 @@ type RuntimeServiceClient interface {
 	// Stops one stdio MCP server process. Its sessions end, so harnesses reconnect and the next
 	// session starts it again; a shared process stops for every launch using it.
 	StopMcpProcess(context.Context, *connect.Request[v1.StopMcpProcessRequest]) (*connect.Response[v1.StopMcpProcessResponse], error)
-	// Stops the daemon. Without force, its active launches stay saved for the next daemon to
-	// restore; force revokes their MCP access.
+	// Stops the daemon. Without force, wrappers attach their active launches to the next daemon;
+	// force revokes their MCP access.
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 }
 
@@ -1016,8 +1014,8 @@ type RuntimeServiceHandler interface {
 	// Stops one stdio MCP server process. Its sessions end, so harnesses reconnect and the next
 	// session starts it again; a shared process stops for every launch using it.
 	StopMcpProcess(context.Context, *connect.Request[v1.StopMcpProcessRequest]) (*connect.Response[v1.StopMcpProcessResponse], error)
-	// Stops the daemon. Without force, its active launches stay saved for the next daemon to
-	// restore; force revokes their MCP access.
+	// Stops the daemon. Without force, wrappers attach their active launches to the next daemon;
+	// force revokes their MCP access.
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 }
 

@@ -84,7 +84,7 @@ func newSharedFixture(t *testing.T, share string) *sharedFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shared := mcpruntime.NewShared(t.Context(), "test")
+	shared := mcpruntime.NewShared(t.Context(), "test", nil)
 	t.Cleanup(shared.Close)
 	return &sharedFixture{
 		t:      t,
@@ -198,8 +198,8 @@ func TestUnsharedServerStartsProcessPerSession(t *testing.T) {
 	if call(t, first, tool("pid")) == call(t, second, tool("pid")) {
 		t.Fatal("sessions of an unshared server share a process")
 	}
-	if got := f.shared.Servers(); got != 0 {
-		t.Fatalf("shared servers = %d, want 0", got)
+	if got := f.shared.Servers(); got != 2 {
+		t.Fatalf("processes = %d, want 2", got)
 	}
 }
 
@@ -320,9 +320,8 @@ func TestProcessesListSharedAndOwnProcesses(t *testing.T) {
 		processes[0].Root != root || !processes[0].StopsAt.IsZero() {
 		t.Fatalf("shared processes = %+v", processes)
 	}
-	own, joined := e.Processes()
-	if len(own) != 0 || len(joined) != 1 || strconv.Itoa(joined[0]) != pid {
-		t.Fatalf("endpoint processes = %+v, joined %v", own, joined)
+	if pids := e.Processes(); len(pids) != 1 || strconv.Itoa(pids[0]) != pid {
+		t.Fatalf("endpoint processes = %v", pids)
 	}
 	_ = first.Close()
 	_ = second.Close()
@@ -334,10 +333,13 @@ func TestProcessesListSharedAndOwnProcesses(t *testing.T) {
 	unshared := newSharedFixture(t, config.ShareNone)
 	alone := unshared.endpoint("")
 	session := connect(t, alone)
-	own, _ = alone.Processes()
-	if len(own) != 1 || strconv.Itoa(own[0].PID) != call(t, session, tool("pid")) || own[0].Sessions != 1 {
+	own := unshared.shared.Processes()
+	if len(own) != 1 || strconv.Itoa(own[0].PID) != call(t, session, tool("pid")) || own[0].Sessions != 1 ||
+		own[0].Share != config.ShareNone {
 		t.Fatalf("unshared processes = %+v", own)
 	}
+	_ = session.Close()
+	eventually(t, "the session's process stopped", func() bool { return unshared.shared.Servers() == 0 })
 }
 
 func TestStopProcess(t *testing.T) {
@@ -355,10 +357,8 @@ func TestStopProcess(t *testing.T) {
 	e := unshared.endpoint("")
 	own := connect(t, e)
 	pid, _ = strconv.Atoi(call(t, own, tool("pid")))
-	if !e.StopProcess(pid) {
+	if !unshared.shared.StopProcess(pid) {
 		t.Fatal("the session's process did not stop")
 	}
-	if processes, _ := e.Processes(); len(processes) != 0 {
-		t.Fatalf("processes after stop = %+v", processes)
-	}
+	eventually(t, "the session ended", func() bool { return len(e.Processes()) == 0 })
 }

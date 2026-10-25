@@ -9,10 +9,8 @@ import (
 	"os/signal"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/charmbracelet/x/term"
 
-	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
@@ -66,8 +64,8 @@ type daemonRestarted struct {
 	Stopped bool   `json:"stopped"`
 	Started bool   `json:"started"`
 	Version string `json:"version"`
-	// Restored counts the active launches the new daemon restored.
-	Restored int `json:"restored"`
+	// KeptLaunches counts the active launches that attach to the new daemon.
+	KeptLaunches int `json:"kept_launches"`
 }
 
 // restartDaemon stops the running daemon, if any, waits until it exited, and starts one of this
@@ -83,7 +81,7 @@ func restartDaemon(
 	result := daemonRestarted{Version: daemon.Version}
 	c, err := newAnyVersionClient(paths)
 	if err == nil {
-		_, err = stopDaemon(ctx, c, force, grace)
+		result.KeptLaunches, err = stopDaemon(ctx, c, force, grace)
 	}
 	switch {
 	case err == nil:
@@ -107,19 +105,6 @@ func restartDaemon(
 		return result, err
 	}
 	result.Started = true
-	next, err := newClient(paths)
-	if err != nil {
-		return result, err
-	}
-	view, err := next.runtime.GetRuntime(ctx, connect.NewRequest(&v1.GetRuntimeRequest{}))
-	if err != nil {
-		return result, err
-	}
-	for _, l := range view.Msg.GetRuntime().GetLaunches() {
-		if l.ParentLaunchId == "" && (l.State == v1.Launch_STATE_PREPARED || l.State == v1.Launch_STATE_RUNNING) {
-			result.Restored++
-		}
-	}
 	return result, nil
 }
 

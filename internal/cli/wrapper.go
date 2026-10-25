@@ -26,7 +26,6 @@ import (
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/daemon"
 	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/sessions"
 )
@@ -270,16 +269,21 @@ func runHarness(
 	if err := records.Start(record); err != nil {
 		ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
 	}
-	link := newLease(paths, c, p.Launch.Id, p.LifecycleToken)
-	link.remember(p.Launch.Id, inputs, nativeArgs, executable)
-	link.rememberLaunch(p.Launch, p.Spawn.EnvironmentOverrides[adapters.GrantEnvironment])
+	link := newLease(paths, c, &v1.AttachLaunchRequest{
+		Launch:            p.Launch,
+		Grant:             p.Spawn.EnvironmentOverrides[adapters.GrantEnvironment],
+		LifecycleToken:    p.LifecycleToken,
+		EnvironmentInputs: inputs,
+		NativeArguments:   nativeArgs,
+		Executable:        executable,
+	})
 	finished := make(chan struct{})
 	var wg sync.WaitGroup
 	start := func() {
 		// The daemon's expiry turns into a monotonic deadline, which a wall clock jump leaves be.
 		expires := time.Now().Add(time.Until(p.Launch.GetExpiresAt().AsTime()))
-		// Failures are retried for as long as the harness runs: a daemon may recover, another
-		// one restore the launch, or one that lost it, as a killed daemon does, take it back.
+		// Failures are retried for as long as the harness runs: a daemon may recover, or another
+		// one take the launch.
 		paused := false
 		renew := func() (bool, bool) {
 			response, err := link.renew(
@@ -296,42 +300,27 @@ func runHarness(
 				}
 				return true, true
 			}
-			var rpcErr *connect.Error
-			ended := ""
-			if errors.As(err, &rpcErr) {
-				ended = rpcErr.Meta().Get(daemon.EndedHeader)
-			}
-			lost := ended == "expired" || ended == "" && connect.CodeOf(err) == connect.CodeNotFound
-			switch {
-			case ended == "revoked":
+			switch code := connect.CodeOf(err); {
+			case ended(err) == "revoked":
 				ui.Diagnose(ui.Warn, "launch was revoked; MCP access is lost. Relaunch to reconnect.")
 				return false, false
-			case ended == "finished":
+			case ended(err) == "finished":
 				return false, false
-			case lost:
-				reattachErr := link.reattach(ctx)
-				if reattachErr == nil {
-					// The daemon logs the re-attachment; the next renewal resends the inputs.
-					return false, true
-				}
-				if connect.CodeOf(reattachErr) == connect.CodeUnavailable ||
-					errors.Is(reattachErr, daemon.ErrUnavailable) {
-					break
-				}
+			case code == connect.CodeInvalidArgument, code == connect.CodeUnauthenticated:
 				ui.Diagnose(
 					ui.Warn,
 					"the daemon no longer holds this launch and refused to take it back: %v; MCP access is lost. "+
 						"Relaunch to reconnect.",
-					reattachErr,
+					err,
 				)
 				return false, false
-			case connect.CodeOf(err) == connect.CodeUnavailable && !stopping(err) && link.replaceCrashed(ctx):
+			case code == connect.CodeUnavailable && !stopping(err) && link.replaceCrashed(ctx):
 				return false, true
 			case time.Now().Before(expires):
 				return false, true
 			}
 			if !paused {
-				ui.Diagnose(ui.Warn, "no agx daemon serves this launch; MCP access is paused until one does.")
+				ui.Diagnose(ui.Warn, "no agx daemon serves this launch; MCP access is paused until one does: %v", err)
 				paused = true
 			}
 			return false, true
@@ -353,7 +342,7 @@ func runHarness(
 					wait = backoff(failures)
 					failures++
 				}
-				// A daemon that replaced this one renews, and restores the launch, at once.
+				// A daemon that replaced this one gets the launch at once.
 				if !link.await(finished, wait) {
 					return
 				}

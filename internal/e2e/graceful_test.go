@@ -16,10 +16,10 @@ import (
 
 // restarted is the daemon restart document.
 type restarted struct {
-	Stopped  bool   `json:"stopped"`
-	Started  bool   `json:"started"`
-	Version  string `json:"version"`
-	Restored int    `json:"restored"`
+	Stopped      bool   `json:"stopped"`
+	Started      bool   `json:"started"`
+	Version      string `json:"version"`
+	KeptLaunches int    `json:"kept_launches"`
 }
 
 func TestGracefulShutdown(t *testing.T) {
@@ -34,7 +34,7 @@ func TestGracefulShutdown(t *testing.T) {
 
 		var doc restarted
 		e.jsonOK(&doc, "daemon", "restart")
-		if doc != (restarted{Stopped: true, Started: true, Version: version, Restored: 1}) {
+		if doc != (restarted{Stopped: true, Started: true, Version: version, KeptLaunches: 1}) {
 			t.Fatalf("daemon restart = %+v", doc)
 		}
 		// The call finished on its session before the daemon stopped.
@@ -78,8 +78,8 @@ func TestGracefulShutdown(t *testing.T) {
 		if doc != (restarted{Stopped: true, Started: true, Version: version}) {
 			t.Fatalf("daemon restart --force = %+v", doc)
 		}
-		if saved := e.savedLaunches(); len(saved) != 0 {
-			t.Fatalf("state file after a forced restart holds %q", saved)
+		if !e.revoked(launchID(h.endpoint())) {
+			t.Fatal("the state file does not keep the forced restart's revocation")
 		}
 		if got := mcpStatus(t, h.endpoint(), h.grant()); got != http.StatusUnauthorized {
 			t.Fatalf("grant after a forced restart: HTTP %d", got)
@@ -113,7 +113,6 @@ func TestGracefulShutdown(t *testing.T) {
 			}
 		}
 		h := e.hold(binaries.agx)
-		id := launchID(h.endpoint())
 		slow := h.slowCall(time.Minute)
 
 		if err := daemon.Process.Signal(syscall.SIGTERM); err != nil {
@@ -132,9 +131,6 @@ func TestGracefulShutdown(t *testing.T) {
 		case <-exited:
 		case <-time.After(5 * time.Second):
 			t.Fatal("the daemon kept draining after a second signal")
-		}
-		if saved := e.savedLaunches(); !slices.Equal(saved, []string{id}) {
-			t.Fatalf("state file holds %q, want %q", saved, id)
 		}
 		if tools, _ := h.result(slow); !strings.HasPrefix(tools["agx-echo"], "error:") {
 			t.Fatalf("cut tool call = %q", tools["agx-echo"])

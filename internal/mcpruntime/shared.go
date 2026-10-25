@@ -32,32 +32,41 @@ var (
 	errSharedStopped = errors.New("shared MCP server stopped")
 	// logLevels are MCP's logging levels from the most to the least verbose.
 	logLevels = []string{"debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"}
+	// protocolVersions are the MCP versions the stdio bridge speaks, the latest last.
+	protocolVersions = []string{"2024-11-05", "2025-03-26", "2025-06-18", sharedProtocol}
 )
 
-func supportedProtocol(version string) bool {
-	switch version {
-	case "2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25":
-		return true
-	}
-	return false
-}
-
-// Shared runs the stdio MCP servers whose definitions set share: one process per share key,
-// which every matching harness session and agx mcp call joins as a client session
-// (ADR 0024). A stdio server talks to exactly one client, so a shared server multiplexes:
-// it owns the upstream session and maps each client's requests, progress, and
-// subscriptions onto it.
+// Shared runs the stdio MCP servers' processes. A server whose definition sets share runs one
+// process per share key, which every matching harness session and agx mcp call joins as a
+// client session (ADR 0024). A stdio server talks to exactly one client, so a shared server
+// multiplexes: it owns the upstream session and maps each client's requests, progress, and
+// subscriptions onto it. Any other server runs a process per session, which relays the
+// session's messages unchanged and stops with it.
 type Shared struct {
 	ctx     context.Context
 	version string
 	idle    time.Duration
+	// changed, when set, runs whenever an endpoint's state changes.
+	changed func()
 	mu      sync.Mutex
 	servers map[string]*sharedServer
 	closed  bool
 }
 
-func NewShared(ctx context.Context, version string) *Shared {
-	return &Shared{ctx: ctx, version: version, idle: sharedIdleTimeout, servers: map[string]*sharedServer{}}
+func NewShared(ctx context.Context, version string, changed func()) *Shared {
+	return &Shared{
+		ctx:     ctx,
+		version: version,
+		idle:    sharedIdleTimeout,
+		changed: changed,
+		servers: map[string]*sharedServer{},
+	}
+}
+
+func (sh *Shared) notify() {
+	if sh.changed != nil {
+		sh.changed()
+	}
 }
 
 // SetIdleTimeout changes how long a server without clients stays warm; for tests.
@@ -67,7 +76,7 @@ func (sh *Shared) SetIdleTimeout(d time.Duration) {
 	sh.idle = d
 }
 
-// Servers counts the running shared servers.
+// Servers counts the running processes.
 func (sh *Shared) Servers() int {
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
@@ -204,26 +213,31 @@ func shareKey(
 	return config.Digest([]any{id, definition, root, used, inputs})
 }
 
-// join returns the shared server of e's share key, starting it with e's definition, secrets,
-// and inputs when none runs. The caller attaches a client or calls unreserve.
-func (sh *Shared) join(ctx context.Context, e *Endpoint, inputs map[string]string) (*sharedServer, error) {
+// join returns the server of key, starting it with e's definition, secrets, and inputs when none
+// runs. The caller attaches a client or calls unreserve.
+func (sh *Shared) join(ctx context.Context, e *Endpoint, key string, inputs map[string]string) (*sharedServer, error) {
 	sh.mu.Lock()
 	if sh.closed {
 		sh.mu.Unlock()
 		return nil, errEndpointClosed
 	}
-	s := sh.servers[e.shareKey]
+	s := sh.servers[key]
 	if s == nil {
+		exclusive := e.definition.ShareMode() == config.ShareNone
 		idle := sh.idle
 		if configured := e.definition.Share.Idle; configured != nil {
 			idle = *configured
 		}
+		if exclusive {
+			idle = 0
+		}
 		s = &sharedServer{
 			shared:        sh,
-			key:           e.shareKey,
+			key:           key,
 			id:            e.id,
+			exclusive:     exclusive,
 			root:          e.shareRoot,
-			share:         e.definition.Share.Type,
+			share:         e.definition.ShareMode(),
 			cwd:           e.definition.Cwd,
 			secrets:       e.definition.Secrets(),
 			idle:          idle,
@@ -256,14 +270,16 @@ func (sh *Shared) join(ctx context.Context, e *Endpoint, inputs map[string]strin
 
 // sharedServer is one upstream process and the client sessions multiplexed onto it.
 type sharedServer struct {
-	shared  *Shared
-	key     string
-	id      config.ID
-	root    string
-	share   string
-	cwd     string
-	secrets []config.ID
-	idle    time.Duration
+	shared *Shared
+	key    string
+	id     config.ID
+	// exclusive marks the process of a single session, which talks to the server itself.
+	exclusive bool
+	root      string
+	share     string
+	cwd       string
+	secrets   []config.ID
+	idle      time.Duration
 	// ready closes once the process started and initialized; err then says whether it failed.
 	ready chan struct{}
 	err   error
@@ -325,6 +341,10 @@ func (s *sharedServer) start(e *Endpoint, inputs map[string]string) {
 		<-p.exited
 		s.ended()
 	}()
+	if s.exclusive {
+		close(s.ready)
+		return
+	}
 	capabilities := map[string]any{}
 	if s.root != "" {
 		capabilities["roots"] = map[string]any{}
@@ -340,7 +360,7 @@ func (s *sharedServer) start(e *Endpoint, inputs map[string]string) {
 	if err == nil {
 		var version string
 		_ = json.Unmarshal(s.initialize["protocolVersion"], &version)
-		if !supportedProtocol(version) {
+		if !slices.Contains(protocolVersions, version) {
 			err = fmt.Errorf("MCP server answered with unsupported protocol version %q", version)
 		}
 	}
@@ -530,6 +550,18 @@ func (s *sharedServer) attach(ctx context.Context, down mcp.Connection) (*shared
 	return c, nil
 }
 
+// sole is the session of an exclusive server, nil before it attached or for a shared server.
+func (s *sharedServer) sole() *sharedClient {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for c := range s.clients {
+		if s.exclusive {
+			return c
+		}
+	}
+	return nil
+}
+
 func (s *sharedServer) clientsLocked() []*sharedClient {
 	clients := []*sharedClient{}
 	for c := range s.clients {
@@ -549,6 +581,10 @@ func (s *sharedServer) readUpstream() {
 		case *jsonrpc.Response:
 			s.answered(m)
 		case *jsonrpc.Request:
+			if s.exclusive {
+				s.relay(m)
+				continue
+			}
 			if m.IsCall() {
 				s.serverRequest(m)
 			} else {
@@ -567,6 +603,9 @@ func (s *sharedServer) answered(r *jsonrpc.Response) {
 	}
 	s.mu.Unlock()
 	if call == nil {
+		if c := s.sole(); c != nil {
+			c.write(r)
+		}
 		return
 	}
 	if call.after != nil {
@@ -575,6 +614,23 @@ func (s *sharedServer) answered(r *jsonrpc.Response) {
 	if call.client != nil {
 		call.client.write(&jsonrpc.Response{ID: call.id, Result: r.Result, Error: r.Error})
 	}
+}
+
+// relay passes what the process of a single session sends to that session. The streamable
+// transport rejects messages that have no open stream to go to: notifications while the client
+// holds no GET stream, or responses whose request stream disconnected. Delivery is best effort
+// per the MCP spec; a request the session cannot take is refused, so the server does not wait.
+func (s *sharedServer) relay(r *jsonrpc.Request) {
+	if c := s.sole(); c != nil && c.down.Write(c.ctx, r) == nil || !r.IsCall() {
+		return
+	}
+	_ = s.process.conn.Write(s.shared.ctx, &jsonrpc.Response{
+		ID: r.ID,
+		Error: &jsonrpc.Error{
+			Code:    jsonrpc.CodeInternalError,
+			Message: "client has no open stream for server requests",
+		},
+	})
 }
 
 // serverRequest answers what the server asks agx: no single client owns the session, so
@@ -721,6 +777,12 @@ func (c *sharedClient) read() {
 		if err != nil {
 			return
 		}
+		if c.server.exclusive {
+			if c.server.process.conn.Write(c.server.shared.ctx, message) != nil {
+				return
+			}
+			continue
+		}
 		// Responses would answer server requests, which shared servers never pass to clients.
 		if r, ok := message.(*jsonrpc.Request); ok {
 			c.handle(r)
@@ -790,7 +852,7 @@ func (c *sharedClient) initializeSession(r *jsonrpc.Request) {
 	for key, value := range s.initialize {
 		result[key] = value
 	}
-	if supportedProtocol(params.ProtocolVersion) {
+	if slices.Contains(protocolVersions, params.ProtocolVersion) {
 		result["protocolVersion"], _ = json.Marshal(params.ProtocolVersion)
 	}
 	c.reply(r.ID, result)

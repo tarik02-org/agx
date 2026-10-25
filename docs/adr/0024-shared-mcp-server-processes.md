@@ -11,7 +11,7 @@ server definitions gain an opt-in `share` setting.
 
 ## Current model
 
-- `PrepareLaunch` (and thread launches, and `revive` for restored launches)
+- `PrepareLaunch` (and thread launches, and `AttachLaunch`)
   builds one `mcpruntime.Endpoint` per MCP server of the launch's snapshot,
   native and on-demand, with the definition, the snapshot's secrets, and the
   launch's environment inputs. A stdio definition without `cwd` gets the launch
@@ -51,7 +51,10 @@ mcp:
     share: repo
 ```
 
-- `none`: today's behaviour.
+- `none`: one process per session. It runs in the same registry, keyed by the
+  share key and the session, but is not multiplexed: messages pass both ways
+  unchanged, so it negotiates with the client and forwards protocol features
+  agx does not know, and it stops when the session ends.
 - `directory`: one upstream process per **share key** of (server, resolved
   launch directory, digest of the resolved definition, the identities of the
   secrets it uses, and the values of the environment inputs it reads). Every
@@ -139,7 +142,7 @@ servers whose state is the same for every client".
 - When the process crashes, in-flight requests fail (`mcp_failed` for
   `agx mcp call`, an internal error response for harnesses), client sessions are
   ended so harnesses reinitialize, and the next session starts a new process.
-- Daemon shutdown closes shared servers with the launches. Restored launches
+- Daemon shutdown closes shared servers with the launches. Attached launches
   ([ADR 0016](0016-launches-survive-daemon-restarts.md)) start new shared
   servers on their next session, as they start endpoints today.
 
@@ -204,7 +207,4 @@ when it stops. Filters keep processes working in exactly one directory
 
 ## Open questions
 
-- Whether the multiplexer should also serve `share: none` stdio servers, so one
-  code path parses messages; that changes today's byte-level relay, which
-  forwards protocol features agx does not yet know.
 - How runtime views attribute a shared server's failures to launches.

@@ -37,30 +37,11 @@ func (s *Server) PrepareLaunch(
 	if msg.Executable != "" && !filepath.IsAbs(msg.Executable) {
 		return nil, rpcError(connect.CodeInvalidArgument, "executable must be absolute")
 	}
-	c, err := s.reload()
+	b, err := s.launchBasis(msg.Directory, msg.Harness, msg.NativeArguments)
 	if err != nil {
-		return nil, configError(err)
+		return nil, err
 	}
-	// Definitions come from the daemon's snapshot; clients send only a name and native arguments.
-	harness, err := c.Harness(msg.Harness)
-	if err != nil {
-		return nil, rpcError(connect.CodeInvalidArgument, err.Error())
-	}
-	adapter, ok := s.adapters.Adapter(harness.Builtin)
-	if !ok {
-		return nil, rpcError(connect.CodeInternal, "no adapter for harness "+harness.Builtin)
-	}
-	mode := adapter.Classify(msg.NativeArguments)
-	if mode == config.ModePassthrough {
-		return nil, rpcError(
-			connect.CodeInvalidArgument,
-			"non-session command must pass through without launch preparation",
-		)
-	}
-	snapshot, err := c.Resolve(msg.Directory, msg.Harness)
-	if err != nil {
-		return nil, rpcError(connect.CodeFailedPrecondition, "directory cannot be resolved")
-	}
+	snapshot, harness, adapter := b.snapshot, b.harness, b.adapter
 	if snapshot.ID != msg.SnapshotId {
 		return nil, rpcError(connect.CodeAborted, "snapshot changed; resolve again before forwarding credentials")
 	}
@@ -69,22 +50,9 @@ func (s *Server) PrepareLaunch(
 	if err != nil {
 		return nil, err
 	}
-	env := func(name string) (string, bool) {
-		value, ok := inputs[name]
-		return value, ok
-	}
-	// A forwarded variable the caller has not set stays unset for the harness: an empty value.
-	lookup := func(name string) (string, bool) {
-		if value, ok := inputs[name]; ok {
-			return value, value != ""
-		}
-		return os.LookupEnv(name)
-	}
-	harnessArgs, harnessEnv, err := harness.Resolve(mode, env, func(id config.ID) (string, error) {
-		return s.manager.Value(ctx, id, snapshot.Config.Secrets[id], snapshot.Config.Secrets, inputs, "")
-	})
+	harnessArgs, harnessEnv, lookup, err := s.resolveHarness(ctx, b, inputs)
 	if err != nil {
-		return nil, rpcError(connect.CodeFailedPrecondition, err.Error())
+		return nil, err
 	}
 	s.mu.Lock()
 	full := len(s.launches) >= 10000
@@ -99,9 +67,7 @@ func (s *Server) PrepareLaunch(
 	launchCtx, cancel := context.WithCancel(s.ctx)
 	endpoints, nativeEndpoints := map[config.ID]*mcpruntime.Endpoint{}, []adapters.Endpoint{}
 	// A process serving many threads gets its MCP servers per thread launch.
-	threads, isThreads := adapter.(adapters.Threads)
-	threadServer := isThreads && threads.ThreadServer(msg.NativeArguments)
-	if !threadServer {
+	if !b.threadServer {
 		endpoints, nativeEndpoints = s.endpoints(launchCtx, id, snapshot, inputs)
 	}
 	discard := func() {
@@ -133,7 +99,7 @@ func (s *Server) PrepareLaunch(
 		SnapshotId: snapshot.ID,
 		Directory:  snapshot.Directory,
 		Harness:    msg.Harness,
-		Mode:       mode,
+		Mode:       b.mode,
 		State:      v1.Launch_STATE_PREPARED,
 	}
 	target := adapters.NewTarget(
@@ -154,8 +120,8 @@ func (s *Server) PrepareLaunch(
 		snapshot:     snapshot,
 		target:       target,
 		created:      time.Now(),
-		lease:        time.Duration(c.Daemon.LeaseSeconds) * time.Second,
-		threadServer: threadServer,
+		lease:        time.Duration(b.config.Daemon.LeaseSeconds) * time.Second,
+		threadServer: b.threadServer,
 	}
 	l.extend(time.Now().Add(l.lease))
 	response := &v1.PrepareLaunchResponse{
@@ -168,12 +134,12 @@ func (s *Server) PrepareLaunch(
 			InitializeSystemPrompt: plan.InitializeSystemPrompt,
 		},
 		LifecycleToken:    lifecycle,
-		RenewAfterSeconds: uint32(c.Daemon.RenewSeconds),
+		RenewAfterSeconds: uint32(b.config.Daemon.RenewSeconds),
 		Warnings:          plan.Warnings,
 	}
 	s.mu.Lock()
-	// The state the next daemon restores is final: a launch it does not hold must go there.
-	if s.flushed {
+	// A launch added after a forced stop revoked the others would escape it.
+	if s.stopped {
 		s.mu.Unlock()
 		discard()
 		return nil, refusal()
@@ -187,9 +153,84 @@ func (s *Server) PrepareLaunch(
 		)
 	}
 	s.launches[id] = l
+	s.changed.notify()
 	s.mu.Unlock()
-	s.persist(false)
 	return connect.NewResponse(response), nil
+}
+
+// launchBasis is what a launch of a harness in a directory starts from.
+type launchBasis struct {
+	config   *config.Config
+	harness  config.ResolvedHarness
+	adapter  adapters.Adapter
+	mode     string
+	snapshot *config.Snapshot
+	// threadServer marks a harness process serving many threads.
+	threadServer bool
+}
+
+func (s *Server) launchBasis(directory, name string, native []string) (launchBasis, error) {
+	c, err := s.reload()
+	if err != nil {
+		return launchBasis{}, configError(err)
+	}
+	// Definitions come from the daemon's snapshot; clients send only a name and native arguments.
+	harness, err := c.Harness(name)
+	if err != nil {
+		return launchBasis{}, rpcError(connect.CodeInvalidArgument, err.Error())
+	}
+	adapter, ok := s.adapters.Adapter(harness.Builtin)
+	if !ok {
+		return launchBasis{}, rpcError(connect.CodeInternal, "no adapter for harness "+harness.Builtin)
+	}
+	mode := adapter.Classify(native)
+	if mode == config.ModePassthrough {
+		return launchBasis{}, rpcError(
+			connect.CodeInvalidArgument,
+			"non-session command must pass through without launch preparation",
+		)
+	}
+	snapshot, err := c.Resolve(directory, name)
+	if err != nil {
+		return launchBasis{}, rpcError(connect.CodeFailedPrecondition, "directory cannot be resolved")
+	}
+	threads, isThreads := adapter.(adapters.Threads)
+	return launchBasis{
+		config:       c,
+		harness:      harness,
+		adapter:      adapter,
+		mode:         mode,
+		snapshot:     snapshot,
+		threadServer: isThreads && threads.ThreadServer(native),
+	}, nil
+}
+
+// resolveHarness resolves the harness definition's arguments and environment for a launch with
+// inputs, and the environment lookup its process gets.
+func (s *Server) resolveHarness(
+	ctx context.Context,
+	b launchBasis,
+	inputs map[string]string,
+) ([]string, map[string]string, func(string) (string, bool), error) {
+	env := func(name string) (string, bool) {
+		value, ok := inputs[name]
+		return value, ok
+	}
+	// A forwarded variable the caller has not set stays unset for the harness: an empty value.
+	lookup := func(name string) (string, bool) {
+		if value, ok := inputs[name]; ok {
+			return value, value != ""
+		}
+		return os.LookupEnv(name)
+	}
+	secrets := b.snapshot.Config.Secrets
+	args, harnessEnv, err := b.harness.Resolve(b.mode, env, func(id config.ID) (string, error) {
+		return s.manager.Value(ctx, id, secrets[id], secrets, inputs, "")
+	})
+	if err != nil {
+		return nil, nil, nil, rpcError(connect.CodeFailedPrecondition, err.Error())
+	}
+	return args, harnessEnv, lookup, nil
 }
 
 // launchInputs checks that a launch's environment inputs are the snapshot's to receive or the
@@ -320,32 +361,17 @@ func (s *Server) RenewLaunch(
 	ctx context.Context,
 	req *connect.Request[v1.RenewLaunchRequest],
 ) (*connect.Response[v1.RenewLaunchResponse], error) {
-	response, changed, err := s.renew(req.Msg, req.Header().Get("Authorization"))
+	msg := req.Msg
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	l, err := s.lifecycleLaunch(msg.LaunchId, req.Header().Get("Authorization"))
 	if err != nil {
 		return nil, err
 	}
-	// The lease alone moving forward is written at most every renewalWriteInterval.
-	s.persist(!changed)
-	return connect.NewResponse(response), nil
-}
-
-// renew extends a launch's lease and reports whether anything besides the lease changed.
-func (s *Server) renew(msg *v1.RenewLaunchRequest, authorization string) (*v1.RenewLaunchResponse, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	l, err := s.lifecycleLaunch(msg.LaunchId, authorization)
-	if err != nil {
-		return nil, false, err
-	}
 	if !active(l.view.State) || time.Now().After(l.expires) {
-		changed := active(l.view.State)
 		s.end(l, v1.Launch_STATE_EXPIRED)
-		if changed {
-			go s.persist(false)
-		}
-		return nil, false, endedError(l.view.State)
+		return nil, endedError(l.view.State)
 	}
-	before := l.view.State.String() + "/" + l.view.SessionId
 	if parent := s.launches[l.view.ParentLaunchId]; parent != nil {
 		// A thread launch follows its parent's lease; renewing it reports its thread.
 		if msg.SessionId != "" {
@@ -365,10 +391,10 @@ func (s *Server) renew(msg *v1.RenewLaunchRequest, authorization string) (*v1.Re
 			child.extend(l.expires)
 		}
 	}
-	return &v1.RenewLaunchResponse{
-		ExpiresAt:        proto.Clone(l.view.ExpiresAt).(*timestamppb.Timestamp),
-		RestoreLaunchIds: s.awaitingRestore(l),
-	}, before != l.view.State.String()+"/"+l.view.SessionId, nil
+	s.changed.notify()
+	return connect.NewResponse(&v1.RenewLaunchResponse{
+		ExpiresAt: proto.Clone(l.view.ExpiresAt).(*timestamppb.Timestamp),
+	}), nil
 }
 
 // EndedHeader carries, on a renewal refused because the launch ended, how it ended: revoked,
@@ -411,7 +437,6 @@ func (s *Server) FinishLaunch(
 	if err != nil {
 		return nil, err
 	}
-	s.persist(false)
 	return connect.NewResponse(&v1.FinishLaunchResponse{}), nil
 }
 
@@ -423,11 +448,11 @@ func (s *Server) RevokeLaunch(
 	l := s.launches[req.Msg.LaunchId]
 	if l != nil {
 		s.end(l, v1.Launch_STATE_REVOKED)
+		s.saveState()
 	}
 	s.mu.Unlock()
 	if l == nil {
 		return nil, rpcError(connect.CodeNotFound, "unknown launch")
 	}
-	s.persist(false)
 	return connect.NewResponse(&v1.RevokeLaunchResponse{}), nil
 }

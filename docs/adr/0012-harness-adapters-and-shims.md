@@ -37,8 +37,8 @@ caller's arguments, so argv order is the same for every harness.
 The wrapper, not the daemon, locates the executable: a configured absolute
 path, else the caller's PATH. The daemon's PATH is that of whichever shell
 first started it, so it would ignore per-project mise or Nix shells. The
-wrapper sends the path with the preparation (and again when a restarted daemon
-restores the launch), and native installation run for the launch, such as
+wrapper sends the path with the preparation (and again when it attaches the
+launch to another daemon), and native installation run for the launch, such as
 Codex's plugin commands, uses it.
 
 `internal/adapters/builtin` is the one explicit list of adapters; nothing

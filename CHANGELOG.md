@@ -41,5 +41,8 @@ agx has not been released yet. What it does today:
 - Removed `agx mcp login` (use `agx secret login`) and `agx resolve` (use `agx explain`).
 - `agx secret set` prompts without echo on a terminal and reads piped stdin otherwise.
 - A daemon of another agx build is always replaced, keeping its launches.
+- Wrappers attach their launches, `codex app-server` threads included, to a daemon that does not
+  hold them; the daemon keeps only its port and revoked launches in `daemon-state.json`.
+- `agx daemon restart --json` reports `kept_launches` instead of `restored`.
 - Passthrough harness commands replace the agx process on Unix.
 - Codex plugin checks ask `codex features list` instead of reading Codex configuration.

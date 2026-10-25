@@ -124,8 +124,8 @@ arguments and environment from its own snapshot.
 The wrapper supervises the harness, renews a lease, and reports exit. Ended or
 expired launches lose MCP access and release their runtime; an HTTP disconnect
 alone does not end a launch, and a grant never changes an upstream credential's
-own lifetime. A daemon restart or upgrade does not end launches either: the
-daemon saves them, without secrets, and the next one restores them
+own lifetime. A daemon restart, upgrade, or crash does not end launches either:
+their wrappers attach them to the next daemon
 ([ADR 0016](0016-launches-survive-daemon-restarts.md)). See the
 [launch flow](../development/api.md#launch-flow).
 

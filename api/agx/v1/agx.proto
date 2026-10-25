@@ -53,11 +53,10 @@ service LaunchService {
   // Prepares the resources of one such thread as a launch under the process's launch. It shares
   // the parent's lease and lifecycle token and ends with it.
   rpc PrepareThreadLaunch(PrepareThreadLaunchRequest) returns (PrepareThreadLaunchResponse);
-  // Resends what a daemon restored after a restart does not keep: the environment inputs of a
-  // launch, or one of its thread launches, and the native arguments of the launch itself. With
-  // the launch and its grant, it also re-attaches a launch the daemon lost or let expire while
-  // its wrapper still runs.
-  rpc RestoreLaunch(RestoreLaunchRequest) returns (RestoreLaunchResponse);
+  // Hands a daemon that does not hold a launch, or let it expire, everything its wrapper keeps,
+  // so the launch serves again under its ID and grant: after a restart, an upgrade, or a crash.
+  // Attaching a launch the daemon holds changes nothing; a revoked launch cannot come back.
+  rpc AttachLaunch(AttachLaunchRequest) returns (AttachLaunchResponse);
 }
 
 service RuntimeService {
@@ -77,8 +76,8 @@ service RuntimeService {
   // Stops one stdio MCP server process. Its sessions end, so harnesses reconnect and the next
   // session starts it again; a shared process stops for every launch using it.
   rpc StopMcpProcess(StopMcpProcessRequest) returns (StopMcpProcessResponse);
-  // Stops the daemon. Without force, its active launches stay saved for the next daemon to
-  // restore; force revokes their MCP access.
+  // Stops the daemon. Without force, wrappers attach their active launches to the next daemon;
+  // force revokes their MCP access.
   rpc Stop(StopRequest) returns (StopResponse);
 }
 
@@ -346,6 +345,8 @@ message PrepareThreadLaunchResponse {
   ThreadPlan thread = 2;
   // Problems the thread proceeds despite, such as skills the harness cannot load.
   repeated string warnings = 3;
+  // Sensitive: the thread's MCP grant, which config_json also carries, for AttachLaunch.
+  string grant = 4;
 }
 // What the wrapper adds to a thread's native requests.
 message ThreadPlan {
@@ -366,30 +367,36 @@ message RenewLaunchRequest {
 }
 message RenewLaunchResponse {
   google.protobuf.Timestamp expires_at = 1;
-  // This launch and its thread launches that a restarted daemon restored and that wait for
-  // RestoreLaunch before they serve MCP or prepare threads.
-  repeated string restore_launch_ids = 2;
 }
 
 // Uses management authorization; the lifecycle token proves the caller is the launch's wrapper.
-message RestoreLaunchRequest {
-  string launch_id = 1;
-  // Sensitive: the launch's lifecycle token, its parent's for a thread launch.
-  string lifecycle_token = 2;
+message AttachLaunchRequest {
+  // The launch as PrepareLaunch returned it.
+  Launch launch = 1;
+  // Sensitive: the launch's MCP grant, which its harness keeps using.
+  string grant = 2;
+  // Sensitive: the launch's lifecycle token.
+  string lifecycle_token = 3;
   // Sensitive: the environment inputs the launch was prepared with.
-  map<string, string> environment_inputs = 3;
-  // Sensitive: the native arguments the launch was prepared with; empty for a thread launch.
-  repeated string native_arguments = 4;
-  // The native executable the launch was prepared with; empty for a thread launch.
-  string executable = 5;
-  // Re-attaches a launch this daemon does not hold, or let expire, as when the daemon that held
-  // it was killed before saving it: the launch as PrepareLaunch returned it. Thread launches
-  // cannot be re-attached. Ignored for a launch the daemon restored.
-  Launch launch = 6;
-  // Sensitive: the launch's MCP grant, required with launch, so the harness keeps using it.
-  string grant = 7;
+  map<string, string> environment_inputs = 4;
+  // Sensitive: the native arguments the launch was prepared with.
+  repeated string native_arguments = 5;
+  // The native executable the launch was prepared with.
+  string executable = 6;
+  // For a process serving threads, its active thread launches.
+  repeated AttachedThread threads = 7;
 }
-message RestoreLaunchResponse {}
+message AttachedThread {
+  // The thread launch as PrepareThreadLaunch returned it, with the thread it serves once bound.
+  Launch launch = 1;
+  // Sensitive: the thread launch's MCP grant.
+  string grant = 2;
+  // Sensitive: the environment inputs the thread launch was prepared with.
+  map<string, string> environment_inputs = 3;
+}
+message AttachLaunchResponse {
+  google.protobuf.Timestamp expires_at = 1;
+}
 
 message FinishLaunchRequest {
   string launch_id = 1;
@@ -514,7 +521,7 @@ message StopRequest {
   google.protobuf.Duration grace = 2;
 }
 message StopResponse {
-  // Active launches the daemon keeps for the next one to restore.
+  // Active launches whose wrappers attach them to the next daemon.
   uint32 kept_launches = 1;
 }
 

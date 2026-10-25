@@ -605,17 +605,17 @@ type daemonStopJSON struct {
 	Stopping bool    `json:"stopping"`
 	Forced   bool    `json:"forced"`
 	Version  *string `json:"version"`
-	// KeptLaunches counts the active launches the next daemon restores.
+	// KeptLaunches counts the active launches that attach to the next daemon.
 	KeptLaunches int `json:"kept_launches"`
 }
 
 // daemonRestartJSON reports daemon restart: stopped says whether a daemon was running; version is
-// the new daemon's; restored counts the active launches it restored.
+// the new daemon's; kept_launches counts the active launches that attach to it.
 type daemonRestartJSON struct {
-	Stopped  bool   `json:"stopped"`
-	Started  bool   `json:"started"`
-	Version  string `json:"version"`
-	Restored int    `json:"restored"`
+	Stopped      bool   `json:"stopped"`
+	Started      bool   `json:"started"`
+	Version      string `json:"version"`
+	KeptLaunches int    `json:"kept_launches"`
 }
 
 // launch
