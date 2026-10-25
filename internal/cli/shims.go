@@ -126,6 +126,11 @@ func emitShimChanges(dir string, changes []shims.Change, err error, warn func())
 	if err != nil && scripting.enabled {
 		return err
 	}
+	// Only copies and hard links carry a hash, for the manifest; the document is the same on
+	// every platform without it.
+	for i := range changes {
+		changes[i].Hash = ""
+	}
 	document := struct {
 		Directory string         `json:"directory"`
 		OnPath    bool           `json:"on_path"`
