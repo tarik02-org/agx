@@ -29,6 +29,9 @@ func lookupSecret(c *config.Config, id string) (config.Secret, error) {
 				"MCP server "+id+" authenticates with secret "+string(server.Auth.Secret)+"; use that ID",
 			)
 		}
+		if server.Auth.Tagged() {
+			return secret, rpcError(connect.CodeNotFound, "MCP server "+id+" reads its auth from "+server.Auth.String())
+		}
 		return secret, rpcError(connect.CodeNotFound, "MCP server "+id+" has no auth")
 	}
 	return secret, rpcError(connect.CodeNotFound, "unknown secret "+id)

@@ -92,7 +92,7 @@ Command-specific flags:
 
 | Command | Flags |
 | --- | --- |
-| `mcp add` | `--header KEY=VALUE` (remote), `--env KEY=VALUE` (local), `--auth none\|oauth\|keychain\|'!secret <id>'`, `--client-id <id>` (OAuth public client), `--description <text>`, `--load native\|on_demand`, `--share none\|directory\|repository\|global` (local), `--no-browser` |
+| `mcp add` | `--header KEY=VALUE` (remote), `--env KEY=VALUE` (local), `--auth none\|oauth\|keychain\|'!secret <id>'\|'!env NAME'\|'!file PATH'`, `--client-id <id>` (OAuth public client), `--description <text>`, `--load native\|on_demand`, `--share none\|directory\|repository\|global` (local), `--no-browser` |
 | `skill add` | `--skill <name>` (repeatable), `--all`, `--ref <ref>`, `--path <dir>`, `--package <id>` |
 | `instructions add` | `--id <id>`, `--text <text>` |
 | `harness add` | `--base <harness>`, `--executable <path>`, `--env KEY=VALUE` (repeatable) |

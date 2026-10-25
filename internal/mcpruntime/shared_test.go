@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/zalando/go-keyring"
 
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/config"
@@ -283,18 +284,13 @@ func TestSharedServerRestartsAfterCrash(t *testing.T) {
 func TestSharedServerStopsOnSecretReset(t *testing.T) {
 	f := newSharedFixture(t, config.ShareGlobal)
 	f.server.Environment["TOKEN"] = config.Value{Secret: "token"}
-	secrets := map[config.ID]config.Secret{"token": {Kind: "daemon_environment", Variable: "AGX_TEST_SHARED_TOKEN"}}
-	t.Setenv("AGX_TEST_SHARED_TOKEN", "value")
-	e := mcpruntime.New(
-		t.Context(),
-		"fake",
-		f.server,
-		secrets,
-		nil,
-		auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir())),
-		f.shared,
-		"",
-	)
+	secrets := map[config.ID]config.Secret{"token": {Kind: "keychain"}}
+	keyring.MockInit()
+	manager := auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir()))
+	if err := manager.Set("token", secrets["token"], []byte("value")); err != nil {
+		t.Fatal(err)
+	}
+	e := mcpruntime.New(t.Context(), "fake", f.server, secrets, nil, manager, f.shared, "")
 	t.Cleanup(e.Close)
 	session := connect(t, e)
 	call(t, session, tool("pid"))

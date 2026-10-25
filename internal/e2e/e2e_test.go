@@ -128,13 +128,12 @@ func newEnv(t *testing.T) *env {
 instructions:
   rules: {text: E2E instructions.}
 secrets:
-  token: {kind: environment, variable: E2E_TOKEN}
   sealed: {kind: sops, file: ./sealed.json, key: echo.extra}
 mcp:
   echo:
     command: ['`+filepath.ToSlash(binaries.mcp)+`']
     environment:
-      ECHO_TOKEN: !secret token
+      ECHO_TOKEN: !env E2E_TOKEN
       ECHO_EXTRA: !secret sealed
 scopes:
   - directory: ../work
@@ -556,7 +555,7 @@ func TestEndToEnd(t *testing.T) {
 			} `json:"statuses"`
 		}
 		e.jsonOK(&secrets, "secret", "status")
-		if len(secrets.Secrets) != 2 || secrets.Secrets[0].ID == "" || secrets.Secrets[0].State == "" {
+		if len(secrets.Secrets) != 1 || secrets.Secrets[0].ID == "" || secrets.Secrets[0].State == "" {
 			t.Fatalf("secret status = %+v", secrets)
 		}
 		e.jsonFail("failed_precondition", "secret", "set", "sealed")
@@ -794,7 +793,6 @@ func TestDoctor(t *testing.T) {
 		{"harness", "claude", "warn"},
 		{"daemon", "daemon", "pass"},
 		{"mcp", "echo", "pass"},
-		{"secret", "token", "pass"},
 		{"secret", "sealed", "pass"},
 		{"secret", "sops", "pass"},
 		{"shims", "shims", "warn"},

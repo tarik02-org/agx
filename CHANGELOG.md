@@ -21,8 +21,7 @@ agx has not been released yet. What it does today:
   TypeScript clients (`agx mcp types`).
 - `codex app-server` hosts get resources per thread.
 - Injected values (`!env`, `!file`, `!secret`) that never reach snapshots, output, or logs;
-  secrets from the environment, commands, files, sops, an encrypted store keyed by the OS
-  keychain, or OAuth with `agx secret login` and automatic refresh.
+  secrets from commands, sops, an encrypted store keyed by the OS keychain, or OAuth with `agx secret login` and automatic refresh.
 - Editing commands (`agx mcp|skill|instructions|harness add|list|remove`, `agx use`,
   `agx unuse`) that keep comments and layout, and a Connect API to plan and apply the same
   edits.
@@ -51,3 +50,5 @@ agx has not been released yet. What it does today:
 - Fragments and package manifests are checked against the published JSON Schema when they load.
 - Daemon errors about configuration carry the file and line in `ErrorDetail.source`.
 - Git packages fetch only the requested commit instead of cloning the repository.
+- MCP `auth` takes `!env` and `!file`, and `age_key` a literal key; removed the `environment`,
+  `file`, and `daemon_environment` secret kinds.

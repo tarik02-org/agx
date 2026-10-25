@@ -39,5 +39,10 @@ every secret. OAuth secrets cannot be injected.
 `auth_environment` is removed; `environment: {NAME: !secret id}` replaces it.
 Nothing has shipped, so there is no compatibility alias.
 
+Later, MCP `auth` and a sops secret's `age_key` came to accept any value, so the
+`environment` and `file` kinds duplicated `!env` and `!file` and were removed,
+with `daemon_environment`: the daemon's environment is an accident of how it was
+started. The kinds left are `command`, `keychain`, `oauth`, and `sops`.
+
 Rejected: an `{auth: id}` mapping form, which is noisier and cannot appear inside
 argument lists; a general templating language, which invites logic in configuration.

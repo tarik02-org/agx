@@ -199,7 +199,7 @@ func TestDaemonCheck(t *testing.T) {
 }
 
 func TestMCPCheck(t *testing.T) {
-	server := config.MCPServer{Auth: config.MCPAuth{Secret: "github"}}
+	server := config.MCPServer{Auth: config.MCPAuth{Value: config.Value{Secret: "github"}}}
 	got := mcpCheck("docs", server, &v1.TestMcpServerResponse{Tools: []string{"a", "b"}, ServerName: "docs"}, nil)
 	if got.Status != checkPass || got.Detail != "2 tools from docs" {
 		t.Errorf("ready = %+v", got)
@@ -221,51 +221,30 @@ func TestMCPCheck(t *testing.T) {
 }
 
 func TestSecretCheck(t *testing.T) {
-	env := func(values map[string]string) func(string) (string, bool) {
-		return func(name string) (string, bool) {
-			value, ok := values[name]
-			return value, ok
-		}
-	}
-	none := env(nil)
 	for _, test := range []struct {
 		status *v1.SecretStatus
-		secret config.Secret
-		lookup func(string) (string, bool)
 		want   checkStatus
 		hint   string
 	}{
-		{&v1.SecretStatus{SecretId: "a", Kind: "keychain", State: v1.SecretStatus_STATE_READY}, config.Secret{}, none, checkPass, ""},
+		{&v1.SecretStatus{SecretId: "a", Kind: "keychain", State: v1.SecretStatus_STATE_READY}, checkPass, ""},
 		{
 			&v1.SecretStatus{SecretId: "gh", Kind: "oauth", State: v1.SecretStatus_STATE_NEEDS_LOGIN},
-			config.Secret{},
-			none, checkWarn, "run agx secret login gh",
+			checkWarn, "run agx secret login gh",
 		},
 		{
 			&v1.SecretStatus{SecretId: "key", Kind: "keychain", State: v1.SecretStatus_STATE_NEEDS_LOGIN},
-			config.Secret{},
-			none, checkWarn, "run agx secret set key",
+			checkWarn, "run agx secret set key",
 		},
 		{
 			&v1.SecretStatus{
 				SecretId: "s", Kind: "sops", State: v1.SecretStatus_STATE_UNAVAILABLE,
 				Diagnostics: []*v1.Diagnostic{{Summary: "sops cannot decrypt"}},
 			},
-			config.Secret{},
-			none, checkFail, "",
+			checkFail, "",
 		},
-		{
-			&v1.SecretStatus{SecretId: "t", Kind: "environment", State: v1.SecretStatus_STATE_UNCONFIGURED},
-			config.Secret{Kind: "environment", Variable: "TOKEN"},
-			env(map[string]string{"TOKEN": "x"}), checkPass, "",
-		},
-		{
-			&v1.SecretStatus{SecretId: "t", Kind: "environment", State: v1.SecretStatus_STATE_UNCONFIGURED},
-			config.Secret{Kind: "environment", Variable: "TOKEN"},
-			none, checkWarn, "set TOKEN in the shell that launches harnesses",
-		},
+		{&v1.SecretStatus{SecretId: "s", Kind: "sops", State: v1.SecretStatus_STATE_UNCONFIGURED}, checkPass, ""},
 	} {
-		got := secretCheck(test.status, test.secret, test.lookup)
+		got := secretCheck(test.status)
 		if got.Status != test.want || got.Hint != test.hint {
 			t.Errorf(
 				"%s (%s): got %+v, want %s with hint %q",

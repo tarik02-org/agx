@@ -38,7 +38,8 @@ secrets:
 
 Tags work in:
 
-- MCP server `headers` and `environment`, and `auth` (`!secret` only);
+- MCP server `headers`, `environment`, and `auth`;
+- a sops secret's `age_key`;
 - harness `environment`;
 - harness `args`, `!file` only: arguments are visible to other processes, so
   `!secret` and `!env` are rejected there. Pass secrets through `environment`.
@@ -55,10 +56,7 @@ whole shell environment to the daemon.
 
 ```yaml
 secrets:
-  work-token: {kind: environment, variable: WORK_TOKEN}
-  ci-token:   {kind: daemon_environment, variable: CI_TOKEN}
   cpa-key:    {kind: command, command: [pass, show, cpa]}
-  gw-key:     {kind: file, file: /run/secrets/gateway-key}
   docs-key:   {kind: keychain}
   github:     {kind: sops, file: ./secrets.yaml, key: github.token}
   team-login: {kind: oauth, scopes: [read]}
@@ -66,10 +64,7 @@ secrets:
 
 | Kind | Where the value comes from |
 | --- | --- |
-| `environment` | `variable` in the shell you launch from |
-| `daemon_environment` | `variable` in the daemon's environment (from the shell that started it) |
 | `command` | the trimmed output of a command, run with a minimal environment and a time limit |
-| `file` | a file's contents without trailing newlines, up to 1 MiB, read at each use |
 | `keychain` | the OS keychain; store it with `agx secret set <id>`, which prompts or reads stdin |
 | `sops` | a value in a [sops](https://getsops.io)-encrypted file; see [below](#sops-encrypted-files) |
 | `oauth` | an OAuth login; only for an MCP server's `auth`, see [MCP servers](mcp.md#logging-in) |
@@ -84,11 +79,9 @@ pbpaste | agx secret set docs-key
 agx secret set docs-key < ~/Downloads/token.txt
 ```
 
-A `file` secret suits files another tool keeps up to date, such as one decrypted
-by sops-nix or agenix under `/run`. Unlike `!file`, it is a secret: it works as
-an MCP server's `auth`, shows in `agx secret status`, and may be missing until
-it is used; a relative path is relative to the configuration file. Write the
-file itself to change it; `agx secret set` does not apply.
+For a value in an environment variable or a file, such as one decrypted by
+sops-nix or agenix under `/run`, use `!env` or `!file` directly; no secret is
+needed.
 
 An MCP server with `auth: keychain` stores its token the same way, under the
 server's ID. That is how the GitHub MCP server is set up, with a personal
@@ -170,7 +163,7 @@ secrets:
 agx secret set age < ~/.config/sops/age/keys.txt
 ```
 
-`age_key` takes `!secret`, `!env`, or `!file`; a literal key is rejected. To
+`age_key` takes any value: `!secret`, `!env`, `!file`, or the key itself. To
 have sops run a command for the key instead, leave `age_key` out and set
 `SOPS_AGE_KEY_CMD` in the daemon's environment.
 

@@ -69,13 +69,12 @@ instructions:
   rules: {text: E2E instructions.}
   others: {text: Other instructions.}
 secrets:
-  token: {kind: environment, variable: E2E_TOKEN}
   sealed: {kind: sops, file: ./sealed.json, key: echo.extra}
 mcp:
   echo:
     command: ['`+filepath.ToSlash(binaries.mcp)+`']
     environment:
-      ECHO_TOKEN: !secret token
+      ECHO_TOKEN: !env E2E_TOKEN
       ECHO_EXTRA: !secret sealed
   second:
     command: ['`+filepath.ToSlash(binaries.mcp)+`']

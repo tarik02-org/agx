@@ -41,13 +41,11 @@ version or build with a warning to run `agx daemon restart`.
 The daemon inherits the environment of the command that started it. That
 matters for:
 
-- `daemon_environment` secrets;
 - sops keys from `SOPS_AGE_KEY_FILE` and similar variables;
 - local MCP servers whose commands are looked up on `PATH`.
 
 After changing any of these in your shell, run `agx daemon restart` from that
-shell. Values your configuration reads with `!env` or `environment` secrets are
-different: they come from the shell you launch each harness from, every time.
+shell. Values your configuration reads with `!env` are different: they come from the shell you launch each harness from, every time.
 
 ## Starting it yourself
 

@@ -874,7 +874,14 @@ func (e *Endpoint) remoteCredentials(
 	origin string,
 ) (string, map[string]string, error) {
 	credential := ""
-	if id := e.definition.Auth.Secret; id != "" {
+	switch id := e.definition.Auth.Secret; {
+	case e.definition.Auth.Env != "" || e.definition.Auth.File != "":
+		value, err := e.resolve(ctx, "mcp "+string(e.id)+" auth", e.definition.Auth.Value, inputs)
+		if err != nil {
+			return "", nil, needsAuth{err}
+		}
+		credential = value
+	case id != "":
 		secret := e.secrets[id]
 		value, err := e.auth.Value(ctx, id, secret, e.secrets, inputs, origin)
 		switch {
@@ -908,13 +915,15 @@ func (e *Endpoint) remoteCredentials(
 // as for servers without auth, the 401 is an ordinary upstream failure and nil is returned.
 func (e *Endpoint) unauthorized(ctx context.Context, credential, challenge string, refreshErr error) error {
 	id := e.definition.Auth.Secret
-	if id == "" {
+	switch secret := e.secrets[id]; {
+	case e.definition.Auth.Env != "" || e.definition.Auth.File != "":
+		return needsAuth{fmt.Errorf("MCP server %s rejected the credential of %s", e.id, e.definition.Auth)}
+	case id == "":
 		return nil
-	}
-	secret := e.secrets[id]
-	if secret.Kind != "oauth" {
+	case secret.Kind != "oauth":
 		return needsAuth{fmt.Errorf("MCP server %s rejected the credential of secret %s", e.id, id)}
 	}
+	secret := e.secrets[id]
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	err := e.auth.RequireLogin(ctx, id, secret, e.definition.URL, challenge)

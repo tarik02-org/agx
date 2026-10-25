@@ -326,32 +326,27 @@ func (MCPShare) JSONSchema() *jsonschema.Schema {
 func (MCPAuth) JSONSchema() *jsonschema.Schema {
 	inline := &jsonschema.Schema{Ref: "#/$defs/Secret", Not: requires("override")}
 	return &jsonschema.Schema{
-		Description: "http: bearer credential: oauth or keychain, none, an inline secret, or !secret ID; " +
-			"omitted means OAuth when the server asks for it.",
+		Description: "http: bearer credential: oauth or keychain, none, an inline secret, or !secret ID, " +
+			"!env NAME, or !file PATH; omitted means OAuth when the server asks for it.",
 		If:   isString,
-		Then: &jsonschema.Schema{Pattern: idPattern},
 		Else: inline,
 	}
 }
 
 func (Secret) JSONSchemaExtend(s *jsonschema.Schema) {
 	kind, _ := s.Properties.Get("kind")
-	kind.Enum = []any{"environment", "daemon_environment", "command", "file", "keychain", "oauth", "sops"}
+	kind.Enum = []any{"command", "keychain", "oauth", "sops"}
 	kind.Description = "How the secret is obtained."
-	variable, _ := s.Properties.Get("variable")
-	variable.Pattern = environmentPattern
 	command, _ := s.Properties.Get("command")
 	command.MinItems = ptr(uint64(1))
 	command.PrefixItems = []*jsonschema.Schema{{MinLength: ptr(uint64(1))}}
 	s.AllOf = []*jsonschema.Schema{
-		{If: when("kind", &jsonschema.Schema{Const: "sops"}), Else: forbid("key", "age_key")},
-		{If: when("kind", &jsonschema.Schema{Enum: []any{"file", "sops"}}), Else: forbid("file")},
 		{
-			If:   when("kind", &jsonschema.Schema{Enum: []any{"environment", "daemon_environment"}}),
-			Then: requires("variable"),
+			If:   when("kind", &jsonschema.Schema{Const: "sops"}),
+			Then: requires("file"),
+			Else: forbid("file", "key", "age_key"),
 		},
 		{If: when("kind", &jsonschema.Schema{Const: "command"}), Then: requires("command")},
-		{If: when("kind", &jsonschema.Schema{Enum: []any{"file", "sops"}}), Then: requires("file")},
 	}
 }
 

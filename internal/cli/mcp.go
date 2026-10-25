@@ -160,10 +160,14 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 				case authValue == "":
 				case authValue == "none" || authValue == "oauth" || authValue == "keychain":
 					edit.Set(definition, "auth", edit.Scalar(authValue))
-				case strings.HasPrefix(authValue, "!secret "):
+				case strings.HasPrefix(authValue, "!"):
 					edit.Set(definition, "auth", value(authValue))
 				default:
-					return &usageError{fmt.Errorf("--auth must be none, oauth, keychain, or '!secret <id>'")}
+					return &usageError{
+						fmt.Errorf(
+							"--auth must be none, oauth, keychain, '!secret <id>', '!env NAME', or '!file PATH'",
+						),
+					}
 				}
 			}
 			if description != "" {
@@ -192,7 +196,7 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 				return err
 			}
 			if ok && command == nil && authValue != "none" && authValue != "keychain" &&
-				!strings.HasPrefix(authValue, "!secret") {
+				!strings.HasPrefix(authValue, "!") {
 				if needsLogin, err = offerLogin(cmd.Context(), s, id, target, !noBrowser); err != nil {
 					return err
 				}
@@ -205,7 +209,7 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 		StringArrayVar(&headers, "header", nil, "HTTP header KEY=VALUE; VALUE may be '!secret id', '!env NAME', or '!file path'")
 	cmd.Flags().StringArrayVar(&env, "env", nil, "stdio environment KEY=VALUE; VALUE may be a tag as for --header")
 	cmd.Flags().
-		StringVar(&authValue, "auth", "", "HTTP auth: none, oauth, keychain, or '!secret id' (default: OAuth on demand)")
+		StringVar(&authValue, "auth", "", "HTTP auth: none, oauth, keychain, '!secret id', '!env NAME', or '!file path' (default: OAuth on demand)")
 	cmd.Flags().StringVar(&clientID, "client-id", "",
 		"OAuth public client ID, for servers that do not register clients automatically")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the login URL without opening a browser")
@@ -332,7 +336,7 @@ func mcpRows(c *config.Config) ([]string, [][]string, any) {
 		case secret.Owner == id:
 			authText = secret.Kind
 		default:
-			authText = "!secret " + string(server.Auth.Secret)
+			authText = server.Auth.String()
 		}
 		// Like auth for stdio, share does not apply to HTTP servers.
 		shareText := server.ShareMode()

@@ -178,7 +178,7 @@ func runDoctor(
 		add(mcpChecks(ctx, client, c, directory, all)...)
 	}
 	if client != nil {
-		add(secretChecks(ctx, client, c)...)
+		add(secretChecks(ctx, client)...)
 	}
 	add(sopsChecks(c, exec.LookPath)...)
 	add(shimChecks(c, registry)...)
@@ -582,8 +582,10 @@ func mcpCheck(id config.ID, server config.MCPServer, response *v1.TestMcpServerR
 	switch errorCode(err) {
 	case codeNeedsLogin:
 		row.Status, row.Detail = checkWarn, "needs authorization: "+message
-		secret := cmp.Or(server.Auth.Secret, id)
-		row.Hint = "run agx secret login " + string(secret)
+		row.Hint = "run agx secret login " + string(cmp.Or(server.Auth.Secret, id))
+		if server.Auth.Env != "" || server.Auth.File != "" {
+			row.Hint = "check " + server.Auth.String()
+		}
 	case codeTimeout:
 		row.Status, row.Detail = checkFail, fmt.Sprintf("no answer within %s", doctorMCPTimeout)
 		row.Hint = "run agx mcp test " + string(id) + " for details"
@@ -594,7 +596,7 @@ func mcpCheck(id config.ID, server config.MCPServer, response *v1.TestMcpServerR
 	return row
 }
 
-func secretChecks(ctx context.Context, c *client, cfg *config.Config) []check {
+func secretChecks(ctx context.Context, c *client) []check {
 	response, err := c.secrets.GetSecretStatus(ctx, connect.NewRequest(&v1.GetSecretStatusRequest{}))
 	if err != nil {
 		return []check{{
@@ -608,14 +610,13 @@ func secretChecks(ctx context.Context, c *client, cfg *config.Config) []check {
 	slices.SortFunc(statuses, func(a, b *v1.SecretStatus) int { return strings.Compare(a.SecretId, b.SecretId) })
 	rows := []check{}
 	for _, s := range statuses {
-		rows = append(rows, secretCheck(s, cfg.Secrets[config.ID(s.SecretId)], os.LookupEnv))
+		rows = append(rows, secretCheck(s))
 	}
 	return rows
 }
 
-// secretCheck judges a secret by the daemon's view. Secrets read from the caller's environment
-// exist for the daemon only at launch, so their variable is checked here instead.
-func secretCheck(s *v1.SecretStatus, secret config.Secret, lookup func(string) (string, bool)) check {
+// secretCheck judges a secret by the daemon's view.
+func secretCheck(s *v1.SecretStatus) check {
 	row := check{Group: "secret", Name: s.SecretId, Detail: s.Kind}
 	problems := []string{}
 	for _, d := range s.Diagnostics {
@@ -644,20 +645,10 @@ func secretCheck(s *v1.SecretStatus, secret config.Secret, lookup func(string) (
 			row.Detail += ": " + strings.Join(problems, "; ")
 		}
 	default:
-		switch {
-		case s.Kind == "environment" && secret.Variable != "":
-			if value, ok := lookup(secret.Variable); ok && value != "" {
-				row.Status = checkPass
-				row.Detail += ": $" + secret.Variable + " is set"
-			} else {
-				row.Status = checkWarn
-				row.Detail += ": $" + secret.Variable + " is not set here"
-				row.Hint = "set " + secret.Variable + " in the shell that launches harnesses"
-			}
-		case s.Kind == "sops":
+		if s.Kind == "sops" {
 			row.Status = checkPass
 			row.Detail += ": age key resolves at launch"
-		default:
+		} else {
 			row.Status = checkWarn
 			row.Detail += ": not configured"
 		}

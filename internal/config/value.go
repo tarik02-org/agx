@@ -89,16 +89,17 @@ func (a *MCPAuth) UnmarshalYAML(node *yaml.Node) error {
 			return err
 		}
 		a.Inline = &secret
-	case node.Tag == "!secret":
-		consume(node)
-		if !validID(ID(node.Value)) {
-			return nodeError(node, "!secret needs a secret ID, not %q", node.Value)
-		}
-		a.Secret = ID(node.Value)
+	case custom(node.Tag):
+		return a.Value.UnmarshalYAML(node)
 	case node.Value == "none":
 		a.None = true
-	default:
+	case node.Value == "keychain" || node.Value == "oauth":
 		a.Inline = &Secret{Kind: node.Value}
+	default:
+		return nodeError(
+			node, "auth must be none, keychain, oauth, a secret mapping, or a !secret, !env, or !file value; "+
+				"to use secret %s, write auth: !secret %s", node.Value, node.Value,
+		)
 	}
 	return nil
 }
@@ -314,8 +315,6 @@ func Variable(secrets map[ID]Secret, v Value) string {
 		switch {
 		case !ok || v.Secret == "":
 			return ""
-		case s.Kind == "environment":
-			return s.Variable
 		case s.Kind == "sops":
 			v = s.AgeKey
 		default:

@@ -302,12 +302,7 @@ func TestSopsAgeKey(t *testing.T) {
 	}{
 		{"!env", "AGE-SECRET-KEY-ENV", config.Value{Env: "AGE_IDENTITY"}, nil},
 		{"!file", "# created: today\nAGE-SECRET-KEY-FROM-FILE", config.Value{File: keyFile}, nil},
-		{
-			"!secret environment",
-			"AGE-SECRET-KEY-ENV",
-			config.Value{Secret: "age"},
-			map[config.ID]config.Secret{"age": {Kind: "environment", Variable: "AGE_IDENTITY"}},
-		},
+		{"literal", "AGE-SECRET-KEY-LITERAL", config.Value{Literal: "AGE-SECRET-KEY-LITERAL"}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("SOPS_FAKE_AGE_KEY", tc.want)
