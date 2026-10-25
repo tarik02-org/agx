@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -82,7 +84,7 @@ func TestStateRoundTrip(t *testing.T) {
 		}
 	}
 
-	port, restored, err := loadState(s.store.path, s.paths.Config, now)
+	port, restored, _, err := loadState(s.store.path, s.paths.Config, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +129,7 @@ func TestStateDropsOnLoad(t *testing.T) {
 	s.persist(false)
 
 	// An expired launch goes, and its threads with it.
-	_, restored, err := loadState(s.store.path, s.paths.Config, now.Add(2*time.Second))
+	_, restored, _, err := loadState(s.store.path, s.paths.Config, now.Add(2*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,18 +137,23 @@ func TestStateDropsOnLoad(t *testing.T) {
 		t.Fatalf("restored = %+v", restored)
 	}
 	// Launches of another configuration root are not this daemon's; the port still is.
-	port, restored, err := loadState(s.store.path, "/other/agx.yaml", now)
+	port, restored, _, err := loadState(s.store.path, "/other/agx.yaml", now)
 	if err != nil || port != 4242 || len(restored) != 0 {
 		t.Fatalf("other configuration: port %d, restored %+v, %v", port, restored, err)
 	}
-	if port, restored, err := loadState(filepath.Join(t.TempDir(), "missing.json"), s.paths.Config, now); err != nil ||
-		port != 0 || restored != nil {
+	if port, restored, _, err := loadState(
+		filepath.Join(t.TempDir(), "missing.json"),
+		s.paths.Config,
+		now,
+	); err != nil ||
+		port != 0 ||
+		restored != nil {
 		t.Fatalf("missing file: %d, %+v, %v", port, restored, err)
 	}
 	if err := os.WriteFile(s.store.path, []byte(`{"version": 99, "launches": []}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := loadState(s.store.path, s.paths.Config, now); err == nil {
+	if _, _, _, err := loadState(s.store.path, s.paths.Config, now); err == nil {
 		t.Fatal("a file of another format version loaded")
 	}
 }
@@ -158,7 +165,7 @@ func TestStateThrottlesRenewals(t *testing.T) {
 	state := func(port int) savedState { return savedState{Version: stateVersion, Port: port} }
 	written := func(want int) {
 		t.Helper()
-		port, _, err := loadState(store.path, "", start)
+		port, _, _, err := loadState(store.path, "", start)
 		if err != nil || port != want {
 			t.Fatalf("file holds port %d (%v), want %d", port, err, want)
 		}
@@ -205,7 +212,7 @@ func TestRestoreSkipsEndedAndCleansLaunchFiles(t *testing.T) {
 	now := time.Now()
 	addLaunch(s, "plain", "", v1.Launch_STATE_RUNNING, now.Add(time.Minute), now)
 	s.persist(false)
-	_, restored, err := loadState(s.store.path, s.paths.Config, now)
+	_, restored, _, err := loadState(s.store.path, s.paths.Config, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,5 +234,34 @@ func TestRestoreSkipsEndedAndCleansLaunchFiles(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(s.paths.Cache, "launches", "gone")); !os.IsNotExist(err) {
 		t.Errorf("files of a launch not restored remain: %v", err)
+	}
+}
+
+func TestRemoveAbandonedTemporaries(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	files := map[string]time.Duration{
+		".agx-123":            time.Hour,
+		".agx-456":            time.Minute,
+		".agx-shim-1":         time.Hour,
+		"daemon-state.json":   time.Hour,
+		"launch-records.json": time.Hour,
+	}
+	for name, age := range files {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, now.Add(-age), now.Add(-age)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removeAbandonedTemporaries(dir, now)
+	for name := range files {
+		_, err := os.Stat(filepath.Join(dir, name))
+		// Only the old temporary is abandoned; a recent one may belong to a write in progress.
+		if gone := errors.Is(err, fs.ErrNotExist); gone != (name == ".agx-123") {
+			t.Errorf("%s: removed %v", name, gone)
+		}
 	}
 }

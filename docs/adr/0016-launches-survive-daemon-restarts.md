@@ -79,3 +79,24 @@ anyway, as it needs the startup lock.
 - Re-initializing upstream sessions behind an unknown `Mcp-Session-Id`: the
   client's capabilities are unknown, so the new session could not negotiate
   honestly.
+
+## Addendum: launches survive a daemon that dies
+
+A daemon killed before it saved its state, for example with the job object of the editor or
+harness whose agx command started it, left its launches nowhere: the next daemon restored an
+older state or none, and wrappers gave up once their renewal found the launch unknown. Now:
+
+- the daemon starts outside its caller's Windows job object, and in a session of its own on Unix;
+- a wrapper whose launch the daemon does not hold, or let expire, re-attaches it with
+  `RestoreLaunch`, sending the launch as `PrepareLaunch` returned it and its grant, so the
+  harness's MCP configuration stays valid; thread launches are not re-attached;
+- a wrapper that finds the discovery file of a daemon that no longer answers, which a stopping
+  daemon removes last, starts the next daemon, which binds that discovery's port when its state
+  file names none;
+- the state file keeps revoked launch IDs for a week, so neither a forced stop nor `launch revoke`
+  can be undone by re-attaching;
+- wrappers retry for as long as their harness runs instead of until their lease ends.
+
+Re-attaching needs the lifecycle token and the grant, which only the wrapper holds, and management
+authorization, which any agx command has; it grants nothing a new launch would not.
+

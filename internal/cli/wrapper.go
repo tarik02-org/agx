@@ -283,13 +283,15 @@ func runHarness(
 	}
 	link := newLease(paths, c, p.Launch.Id, p.LifecycleToken)
 	link.remember(p.Launch.Id, inputs, nativeArgs, executable)
+	link.rememberLaunch(p.Launch, p.Spawn.EnvironmentOverrides[adapters.GrantEnvironment])
 	finished := make(chan struct{})
 	var wg sync.WaitGroup
 	start := func() {
 		// The daemon's expiry turns into a monotonic deadline, which a wall clock jump leaves be.
 		expires := time.Now().Add(time.Until(p.Launch.GetExpiresAt().AsTime()))
-		// Failures are retried every second until the lease runs out, because the daemon may
-		// recover, or another one restore the launch, before then.
+		// Failures are retried for as long as the harness runs: a daemon may recover, another
+		// one restore the launch, or one that lost it, as a killed daemon does, take it back.
+		paused := false
 		renew := func() (bool, bool) {
 			ctx, cancel := boundedContext()
 			defer cancel()
@@ -301,6 +303,10 @@ func runHarness(
 				if next := response.GetExpiresAt(); next != nil {
 					expires = time.Now().Add(time.Until(next.AsTime()))
 				}
+				if paused {
+					ui.Diagnose(ui.Info, "MCP access is back.")
+					paused = false
+				}
 				return true, true
 			}
 			var rpcErr *connect.Error
@@ -308,25 +314,40 @@ func runHarness(
 			if errors.As(err, &rpcErr) {
 				ended = rpcErr.Meta().Get(daemon.EndedHeader)
 			}
+			lost := ended == "expired" || ended == "" && connect.CodeOf(err) == connect.CodeNotFound
 			switch {
 			case ended == "revoked":
 				ui.Diagnose(ui.Warn, "launch was revoked; MCP access is lost. Relaunch to reconnect.")
 				return false, false
 			case ended == "finished":
 				return false, false
-			case ended == "" && connect.CodeOf(err) == connect.CodeNotFound:
-				// A serving daemon has restored every launch it could; the next one would not either.
+			case lost:
+				reattachErr := link.reattach(ctx)
+				if reattachErr == nil {
+					// The daemon logs the re-attachment; the next renewal resends the inputs.
+					return false, true
+				}
+				if connect.CodeOf(reattachErr) == connect.CodeUnavailable ||
+					errors.Is(reattachErr, daemon.ErrUnavailable) {
+					break
+				}
 				ui.Diagnose(
 					ui.Warn,
-					"the daemon no longer knows this launch (revoked by agx daemon stop --force, or its saved state "+
-						"was lost); MCP access is lost. Relaunch to reconnect.",
+					"the daemon no longer holds this launch and refused to take it back: %v; MCP access is lost. "+
+						"Relaunch to reconnect.",
+					reattachErr,
 				)
 				return false, false
-			case ended == "" && time.Now().Before(expires):
+			case connect.CodeOf(err) == connect.CodeUnavailable && !stopping(err) && link.replaceCrashed(ctx):
+				return false, true
+			case time.Now().Before(expires):
 				return false, true
 			}
-			ui.Diagnose(ui.Warn, "launch lease expired; MCP access is lost. Relaunch to reconnect.")
-			return false, false
+			if !paused {
+				ui.Diagnose(ui.Warn, "no agx daemon serves this launch; MCP access is paused until one does.")
+				paused = true
+			}
+			return false, true
 		}
 		wg.Go(func() {
 			interval := time.Duration(p.RenewAfterSeconds) * time.Second

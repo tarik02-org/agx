@@ -279,3 +279,47 @@ func TestManifestFromNewerAgx(t *testing.T) {
 		t.Fatalf("Remove = %v, want the newer manifest rejected", err)
 	}
 }
+
+// An update that replaces the agx executable leaves hard-link and copy shims with the old build;
+// they report the agx to hand off to.
+func TestOutdated(t *testing.T) {
+	for _, kind := range []Kind{Hardlink, Copy} {
+		t.Run(string(kind), func(t *testing.T) {
+			agx := target(t)
+			dir := t.TempDir()
+			s, err := write(dir, "claude-cpa", agx, kind)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := writeManifest(dir, []Shim{s}); err != nil {
+				t.Fatal(err)
+			}
+			shim := filepath.Join(dir, s.File)
+			if current, outdated := Outdated(shim); outdated {
+				t.Fatalf("a current shim hands off to %s", current)
+			}
+			if origin, ok := Origin(shim); !ok || origin != agx {
+				t.Fatalf("Origin = %q, %v", origin, ok)
+			}
+			// Updates write a new file and rename it over the old one.
+			if err := os.WriteFile(agx+".new", []byte("newer agx binary"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(agx+".new", agx); err != nil {
+				t.Fatal(err)
+			}
+			if current, outdated := Outdated(shim); !outdated || current != agx {
+				t.Fatalf("Outdated after the update = %q, %v", current, outdated)
+			}
+			if err := os.Remove(agx); err != nil {
+				t.Fatal(err)
+			}
+			if _, outdated := Outdated(shim); outdated {
+				t.Fatal("a shim hands off to an agx that is gone")
+			}
+		})
+	}
+	if _, outdated := Outdated(filepath.Join(t.TempDir(), "agx")); outdated {
+		t.Fatal("a file outside a shim directory is outdated")
+	}
+}

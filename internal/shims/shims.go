@@ -336,6 +336,62 @@ func copyFile(src, dst string) error {
 	return errors.Join(err, out.Close())
 }
 
+// Origin reports the agx executable the shim at path runs, when path is one of agx's shims and
+// that executable exists. A daemon runs from it rather than from the shim: on Windows a running
+// executable's file cannot be replaced, so a daemon running a shim would block updating it.
+func Origin(path string) (string, bool) {
+	dir, file := filepath.Split(path)
+	m, err := readManifest(dir)
+	if err != nil {
+		return "", false
+	}
+	for _, s := range m.Shims {
+		if !strings.EqualFold(s.File, file) || !filepath.IsAbs(s.Target) {
+			continue
+		}
+		if _, err := os.Stat(s.Target); err != nil {
+			return "", false
+		}
+		return s.Target, true
+	}
+	return "", false
+}
+
+// Outdated reports the agx executable that the hard-link or copy shim at path was made from, when
+// that executable changed since: updating agx in place replaces the file a hard link shared, and a
+// copy never follows it, so the shim still runs the build it was made from. Every launch through
+// it would then replace the daemon of the current build with one of the old build. Symbolic links
+// and scripts always run the current agx.
+func Outdated(path string) (string, bool) {
+	dir, file := filepath.Split(path)
+	m, err := readManifest(dir)
+	if err != nil {
+		return "", false
+	}
+	for _, s := range m.Shims {
+		if !strings.EqualFold(s.File, file) || (s.Kind != Hardlink && s.Kind != Copy) || !filepath.IsAbs(s.Target) {
+			continue
+		}
+		target, err := os.Stat(s.Target)
+		if err != nil {
+			// Without its agx, the shim's own build is the only one left.
+			return "", false
+		}
+		self, err := os.Stat(path)
+		if err != nil || os.SameFile(self, target) {
+			return "", false
+		}
+		if s.Kind == Copy {
+			hash, err := hashFile(s.Target)
+			if err != nil || hash == s.Hash {
+				return "", false
+			}
+		}
+		return s.Target, true
+	}
+	return "", false
+}
+
 // List reports agx's shims in dir and the definitions without one.
 func List(dir, target string, names []string) ([]Entry, error) {
 	m, err := readManifest(dir)
