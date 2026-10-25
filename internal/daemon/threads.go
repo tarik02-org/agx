@@ -101,12 +101,8 @@ func (s *Server) PrepareThreadLaunch(
 	req *connect.Request[v1.PrepareThreadLaunchRequest],
 ) (*connect.Response[v1.PrepareThreadLaunchResponse], error) {
 	msg := req.Msg
-	if msg.RequestId == "" || len(msg.RequestId) > 256 || msg.SnapshotId == "" || !filepath.IsAbs(msg.Directory) {
-		return nil, rpcError(connect.CodeInvalidArgument, "request_id, snapshot_id and absolute directory required")
-	}
-	fingerprint := config.Digest(msg)
-	if response, ok, err := s.replay(msg.RequestId, fingerprint); ok || err != nil {
-		return response, err
+	if msg.SnapshotId == "" || !filepath.IsAbs(msg.Directory) {
+		return nil, rpcError(connect.CodeInvalidArgument, "snapshot_id and absolute directory required")
 	}
 	p, err := s.threadParent(msg.ParentLaunchId)
 	if err != nil {
@@ -178,12 +174,7 @@ func (s *Server) PrepareThreadLaunch(
 		},
 		Warnings: plan.Warnings,
 	}
-	sealed, err := s.sealResponse(response)
-	if err != nil {
-		discard()
-		return nil, rpcError(connect.CodeInternal, "cannot cache launch response")
-	}
-	if err := s.addThreadLaunch(msg.RequestId, p.launch, &launch{
+	if err := s.addThreadLaunch(p.launch, &launch{
 		view:      view,
 		expires:   expires,
 		grant:     auth.Verifier(grant),
@@ -195,7 +186,7 @@ func (s *Server) PrepareThreadLaunch(
 		target:    p.target,
 		created:   time.Now(),
 		lease:     p.launch.lease,
-	}, prepareRecord{fingerprint: fingerprint, response: sealed, launchID: id}); err != nil {
+	}); err != nil {
 		discard()
 		return nil, err
 	}
@@ -203,12 +194,9 @@ func (s *Server) PrepareThreadLaunch(
 	return connect.NewResponse(response), nil
 }
 
-func (s *Server) addThreadLaunch(requestID string, parent, l *launch, record prepareRecord) error {
+func (s *Server) addThreadLaunch(parent, l *launch) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.preparations[requestID]; ok {
-		return rpcError(connect.CodeAborted, "concurrent preparation with the same idempotency key; retry")
-	}
 	switch {
 	case s.flushed:
 		// The state the next daemon restores is final; the relay retries with that daemon.
@@ -222,26 +210,5 @@ func (s *Server) addThreadLaunch(requestID string, parent, l *launch, record pre
 		)
 	}
 	s.launches[l.view.Id] = l
-	s.preparations[requestID] = record
 	return nil
-}
-
-// replay returns the cached response of an earlier thread preparation with the same key.
-func (s *Server) replay(
-	requestID, fingerprint string,
-) (*connect.Response[v1.PrepareThreadLaunchResponse], bool, error) {
-	s.mu.Lock()
-	previous, exists := s.preparations[requestID]
-	s.mu.Unlock()
-	if !exists {
-		return nil, false, nil
-	}
-	if previous.fingerprint != fingerprint {
-		return nil, true, rpcError(connect.CodeInvalidArgument, "idempotency key reused with different parameters")
-	}
-	response := &v1.PrepareThreadLaunchResponse{}
-	if err := s.openInto(previous.response, response); err != nil {
-		return nil, true, rpcError(connect.CodeInternal, "cannot recover launch response")
-	}
-	return connect.NewResponse(response), true, nil
 }

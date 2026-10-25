@@ -147,7 +147,7 @@ func errorCode(err error) string {
 		return c.code
 	case errors.As(err, &edited):
 		return string(edited.Code)
-	case errors.Is(err, daemon.ErrVersionMismatch), errors.Is(err, daemon.ErrNewerDiscovery):
+	case errors.Is(err, daemon.ErrVersionMismatch):
 		return codeVersionMismatch
 	case errors.Is(err, daemon.ErrUnavailable):
 		return codeDaemonUnavailable

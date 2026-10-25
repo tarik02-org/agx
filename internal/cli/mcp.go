@@ -27,7 +27,7 @@ import (
 func mcpCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "mcp",
-		Short:   "Add, list, remove, log in to, test, and call MCP servers",
+		Short:   "Add, list, remove, test, and call MCP servers",
 		GroupID: "config",
 	}
 	test := &cobra.Command{
@@ -43,7 +43,6 @@ func mcpCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command
 		mcpAddCommand(paths, builtins),
 		listCommand(paths, builtins, edit.MCP),
 		removeCommand(paths, builtins, edit.MCP),
-		mcpLoginCommand(paths, builtins),
 		test,
 		mcpToolsCommand(paths, builtins),
 		mcpCallCommand(paths, builtins),
@@ -52,64 +51,6 @@ func mcpCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command
 		mcpStopCommand(paths, builtins),
 	)
 	return command
-}
-
-func mcpLoginCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
-	noBrowser := false
-	cmd := &cobra.Command{
-		Use:   "login <id>",
-		Short: "Log in to an MCP server's OAuth secret, as agx secret login does for that secret",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := config.Load(paths.Config, paths.Cache, *builtins)
-			if err != nil {
-				return coded(codeConfigInvalid, err)
-			}
-			id, err := loginSecret(c, args[0])
-			if err != nil {
-				return err
-			}
-			return login(cmd.Context(), *paths, id, !noBrowser, autostart(c))
-		},
-	}
-	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the authorization URL without opening a browser")
-	jsonFlag(cmd)
-	return cmd
-}
-
-// loginSecret is the secret an MCP server logs in with: its inline or on-demand auth, which takes
-// its ID, or the top-level secret it references.
-func loginSecret(c *config.Config, id string) (string, error) {
-	server, ok := c.MCP[config.ID(id)]
-	if !ok {
-		return "", codedf(codeNotFound, "unknown MCP server %s", id)
-	}
-	secret := c.Secrets[server.Auth.Secret]
-	switch {
-	case server.Transport != "http":
-		return "", codedf(codeFailedPrecondition, "MCP server %s runs over stdio and has no login", id)
-	case server.Auth.None:
-		return "", codedf(codeFailedPrecondition, "MCP server %s has auth: none", id)
-	case secret.Kind == "sops":
-		return "", codedf(
-			codeFailedPrecondition,
-			"MCP server %s authenticates with sops secret %s; edit it with sops %s",
-			id, server.Auth.Secret, secret.File,
-		)
-	case secret.Kind == "file":
-		return "", codedf(
-			codeFailedPrecondition,
-			"MCP server %s authenticates with file secret %s; write the token to %s",
-			id, server.Auth.Secret, secret.File,
-		)
-	case secret.Kind != "oauth":
-		return "", codedf(
-			codeFailedPrecondition,
-			"MCP server %s authenticates with %s secret %s; store it with agx secret set %s --stdin",
-			id, secret.Kind, server.Auth.Secret, server.Auth.Secret,
-		)
-	}
-	return string(server.Auth.Secret), nil
 }
 
 func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
@@ -326,7 +267,7 @@ func daemonReachable(paths platform.Paths) bool {
 }
 
 func testMCP(ctx context.Context, paths platform.Paths, builtins config.Builtins, id string) error {
-	c, err := config.Load(paths.Config, paths.Cache, builtins)
+	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
 	if err != nil {
 		return coded(codeConfigInvalid, err)
 	}
@@ -486,9 +427,9 @@ func listCommand(paths *platform.Paths, builtins *config.Builtins, kind string) 
 			var c *config.Config
 			var err error
 			if kind == "harnesses" {
-				c, err = config.Read(paths.Config, *builtins)
+				c, err = config.Load(paths.Config, config.Options{Builtins: *builtins})
 			} else {
-				c, err = config.Load(paths.Config, paths.Cache, *builtins)
+				c, err = config.Load(paths.Config, config.Options{Builtins: *builtins, Cache: paths.Cache})
 			}
 			if err != nil {
 				return coded(codeConfigInvalid, err)

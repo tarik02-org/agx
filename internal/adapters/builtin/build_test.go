@@ -12,7 +12,6 @@ import (
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/securefs"
 )
 
 const grant = "grant-token"
@@ -72,7 +71,10 @@ harnesses:
   claude: {executable: `+executable+`}
   pi: {executable: `+executable+`}
 `)
-	c, err := config.Load(filepath.Join(dir, "agx.yaml"), filepath.Join(dir, "cache"), builtin.Registry().Builtins(nil))
+	c, err := config.Load(
+		filepath.Join(dir, "agx.yaml"),
+		config.Options{Builtins: builtin.Registry().Builtins(nil), Cache: filepath.Join(dir, "cache")},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +248,7 @@ func TestBuildCodex(t *testing.T) {
 	}
 
 	other := "agx-" + strings.Repeat("0", 24)
-	writeCatalog(t, f, home, other, selected)
+	installPlugins(t, home, other, selected)
 	plan, s, err := f.build(t, "codex", "exec", "hi")
 	if err != nil {
 		t.Fatal(err)
@@ -286,7 +288,7 @@ func TestBuildCodexAppServer(t *testing.T) {
 	other := "agx-" + strings.Repeat("0", 24)
 	home := t.TempDir()
 	t.Setenv("CODEX_HOME", home)
-	writeCatalog(t, f, home, other, "review-"+hash[:12])
+	installPlugins(t, home, other, "review-"+hash[:12])
 	// The process carries no snapshot resources; its threads get theirs.
 	plan, s, err := f.build(t, "codex", "app-server")
 	if err != nil {
@@ -381,15 +383,9 @@ func TestBuildCodexPluginsDisabled(t *testing.T) {
 	}
 }
 
-// writeCatalog records plugins as published, and installs them in home as Codex does.
-func writeCatalog(t *testing.T, f fixture, home string, names ...string) {
+// installPlugins installs plugins in home as Codex does.
+func installPlugins(t *testing.T, home string, names ...string) {
 	t.Helper()
-	if err := securefs.WriteJSON(
-		filepath.Join(f.cache, "native", "catalog.json"),
-		map[string]any{"version": 1, "names": names},
-	); err != nil {
-		t.Fatal(err)
-	}
 	config := ""
 	for _, name := range names {
 		config += "[plugins.\"" + name + "@agx-managed\"]\nenabled = true\n"

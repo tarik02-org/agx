@@ -36,7 +36,7 @@ bundles:
   dev:
     skills: [alpha]
 imports:
-  - glob: agx.d/*.yaml
+  - agx.d/*.yaml
 `
 
 // editorServer serves an isolated configuration holding a local skill and instructions.

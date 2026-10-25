@@ -285,12 +285,12 @@ func TestJSONValidate(t *testing.T) {
 	}
 
 	// --json before the command works as after it.
-	failJSON(t, 1, codeConfigInvalid, "--json", "resolve")
+	failJSON(t, 1, codeConfigInvalid, "--json", "explain")
 	if code, docs := runJSON(t, "--json", "config", "validate"); code != 1 || len(docs) != 1 || docs[0].Data == nil {
 		t.Fatalf("leading --json validate exited %d: %+v", code, docs)
 	}
 
-	d := failJSON(t, 1, codeConfigInvalid, "resolve", "--json")
+	d := failJSON(t, 1, codeConfigInvalid, "explain", "--json")
 	if d.Error.Source == nil || d.Error.Source.Line != 2 {
 		t.Fatalf("config error without its source: %+v", d.Error)
 	}
@@ -311,7 +311,7 @@ func TestMissingPaths(t *testing.T) {
 	if _, err := os.Stat(created); err != nil {
 		t.Fatal(err)
 	}
-	d = failJSON(t, 1, codeNotFound, "resolve", filepath.Join(dir, "nope"), "--json")
+	d = failJSON(t, 1, codeNotFound, "explain", filepath.Join(dir, "nope"), "--json")
 	if !strings.Contains(d.Error.Message, "does not exist") {
 		t.Fatalf("missing directory: %s", d.Error.Message)
 	}
@@ -333,9 +333,8 @@ func TestJSONCommands(t *testing.T) {
 		_ = devNull.Close()
 	})
 
-	okJSON(t, nil, "resolve")
 	okJSON(t, nil, "explain", "--harness", "codex-work")
-	failJSON(t, 1, codeNotFound, "resolve", "--harness", "missing", "--json")
+	failJSON(t, 1, codeNotFound, "explain", "--harness", "missing", "--json")
 
 	var installed struct {
 		Packages  []string `json:"packages"`
@@ -377,7 +376,7 @@ func TestJSONCommands(t *testing.T) {
 		{"launch", "show", "x"},
 		{"launch", "revoke", "x"},
 		{"secret", "status"},
-		{"secret", "set", "token", "--stdin"},
+		{"secret", "set", "token"},
 		{"secret", "logout", "token"},
 		{"secret", "login", "token"},
 		{"mcp", "test", "fs"},
@@ -402,9 +401,7 @@ func TestJSONCommands(t *testing.T) {
 			t.Fatalf("%q without a daemon = %+v", args, stopped)
 		}
 	}
-	failJSON(t, 1, codeFailedPrecondition, "mcp", "login", "fs", "--json")
 	failJSON(t, 1, codeNotFound, "mcp", "test", "missing", "--json")
-	failJSON(t, 1, codeInvalidRequest, "secret", "set", "token", "--json")
 }
 
 func TestJSONUsageErrors(t *testing.T) {

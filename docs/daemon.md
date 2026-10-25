@@ -9,7 +9,7 @@ agx keeps a small background process, the daemon, running as you. It:
 - receives OAuth logins in your browser.
 
 You rarely need to think about it. Any command that needs it (launching a
-harness, `agx mcp test`, `agx mcp login`, `agx secret …`, `agx doctor`) starts
+harness, `agx mcp test`, `agx secret …`, `agx doctor`) starts
 it in the background if it is not running. Help, version, and login commands of
 harnesses, and commands that only read or edit configuration, work without it.
 
@@ -35,11 +35,6 @@ Upgrading agx works the same way: the first command of the new version stops
 the old daemon gracefully and starts its own, keeping running launches.
 `agx daemon status` does not replace it: it reports a daemon of another agx
 version or build with a warning to run `agx daemon restart`.
-
-Downgrading is different. An older agx does not touch a daemon or saved
-launches written by a newer one, and asks you to upgrade agx instead. To go
-back anyway, run `agx daemon stop --force` with the newer agx first; that ends
-the saved launches' MCP access.
 
 ## Its environment
 
@@ -112,7 +107,7 @@ foreground daemon, or SIGTERM), it:
 1. stops taking new launches, logins, and MCP sessions; agx commands waiting on
    it retry with the next daemon;
 2. lets MCP requests and tool calls in progress finish, for up to
-   `daemon.shutdown_grace_seconds` (10 by default) or `--timeout`;
+   10 seconds, or `--timeout`;
 3. saves its running launches for the next daemon (unless `--force`);
 4. closes local MCP servers: their input first, then SIGTERM, then a kill;
 5. exits.

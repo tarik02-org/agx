@@ -3,9 +3,6 @@ package cli
 import (
 	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/tarik02-org/agx/internal/config"
@@ -31,17 +28,12 @@ func TestDaemonAction(t *testing.T) {
 		{
 			"busy other build",
 			daemonState{discovery: mismatch, reachable: true, sameConfig: true, activeLaunches: 1},
-			refuseDaemon,
-		},
-		{
-			"busy other build that restores its launches",
-			daemonState{discovery: mismatch, reachable: true, sameConfig: true, activeLaunches: 1, restores: true},
 			replaceDaemon,
 		},
 		{
-			"busy other build with another configuration that restores its launches",
-			daemonState{discovery: mismatch, reachable: true, activeLaunches: 1, restores: true},
-			refuseDaemon,
+			"busy other build with another configuration",
+			daemonState{discovery: mismatch, reachable: true, activeLaunches: 1},
+			replaceDaemon,
 		},
 		{"idle other build with another configuration", daemonState{discovery: mismatch, reachable: true}, replaceDaemon},
 	} {
@@ -74,36 +66,5 @@ func TestAutostart(t *testing.T) {
 				t.Fatalf("autostart = %v, want %v", got, test.want)
 			}
 		})
-	}
-}
-
-func TestStopBusyDaemon(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("force") == "true" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		w.WriteHeader(http.StatusConflict)
-	}))
-	t.Cleanup(server.Close)
-	c := dial(daemon.Discovery{URL: server.URL, Token: "token"})
-	_, err := stopDaemon(t.Context(), c, false, 0)
-	if errorCode(err) != codeConflict || !strings.Contains(err.Error(), "agx daemon stop --force") {
-		t.Fatalf("busy stop = %v (%s)", err, errorCode(err))
-	}
-	if _, err := stopDaemon(t.Context(), c, true, 0); err != nil {
-		t.Fatalf("forced stop = %v", err)
-	}
-}
-
-func TestStopKeepsLaunches(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set(daemon.KeptLaunchesHeader, "2")
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	t.Cleanup(server.Close)
-	c := dial(daemon.Discovery{URL: server.URL, Token: "token"})
-	if kept, err := stopDaemon(t.Context(), c, false, 0); err != nil || kept != 2 {
-		t.Fatalf("stop = %d, %v", kept, err)
 	}
 }

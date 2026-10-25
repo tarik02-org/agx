@@ -82,8 +82,8 @@ agx explain ~/work/legacy
 ```
 
 `explain` lists every selected and removed resource with the file and line that
-decided it, and marks on-demand MCP servers. `agx resolve` prints just the result, and `agx config validate`
-checks the whole configuration.
+decided it, and marks on-demand MCP servers. `agx config validate` checks the
+whole configuration.
 
 ## Scopes
 
@@ -113,8 +113,8 @@ scopes:
 
 The rule then applies only to Claude Code launches and to
 [harness definitions](harnesses.md) based on it. `agx explain --harness claude`
-shows the result for one harness; without `--harness`, `explain` and `resolve`
-skip harness-specific rules.
+shows the result for one harness; without `--harness`, `explain`
+skips harness-specific rules.
 
 ## Selection lists
 
@@ -174,17 +174,17 @@ contains them:
 
 ```yaml
 imports:
-  - path: personal.yaml
-  - path: local.yaml
-    optional: true          # skipped when the file does not exist
-  - glob: agx.d/*.yaml      # every match, in name order
+  - personal.yaml           # must exist
+  - agx.d/*.yaml            # every match, in name order; may match nothing
 ```
+
+An import containing `*`, `?`, or `[` is a glob; any other import is a path.
 
 Imports load in order, before the file that imports them. Name drop-ins
 `10-team.yaml`, `50-local.yaml` to control their order.
 
 When there is no root file at all, agx behaves as if it contained just
-`imports: [{glob: agx.d/*.yaml}]`, so a directory of drop-ins works without one.
+`imports: [agx.d/*.yaml]`, so a directory of drop-ins works without one.
 The editing commands create the root file with that import when they first
 write.
 
@@ -194,8 +194,8 @@ The Home Manager module (`programs.agx.settings`, see the README) writes
 does not import `agx.d/*.yaml`.
 
 Defining the same ID twice is an error, unless the later definition says
-`override: true`. Harness definitions and `daemon` settings are the exception:
-they merge field by field across files.
+`override: true`. Harness definitions are the exception: they merge field by
+field across files. Each `daemon` setting may be set in one file.
 
 ### Paths
 
@@ -219,7 +219,7 @@ package versions. On a new machine:
 2. Provide whatever your secrets need, such as the sops age key.
 3. Run `agx install --frozen` to install exactly the locked packages.
 4. Run `agx secret login <id>` for each MCP server that uses OAuth, and `agx
-   secret set <id> --stdin` for each keychain secret. Both stay in each
+   secret set <id>` for each keychain secret. Both stay in each
    machine's keychain.
 
 ## Editing with commands
@@ -301,7 +301,6 @@ and paths.
 ```yaml
 daemon:
   autostart: true               # start the daemon when a command needs it
-  shutdown_grace_seconds: 10    # how long stopping waits for MCP calls in flight
   lease_seconds: 60             # how long a launch survives without its wrapper
   renew_seconds: 20             # how often wrappers renew (less than the lease)
 ```

@@ -132,7 +132,10 @@ harnesses:
 		t.Fatal(err)
 	}
 	registry := builtin.Registry()
-	c, err := config.Load(filepath.Join(dir, "agx.yaml"), filepath.Join(dir, "cache"), registry.Builtins(nil))
+	c, err := config.Load(
+		filepath.Join(dir, "agx.yaml"),
+		config.Options{Builtins: registry.Builtins(nil), Cache: filepath.Join(dir, "cache")},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +238,7 @@ func TestSecretCheck(t *testing.T) {
 		{
 			&v1.SecretStatus{SecretId: "key", Kind: "keychain", State: v1.SecretStatus_STATE_NEEDS_LOGIN},
 			config.Secret{},
-			none, checkWarn, "run agx secret set key --stdin",
+			none, checkWarn, "run agx secret set key",
 		},
 		{
 			&v1.SecretStatus{
@@ -373,20 +376,11 @@ func TestStateCheck(t *testing.T) {
 	if got := stateCheck(path); got.Status != checkPass || got.Detail != "no saved launches" {
 		t.Fatalf("missing state = %+v", got)
 	}
-	for _, test := range []struct {
-		data   string
-		status checkStatus
-	}{
-		{`{"version":1}`, checkPass},
-		{`{"version":99}`, checkFail},
-		{`{"version":`, checkWarn},
-	} {
-		if err := os.WriteFile(path, []byte(test.data), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if got := stateCheck(path); got.Status != test.status {
-			t.Fatalf("state %s = %+v", test.data, got)
-		}
+	if err := os.WriteFile(path, []byte(`{"version":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := stateCheck(path); got.Status != checkPass {
+		t.Fatalf("state = %+v", got)
 	}
 	if runtime.GOOS == "windows" {
 		return

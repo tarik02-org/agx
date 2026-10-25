@@ -15,10 +15,9 @@ import (
 func TestImportsLoadInOrder(t *testing.T) {
 	dir := t.TempDir()
 	root := write(t, filepath.Join(dir, "agx.yaml"), `imports:
-  - path: first.yaml
-  - path: missing.yaml
-    optional: true
-  - glob: agx.d/*.yaml
+  - first.yaml
+  - agx.d/*.yaml
+  - none.d/*.yaml
 instructions:
   root: {text: root}
 `)
@@ -53,33 +52,28 @@ func TestImportErrors(t *testing.T) {
 		{
 			name: "cycle",
 			files: map[string]string{
-				"agx.yaml": "imports: [{path: b.yaml}]\n",
-				"b.yaml":   "imports: [{path: agx.yaml}]\n",
+				"agx.yaml": "imports: [b.yaml]\n",
+				"b.yaml":   "imports: [agx.yaml]\n",
 			},
 			want: []string{"import cycle"},
 		},
 		{
 			name:  "missing import",
-			files: map[string]string{"agx.yaml": "imports: [{path: nope.yaml}]\n"},
+			files: map[string]string{"agx.yaml": "imports: [nope.yaml]\n"},
 			want:  []string{"nope.yaml"},
 		},
 		{
-			name: "error inside an optional import",
+			name: "error inside an imported glob match",
 			files: map[string]string{
-				"agx.yaml":   "imports: [{path: local.yaml, optional: true}]\n",
-				"local.yaml": "bogus: true\n",
+				"agx.yaml":           "imports: [local.d/*.yaml]\n",
+				"local.d/local.yaml": "bogus: true\n",
 			},
 			want: []string{"local.yaml", "local.yaml:1: unknown key bogus"},
 		},
 		{
-			name:  "optional glob",
-			files: map[string]string{"agx.yaml": "imports: [{glob: '*.yaml', optional: true}]\n"},
-			want:  []string{"optional applies only to path imports"},
-		},
-		{
-			name:  "path and glob",
-			files: map[string]string{"agx.yaml": "imports: [{path: a.yaml, glob: '*.yaml'}]\n"},
-			want:  []string{"import needs exactly one of path or glob"},
+			name:  "import object",
+			files: map[string]string{"agx.yaml": "imports: [{path: a.yaml}]\n"},
+			want:  []string{"agx.yaml:1"},
 		},
 		{
 			name:  "empty file",
@@ -103,7 +97,7 @@ func TestImportErrors(t *testing.T) {
 			for name, content := range tt.files {
 				write(t, filepath.Join(dir, name), content)
 			}
-			_, err := config.Read(filepath.Join(dir, "agx.yaml"), builtins)
+			_, err := config.Load(filepath.Join(dir, "agx.yaml"), config.Options{Builtins: builtins})
 			wantError(t, err, tt.want...)
 		})
 	}
@@ -116,9 +110,9 @@ func TestDefinitionPrecedence(t *testing.T) {
 		root := write(
 			t,
 			filepath.Join(dir, "agx.yaml"),
-			"imports: [{path: first.yaml}]\ninstructions:\n  x: {text: root}\n",
+			"imports: [first.yaml]\ninstructions:\n  x: {text: root}\n",
 		)
-		_, err := config.Read(root, builtins)
+		_, err := config.Load(root, config.Options{Builtins: builtins})
 		wantError(
 			t,
 			err,
@@ -131,7 +125,7 @@ func TestDefinitionPrecedence(t *testing.T) {
 	t.Run("override in a later fragment replaces", func(t *testing.T) {
 		dir := t.TempDir()
 		write(t, filepath.Join(dir, "first.yaml"), "instructions:\n  x: {text: first}\n")
-		root := write(t, filepath.Join(dir, "agx.yaml"), `imports: [{path: first.yaml}]
+		root := write(t, filepath.Join(dir, "agx.yaml"), `imports: [first.yaml]
 instructions:
   x: {text: root, override: true}
 `)
@@ -145,9 +139,9 @@ instructions:
 		root := write(
 			t,
 			filepath.Join(dir, "agx.yaml"),
-			"imports: [{path: first.yaml}]\ninstructions:\n  x: {text: root}\n",
+			"imports: [first.yaml]\ninstructions:\n  x: {text: root}\n",
 		)
-		_, err := config.Read(root, builtins)
+		_, err := config.Load(root, config.Options{Builtins: builtins})
 		wantError(t, err, "conflicting definition of instructions x")
 	})
 
@@ -359,7 +353,7 @@ scopes:
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := config.Read(setup(t, tt.content), builtins)
+			_, err := config.Load(setup(t, tt.content), config.Options{Builtins: builtins})
 			wantError(t, err, tt.want...)
 		})
 	}
@@ -371,12 +365,14 @@ func TestGeneratedSkillValidation(t *testing.T) {
 		{"invalid name", "{name: Deploy_X, description: d, content: body}", `name "Deploy_X" must be lowercase`},
 		{"name from an invalid ID", "{description: d, content: body}", "must be lowercase letters"},
 		{"frontmatter cannot set name", "{description: d, content: body, frontmatter: {name: x}}", "frontmatter cannot set name"},
-		{"files escape", "{description: d, content: body, files: {../x: y}}", "must be a relative path inside the skill"},
-		{"files name SKILL.md", "{description: d, content: body, files: {skill.md: y}}", "files cannot name SKILL.md"},
-		{"files contain .git", "{description: d, content: body, files: {.git/config: y}}", "cannot contain .git"},
-		{"files overlap", "{description: d, content: body, files: {a: x, a/b: y}}", "files a and a/b overlap"},
+		{"files escape", "{description: d, content: body, files: {../x: {content: y}}}", "must be a relative path inside the skill"},
+		{"files name SKILL.md", "{description: d, content: body, files: {skill.md: {content: y}}}", "files cannot name SKILL.md"},
+		{"files contain .git", "{description: d, content: body, files: {.git/config: {content: y}}}", "cannot contain .git"},
+		{"files overlap", "{description: d, content: body, files: {a: {content: x}, a/b: {content: y}}}", "files a and a/b overlap"},
+		{"file as a string", "{description: d, content: body, files: {a: ./x}}", "skill file must be {content, executable} or {path}"},
+		{"file with content and path", "{description: d, content: body, files: {a: {content: x, path: ./x}}}", "exactly one of content or path"},
 		{"name on a path skill", "{path: ./s, name: foo}", "name applies only to skills with content"},
-		{"short rev", "{git: 'https://example.com/r.git', rev: abc123}", "rev must be a full 40-character"},
+		{"rev", "{git: 'https://example.com/r.git', rev: abc123}", "unknown key rev"},
 		{"Git path escapes", "{git: 'https://example.com/r.git', path: ../x}", "must stay inside the Git checkout"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -385,7 +381,7 @@ func TestGeneratedSkillValidation(t *testing.T) {
 				id = "My.Skill"
 			}
 			root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), "skills:\n  "+id+": "+tt.skill+"\n")
-			_, err := config.Read(root, builtins)
+			_, err := config.Load(root, config.Options{Builtins: builtins})
 			wantError(t, err, tt.want)
 		})
 	}
@@ -400,7 +396,8 @@ func TestPinnedSources(t *testing.T) {
 		want bool
 	}{
 		{"git with ref", config.Package{Git: "https://example.com/r.git", Ref: "main"}, false},
-		{"git with rev", config.Package{Git: "https://example.com/r.git", Rev: rev}, true},
+		{"git with a commit ref", config.Package{Git: "https://example.com/r.git", Ref: rev}, true},
+		{"git with a short commit ref", config.Package{Git: "https://example.com/r.git", Ref: rev[:12]}, false},
 		{"local path", config.Package{Path: "/srv/pkg"}, false},
 		{"local path with hash", config.Package{Path: "/srv/pkg", Hash: hash}, true},
 		{"nix store path", config.Package{Path: "/nix/store/abc-pkg"}, runtime.GOOS != "windows"},
@@ -414,14 +411,13 @@ func TestPinnedSources(t *testing.T) {
 	}
 
 	for _, tt := range []struct{ name, pkg, want string }{
-		{"ref and rev", "{git: 'https://example.com/r.git', ref: main, rev: " + rev + "}", "set ref or rev, not both"},
-		{"rev on a path", "{path: ./x, rev: " + rev + "}", "rev applies only to git sources"},
+		{"ref on a path", "{path: ./x, ref: " + rev + "}", "ref applies only to git sources"},
 		{"malformed hash", "{path: ./x, hash: abc}", "hash must be a 64-character content hash"},
 		{"path and git", "{path: ./x, git: 'https://example.com/r.git'}", "needs exactly one of path or git"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), "packages:\n  p: "+tt.pkg+"\n")
-			_, err := config.Read(root, builtins)
+			_, err := config.Load(root, config.Options{Builtins: builtins})
 			wantError(t, err, tt.want)
 		})
 	}
@@ -438,7 +434,7 @@ func TestPinnedSources(t *testing.T) {
 		root := write(t, filepath.Join(dir, "agx.yaml"), "packages:\n  p: {path: ./src, hash: "+hash+"}\n")
 		cache := filepath.Join(dir, "cache")
 
-		missing, err := config.Load(root, cache, builtins)
+		missing, err := config.Load(root, config.Options{Builtins: builtins, Cache: cache})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -450,7 +446,7 @@ func TestPinnedSources(t *testing.T) {
 		if err := securefs.CopyTree(src, filepath.Join(cache, "packages", hash)); err != nil {
 			t.Fatal(err)
 		}
-		c, err := config.Load(root, cache, builtins)
+		c, err := config.Load(root, config.Options{Builtins: builtins, Cache: cache})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -463,7 +459,7 @@ func TestPinnedSources(t *testing.T) {
 		dir := t.TempDir()
 		mkdir(t, filepath.Join(dir, "src"))
 		root := write(t, filepath.Join(dir, "agx.yaml"), "packages:\n  p: {path: ./src}\n")
-		c, err := config.Load(root, filepath.Join(dir, "cache"), builtins)
+		c, err := config.Load(root, config.Options{Builtins: builtins, Cache: filepath.Join(dir, "cache")})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -471,7 +467,7 @@ func TestPinnedSources(t *testing.T) {
 			t.Fatalf("missing = %v", got)
 		}
 		write(t, filepath.Join(dir, "agx.lock.json"), "{not json")
-		_, err = config.Load(root, filepath.Join(dir, "cache"), builtins)
+		_, err = config.Load(root, config.Options{Builtins: builtins, Cache: filepath.Join(dir, "cache")})
 		wantError(t, err, "agx.lock.json", "run agx install")
 	})
 }
@@ -496,7 +492,7 @@ scopes:
       instructions: [note]
       bundles: [team, b/defaults]
 `)
-	c, err := config.Load(root, filepath.Join(dir, "cache"), builtins)
+	c, err := config.Load(root, config.Options{Builtins: builtins, Cache: filepath.Join(dir, "cache")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -528,7 +524,7 @@ scopes:
   - add:
       skills: [c/review]
 `)
-	_, err = config.Load(bad, filepath.Join(dir, "cache"), builtins)
+	_, err = config.Load(bad, config.Options{Builtins: builtins, Cache: filepath.Join(dir, "cache")})
 	wantError(t, err, `unknown skill "c/review"`)
 }
 
@@ -537,8 +533,7 @@ func TestHomeExpansion(t *testing.T) {
 	skill(t, filepath.Join(home, "skills", "s"), "s")
 	write(t, filepath.Join(home, "frag.yaml"), "instructions:\n  frag: {text: frag}\n")
 	mkdir(t, filepath.Join(home, "work"))
-	root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), `imports: [{path: ~/frag.yaml}]
-lockfile: ~/locks/agx.lock.json
+	root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), `imports: [~/frag.yaml]
 packages:
   p: {path: ~/pkg}
 skills:
@@ -561,7 +556,6 @@ harnesses:
 	for _, tt := range []struct{ name, got, want string }{
 		{"skill path", c.Skills["s"].Path, in("skills", "s")},
 		{"package path", c.Packages["p"].Path, in("pkg")},
-		{"lockfile", c.Packages["p"].Lockfile, in("locks", "agx.lock.json")},
 		{"mcp command", c.MCP["up"].Command[0], in("bin", "up")},
 		{"mcp cwd", c.MCP["up"].Cwd, in("srv")},
 		{"harness executable", c.Harnesses["codex"].Executable, in("bin", "codex")},
@@ -581,11 +575,11 @@ harnesses:
 
 	for _, content := range []string{
 		"scopes:\n  - directory: ~root/work\n",
-		"imports: [{path: ~other/x.yaml}]\n",
+		"imports: [~other/x.yaml]\n",
 		"harnesses:\n  codex: {executable: ~bin/codex}\n",
 	} {
 		root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), content)
-		_, err := config.Read(root, builtins)
+		_, err := config.Load(root, config.Options{Builtins: builtins})
 		wantError(t, err, "~user paths are not supported")
 	}
 }
@@ -600,12 +594,9 @@ func TestDaemonAutostart(t *testing.T) {
 		t.Fatalf("autostart = %v, want unset", *c.Daemon.Autostart)
 	}
 	write(t, filepath.Join(dir, "first.yaml"), "daemon: {autostart: true}\n")
-	write(t, root, "imports: [{path: first.yaml}]\ndaemon: {autostart: false}\n")
-	if _, err := config.Read(
-		root,
-		builtins,
-	); err == nil ||
-		!strings.Contains(err.Error(), "conflicting daemon.autostart") {
+	write(t, root, "imports: [first.yaml]\ndaemon: {autostart: false}\n")
+	if _, err := config.Load(root, config.Options{Builtins: builtins}); err == nil ||
+		!strings.Contains(err.Error(), "daemon.autostart is already set in") {
 		t.Fatalf("conflicting autostart: %v", err)
 	}
 }
@@ -651,7 +642,7 @@ func TestMCPLoad(t *testing.T) {
 		t.Fatalf("tracker = %+v", tracker)
 	}
 	bad := write(t, filepath.Join(t.TempDir(), "agx.yaml"), "mcp:\n  x: {command: [x], load: lazy}\n")
-	if _, err := config.Read(bad, builtins); err == nil ||
+	if _, err := config.Load(bad, config.Options{Builtins: builtins}); err == nil ||
 		!strings.Contains(err.Error(), "load must be native or on_demand") {
 		t.Fatalf("invalid load: %v", err)
 	}
@@ -682,7 +673,11 @@ func TestMCPShare(t *testing.T) {
 		"mcp:\n  x: {url: https://x.example/mcp, share: global}\n":       "share applies to stdio servers",
 	} {
 		bad := write(t, filepath.Join(t.TempDir(), "agx.yaml"), content)
-		if _, err := config.Read(bad, builtins); err == nil || !strings.Contains(err.Error(), want) {
+		if _, err := config.Load(
+			bad,
+			config.Options{Builtins: builtins},
+		); err == nil ||
+			!strings.Contains(err.Error(), want) {
 			t.Fatalf("%q: %v", content, err)
 		}
 	}

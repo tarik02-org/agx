@@ -3,10 +3,8 @@ instructions:
   repository:
     path: instructions.md
 
-# Machine-specific mappings can live in an optional, separately locked fragment.
-imports:
-  - path: local.yaml
-    optional: true
+# Machine-specific mappings can live in drop-ins; a glob may match nothing.
+imports: [local.d/*.yaml]
 
 scopes:
   - directory: ..

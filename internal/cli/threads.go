@@ -10,7 +10,6 @@ import (
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/cli/ui"
-	"github.com/tarik02-org/agx/internal/securefs"
 	"github.com/tarik02-org/agx/internal/sessions"
 )
 
@@ -86,7 +85,6 @@ func (h *threadHost) prepare(ctx context.Context, c *client, directory string) (
 		resolveCtx,
 		request(
 			&v1.PrepareThreadLaunchRequest{
-				RequestId:         securefs.Token(),
 				ParentLaunchId:    h.parent,
 				SnapshotId:        resolved.Msg.Snapshot.Id,
 				Directory:         directory,

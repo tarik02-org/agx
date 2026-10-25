@@ -138,7 +138,7 @@ mcp:
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), tt.content)
-			_, err := config.Load(root, t.TempDir(), builtins)
+			_, err := config.Load(root, config.Options{Builtins: builtins, Cache: t.TempDir()})
 			wantError(t, err, tt.want)
 		})
 	}

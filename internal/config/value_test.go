@@ -28,7 +28,7 @@ func tagFixture(t *testing.T) (*config.Config, string) {
   codex-t:
     base: codex
     args:
-      - [--prompt, !file prompt.txt]
+      - values: [--prompt, !file prompt.txt]
       - values: [--system, !file prompt.txt]
         modes: [exec]
     environment:
@@ -36,7 +36,7 @@ func tagFixture(t *testing.T) (*config.Config, string) {
       KEY: !secret key
       PLAIN: plain
 `)
-	root := write(t, filepath.Join(dir, "agx.yaml"), `imports: [{path: conf/harness.yaml}]
+	root := write(t, filepath.Join(dir, "agx.yaml"), `imports: [conf/harness.yaml]
 secrets:
   key: {kind: environment, variable: KEY_SOURCE}
 mcp:
@@ -167,7 +167,7 @@ func TestTagPlacement(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), tt.content)
-			_, err := config.Read(root, builtins)
+			_, err := config.Load(root, config.Options{Builtins: builtins})
 			wantError(t, err, tt.want)
 		})
 	}
@@ -197,7 +197,7 @@ func TestTagPlacement(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), tt.content)
-			_, err := config.Load(root, t.TempDir(), builtins)
+			_, err := config.Load(root, config.Options{Builtins: builtins, Cache: t.TempDir()})
 			wantError(t, err, tt.want)
 		})
 	}

@@ -490,7 +490,7 @@ func clientIDRequired(id config.ID, a config.Secret, issuer, callback string) er
 		"OAuth server %s does not register clients automatically, so %s needs a client ID: "+
 			"create an OAuth app with the provider, allowing the redirect URI %s, and set its public client ID in %s. "+
 			"agx logs in as a public client without a client secret; for a provider that requires one, such as GitHub, "+
-			"use a personal access token instead: set %s and store it with agx secret set %s --stdin",
+			"use a personal access token instead: set %s and store it with agx secret set %s",
 		issuer, id, callback, where, keychain, id,
 	)
 }

@@ -28,10 +28,8 @@ resends their environment inputs and native arguments under management
 authorization; that rebuilds endpoints and, for a process serving threads, its
 harness process. Endpoints needing no inputs rebuild on first use.
 
-A state file of a newer format version, left by a downgrade, keeps the daemon
-from starting with a hint to upgrade agx: replacing it would lose the launches
-it holds. Writes are atomic, so a file that does not decode comes from an edit
-by hand; the daemon moves it aside to `daemon-state.json.bad-<UTC time>`, starts
+Writes are atomic, so a file that does not decode, or holds another format
+version, comes from an edit by hand or another agx; the daemon moves it aside to `daemon-state.json.bad-<UTC time>`, starts
 without restoring, and keeps every launch file, since the launches of the
 moved file may still need them.
 
@@ -43,11 +41,10 @@ by harnesses are lost until relaunch or, for Codex app-server threads,
 `thread/resume`.
 
 `daemon stop --force` still revokes everything and clears the file. A command
-finding a daemon of another build that advertises `restores_launches` in its
-discovery replaces it even with active launches; older builds still refuse.
-Discovery also carries a `format` version; a build finding a newer one neither
-uses nor replaces that daemon and asks for an agx upgrade. `version` keeps
-naming the agx release, which builds without `format` compare.
+finding a daemon of another build replaces it even with active launches: every
+build keeps them for its successor. Builds compare only `build`, the executable's
+content hash, in discovery; there is no compatibility with builds that could not
+hand launches over.
 
 ## Addendum: graceful shutdown
 
@@ -56,8 +53,7 @@ daemon killed its MCP servers the moment it was asked to stop. Every stop that
 keeps launches, and a forced one briefly, now drains first. The daemon refuses
 new launches and MCP sessions with a retryable error marked
 `Agx-Daemon-Stopping`, lets requests in flight finish for
-`daemon.shutdown_grace_seconds` (default 10, `--timeout` on `daemon stop` and
-the new `daemon restart`), writes the state file, closes its listener, and only
+10 seconds (`--timeout` on `daemon stop` and the new `daemon restart`), writes the state file, closes its listener, and only
 then lets stdio servers exit (input closed, SIGTERM, kill) and deletes remote
 sessions; discovery goes last. SIGTERM and SIGINT, and the Windows console
 events Go reports as SIGTERM, stop it the same way; a second signal skips the

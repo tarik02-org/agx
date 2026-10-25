@@ -22,18 +22,18 @@ func TestHarnessMerge(t *testing.T) {
 	write(t, filepath.Join(dir, "more.yaml"), `harnesses:
   codex-cpa:
     args:
-      - [--from-more]
+      - values: [--from-more]
     environment:
       MORE: "yes"
 `)
-	root := write(t, filepath.Join(dir, "agx.yaml"), `imports: [{path: more.yaml}]
+	root := write(t, filepath.Join(dir, "agx.yaml"), `imports: [more.yaml]
 harnesses:
   codex:
     executable: '`+filepath.ToSlash(codex)+`'
   codex-cpa:
     base: codex
     args:
-      - [-c, 'model_provider="cpa"']
+      - values: [-c, 'model_provider="cpa"']
       - values: [--profile, cpa]
         modes: [interactive, exec, resume]
       - values: [--pt-flag]
@@ -122,7 +122,7 @@ func TestHarnessBaseChain(t *testing.T) {
 func TestHarnessHidden(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "more.yaml"), "harnesses:\n  claude: {hidden: false}\n")
-	root := write(t, filepath.Join(dir, "agx.yaml"), `imports: [{path: more.yaml}]
+	root := write(t, filepath.Join(dir, "agx.yaml"), `imports: [more.yaml]
 harnesses:
   codex: {hidden: true}
   codex-cpa: {base: codex}
@@ -156,7 +156,7 @@ func TestHarnessOverride(t *testing.T) {
 		filepath.Join(dir, "one.yaml"),
 		absolute(dir, "harnesses:\n  codex:\n    executable: ABS/a\n    args: [--a]\n"),
 	)
-	root := write(t, filepath.Join(dir, "agx.yaml"), absolute(dir, `imports: [{path: one.yaml}]
+	root := write(t, filepath.Join(dir, "agx.yaml"), absolute(dir, `imports: [one.yaml]
 harnesses:
   codex:
     override: true
@@ -181,7 +181,7 @@ func TestHarnessErrors(t *testing.T) {
 			name: "executable set in two fragments",
 			files: map[string]string{
 				"one.yaml": "harnesses:\n  codex:\n    executable: ABS/a\n",
-				"agx.yaml": "imports: [{path: one.yaml}]\nharnesses:\n  codex:\n    executable: ABS/b\n",
+				"agx.yaml": "imports: [one.yaml]\nharnesses:\n  codex:\n    executable: ABS/b\n",
 			},
 			want: []string{"agx.yaml:4", "harness codex: executable already set at", "one.yaml:3"},
 		},
@@ -189,7 +189,7 @@ func TestHarnessErrors(t *testing.T) {
 			name: "environment key set in two fragments",
 			files: map[string]string{
 				"one.yaml": "harnesses:\n  codex:\n    environment: {A: '1'}\n",
-				"agx.yaml": "imports: [{path: one.yaml}]\nharnesses:\n  codex:\n    environment: {A: '2'}\n",
+				"agx.yaml": "imports: [one.yaml]\nharnesses:\n  codex:\n    environment: {A: '2'}\n",
 			},
 			want: []string{"environment.A already set at", "one.yaml"},
 		},
@@ -197,7 +197,7 @@ func TestHarnessErrors(t *testing.T) {
 			name: "hidden set in two fragments",
 			files: map[string]string{
 				"one.yaml": "harnesses:\n  codex: {hidden: true}\n",
-				"agx.yaml": "imports: [{path: one.yaml}]\nharnesses:\n  codex: {hidden: false}\n",
+				"agx.yaml": "imports: [one.yaml]\nharnesses:\n  codex: {hidden: false}\n",
 			},
 			want: []string{"harness codex: hidden already set at", "one.yaml"},
 		},
@@ -212,7 +212,7 @@ func TestHarnessErrors(t *testing.T) {
 			want:  []string{`claude has no mode "exec"`},
 		},
 		{"empty modes", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    args: [{values: [-x], modes: []}]\n"}, []string{"modes must not be empty"}},
-		{"mixed args", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    args: [--a, [--b]]\n"}, []string{"args mixes strings with argument groups"}},
+		{"mixed args", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    args: [--a, {values: [--b]}]\n"}, []string{"args mixes strings with argument groups"}},
 		{"relative executable", map[string]string{"agx.yaml": "harnesses:\n  codex: {executable: bin/codex}\n"}, []string{"executable must be absolute"}},
 		{"reserved environment", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    environment: {AGX_MCP_GRANT: x}\n"}, []string{`invalid environment name "AGX_MCP_GRANT"`}},
 		{"non-string environment value", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    environment: {X: 1}\n"}, []string{"value must be a string"}},
@@ -223,14 +223,14 @@ func TestHarnessErrors(t *testing.T) {
 			for name, content := range tt.files {
 				write(t, filepath.Join(dir, name), absolute(dir, content))
 			}
-			_, err := config.Read(filepath.Join(dir, "agx.yaml"), builtins)
+			_, err := config.Load(filepath.Join(dir, "agx.yaml"), config.Options{Builtins: builtins})
 			wantError(t, err, tt.want...)
 		})
 	}
 
 	t.Run("unknown resource in a harness selection", func(t *testing.T) {
 		root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), "harnesses:\n  codex:\n    add: {skills: [nope]}\n")
-		_, err := config.Load(root, t.TempDir(), builtins)
+		_, err := config.Load(root, config.Options{Builtins: builtins, Cache: t.TempDir()})
 		wantError(t, err, `harness codex: unknown skill "nope"`)
 	})
 }

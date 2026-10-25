@@ -49,7 +49,7 @@ rule removed it. Harness-specific rules only show with `agx explain --harness
 
 **An MCP server's tools fail with an authorization error.**
 Run `agx secret login <id>` for an OAuth server, or store a new token with
-`agx secret set <id> --stdin` for a `keychain` one. `agx launch show
+`agx secret set <id>` for a `keychain` one. `agx launch show
 <launch-id>` shows each server's state in a running session, for example
 `needs-auth`.
 
@@ -75,16 +75,12 @@ plugins are not turned off (`features.plugins = false` in Codex's
 selects, so check with `agx explain` that the skill is selected.
 
 **"daemon of another build" or "version mismatch".**
-A daemon from another agx version is running and cannot be replaced
-automatically, usually because it has active launches of another configuration
-or is too old to hand over its running launches. Run `agx daemon stop` (or `agx daemon stop
---force` if it says so), then try again.
+A daemon from another agx build is running and the command could not replace
+it. Run `agx daemon stop`, then try again.
 
 **"upgrade agx".**
-A newer agx wrote the running daemon's files, its saved launches, or one of
-agx's own files (package pins, the shim manifest, the Codex plugin catalog),
-and this older agx will not overwrite them. Use the newer agx. To downgrade
-anyway, see [The daemon](daemon.md#commands).
+A newer agx wrote one of agx's own files (package pins, the shim manifest), and
+this older agx will not overwrite them. Use the newer agx.
 
 **"the agx wrapper started agx again instead of the native harness".**
 A link or shim named after the harness, and pointing at agx, comes before the

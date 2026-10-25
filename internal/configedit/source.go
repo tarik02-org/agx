@@ -145,7 +145,7 @@ func (s *Session) Load(file string) (*config.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return config.LoadWith(s.loadRoot(file), s.Paths.Cache, s.Builtins, overlay)
+	return config.Load(s.loadRoot(file), config.Options{Builtins: s.Builtins, Cache: s.Paths.Cache, Overlay: overlay})
 }
 
 func (s *Session) loadRoot(file string) string {

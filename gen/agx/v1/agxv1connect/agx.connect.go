@@ -70,11 +70,6 @@ const (
 	ConfigurationServiceApplyChangesProcedure = "/agx.v1.ConfigurationService/ApplyChanges"
 	// PackageServiceInstallProcedure is the fully-qualified name of the PackageService's Install RPC.
 	PackageServiceInstallProcedure = "/agx.v1.PackageService/Install"
-	// PackageServiceUpdateProcedure is the fully-qualified name of the PackageService's Update RPC.
-	PackageServiceUpdateProcedure = "/agx.v1.PackageService/Update"
-	// PackageServiceWatchOperationProcedure is the fully-qualified name of the PackageService's
-	// WatchOperation RPC.
-	PackageServiceWatchOperationProcedure = "/agx.v1.PackageService/WatchOperation"
 	// PackageServicePreviewSourceProcedure is the fully-qualified name of the PackageService's
 	// PreviewSource RPC.
 	PackageServicePreviewSourceProcedure = "/agx.v1.PackageService/PreviewSource"
@@ -128,6 +123,8 @@ const (
 	// RuntimeServiceStopMcpProcessProcedure is the fully-qualified name of the RuntimeService's
 	// StopMcpProcess RPC.
 	RuntimeServiceStopMcpProcessProcedure = "/agx.v1.RuntimeService/StopMcpProcess"
+	// RuntimeServiceStopProcedure is the fully-qualified name of the RuntimeService's Stop RPC.
+	RuntimeServiceStopProcedure = "/agx.v1.RuntimeService/Stop"
 	// SecretServiceLoginProcedure is the fully-qualified name of the SecretService's Login RPC.
 	SecretServiceLoginProcedure = "/agx.v1.SecretService/Login"
 	// SecretServiceSetSecretProcedure is the fully-qualified name of the SecretService's SetSecret RPC.
@@ -438,9 +435,8 @@ func (UnimplementedConfigurationServiceHandler) ApplyChanges(context.Context, *c
 
 // PackageServiceClient is a client for the agx.v1.PackageService service.
 type PackageServiceClient interface {
-	Install(context.Context, *connect.Request[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error)
-	Update(context.Context, *connect.Request[v1.UpdateRequest]) (*connect.Response[v1.UpdateResponse], error)
-	WatchOperation(context.Context, *connect.Request[v1.WatchOperationRequest]) (*connect.ServerStreamForClient[v1.WatchOperationResponse], error)
+	// Installs the configuration's packages, streaming progress and then the result or failure.
+	Install(context.Context, *connect.Request[v1.InstallRequest]) (*connect.ServerStreamForClient[v1.InstallResponse], error)
 	// Fetches a Git source into the cache and lists the skills it holds, without changing the
 	// configuration; previews expire after 30 minutes.
 	PreviewSource(context.Context, *connect.Request[v1.PreviewSourceRequest]) (*connect.Response[v1.PreviewSourceResponse], error)
@@ -468,18 +464,6 @@ func NewPackageServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+PackageServiceInstallProcedure,
 			connect.WithSchema(packageServiceMethods.ByName("Install")),
-			connect.WithClientOptions(opts...),
-		),
-		update: connect.NewClient[v1.UpdateRequest, v1.UpdateResponse](
-			httpClient,
-			baseURL+PackageServiceUpdateProcedure,
-			connect.WithSchema(packageServiceMethods.ByName("Update")),
-			connect.WithClientOptions(opts...),
-		),
-		watchOperation: connect.NewClient[v1.WatchOperationRequest, v1.WatchOperationResponse](
-			httpClient,
-			baseURL+PackageServiceWatchOperationProcedure,
-			connect.WithSchema(packageServiceMethods.ByName("WatchOperation")),
 			connect.WithClientOptions(opts...),
 		),
 		previewSource: connect.NewClient[v1.PreviewSourceRequest, v1.PreviewSourceResponse](
@@ -512,8 +496,6 @@ func NewPackageServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 // packageServiceClient implements PackageServiceClient.
 type packageServiceClient struct {
 	install         *connect.Client[v1.InstallRequest, v1.InstallResponse]
-	update          *connect.Client[v1.UpdateRequest, v1.UpdateResponse]
-	watchOperation  *connect.Client[v1.WatchOperationRequest, v1.WatchOperationResponse]
 	previewSource   *connect.Client[v1.PreviewSourceRequest, v1.PreviewSourceResponse]
 	readPreviewFile *connect.Client[v1.ReadPreviewFileRequest, v1.ReadPreviewFileResponse]
 	listSourceRefs  *connect.Client[v1.ListSourceRefsRequest, v1.ListSourceRefsResponse]
@@ -521,18 +503,8 @@ type packageServiceClient struct {
 }
 
 // Install calls agx.v1.PackageService.Install.
-func (c *packageServiceClient) Install(ctx context.Context, req *connect.Request[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error) {
-	return c.install.CallUnary(ctx, req)
-}
-
-// Update calls agx.v1.PackageService.Update.
-func (c *packageServiceClient) Update(ctx context.Context, req *connect.Request[v1.UpdateRequest]) (*connect.Response[v1.UpdateResponse], error) {
-	return c.update.CallUnary(ctx, req)
-}
-
-// WatchOperation calls agx.v1.PackageService.WatchOperation.
-func (c *packageServiceClient) WatchOperation(ctx context.Context, req *connect.Request[v1.WatchOperationRequest]) (*connect.ServerStreamForClient[v1.WatchOperationResponse], error) {
-	return c.watchOperation.CallServerStream(ctx, req)
+func (c *packageServiceClient) Install(ctx context.Context, req *connect.Request[v1.InstallRequest]) (*connect.ServerStreamForClient[v1.InstallResponse], error) {
+	return c.install.CallServerStream(ctx, req)
 }
 
 // PreviewSource calls agx.v1.PackageService.PreviewSource.
@@ -557,9 +529,8 @@ func (c *packageServiceClient) InspectSource(ctx context.Context, req *connect.R
 
 // PackageServiceHandler is an implementation of the agx.v1.PackageService service.
 type PackageServiceHandler interface {
-	Install(context.Context, *connect.Request[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error)
-	Update(context.Context, *connect.Request[v1.UpdateRequest]) (*connect.Response[v1.UpdateResponse], error)
-	WatchOperation(context.Context, *connect.Request[v1.WatchOperationRequest], *connect.ServerStream[v1.WatchOperationResponse]) error
+	// Installs the configuration's packages, streaming progress and then the result or failure.
+	Install(context.Context, *connect.Request[v1.InstallRequest], *connect.ServerStream[v1.InstallResponse]) error
 	// Fetches a Git source into the cache and lists the skills it holds, without changing the
 	// configuration; previews expire after 30 minutes.
 	PreviewSource(context.Context, *connect.Request[v1.PreviewSourceRequest]) (*connect.Response[v1.PreviewSourceResponse], error)
@@ -579,22 +550,10 @@ type PackageServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewPackageServiceHandler(svc PackageServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	packageServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("PackageService").Methods()
-	packageServiceInstallHandler := connect.NewUnaryHandler(
+	packageServiceInstallHandler := connect.NewServerStreamHandler(
 		PackageServiceInstallProcedure,
 		svc.Install,
 		connect.WithSchema(packageServiceMethods.ByName("Install")),
-		connect.WithHandlerOptions(opts...),
-	)
-	packageServiceUpdateHandler := connect.NewUnaryHandler(
-		PackageServiceUpdateProcedure,
-		svc.Update,
-		connect.WithSchema(packageServiceMethods.ByName("Update")),
-		connect.WithHandlerOptions(opts...),
-	)
-	packageServiceWatchOperationHandler := connect.NewServerStreamHandler(
-		PackageServiceWatchOperationProcedure,
-		svc.WatchOperation,
-		connect.WithSchema(packageServiceMethods.ByName("WatchOperation")),
 		connect.WithHandlerOptions(opts...),
 	)
 	packageServicePreviewSourceHandler := connect.NewUnaryHandler(
@@ -625,10 +584,6 @@ func NewPackageServiceHandler(svc PackageServiceHandler, opts ...connect.Handler
 		switch r.URL.Path {
 		case PackageServiceInstallProcedure:
 			packageServiceInstallHandler.ServeHTTP(w, r)
-		case PackageServiceUpdateProcedure:
-			packageServiceUpdateHandler.ServeHTTP(w, r)
-		case PackageServiceWatchOperationProcedure:
-			packageServiceWatchOperationHandler.ServeHTTP(w, r)
 		case PackageServicePreviewSourceProcedure:
 			packageServicePreviewSourceHandler.ServeHTTP(w, r)
 		case PackageServiceReadPreviewFileProcedure:
@@ -646,16 +601,8 @@ func NewPackageServiceHandler(svc PackageServiceHandler, opts ...connect.Handler
 // UnimplementedPackageServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedPackageServiceHandler struct{}
 
-func (UnimplementedPackageServiceHandler) Install(context.Context, *connect.Request[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.PackageService.Install is not implemented"))
-}
-
-func (UnimplementedPackageServiceHandler) Update(context.Context, *connect.Request[v1.UpdateRequest]) (*connect.Response[v1.UpdateResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.PackageService.Update is not implemented"))
-}
-
-func (UnimplementedPackageServiceHandler) WatchOperation(context.Context, *connect.Request[v1.WatchOperationRequest], *connect.ServerStream[v1.WatchOperationResponse]) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.PackageService.WatchOperation is not implemented"))
+func (UnimplementedPackageServiceHandler) Install(context.Context, *connect.Request[v1.InstallRequest], *connect.ServerStream[v1.InstallResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.PackageService.Install is not implemented"))
 }
 
 func (UnimplementedPackageServiceHandler) PreviewSource(context.Context, *connect.Request[v1.PreviewSourceRequest]) (*connect.Response[v1.PreviewSourceResponse], error) {
@@ -932,6 +879,9 @@ type RuntimeServiceClient interface {
 	// Stops one stdio MCP server process. Its sessions end, so harnesses reconnect and the next
 	// session starts it again; a shared process stops for every launch using it.
 	StopMcpProcess(context.Context, *connect.Request[v1.StopMcpProcessRequest]) (*connect.Response[v1.StopMcpProcessResponse], error)
+	// Stops the daemon. Without force, its active launches stay saved for the next daemon to
+	// restore; force revokes their MCP access.
+	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 }
 
 // NewRuntimeServiceClient constructs a client for the agx.v1.RuntimeService service. By default, it
@@ -987,6 +937,12 @@ func NewRuntimeServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(runtimeServiceMethods.ByName("StopMcpProcess")),
 			connect.WithClientOptions(opts...),
 		),
+		stop: connect.NewClient[v1.StopRequest, v1.StopResponse](
+			httpClient,
+			baseURL+RuntimeServiceStopProcedure,
+			connect.WithSchema(runtimeServiceMethods.ByName("Stop")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -999,6 +955,7 @@ type runtimeServiceClient struct {
 	callTool         *connect.Client[v1.CallToolRequest, v1.CallToolResponse]
 	listMcpProcesses *connect.Client[v1.ListMcpProcessesRequest, v1.ListMcpProcessesResponse]
 	stopMcpProcess   *connect.Client[v1.StopMcpProcessRequest, v1.StopMcpProcessResponse]
+	stop             *connect.Client[v1.StopRequest, v1.StopResponse]
 }
 
 // GetRuntime calls agx.v1.RuntimeService.GetRuntime.
@@ -1036,6 +993,11 @@ func (c *runtimeServiceClient) StopMcpProcess(ctx context.Context, req *connect.
 	return c.stopMcpProcess.CallUnary(ctx, req)
 }
 
+// Stop calls agx.v1.RuntimeService.Stop.
+func (c *runtimeServiceClient) Stop(ctx context.Context, req *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error) {
+	return c.stop.CallUnary(ctx, req)
+}
+
 // RuntimeServiceHandler is an implementation of the agx.v1.RuntimeService service.
 type RuntimeServiceHandler interface {
 	GetRuntime(context.Context, *connect.Request[v1.GetRuntimeRequest]) (*connect.Response[v1.GetRuntimeResponse], error)
@@ -1054,6 +1016,9 @@ type RuntimeServiceHandler interface {
 	// Stops one stdio MCP server process. Its sessions end, so harnesses reconnect and the next
 	// session starts it again; a shared process stops for every launch using it.
 	StopMcpProcess(context.Context, *connect.Request[v1.StopMcpProcessRequest]) (*connect.Response[v1.StopMcpProcessResponse], error)
+	// Stops the daemon. Without force, its active launches stay saved for the next daemon to
+	// restore; force revokes their MCP access.
+	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 }
 
 // NewRuntimeServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1105,6 +1070,12 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 		connect.WithSchema(runtimeServiceMethods.ByName("StopMcpProcess")),
 		connect.WithHandlerOptions(opts...),
 	)
+	runtimeServiceStopHandler := connect.NewUnaryHandler(
+		RuntimeServiceStopProcedure,
+		svc.Stop,
+		connect.WithSchema(runtimeServiceMethods.ByName("Stop")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.RuntimeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RuntimeServiceGetRuntimeProcedure:
@@ -1121,6 +1092,8 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 			runtimeServiceListMcpProcessesHandler.ServeHTTP(w, r)
 		case RuntimeServiceStopMcpProcessProcedure:
 			runtimeServiceStopMcpProcessHandler.ServeHTTP(w, r)
+		case RuntimeServiceStopProcedure:
+			runtimeServiceStopHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1156,6 +1129,10 @@ func (UnimplementedRuntimeServiceHandler) ListMcpProcesses(context.Context, *con
 
 func (UnimplementedRuntimeServiceHandler) StopMcpProcess(context.Context, *connect.Request[v1.StopMcpProcessRequest]) (*connect.Response[v1.StopMcpProcessResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.StopMcpProcess is not implemented"))
+}
+
+func (UnimplementedRuntimeServiceHandler) Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.Stop is not implemented"))
 }
 
 // SecretServiceClient is a client for the agx.v1.SecretService service.

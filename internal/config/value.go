@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tarik02-org/agx/internal/yaml"
+	"go.yaml.in/yaml/v4"
 )
 
 // maxValueSize bounds values read from files, matching the limit on stored secrets.

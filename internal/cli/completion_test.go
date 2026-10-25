@@ -91,11 +91,6 @@ func TestCompletion(t *testing.T) {
 		},
 		{[]string{"mcp", "remove", "fs", ""}, []string{}, cobra.ShellCompDirectiveNoFileComp},
 		{
-			[]string{"mcp", "login", ""},
-			[]string{"github\thttps://api.githubcopilot.com/mcp"},
-			cobra.ShellCompDirectiveNoFileComp,
-		},
-		{
 			[]string{"use", "--kind", "mcp", ""},
 			[]string{"docs\tMCP server", "fs\tMCP server", "github\tMCP server"},
 			cobra.ShellCompDirectiveNoFileComp,
@@ -148,11 +143,11 @@ func TestCompletionRootFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{
-		{"--config", other, "mcp", "login", ""},
-		{"--config=" + other, "mcp", "login", ""},
-		{"mcp", "login", "--config", other, ""},
+		{"--config", other, "secret", "login", ""},
+		{"--config=" + other, "secret", "login", ""},
+		{"secret", "login", "--config", other, ""},
 	} {
-		if got, _ := complete(t, args...); !slices.Equal(got, []string{"github\thttps://api.githubcopilot.com/mcp"}) {
+		if got, _ := complete(t, args...); !slices.Equal(got, []string{"github\toauth, on demand"}) {
 			t.Errorf("%q: candidates = %q", args, got)
 		}
 	}

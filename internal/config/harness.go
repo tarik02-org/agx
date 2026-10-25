@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/tarik02-org/agx/internal/yaml"
+	"go.yaml.in/yaml/v4"
 )
 
 // ModePassthrough is the mode of invocations that run without a managed launch, such as
@@ -44,24 +44,18 @@ type argGroupFields struct {
 }
 
 func (g *ArgGroup) UnmarshalYAML(node *yaml.Node) error {
-	switch node.Kind {
-	case yaml.SequenceNode:
-		return node.Load(&g.Values, yaml.WithKnownFields())
-	case yaml.MappingNode:
-		var plain argGroupFields
-		if err := node.Load(&plain, yaml.WithKnownFields()); err != nil {
-			return err
-		}
-		for i := 0; i+1 < len(node.Content); i += 2 {
-			if node.Content[i].Value == "modes" && len(plain.Modes) == 0 {
-				return errors.New("modes must not be empty; omit it to apply in every session mode")
-			}
-		}
-		g.Values, g.Modes = plain.Values, plain.Modes
-		return nil
-	default:
-		return errors.New("argument group must be a list of strings or {values, modes}")
+	if node.Kind != yaml.MappingNode {
+		return errors.New("argument group must be {values, modes}")
 	}
+	var plain argGroupFields
+	if err := node.Load(&plain, yaml.WithKnownFields()); err != nil {
+		return err
+	}
+	if mappingValue(node, "modes") != nil && len(plain.Modes) == 0 {
+		return errors.New("modes must not be empty; omit it to apply in every session mode")
+	}
+	g.Values, g.Modes = plain.Values, plain.Modes
+	return nil
 }
 
 // Args is a harness's argument groups: a flat list of strings is one group for every session mode.
@@ -69,7 +63,7 @@ type Args []ArgGroup
 
 func (a *Args) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind != yaml.SequenceNode {
-		return errors.New("args must be a list of strings or a list of argument groups")
+		return errors.New("args must be a list of strings or a list of {values, modes} groups")
 	}
 	scalars := 0
 	for _, child := range node.Content {
@@ -90,7 +84,7 @@ func (a *Args) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 	case scalars > 0:
 		return errors.New(
-			"args mixes strings with argument groups; write a flat list of strings or a list of groups",
+			"args mixes strings with argument groups; write a flat list of strings or a list of {values, modes}",
 		)
 	}
 	var groups []ArgGroup
@@ -105,7 +99,7 @@ func (a *Args) UnmarshalYAML(node *yaml.Node) error {
 type Harness struct {
 	Base        string           `yaml:"base"        jsonschema_description:"Harness this definition extends."`
 	Executable  string           `yaml:"executable"  jsonschema_description:"Absolute path of the native executable; may start with ~/."`
-	Args        Args             `yaml:"args"        jsonschema_description:"Native arguments inserted before the caller's: a list of strings for every session mode, or a list of groups."`
+	Args        Args             `yaml:"args"        jsonschema_description:"Native arguments inserted before the caller's: a list of strings for every session mode, or a list of {values, modes} groups."`
 	Environment map[string]Value `yaml:"environment" jsonschema_description:"Environment variables for the harness."`
 	Add         SelectionSpec    `yaml:"add"         jsonschema_description:"Resources selected for this harness."`
 	Remove      SelectionSpec    `yaml:"remove"      jsonschema_description:"Resources deselected for this harness."`

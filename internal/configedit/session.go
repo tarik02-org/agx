@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/tarik02-org/agx/internal/yaml"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/config/edit"
@@ -253,7 +253,7 @@ func (s *Session) selection(target Scope) [][]config.Resource {
 	for path, b := range s.Locks {
 		overlay[path] = b
 	}
-	c, err := config.LoadWith(s.Paths.Config, s.Paths.Cache, s.Builtins, overlay)
+	c, err := config.Load(s.Paths.Config, config.Options{Builtins: s.Builtins, Cache: s.Paths.Cache, Overlay: overlay})
 	if err != nil {
 		return nil
 	}

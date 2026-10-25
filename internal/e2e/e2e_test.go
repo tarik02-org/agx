@@ -476,7 +476,7 @@ func TestEndToEnd(t *testing.T) {
 		if strings.Contains(r.stdout, sealed) {
 			t.Fatal("secret status reveals the value")
 		}
-		if r := e.agx(nil, "secret", "set", "sealed", "--stdin"); r.code == 0 ||
+		if r := e.agx(nil, "secret", "set", "sealed"); r.code == 0 ||
 			!strings.Contains(r.stderr, "edit it with sops") {
 			t.Fatalf("secret set of a sops secret: exit %d, %s", r.code, r.stderr)
 		}
@@ -568,7 +568,7 @@ func TestEndToEnd(t *testing.T) {
 		if len(secrets.Secrets) != 2 || secrets.Secrets[0].ID == "" || secrets.Secrets[0].State == "" {
 			t.Fatalf("secret status = %+v", secrets)
 		}
-		e.jsonFail("failed_precondition", "secret", "set", "sealed", "--stdin")
+		e.jsonFail("failed_precondition", "secret", "set", "sealed")
 	})
 
 	t.Run("agent sdk initialize", func(t *testing.T) {
@@ -827,7 +827,7 @@ func TestDoctor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.write("config/agx.yaml", "imports:\n  - path: broken.yaml\n"+string(config))
+	e.write("config/agx.yaml", "imports: [broken.yaml]\n"+string(config))
 	rep, r = doctor()
 	if r.code != 0 || status(rep, "mcp", "broken") != "missing" {
 		t.Fatalf("doctor without --all exited %d: %+v", r.code, rep)

@@ -55,14 +55,14 @@ func newToolTarget(
 ) (*toolTarget, error) {
 	if launchID, grant, ok := inLaunch(); ok && !all {
 		// The launch's daemon runs while its harness does; its configuration is optional here.
-		c, _ := config.Load(paths.Config, paths.Cache, builtins)
+		c, _ := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
 		client, err := newClient(paths)
 		if err != nil {
 			return nil, err
 		}
 		return &toolTarget{client: client, token: grant, scope: &v1.McpCallScope{LaunchId: launchID}, config: c}, nil
 	}
-	c, err := config.Load(paths.Config, paths.Cache, builtins)
+	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
 	if err != nil {
 		return nil, coded(codeConfigInvalid, err)
 	}
@@ -352,11 +352,14 @@ func mcpCallCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 			var c *config.Config
 			if _, _, ok := inLaunch(); !ok || all {
 				var err error
-				if c, err = config.Load(paths.Config, paths.Cache, *builtins); err != nil {
+				if c, err = config.Load(
+					paths.Config,
+					config.Options{Builtins: *builtins, Cache: paths.Cache},
+				); err != nil {
 					return coded(codeConfigInvalid, err)
 				}
 			} else {
-				c, _ = config.Load(paths.Config, paths.Cache, *builtins)
+				c, _ = config.Load(paths.Config, config.Options{Builtins: *builtins, Cache: paths.Cache})
 			}
 			server, tool, err := splitTool(c, args[0])
 			if err != nil {

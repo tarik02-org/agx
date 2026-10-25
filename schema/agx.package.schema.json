@@ -45,23 +45,12 @@
       "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
     },
     "Instructions": {
-      "allOf": [
-        {
-          "not": {
-            "required": [
-              "ref",
-              "rev"
-            ]
-          }
-        }
-      ],
       "oneOf": [
         {
           "properties": {
             "path": false,
             "git": false,
             "ref": false,
-            "rev": false,
             "hash": false
           },
           "required": [
@@ -82,7 +71,6 @@
             "text": false,
             "git": false,
             "ref": false,
-            "rev": false,
             "hash": false
           },
           "required": [
@@ -101,12 +89,7 @@
         },
         "ref": {
           "type": "string",
-          "description": "git: branch, tag, or commit, locked at install."
-        },
-        "rev": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{40}$",
-          "description": "git: full 40-character commit; pins the source without a lock entry."
+          "description": "git: branch, tag, or commit, locked at install; a full 40-character commit pins the source without a lock entry."
         },
         "hash": {
           "type": "string",
@@ -145,14 +128,6 @@
         {
           "allOf": [
             {
-              "not": {
-                "required": [
-                  "ref",
-                  "rev"
-                ]
-              }
-            },
-            {
               "if": {
                 "required": [
                   "text"
@@ -171,7 +146,6 @@
                 "path": false,
                 "git": false,
                 "ref": false,
-                "rev": false,
                 "hash": false
               },
               "required": [
@@ -192,7 +166,6 @@
                 "text": false,
                 "git": false,
                 "ref": false,
-                "rev": false,
                 "hash": false
               },
               "required": [
@@ -215,12 +188,7 @@
             },
             "ref": {
               "type": "string",
-              "description": "git: branch, tag, or commit, locked at install."
-            },
-            "rev": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{40}$",
-              "description": "git: full 40-character commit; pins the source without a lock entry."
+              "description": "git: branch, tag, or commit, locked at install; a full 40-character commit pins the source without a lock entry."
             },
             "hash": {
               "type": "string",
@@ -276,10 +244,7 @@
                 "properties": {
                   "url": false,
                   "headers": false,
-                  "auth": false,
-                  "transport": {
-                    "const": "stdio"
-                  }
+                  "auth": false
                 }
               }
             },
@@ -293,10 +258,7 @@
                 "properties": {
                   "command": false,
                   "environment": false,
-                  "cwd": false,
-                  "transport": {
-                    "const": "http"
-                  }
+                  "cwd": false
                 }
               }
             }
@@ -317,14 +279,6 @@
             "id": {
               "$ref": "#/$defs/ID",
               "description": "MCP server ID, used for logins and native server names."
-            },
-            "transport": {
-              "type": "string",
-              "enum": [
-                "stdio",
-                "http"
-              ],
-              "description": "How to reach the server; inferred from url (http) or command (stdio)."
             },
             "command": {
               "items": {
@@ -398,10 +352,7 @@
             "properties": {
               "url": false,
               "headers": false,
-              "auth": false,
-              "transport": {
-                "const": "stdio"
-              }
+              "auth": false
             }
           }
         },
@@ -415,10 +366,7 @@
             "properties": {
               "command": false,
               "environment": false,
-              "cwd": false,
-              "transport": {
-                "const": "http"
-              }
+              "cwd": false
             }
           }
         }
@@ -436,14 +384,6 @@
         }
       ],
       "properties": {
-        "transport": {
-          "type": "string",
-          "enum": [
-            "stdio",
-            "http"
-          ],
-          "description": "How to reach the server; inferred from url (http) or command (stdio)."
-        },
         "command": {
           "items": {
             "type": "string"
@@ -539,17 +479,9 @@
     "Package": {
       "allOf": [
         {
-          "not": {
-            "required": [
-              "ref",
-              "rev"
-            ]
-          }
-        },
-        {
           "if": {
             "required": [
-              "rev"
+              "ref"
             ]
           },
           "then": {
@@ -582,12 +514,7 @@
         },
         "ref": {
           "type": "string",
-          "description": "Git branch, tag, or commit, locked at install."
-        },
-        "rev": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{40}$",
-          "description": "Full 40-character Git commit; pins the source without a lock entry."
+          "description": "Git branch, tag, or commit, locked at install; a full 40-character commit pins the source without a lock entry."
         },
         "hash": {
           "type": "string",
@@ -750,23 +677,12 @@
       ]
     },
     "Skill": {
-      "allOf": [
-        {
-          "not": {
-            "required": [
-              "ref",
-              "rev"
-            ]
-          }
-        }
-      ],
       "oneOf": [
         {
           "properties": {
             "path": false,
             "git": false,
             "ref": false,
-            "rev": false,
             "hash": false
           },
           "required": [
@@ -795,7 +711,6 @@
             "files": false,
             "git": false,
             "ref": false,
-            "rev": false,
             "hash": false
           },
           "required": [
@@ -814,12 +729,7 @@
         },
         "ref": {
           "type": "string",
-          "description": "git: branch, tag, or commit, locked at install."
-        },
-        "rev": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{40}$",
-          "description": "git: full 40-character commit; pins the source without a lock entry."
+          "description": "git: branch, tag, or commit, locked at install; a full 40-character commit pins the source without a lock entry."
         },
         "hash": {
           "type": "string",
@@ -875,9 +785,6 @@
     "SkillFile": {
       "oneOf": [
         {
-          "type": "string"
-        },
-        {
           "properties": {
             "content": {
               "type": "string"
@@ -891,9 +798,22 @@
           "required": [
             "content"
           ]
+        },
+        {
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File to copy, relative to this file; ending in / copies a directory."
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "path"
+          ]
         }
       ],
-      "description": "File text, a path to copy (ending in / for a directory), or {content, executable}."
+      "description": "{content, executable} for file text, or {path} to copy a file or directory."
     },
     "SkillItem": {
       "oneOf": [
@@ -910,14 +830,6 @@
         },
         {
           "allOf": [
-            {
-              "not": {
-                "required": [
-                  "ref",
-                  "rev"
-                ]
-              }
-            },
             {
               "if": {
                 "required": [
@@ -937,7 +849,6 @@
                 "path": false,
                 "git": false,
                 "ref": false,
-                "rev": false,
                 "hash": false
               },
               "required": [
@@ -966,7 +877,6 @@
                 "files": false,
                 "git": false,
                 "ref": false,
-                "rev": false,
                 "hash": false
               },
               "required": [
@@ -989,12 +899,7 @@
             },
             "ref": {
               "type": "string",
-              "description": "git: branch, tag, or commit, locked at install."
-            },
-            "rev": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{40}$",
-              "description": "git: full 40-character commit; pins the source without a lock entry."
+              "description": "git: branch, tag, or commit, locked at install; a full 40-character commit pins the source without a lock entry."
             },
             "hash": {
               "type": "string",

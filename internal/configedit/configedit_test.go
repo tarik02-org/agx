@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tarik02-org/agx/internal/yaml"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/config"
@@ -67,7 +67,7 @@ func (w *workspace) read(t *testing.T, rel string) string {
 
 func (w *workspace) session(t *testing.T) *configedit.Session {
 	t.Helper()
-	c, err := config.Load(w.paths.Config, w.paths.Cache, builtins)
+	c, err := config.Load(w.paths.Config, config.Options{Builtins: builtins, Cache: w.paths.Cache})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ instructions:
   agents:
     path: ./AGENTS.md
 imports:
-  - glob: agx.d/*.yaml
+  - agx.d/*.yaml
 `
 
 func TestDefineCreatesAndReplaces(t *testing.T) {
@@ -149,7 +149,7 @@ instructions:
   agents:
     path: ./AGENTS.md
 imports:
-  - glob: agx.d/*.yaml
+  - agx.d/*.yaml
 mcp:
   docs:
     url: https://example.com/mcp

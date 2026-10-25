@@ -76,10 +76,10 @@ that agx keeps in the OS keychain:
 
 ```sh
 agx mcp add github https://api.githubcopilot.com/mcp/ --auth keychain
-agx secret set github --stdin < github-token.txt
+agx secret set github < github-token.txt
 ```
 
-`--stdin` keeps the token out of your shell history; delete the file
+Reading the token from stdin keeps it out of your shell history; delete the file
 afterwards. Servers that log in with OAuth instead are covered in
 [MCP servers](mcp.md#logging-in).
 

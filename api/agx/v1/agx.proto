@@ -4,6 +4,7 @@ package agx.v1;
 
 option go_package = "github.com/tarik02-org/agx/gen/agx/v1;agxv1";
 
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
 // Control interface. Native MCP traffic uses separate HTTP endpoints.
@@ -28,9 +29,8 @@ service ConfigurationService {
 }
 
 service PackageService {
-  rpc Install(InstallRequest) returns (InstallResponse);
-  rpc Update(UpdateRequest) returns (UpdateResponse);
-  rpc WatchOperation(WatchOperationRequest) returns (stream WatchOperationResponse);
+  // Installs the configuration's packages, streaming progress and then the result or failure.
+  rpc Install(InstallRequest) returns (stream InstallResponse);
   // Fetches a Git source into the cache and lists the skills it holds, without changing the
   // configuration; previews expire after 30 minutes.
   rpc PreviewSource(PreviewSourceRequest) returns (PreviewSourceResponse);
@@ -77,6 +77,9 @@ service RuntimeService {
   // Stops one stdio MCP server process. Its sessions end, so harnesses reconnect and the next
   // session starts it again; a shared process stops for every launch using it.
   rpc StopMcpProcess(StopMcpProcessRequest) returns (StopMcpProcessResponse);
+  // Stops the daemon. Without force, its active launches stay saved for the next daemon to
+  // restore; force revokes their MCP access.
+  rpc Stop(StopRequest) returns (StopResponse);
 }
 
 service SecretService {
@@ -244,30 +247,13 @@ message CompleteDirectoryResponse {
 }
 
 message InstallRequest {
-  string request_id = 1;
-  bool frozen = 2;
+  bool frozen = 1;
 }
 message InstallResponse {
-  string operation_id = 1;
-}
-
-message UpdateRequest {
-  string request_id = 1;
-  repeated string package_ids = 2;
-}
-message UpdateResponse {
-  string operation_id = 1;
-}
-
-message WatchOperationRequest {
-  string operation_id = 1;
-}
-message WatchOperationResponse {
-  string operation_id = 1;
   oneof state {
-    PackageProgress progress = 2;
-    PackageResult result = 3;
-    Diagnostic failure = 4;
+    PackageProgress progress = 1;
+    PackageResult result = 2;
+    Diagnostic failure = 3;
   }
 }
 message PackageProgress {
@@ -281,19 +267,18 @@ message PackageResult {
 }
 
 message PrepareLaunchRequest {
-  string request_id = 1;
-  string snapshot_id = 2;
-  string directory = 3;
+  string snapshot_id = 1;
+  string directory = 2;
   // Built-in or defined harness name. The daemon resolves its definition.
-  string harness = 4;
+  string harness = 3;
   // Sensitive: native arguments may contain prompt bodies or credentials.
-  repeated string native_arguments = 5;
+  repeated string native_arguments = 4;
   // Sensitive: only names declared by the expected snapshot are accepted, and the variables
   // the harness's adapter forwards, such as CODEX_HOME; an empty value means unset.
-  map<string, string> environment_inputs = 6;
+  map<string, string> environment_inputs = 5;
   // Absolute path of the native executable the wrapper found on its own PATH, or the configured
   // one. The wrapper runs it; the daemon runs it only for native installation on its behalf.
-  string executable = 7;
+  string executable = 6;
 }
 message PrepareLaunchResponse {
   Launch launch = 1;
@@ -306,16 +291,14 @@ message PrepareLaunchResponse {
 }
 // The wrapper runs the native executable it resolved itself, so per-directory PATHs apply.
 message SpawnPlan {
-  reserved 1;
-  reserved "executable";
-  repeated string arguments = 2;
-  string directory = 3;
+  repeated string arguments = 1;
+  string directory = 2;
   // Sensitive: includes the stable harness MCP grant for this lease.
-  map<string, string> environment_overrides = 4;
-  repeated string unset_environment = 5;
+  map<string, string> environment_overrides = 3;
+  repeated string unset_environment = 4;
   // Prepended to the appendSystemPrompt of the first initialize request the harness reads from
   // stream-json standard input, which replaces the flag-given append. Empty leaves input untouched.
-  string initialize_system_prompt = 6;
+  string initialize_system_prompt = 5;
 }
 
 message Launch {
@@ -352,12 +335,11 @@ message ResolveThreadResponse {
 }
 
 message PrepareThreadLaunchRequest {
-  string request_id = 1;
-  string parent_launch_id = 2;
-  string snapshot_id = 3;
-  string directory = 4;
+  string parent_launch_id = 1;
+  string snapshot_id = 2;
+  string directory = 3;
   // Sensitive: only names declared by the expected snapshot are accepted.
-  map<string, string> environment_inputs = 5;
+  map<string, string> environment_inputs = 4;
 }
 message PrepareThreadLaunchResponse {
   Launch launch = 1;
@@ -525,6 +507,17 @@ message StopMcpProcessRequest {
   int64 pid = 1;
 }
 message StopMcpProcessResponse {}
+
+message StopRequest {
+  bool force = 1;
+  // How long requests in flight may finish; unset for the daemon's default.
+  google.protobuf.Duration grace = 2;
+}
+message StopResponse {
+  // Active launches the daemon keeps for the next one to restore.
+  uint32 kept_launches = 1;
+}
+
 message ListToolsRequest {
   McpCallScope scope = 1;
   // One server, whose failure fails the request; empty lists every server in scope, each with
@@ -799,12 +792,10 @@ message SourceRef {
 message InspectSourceRequest {
   // A Git URL or local repository, as a package's git field names it.
   string git = 1;
-  // Empty checks out the default branch.
+  // Empty checks out the default branch; a full commit hash checks out that commit.
   string ref = 2;
-  // A commit, which wins over ref.
-  string rev = 3;
   // The directory whose content is hashed; empty for the whole source.
-  string subdir = 4;
+  string subdir = 3;
 }
 message InspectSourceResponse {
   // The commit the ref or revision resolves to.

@@ -117,7 +117,7 @@ func run(osArgs []string, stdout io.Writer) int {
 		Short: "Load and validate the configuration",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := config.Load(paths.Config, paths.Cache, builtins)
+			c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
 			if scripting.enabled {
 				return printValidation(paths.Config, c, err)
 			}
@@ -149,65 +149,51 @@ func run(osArgs []string, stdout io.Writer) int {
 	schemaCmd.Flags().BoolVar(&schemaManifest, "package", false, "print the package manifest schema instead")
 	configCmd.AddCommand(schemaCmd)
 	root.AddCommand(configCmd)
-	shorts := map[string]string{
-		"resolve": "Show resources selected for a directory",
-		"explain": "Show why each resource is selected or removed for a directory",
+	verbose := false
+	harness := ""
+	explain := &cobra.Command{
+		Use:     "explain [directory]",
+		Short:   "Show why each resource is selected or removed for a directory",
+		GroupID: "config",
+		Args:    cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			directory := "."
+			if len(args) > 0 {
+				directory = args[0]
+			}
+			c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
+			if err != nil {
+				return coded(codeConfigInvalid, err)
+			}
+			if harness != "" && !slices.Contains(c.HarnessNames(), harness) {
+				return codedf(codeNotFound, "unknown harness %s", harness)
+			}
+			if info, err := os.Stat(directory); err != nil {
+				return statError("directory", directory, err)
+			} else if !info.IsDir() {
+				return codedf(codeInvalidRequest, "not a directory: %s", directory)
+			}
+			snapshot, err := c.Resolve(directory, harness)
+			if err != nil {
+				return err
+			}
+			for _, warning := range c.MissingWarnings(snapshot.Missing) {
+				ui.Diagnose(ui.Warn, "%s", warning)
+			}
+			if scripting.enabled {
+				return printJSON(explainDocument(snapshot))
+			}
+			if verbose || !ui.Stdout.Styled() {
+				return printExplain(snapshot)
+			}
+			return printExplainCompact(snapshot)
+		},
 	}
-	for _, name := range []string{"resolve", "explain"} {
-		verbose := false
-		harness := ""
-		cmd := &cobra.Command{
-			Use:     name + " [directory]",
-			Short:   shorts[name],
-			GroupID: "config",
-			Args:    cobra.MaximumNArgs(1),
-			RunE: func(cmd *cobra.Command, args []string) error {
-				directory := "."
-				if len(args) > 0 {
-					directory = args[0]
-				}
-				c, err := config.Load(paths.Config, paths.Cache, builtins)
-				if err != nil {
-					return coded(codeConfigInvalid, err)
-				}
-				if harness != "" && !slices.Contains(c.HarnessNames(), harness) {
-					return codedf(codeNotFound, "unknown harness %s", harness)
-				}
-				if info, err := os.Stat(directory); err != nil {
-					return statError("directory", directory, err)
-				} else if !info.IsDir() {
-					return codedf(codeInvalidRequest, "not a directory: %s", directory)
-				}
-				snapshot, err := c.Resolve(directory, harness)
-				if err != nil {
-					return err
-				}
-				for _, warning := range c.MissingWarnings(snapshot.Missing) {
-					ui.Diagnose(ui.Warn, "%s", warning)
-				}
-				if name == "resolve" {
-					if scripting.enabled {
-						return printJSON(resolveDocument(snapshot))
-					}
-					return printResolve(snapshot)
-				}
-				if scripting.enabled {
-					return printJSON(explainDocument(snapshot))
-				}
-				if verbose || !ui.Stdout.Styled() {
-					return printExplain(snapshot)
-				}
-				return printExplainCompact(snapshot)
-			},
-		}
-		if name == "explain" {
-			cmd.Flags().BoolVar(&verbose, "verbose", false, "show every step with full paths")
-		}
-		jsonFlag(cmd)
-		cmd.Flags().
-			StringVar(&harness, "harness", "", "resolve for a harness (default: harness-independent rules only)")
-		root.AddCommand(cmd)
-	}
+	explain.Flags().BoolVar(&verbose, "verbose", false, "show every step with full paths")
+	jsonFlag(explain)
+	explain.Flags().
+		StringVar(&harness, "harness", "", "resolve for a harness (default: harness-independent rules only)")
+	root.AddCommand(explain)
 	install := &cobra.Command{
 		Use:     "install",
 		Short:   "Install packages pinned by lockfiles and native harness plugins",
@@ -601,7 +587,7 @@ func installPackages(
 		}
 		return err
 	}
-	c, err := config.Load(paths.Config, paths.Cache, builtins)
+	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
 	if err != nil {
 		return coded(codeConfigInvalid, err)
 	}
@@ -703,7 +689,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 				view, err = c.runtime.GetRuntime(ctx, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
 			}
 			if daemonGone(err) {
-				return printDaemonAbsent(*paths)
+				return printDaemonAbsent()
 			}
 			if err != nil {
 				return err
@@ -813,7 +799,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			&grace,
 			"timeout",
 			0,
-			"how long requests in flight may finish (default daemon.shutdown_grace_seconds)",
+			"how long requests in flight may finish (default 10s)",
 		)
 		jsonFlag(sub)
 		command.AddCommand(sub)
@@ -945,15 +931,11 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 	}
 	jsonFlag(status)
 	command.AddCommand(status)
-	stdin := false
 	set := &cobra.Command{
-		Use:   "set <secret-id> --stdin",
+		Use:   "set <secret-id> < secret",
 		Short: "Store a keychain secret read from stdin",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !stdin {
-				return codedf(codeInvalidRequest, "use --stdin to supply the secret")
-			}
 			data, err := io.ReadAll(io.LimitReader(os.Stdin, 1024*1024+1))
 			if err != nil {
 				return err
@@ -977,7 +959,6 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			return printJSON(secretSetJSON{SecretID: args[0], Stored: true})
 		},
 	}
-	set.Flags().BoolVar(&stdin, "stdin", false, "read secret from stdin")
 	jsonFlag(set)
 	command.AddCommand(set)
 	logout := &cobra.Command{

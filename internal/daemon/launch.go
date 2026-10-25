@@ -2,9 +2,6 @@ package daemon
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"net/url"
@@ -31,28 +28,14 @@ func (s *Server) PrepareLaunch(
 	req *connect.Request[v1.PrepareLaunchRequest],
 ) (*connect.Response[v1.PrepareLaunchResponse], error) {
 	msg := req.Msg
-	if msg.RequestId == "" || len(msg.RequestId) > 256 || msg.SnapshotId == "" || !filepath.IsAbs(msg.Directory) {
-		return nil, rpcError(connect.CodeInvalidArgument, "request_id, snapshot_id and absolute directory required")
+	if msg.SnapshotId == "" || !filepath.IsAbs(msg.Directory) {
+		return nil, rpcError(connect.CodeInvalidArgument, "snapshot_id and absolute directory required")
 	}
 	if msg.Harness == "" {
 		return nil, rpcError(connect.CodeInvalidArgument, "harness is required")
 	}
 	if msg.Executable != "" && !filepath.IsAbs(msg.Executable) {
 		return nil, rpcError(connect.CodeInvalidArgument, "executable must be absolute")
-	}
-	fingerprint := config.Digest(msg)
-	s.mu.Lock()
-	previous, exists := s.preparations[msg.RequestId]
-	s.mu.Unlock()
-	if exists {
-		if previous.fingerprint != fingerprint {
-			return nil, rpcError(connect.CodeInvalidArgument, "idempotency key reused with different parameters")
-		}
-		response, err := s.openResponse(previous.response)
-		if err != nil {
-			return nil, rpcError(connect.CodeInternal, "cannot recover launch response")
-		}
-		return connect.NewResponse(response), nil
 	}
 	c, err := s.reload()
 	if err != nil {
@@ -188,25 +171,7 @@ func (s *Server) PrepareLaunch(
 		RenewAfterSeconds: uint32(c.Daemon.RenewSeconds),
 		Warnings:          plan.Warnings,
 	}
-	sealed, err := s.sealResponse(response)
-	if err != nil {
-		discard()
-		return nil, rpcError(connect.CodeInternal, "cannot cache launch response")
-	}
 	s.mu.Lock()
-	// A concurrent request with the same key may have finished first.
-	if previous, ok := s.preparations[msg.RequestId]; ok {
-		s.mu.Unlock()
-		discard()
-		if previous.fingerprint != fingerprint {
-			return nil, rpcError(connect.CodeInvalidArgument, "idempotency key reused with different parameters")
-		}
-		response, err := s.openResponse(previous.response)
-		if err != nil {
-			return nil, rpcError(connect.CodeInternal, "cannot recover launch response")
-		}
-		return connect.NewResponse(response), nil
-	}
 	// The state the next daemon restores is final: a launch it does not hold must go there.
 	if s.flushed {
 		s.mu.Unlock()
@@ -222,7 +187,6 @@ func (s *Server) PrepareLaunch(
 		)
 	}
 	s.launches[id] = l
-	s.preparations[msg.RequestId] = prepareRecord{fingerprint: fingerprint, response: sealed, launchID: id}
 	s.mu.Unlock()
 	s.persist(false)
 	return connect.NewResponse(response), nil
@@ -466,49 +430,4 @@ func (s *Server) RevokeLaunch(
 	}
 	s.persist(false)
 	return connect.NewResponse(&v1.RevokeLaunchResponse{}), nil
-}
-
-func (s *Server) responseCipher() (cipher.AEAD, error) {
-	key := auth.Verifier(s.discovery.Token)
-	block, err := aes.NewCipher(key[:])
-	if err != nil {
-		return nil, err
-	}
-	return cipher.NewGCM(block)
-}
-
-func (s *Server) sealResponse(response proto.Message) ([]byte, error) {
-	aead, err := s.responseCipher()
-	if err != nil {
-		return nil, err
-	}
-	nonce := make([]byte, aead.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, err
-	}
-	data, err := proto.Marshal(response)
-	if err != nil {
-		return nil, err
-	}
-	return aead.Seal(nonce, nonce, data, nil), nil
-}
-
-func (s *Server) openResponse(data []byte) (*v1.PrepareLaunchResponse, error) {
-	response := &v1.PrepareLaunchResponse{}
-	return response, s.openInto(data, response)
-}
-
-func (s *Server) openInto(data []byte, response proto.Message) error {
-	aead, err := s.responseCipher()
-	if err != nil {
-		return err
-	}
-	if len(data) < aead.NonceSize() {
-		return fmt.Errorf("invalid response cache")
-	}
-	plain, err := aead.Open(nil, data[:aead.NonceSize()], data[aead.NonceSize():], nil)
-	if err != nil {
-		return err
-	}
-	return proto.Unmarshal(plain, response)
 }

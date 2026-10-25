@@ -53,7 +53,7 @@ func canonical(t *testing.T, path string) string {
 
 func read(t *testing.T, root string) *config.Config {
 	t.Helper()
-	c, err := config.Read(root, builtins)
+	c, err := config.Load(root, config.Options{Builtins: builtins})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func read(t *testing.T, root string) *config.Config {
 // load reads and validates the configuration at root with an empty cache.
 func load(t *testing.T, root string) *config.Config {
 	t.Helper()
-	c, err := config.Load(root, filepath.Join(t.TempDir(), "cache"), builtins)
+	c, err := config.Load(root, config.Options{Builtins: builtins, Cache: filepath.Join(t.TempDir(), "cache")})
 	if err != nil {
 		t.Fatal(err)
 	}

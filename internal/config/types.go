@@ -25,17 +25,10 @@ type Source struct {
 	Column int    `json:"column"`
 }
 
-type Import struct {
-	Path     string `yaml:"path"     jsonschema_description:"Fragment to load, relative to this file."`
-	Glob     string `yaml:"glob"     jsonschema_description:"Pattern of fragments to load in lexical order; may match nothing."`
-	Optional bool   `yaml:"optional" jsonschema_description:"Skip a path import whose file is missing."`
-}
-
 type Package struct {
 	Path     string `yaml:"path"     json:"path,omitempty"   jsonschema_description:"Local package directory."`
 	Git      string `yaml:"git"      json:"git,omitempty"    jsonschema_description:"Git repository URL."`
-	Ref      string `yaml:"ref"      json:"ref,omitempty"    jsonschema_description:"Git branch, tag, or commit, locked at install."`
-	Rev      string `yaml:"rev"      json:"rev,omitempty"    jsonschema_description:"Full 40-character Git commit; pins the source without a lock entry."`
+	Ref      string `yaml:"ref"      json:"ref,omitempty"    jsonschema_description:"Git branch, tag, or commit, locked at install; a full 40-character commit pins the source without a lock entry."`
 	Hash     string `yaml:"hash"     json:"hash,omitempty"   jsonschema_description:"Content hash verified at install; pins the source without a lock entry."`
 	Subdir   string `yaml:"subdir"   json:"subdir,omitempty" jsonschema_description:"Package root within the source."`
 	Override bool   `yaml:"override" json:"-"                jsonschema_description:"Replace an existing definition."`
@@ -69,14 +62,13 @@ func (p Package) LockSource() Package {
 // Pinned reports whether the source determines its content without a lock entry: a full commit,
 // a content hash, or a directory inside the read-only Nix store.
 func (p Package) Pinned() bool {
-	return p.Rev != "" || p.Hash != "" || p.Path != "" && InNixStore(p.Path)
+	return IsCommit(p.Ref) || p.Hash != "" || p.Path != "" && InNixStore(p.Path)
 }
 
 // GitSource fetches a skill or instructions file from a repository as an anonymous package.
 type GitSource struct {
 	Git  string `yaml:"git"  json:"git,omitempty"  jsonschema_description:"Git repository holding the resource, fetched like a package; path is then relative to the checkout."`
-	Ref  string `yaml:"ref"  json:"ref,omitempty"  jsonschema_description:"git: branch, tag, or commit, locked at install."`
-	Rev  string `yaml:"rev"  json:"rev,omitempty"  jsonschema_description:"git: full 40-character commit; pins the source without a lock entry."`
+	Ref  string `yaml:"ref"  json:"ref,omitempty"  jsonschema_description:"git: branch, tag, or commit, locked at install; a full 40-character commit pins the source without a lock entry."`
 	Hash string `yaml:"hash" json:"hash,omitempty" jsonschema_description:"git: content hash of the checkout, verified at install; pins the source without a lock entry."`
 }
 
@@ -114,17 +106,17 @@ type Instructions struct {
 // LoadNative or LoadOnDemand once merged.
 type MCPServer struct {
 	// Transport follows from url (http) or command (stdio) once merged.
-	Transport   string           `yaml:"transport"   json:"transport"             jsonschema:"enum=stdio,enum=http"       jsonschema_description:"How to reach the server; inferred from url (http) or command (stdio)."`
-	Command     []string         `yaml:"command"     json:"command,omitempty"                                             jsonschema_description:"stdio: server command and arguments."`
-	URL         string           `yaml:"url"         json:"url,omitempty"                                                 jsonschema_description:"http: server URL; http or https."`
-	Cwd         string           `yaml:"cwd"         json:"cwd,omitempty"                                                 jsonschema_description:"stdio: working directory; defaults to the launch directory."`
-	Environment map[string]Value `yaml:"environment" json:"environment,omitempty"                                         jsonschema_description:"stdio: environment variables for the server."`
-	Headers     map[string]Value `yaml:"headers"     json:"headers,omitempty"                                             jsonschema_description:"http: extra request headers."`
+	Transport   string           `yaml:"-"           json:"transport"`
+	Command     []string         `yaml:"command"     json:"command,omitempty"     jsonschema_description:"stdio: server command and arguments."`
+	URL         string           `yaml:"url"         json:"url,omitempty"         jsonschema_description:"http: server URL; http or https."`
+	Cwd         string           `yaml:"cwd"         json:"cwd,omitempty"         jsonschema_description:"stdio: working directory; defaults to the launch directory."`
+	Environment map[string]Value `yaml:"environment" json:"environment,omitempty" jsonschema_description:"stdio: environment variables for the server."`
+	Headers     map[string]Value `yaml:"headers"     json:"headers,omitempty"     jsonschema_description:"http: extra request headers."`
 	Auth        MCPAuth          `yaml:"auth"        json:"auth"`
-	Description string           `yaml:"description" json:"description,omitempty"                                         jsonschema_description:"What the server offers, shown by agx mcp tools."`
-	Load        string           `yaml:"load"        json:"load"                  jsonschema:"enum=native,enum=on_demand" jsonschema_description:"native: in the harness's tool list (default); on_demand: reached with agx mcp call."`
+	Description string           `yaml:"description" json:"description,omitempty" jsonschema_description:"What the server offers, shown by agx mcp tools."`
+	Load        string           `yaml:"load"        json:"load"                  jsonschema_description:"native: in the harness's tool list (default); on_demand: reached with agx mcp call." jsonschema:"enum=native,enum=on_demand"`
 	Share       MCPShare         `yaml:"share"       json:"share,omitzero"`
-	Override    bool             `yaml:"override"    json:"-"                                                             jsonschema_description:"Replace an existing definition."`
+	Override    bool             `yaml:"override"    json:"-"                     jsonschema_description:"Replace an existing definition."`
 	Inline      bool             `yaml:"-"           json:"-"`
 	Source      Source           `yaml:"-"           json:"source"`
 }
@@ -238,20 +230,15 @@ type ScopeSpec struct {
 	Remove    SelectionSpec `yaml:"remove"    jsonschema_description:"Resources to deselect."`
 }
 
-// DefaultShutdownGraceSeconds is daemon.shutdown_grace_seconds when no fragment sets it.
-const DefaultShutdownGraceSeconds = 10
-
+// Daemon settings each come from at most one fragment.
 type Daemon struct {
-	LeaseSeconds         int   `yaml:"lease_seconds"          json:"lease_seconds"          jsonschema:"minimum=3" jsonschema_description:"Launch lease length; defaults to 60."`
-	RenewSeconds         int   `yaml:"renew_seconds"          json:"renew_seconds"          jsonschema:"minimum=1" jsonschema_description:"Lease renewal interval, shorter than the lease; defaults to 20."`
-	ShutdownGraceSeconds int   `yaml:"shutdown_grace_seconds" json:"shutdown_grace_seconds" jsonschema:"minimum=1" jsonschema_description:"How long a stopping daemon lets MCP requests and tool calls in flight finish; defaults to 10. daemon stop and daemon restart take --timeout instead."`
-	Autostart            *bool `yaml:"autostart"              json:"autostart,omitempty"                           jsonschema_description:"Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."`
-	Override             bool  `yaml:"override"               json:"-"                                             jsonschema_description:"Replace settings made by earlier fragments."`
+	LeaseSeconds int   `yaml:"lease_seconds" json:"lease_seconds"       jsonschema:"minimum=3" jsonschema_description:"Launch lease length; defaults to 60."`
+	RenewSeconds int   `yaml:"renew_seconds" json:"renew_seconds"       jsonschema:"minimum=1" jsonschema_description:"Lease renewal interval, shorter than the lease; defaults to 20."`
+	Autostart    *bool `yaml:"autostart"     json:"autostart,omitempty"                        jsonschema_description:"Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."`
 }
 
 type Document struct {
-	Imports      []Import            `yaml:"imports"      jsonschema_description:"Fragments loaded before this file."`
-	Lockfile     string              `yaml:"lockfile"     jsonschema_description:"Lockfile for unpinned packages declared here; defaults to agx.lock.json."`
+	Imports      []string            `yaml:"imports"      jsonschema_description:"Fragments loaded before this file, relative to it: paths, which must exist, or glob patterns, which may match nothing, loaded in lexical order."`
 	Packages     map[ID]Package      `yaml:"packages"     jsonschema_description:"Package sources by ID."`
 	Skills       map[ID]Skill        `yaml:"skills"       jsonschema_description:"Skills: directories containing SKILL.md, Git sources, or generated from content."`
 	Instructions map[ID]Instructions `yaml:"instructions" jsonschema_description:"Instructions applied to launches: files, Git sources, or text."`
@@ -283,8 +270,9 @@ type Config struct {
 	// rootDefinitions maps definitions from configuration fragments to their override flag,
 	// so package manifests merged later cannot replace them.
 	rootDefinitions map[string]bool
-	daemonSet       map[string]bool
-	builtins        Builtins
+	// daemonSet records the fragment that set each daemon setting.
+	daemonSet map[string]string
+	builtins  Builtins
 }
 
 // MissingPackage is a package that is not installed. Root is the declared package the warning
