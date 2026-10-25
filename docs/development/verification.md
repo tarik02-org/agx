@@ -43,7 +43,7 @@ children to their jobs before resuming them; the end-to-end test runs a stdio
 MCP server through that path in CI. Native Windows harness executables must be
 `.exe` files; PATH lookup skips `.cmd`/`.bat` wrappers and reports an actionable
 error when nothing else matches. Windows symlinks need Developer Mode, so shims
-there are hard links, and tests that need symlinks skip without them. Git
+there are copies, and tests that need symlinks skip without them. Git
 checkouts without symlink support store links as files, so their package hashes
 can differ from other platforms.
 

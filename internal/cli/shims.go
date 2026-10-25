@@ -2,13 +2,10 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"os/signal"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -26,15 +23,6 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 		Short:   "Expose harness definitions as executables on PATH",
 		GroupID: "harness",
 	}
-	dir := ""
-	command.PersistentFlags().
-		StringVar(&dir, "dir", "", `shim directory (default ~/.local/share/agx/shims, under $XDG_DATA_HOME when set; %LOCALAPPDATA%\agx\shims on Windows)`)
-	shimDir := func() (string, error) {
-		if dir != "" {
-			return filepath.Abs(dir)
-		}
-		return shims.DefaultDir()
-	}
 	// Shims exist for definitions only: a built-in's shim would shadow its native executable.
 	definitions := func() ([]string, error) {
 		c, err := config.Load(paths.Config, config.Options{Builtins: *builtins})
@@ -50,7 +38,7 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 		return names, nil
 	}
 	prepare := func() (string, string, []string, error) {
-		dir, err := shimDir()
+		dir, err := shims.Dir()
 		if err != nil {
 			return "", "", nil, err
 		}
@@ -105,10 +93,10 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 	}
 	remove := &cobra.Command{
 		Use:   "remove",
-		Short: "Delete the shims agx created",
+		Short: "Delete the shim directory",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dir, err := shimDir()
+			dir, err := shims.Dir()
 			if err != nil {
 				return err
 			}
@@ -121,7 +109,7 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 }
 
 // emitShimChanges reports what shims install or remove did. A person sees the changes made
-// before a failure; JSON mode reports the failure alone, as the shim directory records them.
+// before a failure; JSON mode reports the failure alone, as listing the directory shows them.
 func emitShimChanges(dir string, changes []shims.Change, err error, warn func()) error {
 	if err != nil && scripting.enabled {
 		return err
@@ -144,16 +132,8 @@ func printShimChanges(dir string, changes []shims.Change) error {
 	items := []string{}
 	for _, c := range changes {
 		counts[c.Action]++
-		switch c.Action {
-		case shims.Unchanged:
-		case shims.Kept:
-			reason := "not created by agx"
-			if c.State == shims.Modified {
-				reason = "changed since agx created it"
-			}
-			ui.Diagnose(ui.Warn, "left %s in place: %s", filepath.Join(dir, c.File), reason)
-		default:
-			items = append(items, fmt.Sprintf("%s %s %s", c.Action, out.ID(c.Name), out.Muted("("+string(c.Kind)+")")))
+		if c.Action != shims.Unchanged {
+			items = append(items, fmt.Sprintf("%s %s", c.Action, out.ID(c.Name)))
 		}
 	}
 	summary := []string{}
@@ -181,25 +161,14 @@ func printShims(dir string, entries []shims.Entry) error {
 	}
 	rows := [][]string{}
 	for _, e := range entries {
-		kind, target := string(e.Kind), e.Target
-		if kind == "" {
-			kind, target = "-", "-"
+		state := out.Badge(ui.Warn, string(e.State))
+		if e.State == shims.Current {
+			state = out.Badge(ui.OK, string(e.State))
 		}
-		rows = append(rows, []string{out.ID(e.Name), kind, shimState(out, e.State), out.Path(target)})
+		rows = append(rows, []string{out.ID(e.Name), state})
 	}
-	_, err := io.WriteString(out, header+out.Table([]string{"NAME", "KIND", "STATE", "TARGET"}, rows, 3))
+	_, err := io.WriteString(out, header+out.Table([]string{"NAME", "STATE"}, rows, 3))
 	return err
-}
-
-func shimState(out *ui.Printer, state shims.State) string {
-	switch state {
-	case shims.Current:
-		return out.Badge(ui.OK, string(state))
-	case shims.Stale, shims.Missing:
-		return out.Badge(ui.Warn, string(state))
-	default:
-		return out.Badge(ui.Error, string(state))
-	}
 }
 
 // warnShims reports what keeps shims from running as intended.
@@ -223,24 +192,10 @@ func warnShims(dir, target string, names []string) {
 	}
 }
 
-// handOff runs a harness definition through the current agx for a shim that still holds an older
-// build, as a script shim does, and returns its exit status. Console interrupts reach both
-// processes; the shim leaves them to the current agx.
+// handOff runs a harness definition through the agx a shim records, which on Windows is not the
+// shim's own copy, and returns its exit status.
 func handOff(current, name string, args []string) int {
 	cmd := exec.CommandContext(context.Background(), current, append([]string{name}, args...)...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	interrupts := make(chan os.Signal, 1)
-	signal.Notify(interrupts, platform.Interrupts()...)
-	defer signal.Stop(interrupts)
-	err := cmd.Run()
-	var exit *exec.ExitError
-	switch {
-	case err == nil:
-		return 0
-	case errors.As(err, &exit) && exit.ExitCode() >= 0:
-		return exit.ExitCode()
-	default:
-		ui.Diagnose(ui.Error, "%s: cannot run the current agx %s: %v", name, current, err)
-		return 1
-	}
+	cmd.Stdin, cmd.Stdout, cmd.Stderr, cmd.Env = os.Stdin, os.Stdout, os.Stderr, os.Environ()
+	return exitCode(passthrough(cmd))
 }

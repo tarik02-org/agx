@@ -123,18 +123,14 @@ func TestJSONShapes(t *testing.T) {
 		}
 	}
 
-	dir := t.TempDir()
-	changes := "{changes:[{action:string,file:string,kind:string,name:string,target:string}],directory:string,on_path:bool}"
+	changes := "{changes:[{action:string,file:string,name:string}],directory:string,on_path:bool}"
 	for _, test := range []struct {
 		args []string
 		want string
 	}{
-		{
-			[]string{"shims", "list", "--dir", dir},
-			"{directory:string,on_path:bool,shims:[{file:string,name:string,state:string}],target:string}",
-		},
-		{[]string{"shims", "install", "--dir", dir}, changes},
-		{[]string{"shims", "remove", "--dir", dir}, changes},
+		{[]string{"shims", "list"}, "{directory:string,on_path:bool,shims:[{file:string,name:string,state:string}],target:string}"},
+		{[]string{"shims", "install"}, changes},
+		{[]string{"shims", "remove"}, changes},
 	} {
 		var data any
 		okJSON(t, &data, test.args...)

@@ -39,7 +39,7 @@ See [Where files live](configuration.md#where-files-live) for the defaults.
 | `agx <definition> [args...]` | launch one of your [harness definitions](harnesses.md#harness-definitions) |
 | `agx run <harness> -- [args...]` | launch a harness by name |
 | `agx sessions [query] [--all]` | list sessions to resume, here or (`--all`) everywhere |
-| `agx shims install\|list\|remove [--dir <dir>]` | manage [shims](harnesses.md#shims) |
+| `agx shims install\|list\|remove` | manage [shims](harnesses.md#shims) |
 
 Arguments after a harness name go to the harness unchanged; agx's own options
 go before it.

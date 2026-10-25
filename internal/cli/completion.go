@@ -330,7 +330,6 @@ func (k *completer) registerCompletions(root *cobra.Command) {
 		"file":       yamlFiles,
 		"config":     yamlFiles,
 		"cache":      directories,
-		"dir":        directories,
 		"executable": files,
 		"color":      fixed(string(ui.ColorAuto), string(ui.ColorAlways), string(ui.ColorNever)),
 		"kind":       fixed(strings.Split(config.JoinKinds(config.SelectionKinds), ", ")...),

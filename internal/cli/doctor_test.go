@@ -298,7 +298,7 @@ func TestLinkedOnPath(t *testing.T) {
 
 func TestShimRows(t *testing.T) {
 	entry := func(name string, state shims.State) shims.Entry {
-		return shims.Entry{Shim: shims.Shim{Name: name}, State: state}
+		return shims.Entry{Name: name, State: state}
 	}
 	rows := shimRows("/s", []shims.Entry{entry("work", shims.Missing)}, false, nil)
 	if len(rows) != 1 || rows[0].Status != checkWarn || !strings.Contains(rows[0].Hint, "agx shims install") {

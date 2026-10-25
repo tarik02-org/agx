@@ -284,7 +284,6 @@ func TestJSONCommands(t *testing.T) {
 	okJSON(t, nil, "update")
 	failJSON(t, 1, codeNotFound, "update", "missing", "--json")
 
-	dir := filepath.Join(t.TempDir(), "shims")
 	var shims struct {
 		Directory string `json:"directory"`
 		Changes   []struct {
@@ -292,12 +291,12 @@ func TestJSONCommands(t *testing.T) {
 			Action string `json:"action"`
 		} `json:"changes"`
 	}
-	okJSON(t, &shims, "shims", "install", "--dir", dir)
+	okJSON(t, &shims, "shims", "install")
 	if len(shims.Changes) != 1 || shims.Changes[0].Name != "codex-work" || shims.Changes[0].Action != "created" {
 		t.Fatalf("shims install = %+v", shims)
 	}
-	okJSON(t, nil, "shims", "list", "--dir", dir)
-	okJSON(t, &shims, "shims", "remove", "--dir", dir)
+	okJSON(t, nil, "shims", "list")
+	okJSON(t, &shims, "shims", "remove")
 	if len(shims.Changes) != 1 || shims.Changes[0].Action != "removed" {
 		t.Fatalf("shims remove = %+v", shims)
 	}

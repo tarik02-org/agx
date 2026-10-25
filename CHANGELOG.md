@@ -52,3 +52,5 @@ agx has not been released yet. What it does today:
 - Git packages fetch only the requested commit instead of cloning the repository.
 - MCP `auth` takes `!env` and `!file`, and `age_key` a literal key; removed the `environment`,
   `file`, and `daemon_environment` secret kinds.
+- agx owns its shim directory: removed `agx shims --dir`, and `install` removes other files there.
+  Windows shims are copies that run the agx recorded beside them.

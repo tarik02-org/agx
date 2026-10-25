@@ -692,7 +692,7 @@ func shimChecks(c *config.Config, registry adapters.Registry) []check {
 	if len(names) == 0 {
 		return nil
 	}
-	dir, err := shims.DefaultDir()
+	dir, err := shims.Dir()
 	if err != nil {
 		return []check{{Group: "shims", Name: "shims", Status: checkWarn, Detail: err.Error()}}
 	}
@@ -763,10 +763,6 @@ func shimRows(dir string, entries []shims.Entry, onPath bool, collisions []shims
 			", ",
 		)
 		row.Hint = "run agx shims install"
-	case len(counts[shims.Modified])+len(counts[shims.Conflict]) > 0:
-		row.Status = checkWarn
-		row.Detail = "not agx's: " + strings.Join(slices.Concat(counts[shims.Modified], counts[shims.Conflict]), ", ")
-		row.Hint = "remove or rename those files, then run agx shims install"
 	}
 	rows := []check{row}
 	path := check{Group: "shims", Name: "PATH", Status: checkPass, Detail: dir + " is on PATH"}
