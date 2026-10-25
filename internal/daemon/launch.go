@@ -17,7 +17,6 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
-	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/mcpruntime"
 	"github.com/tarik02-org/agx/internal/securefs"
@@ -112,8 +111,8 @@ func (s *Server) PrepareLaunch(
 	target.Resolved = msg.Executable
 	l := &launch{
 		view:         view,
-		grant:        auth.Verifier(grant),
-		lifecycle:    auth.Verifier(lifecycle),
+		grant:        verifier(grant),
+		lifecycle:    verifier(lifecycle),
 		ctx:          launchCtx,
 		cancel:       cancel,
 		endpoints:    endpoints,
@@ -351,7 +350,7 @@ func (s *Server) lifecycleLaunch(id, header string) (*launch, error) {
 	if l == nil {
 		return nil, rpcError(connect.CodeNotFound, "unknown launch")
 	}
-	if !strings.HasPrefix(header, "Bearer ") || !auth.Match(l.lifecycle, strings.TrimPrefix(header, "Bearer ")) {
+	if !strings.HasPrefix(header, "Bearer ") || !matches(l.lifecycle, strings.TrimPrefix(header, "Bearer ")) {
 		return nil, rpcError(connect.CodeUnauthenticated, "lifecycle credential required")
 	}
 	return l, nil

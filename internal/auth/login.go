@@ -201,7 +201,7 @@ func (m *Manager) RequireLogin(ctx context.Context, id config.ID, a config.Secre
 	known := m.required[k] && m.hints[resource] == hint
 	m.mu.Unlock()
 	if !known {
-		if _, err := m.protectedResource(ctx, serverURL, hint); err != nil {
+		if _, err := protectedResource(ctx, serverURL, hint); err != nil {
 			return err
 		}
 	}
@@ -219,7 +219,7 @@ func (m *Manager) RequireLogin(ctx context.Context, id config.ID, a config.Secre
 // protectedResource fetches RFC 9728 metadata for serverURL from hint, when the server sent
 // one in a 401 challenge, then from the well-known locations, path-specific before root.
 // Metadata describing another resource is never used (RFC 9728 section 3.3).
-func (m *Manager) protectedResource(
+func protectedResource(
 	ctx context.Context,
 	serverURL, hint string,
 ) (oauthex.ProtectedResourceMetadata, error) {
@@ -253,7 +253,7 @@ func (m *Manager) protectedResource(
 	failure := errors.New("OAuth resource discovery failed; configure issuer explicitly")
 	for _, c := range candidates {
 		var metadata oauthex.ProtectedResourceMetadata
-		if err := m.getJSON(ctx, c.endpoint, &metadata); err != nil {
+		if err := getJSON(ctx, c.endpoint, &metadata); err != nil {
 			continue
 		}
 		advertised, err := normalizeResource(metadata.Resource)
@@ -274,13 +274,13 @@ func (m *Manager) protectedResource(
 // challenge requests serverURL without a credential, as on-demand OAuth meets it, and returns
 // whether it answered 401 and the resource_metadata of its challenge, "" when it sent none. A GET
 // opens no MCP session.
-func (m *Manager) challenge(ctx context.Context, serverURL string) (unauthorized bool, hint string, err error) {
+func challenge(ctx context.Context, serverURL string) (unauthorized bool, hint string, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL, nil)
 	if err != nil {
 		return false, "", err
 	}
 	req.Header.Set("Accept", "text/event-stream")
-	resp, err := m.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return false, "", fmt.Errorf("cannot reach %s", serverURL)
 	}
@@ -295,12 +295,11 @@ func (m *Manager) challenge(ctx context.Context, serverURL string) (unauthorized
 // recognizes one: it answers a request without a credential with 401 and advertises protected
 // resource metadata. Only reaching the server is an error; any other answer means no login.
 func NeedsLogin(ctx context.Context, serverURL string) (bool, error) {
-	m := New("", nil)
-	unauthorized, hint, err := m.challenge(ctx, serverURL)
+	unauthorized, hint, err := challenge(ctx, serverURL)
 	if err != nil || !unauthorized {
 		return false, err
 	}
-	_, err = m.protectedResource(ctx, serverURL, hint)
+	_, err = protectedResource(ctx, serverURL, hint)
 	return err == nil, nil
 }
 
@@ -333,9 +332,9 @@ func (m *Manager) begin(
 		hint := m.hints[normalized]
 		m.mu.Unlock()
 		if hint == "" {
-			_, hint, _ = m.challenge(ctx, serverURL)
+			_, hint, _ = challenge(ctx, serverURL)
 		}
-		metadata, err := m.protectedResource(ctx, serverURL, hint)
+		metadata, err := protectedResource(ctx, serverURL, hint)
 		if err != nil {
 			return nil, err
 		}
@@ -372,7 +371,7 @@ func (m *Manager) begin(
 				GrantTypes:              []string{"authorization_code", "refresh_token"},
 				ResponseTypes:           []string{"code"},
 			},
-			m.client,
+			client,
 		)
 		if err != nil || registration.ClientSecret != "" {
 			return nil, fmt.Errorf("OAuth public-client registration failed")
@@ -423,7 +422,7 @@ func (m *Manager) authorizationServer(ctx context.Context, issuer string) (oauth
 		root + path + "/.well-known/openid-configuration",
 	}) {
 		var metadata oauthex.AuthServerMeta
-		if m.getJSON(ctx, endpoint, &metadata) != nil {
+		if getJSON(ctx, endpoint, &metadata) != nil {
 			continue
 		}
 		if metadata.Issuer != issuer {
@@ -519,7 +518,7 @@ func (m *Manager) Callback(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadRequest, errors.New("authorization was not completed"))
 		return
 	}
-	ctx := context.WithValue(r.Context(), oauth2.HTTPClient, m.client)
+	ctx := context.WithValue(r.Context(), oauth2.HTTPClient, client)
 	token, err := p.oauth.Exchange(
 		ctx,
 		query.Get("code"),

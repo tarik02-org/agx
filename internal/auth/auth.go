@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,7 +41,6 @@ type Manager struct {
 	// refused maps credential keys whose refresh token the authorization server refused to the
 	// reason, until a new login or logout; refreshing again could not succeed.
 	refused  map[string]string
-	client   *http.Client
 	callback string
 	store    *Store
 }
@@ -76,7 +74,7 @@ type Status struct {
 }
 
 // New returns a manager whose OAuth logins return to callback and whose stored secrets live in
-// store, which may be nil for a manager that only checks whether a server needs a login.
+// store.
 func New(callback string, store *Store) *Manager {
 	return &Manager{
 		store:       store,
@@ -88,12 +86,14 @@ func New(callback string, store *Store) *Manager {
 		required:    map[string]bool{},
 		hints:       map[string]string{},
 		refused:     map[string]string{},
-		client: &http.Client{
-			Timeout:       20 * time.Second,
-			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
-		},
-		callback: callback,
+		callback:    callback,
 	}
+}
+
+// client makes every OAuth and discovery request; it does not follow redirects.
+var client = &http.Client{
+	Timeout:       20 * time.Second,
+	CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 }
 
 // key names a secret's keychain item. It covers the definition, so editing a secret starts
@@ -442,7 +442,7 @@ func (m *Manager) refresh(ctx context.Context, saved credential) (token *oauth2.
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	resp, err := m.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, false, fmt.Errorf("cannot reach the token endpoint: %w", err)
 	}
@@ -624,7 +624,7 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 	return s
 }
 
-func (m *Manager) getJSON(ctx context.Context, endpoint string, out any) error {
+func getJSON(ctx context.Context, endpoint string, out any) error {
 	if err := secureURL(endpoint); err != nil {
 		return err
 	}
@@ -632,7 +632,7 @@ func (m *Manager) getJSON(ctx context.Context, endpoint string, out any) error {
 	if err != nil {
 		return err
 	}
-	resp, err := m.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("discovery request failed")
 	}
@@ -682,9 +682,6 @@ func SystemEnvironment() []string {
 	}
 	return env
 }
-
-func Verifier(value string) [32]byte         { return sha256.Sum256([]byte(value)) }
-func Match(hash [32]byte, value string) bool { return hash == Verifier(value) }
 
 // keychainTimeout bounds an OS keychain call, which blocks while the keychain is locked or shows
 // an access prompt, so callers get an explanation before their own deadline instead of a timeout.

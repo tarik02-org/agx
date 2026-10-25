@@ -11,7 +11,6 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
-	"github.com/tarik02-org/agx/internal/auth"
 )
 
 // staleSnapshot is why the MCP servers of an attached launch are not served when its directory
@@ -102,7 +101,7 @@ func (s *Server) attachable(id, grant, lifecycle string) (*launch, error) {
 	if l == nil {
 		return nil, nil
 	}
-	if !auth.Match(l.grant, grant) || !auth.Match(l.lifecycle, lifecycle) {
+	if !matches(l.grant, grant) || !matches(l.lifecycle, lifecycle) {
 		return nil, rpcError(connect.CodeUnauthenticated, "credentials do not match the launch")
 	}
 	if l.view.State == v1.Launch_STATE_EXPIRED {
@@ -219,8 +218,8 @@ func (s *Server) newLaunch(view *v1.Launch, b launchBasis, grant, lifecycle stri
 			ParentLaunchId: view.ParentLaunchId,
 			SessionId:      view.SessionId,
 		},
-		grant:        auth.Verifier(grant),
-		lifecycle:    auth.Verifier(lifecycle),
+		grant:        verifier(grant),
+		lifecycle:    verifier(lifecycle),
 		ctx:          ctx,
 		cancel:       cancel,
 		snapshot:     b.snapshot,
