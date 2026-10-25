@@ -69,9 +69,9 @@ type lease struct {
 const crashRestartInterval = 10 * time.Second
 
 // replaceCrashed starts a daemon when the one discovery names is gone without having stopped:
-// a stopping daemon removes its discovery file last, so one that stays behind unanswered was
-// killed. Nothing else would start a daemon for the harness, whose MCP requests go straight to
-// the port. It reports whether a daemon answers afterwards.
+// it does not answer, and no daemon holds the startup lock, which a stopping daemon keeps until
+// it exits, after it stopped listening. Nothing else would start a daemon for the harness, whose
+// MCP requests go straight to the port. It reports whether a daemon answers afterwards.
 func (l *lease) replaceCrashed(ctx context.Context) bool {
 	if time.Since(l.started) < crashRestartInterval {
 		return false
@@ -84,6 +84,9 @@ func (l *lease) replaceCrashed(ctx context.Context) bool {
 	_, err = c.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{}))
 	cancel()
 	if err == nil || connect.CodeOf(err) != connect.CodeUnavailable {
+		return false
+	}
+	if held, err := lockHeld(l.paths); err != nil || held {
 		return false
 	}
 	l.started = time.Now()
