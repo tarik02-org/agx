@@ -4,40 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 	"unicode"
-
-	"github.com/pelletier/go-toml/v2"
 
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/securefs"
 )
-
-// TOMLAssignment renders key=value for a TOML command-line override: value is a string or a
-// map of string fields, rendered as an inline table.
-func TOMLAssignment(key string, value any) (string, error) {
-	// Marshal a one-field document to get correct TOML escaping and inline JSON-like tables.
-	if str, ok := value.(string); ok {
-		b, err := toml.Marshal(map[string]string{"v": str})
-		if err != nil {
-			return "", err
-		}
-		return key + "=" + strings.TrimSpace(strings.TrimPrefix(string(b), "v =")), nil
-	}
-	fields := value.(map[string]any)
-	keys := []string{}
-	for k := range fields {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	parts := []string{}
-	for _, k := range keys {
-		parts = append(parts, strconv.Quote(k)+" = "+strconv.Quote(fields[k].(string)))
-	}
-	return key + "={" + strings.Join(parts, ", ") + "}", nil
-}
 
 // SkillNames names the snapshot's skills inside the shared artifacts by their native names, which
 // harnesses show; skills sharing a native name each get a suffix from their ID.

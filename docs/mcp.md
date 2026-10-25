@@ -88,7 +88,8 @@ daemon receives the login there, on a port that can change. agx acts as a
 public client: it uses PKCE and no client secret, so this only works with
 providers that allow public clients.
 
-Optional OAuth fields: `scopes` (a list), `issuer`, and `resource`.
+Optional OAuth fields: `scopes` (a list), `issuer`, and `resource`. The issuer and its
+endpoints must use https; plain http is accepted only on loopback addresses.
 
 ### GitHub
 

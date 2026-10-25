@@ -259,10 +259,10 @@ func TestBuildCodex(t *testing.T) {
 		"-c",
 		"plugins." + selected + "@agx-managed.enabled=true",
 		"-c",
-		`mcp_servers.agx-up={"bearer_token_env_var" = "AGX_MCP_GRANT", "url" = "http://127.0.0.1:9/launch/L/mcp/up"}`,
+		`mcp_servers.agx-up={bearer_token_env_var = 'AGX_MCP_GRANT', url = 'http://127.0.0.1:9/launch/L/mcp/up'}`,
 		"-c",
-		`mcp_servers.agx-team-remote={"bearer_token_env_var" = "AGX_MCP_GRANT", ` +
-			`"url" = "http://127.0.0.1:9/launch/L/mcp/team%2Fremote"}`,
+		`mcp_servers.agx-team-remote={bearer_token_env_var = 'AGX_MCP_GRANT', ` +
+			`url = 'http://127.0.0.1:9/launch/L/mcp/team%2Fremote'}`,
 		"--definition",
 		"exec",
 		"hi",
@@ -357,10 +357,10 @@ func TestBuildCodexPluginsDisabled(t *testing.T) {
 		"-c",
 		`developer_instructions="first\n\nsecond\n\n"`,
 		"-c",
-		`mcp_servers.agx-up={"bearer_token_env_var" = "AGX_MCP_GRANT", "url" = "http://127.0.0.1:9/launch/L/mcp/up"}`,
+		`mcp_servers.agx-up={bearer_token_env_var = 'AGX_MCP_GRANT', url = 'http://127.0.0.1:9/launch/L/mcp/up'}`,
 		"-c",
-		`mcp_servers.agx-team-remote={"bearer_token_env_var" = "AGX_MCP_GRANT", ` +
-			`"url" = "http://127.0.0.1:9/launch/L/mcp/team%2Fremote"}`,
+		`mcp_servers.agx-team-remote={bearer_token_env_var = 'AGX_MCP_GRANT', ` +
+			`url = 'http://127.0.0.1:9/launch/L/mcp/team%2Fremote'}`,
 		"--definition",
 		"exec",
 		"hi",
@@ -440,22 +440,5 @@ func TestServerNames(t *testing.T) {
 		if len(name) > 32 {
 			t.Errorf("%s: %q is longer than 32 characters", id, name)
 		}
-	}
-}
-
-func TestTOMLAssignment(t *testing.T) {
-	got, err := adapters.TOMLAssignment("key", "quote \" and \\ and\nnewline")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var decoded map[string]string
-	value := strings.TrimPrefix(got, "key=")
-	// TOML basic strings use JSON-compatible escapes for these characters.
-	if err := json.Unmarshal(
-		[]byte(`{"key":`+value+`}`),
-		&decoded,
-	); err != nil ||
-		decoded["key"] != "quote \" and \\ and\nnewline" {
-		t.Fatalf("TOMLAssignment = %s (%v)", got, err)
 	}
 }

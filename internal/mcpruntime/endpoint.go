@@ -564,27 +564,18 @@ func (e *Endpoint) startProcess(base, resolve context.Context, inputs map[string
 		}
 		cmd.Env = append(cmd.Env, name+"="+value)
 	}
-	platform.IsolateOwned(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		cancel()
 		return nil, err
 	}
-	exited := make(chan struct{})
-	// Most stdio servers exit when their input ends; a termination request and then the kill
-	// that WaitDelay sends cover those that do not.
+	// Most stdio servers exit when their input ends; a termination request and then a kill of
+	// their group cover those that do not, and WaitDelay those that escaped the group.
 	cmd.Cancel = func() error {
 		_ = stdin.Close()
-		time.AfterFunc(inputGrace, func() {
-			select {
-			case <-exited:
-			default:
-				platform.Terminate(cmd)
-			}
-		})
 		return nil
 	}
-	cmd.WaitDelay = inputGrace + terminateGrace
+	cmd.WaitDelay = inputGrace + 2*terminateGrace
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		_ = stdin.Close()
@@ -592,42 +583,35 @@ func (e *Endpoint) startProcess(base, resolve context.Context, inputs map[string
 		return nil, err
 	}
 	// Upstream stderr is deliberately not copied: it can contain credentials.
-	if err := cmd.Start(); err != nil {
-		_ = stdin.Close()
-		_ = stdout.Close()
-		cancel()
-		return nil, err
-	}
-	owned, err := platform.Own(cmd)
+	group, err := platform.Start(cmd)
 	if err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
 		_ = stdin.Close()
 		_ = stdout.Close()
 		cancel()
 		return nil, err
 	}
-	// On Windows, the kill closes the job handle, which must happen once.
-	kill := sync.OnceFunc(owned)
+	context.AfterFunc(ctx, func() {
+		time.AfterFunc(inputGrace, group.Terminate)
+		time.AfterFunc(inputGrace+terminateGrace, group.Kill)
+	})
 	conn, err := (&mcp.IOTransport{Reader: stdout, Writer: stdin}).Connect(ctx)
 	if err != nil {
-		kill()
-		_ = cmd.Wait()
+		group.Kill()
+		_ = group.Wait()
 		cancel()
 		return nil, err
 	}
+	exited := make(chan struct{})
 	go func() {
-		_ = cmd.Wait()
+		_ = group.Wait()
 		close(exited)
-		// Descendants the server left behind end with it.
-		kill()
 	}()
 	return &process{
 		pid:     cmd.Process.Pid,
 		started: time.Now(),
 		conn:    conn,
 		cancel:  cancel,
-		kill:    kill,
+		kill:    group.Kill,
 		exited:  exited,
 	}, nil
 }

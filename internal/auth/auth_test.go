@@ -454,6 +454,26 @@ func TestLoginWithoutClientRegistration(t *testing.T) {
 	}
 }
 
+func TestLoginRequiresHTTPS(t *testing.T) {
+	keyring.MockInit()
+	manager, _ := newManager(t)
+	for issuer, refused := range map[string]bool{
+		"http://example.com":   true,
+		"http://10.0.0.1":      true,
+		"http://localhost.com": true,
+		"ftp://example.com":    true,
+		"http://localhost:1":   false,
+		"http://[::1]:1":       false,
+		"http://127.0.0.2:1":   false,
+	} {
+		secret := config.Secret{Kind: "oauth", Issuer: issuer, ClientID: "agx"}
+		_, err := manager.Begin(t.Context(), "fixture", secret, "http://127.0.0.1:1/mcp")
+		if err == nil || strings.Contains(err.Error(), "must use https") != refused {
+			t.Errorf("issuer %s: %v", issuer, err)
+		}
+	}
+}
+
 // login completes an OAuth login of secret fixture against p.
 func login(t *testing.T, manager *auth.Manager, callback string, p *provider, secret config.Secret) {
 	t.Helper()
