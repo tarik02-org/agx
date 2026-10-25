@@ -142,28 +142,3 @@ jobs:
           # With assets, gh creates a draft, uploads them, then publishes it.
           gh release create "$NIGHTLY_TAG" dist/*.tar.gz dist/*.zip dist/checksums.txt \
             --prerelease --target "$GITHUB_SHA" --title "Nightly $NIGHTLY_VERSION" --notes "$notes"
-      - name: Move the rolling nightly
-        # Installers that follow one tag, such as mise's github:tarik02-org/agx@nightly, update from
-        # this release; it always holds the newest build.
-        run: |
-          # A newer push may have finished first; never move nightly backwards.
-          git fetch --quiet origin master
-          if [ "$(git rev-parse origin/master)" != "$GITHUB_SHA" ] &&
-            git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
-            echo "master moved on; its own run moves nightly"
-            exit 0
-          fi
-          git push --force origin "$GITHUB_SHA:refs/tags/nightly"
-          notes="The newest build from master, now $NIGHTLY_VERSION ($GITHUB_SHA); not a stable release. Each build also has its own nightly-* release."
-          if gh release view nightly >/dev/null 2>&1; then
-            gh release edit nightly --prerelease --title "Nightly (newest)" --notes "$notes"
-          else
-            gh release create nightly --prerelease --verify-tag --title "Nightly (newest)" --notes "$notes"
-          fi
-          gh release upload nightly dist/*.tar.gz dist/*.zip dist/checksums.txt --clobber
-          # Drop assets this build no longer produces.
-          for name in $(gh release view nightly --json assets --jq '.assets[].name'); do
-            if [ ! -e "dist/$name" ]; then
-              gh release delete-asset nightly "$name" --yes
-            fi
-          done

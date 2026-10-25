@@ -166,8 +166,6 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - The daemon log records daemon starts and stops, launches it does not restore and why, launches
   that expire or are revoked, and re-attached launches; discovery carries the daemon's PID.
   Temporary files a killed process left in the state directory are removed at startup.
-- Every master build also moves the rolling `nightly` prerelease again, which installers that
-  follow one tag, such as mise, update from.
 - An HTTP MCP server that rejects an OAuth access token with 401 before its recorded expiry,
   or one issued without `expires_in`, gets the request again with a refreshed token instead of
   asking for `agx secret login`.
