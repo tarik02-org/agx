@@ -1,7 +1,7 @@
 # Launches survive daemon restarts
 
-Status: accepted. Replaces "a daemon restart invalidates active grants" in
-[contracts](../development/contracts.md#launch-preparation-and-credentials).
+Status: accepted. Replaces "a daemon restart invalidates active grants" from the original
+launch contract.
 
 Launches lived only in daemon memory, so stopping or upgrading the daemon cut
 every running harness off its MCP servers, and an upgraded agx could not replace

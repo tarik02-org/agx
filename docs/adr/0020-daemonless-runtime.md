@@ -1,6 +1,6 @@
 # Run without a daemon
 
-Status: proposed.
+Status: deferred. Not implemented.
 
 The daemon suits a workstation: one long-lived owner of MCP sessions, grants,
 OAuth, and state. Other environments don't want one: CI jobs, containers,

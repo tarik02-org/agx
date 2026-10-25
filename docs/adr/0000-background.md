@@ -5,7 +5,7 @@ Status: accepted. Condenses the original design records; later ADRs refine it.
 agx composes agent resources (skills, instructions, MCP servers) for the
 directory a harness runs in, and launches the harness with them natively. The
 decisions below still hold. [Configuration](../configuration.md) and
-[contracts](../development/contracts.md) specify the details.
+[the daemon](../daemon.md) specify the details.
 
 ## Additive directory scopes
 
@@ -39,6 +39,14 @@ Contents install into a shared immutable cache. Locks change only through
 explicit installation commands; resolution and launches never fetch. Each launch resolves a
 snapshot first, so updates affect later launches, not running ones.
 
+A snapshot ID fingerprints the resolved configuration, lock and package content,
+platform inputs, canonical directory, and harness, including each injected value's
+tag and argument but never the value, a token, or a timestamp. A launch never
+rereads configuration; it keeps its snapshot's definitions, though credential
+refresh and revocation still apply. Only a fully valid reload is published: an
+invalid one leaves active launches on their snapshots and rejects new
+preparations until fixed.
+
 [ADR 0011](0011-straightforward-configuration.md) adds anonymous Git packages
 and pinned sources that need no lock entry.
 
@@ -51,7 +59,11 @@ and native account state; it does not own a harness home or hide existing global
 skills. Native plugins are an output format, not agx's package model: artifacts
 are generated per snapshot, so removing one resource does not require removing a
 plugin. Instructions are injected explicitly, because a guidance file inside a
-plugin is not guaranteed to load. Hosts that serve many threads from one
+plugin is not guaranteed to load. Caches and artifacts are written atomically,
+keyed by content and adapter version, and kept while a launch references them;
+package paths cannot escape their installation root. Launching never modifies
+repository files or native account state, and selects per launch with flags or
+configuration rather than racing on global enable/disable. Hosts that serve many threads from one
 process, such as T3 Code with `codex app-server`, get per-thread launches
 ([ADR 0015](0015-per-thread-resources-for-multi-session-hosts.md)). macOS,
 Linux, and Windows are all targets.
@@ -71,8 +83,15 @@ keep each server's identity, tools, and guidance instead of merging catalogs.
 Native tools, schemas, resources, prompts, notifications, and cancellation pass
 through.
 
-Upstream sessions are per launch; pooling may come later where server identity
-and working directory allow. Central ownership means a daemon failure affects
+Upstream sessions are per launch unless a local server shares its process
+([ADR 0024](0024-shared-mcp-server-processes.md)). Tool calls are never retried
+automatically, since the upstream may already have acted. Stdio upstreams get
+only their own environment and directory; ending one closes its input, sends
+SIGTERM to its process group after 2 seconds (skipped on Windows), kills it 1
+second later, and takes the rest of its tree with it through process groups or
+Job Objects. OAuth credentials are bound to their issuer, client, resource, and
+server origin, refreshed one at a time per credential, and agx's own
+authorization headers never reach an upstream. Central ownership means a daemon failure affects
 every launch, so restarts and reconnection are handled explicitly.
 
 Rejected: per-server stdio connector processes; a generic
@@ -90,13 +109,25 @@ mints grants. The harness receives only its grant, never secrets or management
 credentials; upstream credentials go only to stdio upstreams that need them.
 Generated artifacts, packages, and locks hold no secret values.
 
+There are three separate authorities: management credentials (private files with
+per-user permissions or ACLs), the wrapper's lifecycle credential, and the
+harness's MCP grant. Tokens are opaque and only their hashes are stored. Every MCP
+request is checked against both its launch and the selected server; a session ID
+or URL path authorizes nothing. The wrapper, not the daemon, resolves the native
+executable (a configured absolute path, else the caller's `PATH`, skipping agx,
+the shim directory, and files the shim manifest lists), so per-directory shells
+apply; it sets `AGX_WRAPPER_PID` so agx refuses to wrap itself again. It forwards
+only the environment variables the snapshot needs, never its whole environment;
+the daemon rejects a stale snapshot before using them and takes the definition's
+arguments and environment from its own snapshot.
+
 The wrapper supervises the harness, renews a lease, and reports exit. Ended or
 expired launches lose MCP access and release their runtime; an HTTP disconnect
 alone does not end a launch, and a grant never changes an upstream credential's
 own lifetime. A daemon restart or upgrade does not end launches either: the
 daemon saves them, without secrets, and the next one restores them
-([ADR 0016](0016-launches-survive-daemon-restarts.md)). See [contracts](../development/contracts.md#launch-preparation-and-credentials)
-and the [launch flow](../development/api.md#launch-flow).
+([ADR 0016](0016-launches-survive-daemon-restarts.md)). See the
+[launch flow](../development/api.md#launch-flow).
 
 ## Go and Connect
 

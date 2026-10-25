@@ -1,6 +1,6 @@
 # Proxy ACP v1 agents, applying resources per capability
 
-Status: proposed.
+Status: deferred. Not implemented.
 
 The [Agent Client Protocol](https://agentclientprotocol.com) connects clients
 (editors, T3 Code) to coding agents over JSON-RPC, with sessions that carry their

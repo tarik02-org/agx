@@ -3,6 +3,16 @@ version: 2
 
 project_name: agx
 
+before:
+  hooks:
+    - rm -rf completions manpages
+    - mkdir completions manpages
+    - sh -c 'go run ./cmd/agx completion bash >completions/agx.bash'
+    - sh -c 'go run ./cmd/agx completion fish >completions/agx.fish'
+    - sh -c 'go run ./cmd/agx completion zsh >completions/_agx'
+    - sh -c 'go run ./cmd/agx completion powershell >completions/agx.ps1'
+    - sh -c 'go run ./cmd/agx man | gzip -9 >manpages/agx.1.gz'
+
 builds:
   - id: agx
     main: ./cmd/agx
@@ -33,6 +43,8 @@ archives:
       # The README's links and quick start rely on these.
       - docs/*.md
       - examples/*
+      - completions/*
+      - manpages/*
 
 checksum:
   name_template: checksums.txt

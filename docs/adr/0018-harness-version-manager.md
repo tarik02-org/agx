@@ -1,6 +1,6 @@
 # Install and pin harness versions
 
-Status: proposed.
+Status: deferred. Not implemented.
 
 Harnesses today are whatever is on PATH, so their versions drift per machine and
 new agents need manual installation. agx installs harnesses itself, side by side,

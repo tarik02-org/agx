@@ -1,6 +1,6 @@
 # Support OpenCode through one plugin that asks the daemon per location
 
-Status: proposed.
+Status: deferred. Not implemented.
 
 OpenCode 2 runs one server for many directories: the shared background service
 that every `opencode` attaches to, a private `--standalone` server, or

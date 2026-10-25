@@ -3,3 +3,5 @@
 decisions.tsv
 result
 dist/
+completions/
+manpages/
