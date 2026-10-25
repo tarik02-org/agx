@@ -201,8 +201,9 @@ directory per call, and printed as one line per file:
 [image/png, 34 KB] /tmp/agx-mcp-123/1.png
 ```
 
-`--json` prints the result, with file content as `{type, mime_type, path,
-size}` instead of base64:
+`--json` prints the result, with the content items as the server sent them,
+except that binary content names its `path` and `size` instead of carrying
+base64 data:
 
 ```json
 {"version":1,"data":{"mcp_id":"tracker","tool":"search_issues","is_error":false,"content":[{"type":"text","text":"…"}],"structured_content":null}}

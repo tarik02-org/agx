@@ -45,9 +45,9 @@ func (s *session) removePackage(id config.ID, force bool) error {
 	if err != nil {
 		return err
 	}
-	s.result.Removed = append(s.result.Removed, definitionJSON{Kind: config.KindPackages, ID: string(id)})
+	s.result.Removed = append(s.result.Removed, definitionID{Kind: config.KindPackages, ID: string(id)})
 	for _, r := range disabled {
-		s.result.Disabled = append(s.result.Disabled, definitionJSON{Kind: r.Kind, ID: string(r.ID)})
+		s.result.Disabled = append(s.result.Disabled, definitionID{Kind: r.Kind, ID: string(r.ID)})
 	}
 	return nil
 }
@@ -192,7 +192,6 @@ func skillAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 		},
 	}
 	flags.register(cmd, true)
-	jsonFlag(cmd)
 	cmd.Flags().StringArrayVar(&choice.names, "skill", nil, "skill to add by name (repeatable)")
 	cmd.Flags().BoolVar(&choice.all, "all", false, "add every skill found")
 	cmd.Flags().StringVar(&ref, "ref", "", "Git branch, tag, or commit to lock")
@@ -250,7 +249,7 @@ func (s *session) addPackageSkills(
 		return err
 	}
 	if declared {
-		s.result.Defined = append(s.result.Defined, definitionJSON{Kind: config.KindPackages, ID: string(id)})
+		s.result.Defined = append(s.result.Defined, definitionID{Kind: config.KindPackages, ID: string(id)})
 	}
 	progress("Fetching " + source.Git)
 	if err := s.Install(s.ctx, file); err != nil {
@@ -299,32 +298,21 @@ func (s *session) addPackageSkills(
 func skillRows(c *config.Config) ([]string, [][]string, any) {
 	out := ui.Stdout
 	rows := [][]string{}
-	items := []skillJSON{}
 	for _, id := range slices.Sorted(maps.Keys(c.Skills)) {
 		skill := c.Skills[id]
-		// JSON keeps the full path that the table shortens.
-		kind, from, fromJSON := "path", ui.ShortPath(skill.Path, ""), skill.Path
+		kind, from := "path", ui.ShortPath(skill.Path, "")
 		switch {
 		case skill.Generated():
-			kind, from, fromJSON = "generated", "", ""
+			kind, from = "generated", ""
 		case skill.Package != "":
 			kind, from = "git", c.Packages[skill.Package].Git
-			fromJSON = from
 		case !slices.Contains(c.Files, skill.Source.Path):
 			kind = "package"
 			from = string(id)[:strings.LastIndex(string(id), "/")]
-			fromJSON = from
 		}
 		rows = append(rows, []string{out.ID(string(id)), kind, from, out.Path(location(c, skill.Source))})
-		items = append(items, skillJSON{
-			ID:     string(id),
-			Kind:   kind,
-			From:   jsonString(fromJSON),
-			Inline: skill.Inline,
-			Source: configSource(skill.Source),
-		})
 	}
-	return []string{"ID", "KIND", "FROM", "SOURCE"}, rows, skillListJSON{Skills: items}
+	return []string{"ID", "KIND", "FROM", "SOURCE"}, rows, c.Skills
 }
 
 // textNode keeps multi-line text readable as a literal block.

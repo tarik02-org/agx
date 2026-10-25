@@ -119,21 +119,20 @@ func mcpTypesCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 			for _, s := range servers {
 				ids = append(ids, s.ID)
 			}
-			if scripting.enabled {
-				return printJSON(mcpTypesJSON{MCP: ids, Files: files})
-			}
-			_, err = fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, fmt.Sprintf(
+			document := struct {
+				MCP   []string `json:"mcp"`
+				Files []string `json:"files"`
+			}{ids, files}
+			return emit(document, done(fmt.Sprintf(
 				"Wrote %s for %s: %s",
 				plural(len(files), "file"),
 				plural(len(ids), "server"),
 				strings.Join(files, ", "),
 			)))
-			return err
 		},
 	}
 	cmd.Flags().StringVar(&out, "out", "", "write agx-mcp.d.mts and agx-mcp.mjs into this directory")
 	cmd.Flags().
 		BoolVar(&all, "all", false, "every configured server; the client then reaches them all, also inside a launch")
-	jsonFlag(cmd)
 	return cmd
 }

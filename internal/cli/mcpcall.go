@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -154,18 +155,16 @@ func mcpToolsCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 			if err != nil {
 				return mcpError(err)
 			}
-			if scripting.enabled {
-				return printJSON(toolsDocument(servers, schema))
-			}
-			if server != "" {
-				return printSignatures(servers[0], schema)
-			}
-			return printServers(servers)
+			return emit(&v1.ListToolsResponse{Servers: servers}, func() error {
+				if server != "" {
+					return printSignatures(servers[0], schema)
+				}
+				return printServers(servers)
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&schema, "schema", false, "also print each tool's input and output JSON Schema")
 	cmd.Flags().BoolVar(&all, "all", false, "every configured server, not only those selected here or in this launch")
-	jsonFlag(cmd)
 	return cmd
 }
 
@@ -175,50 +174,6 @@ func mcpError(err error) error {
 		hint("Run agx secret status to see which secret is missing.")
 	}
 	return err
-}
-
-var loadNames = map[v1.McpTools_Load]string{
-	v1.McpTools_LOAD_NATIVE:    config.LoadNative,
-	v1.McpTools_LOAD_ON_DEMAND: config.LoadOnDemand,
-}
-
-func toolsDocument(servers []*v1.McpTools, withSchema bool) mcpToolsListJSON {
-	items := []mcpToolsJSON{}
-	for _, s := range servers {
-		item := mcpToolsJSON{
-			ID:          s.McpId,
-			Description: jsonString(s.Description),
-			Load:        enumJSON(loadNames, s.Load),
-			State:       enumJSON(mcpStates, s.State),
-			Message:     jsonString(s.Message),
-			Tools:       []mcpToolDetailJSON{},
-		}
-		if s.ServerName != "" || s.ServerVersion != "" {
-			item.Server = &mcpTestServerJSON{Name: jsonString(s.ServerName), Version: jsonString(s.ServerVersion)}
-		}
-		for _, t := range s.Tools {
-			detail := mcpToolDetailJSON{
-				Name:        t.Name,
-				Title:       jsonString(t.Title),
-				Description: jsonString(t.Description),
-				Signature:   signature(t),
-			}
-			if withSchema {
-				detail.InputSchema = rawJSON(t.InputSchemaJson)
-				detail.OutputSchema = rawJSON(t.OutputSchemaJson)
-			}
-			item.Tools = append(item.Tools, detail)
-		}
-		items = append(items, item)
-	}
-	return mcpToolsListJSON{MCP: items}
-}
-
-func rawJSON(text string) json.RawMessage {
-	if text == "" {
-		return nil
-	}
-	return json.RawMessage(text)
 }
 
 func signature(t *v1.McpTool) string {
@@ -253,7 +208,7 @@ func printServers(servers []*v1.McpTools) error {
 			if s.State == v1.McpRuntime_STATE_NEEDS_AUTH {
 				level = ui.Warn
 			}
-			line += "  " + out.Badge(level, enumJSON(mcpStates, s.State))
+			line += "  " + out.Badge(level, enumName(s.State.String()))
 		}
 		if s.Description != "" {
 			line += "  " + s.Description
@@ -433,7 +388,6 @@ func mcpCallCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 	cmd.Flags().DurationVar(&timeout, "timeout", timeout, "how long to wait for the result")
 	cmd.Flags().
 		BoolVar(&all, "all", false, "reach every configured server, not only those selected here or in this launch")
-	jsonFlag(cmd)
 	return cmd
 }
 
@@ -468,9 +422,7 @@ type wireContent struct {
 	Data        []byte `json:"data"`
 	URI         string `json:"uri"`
 	Name        string `json:"name"`
-	Title       string `json:"title"`
 	Description string `json:"description"`
-	Size        *int64 `json:"size"`
 	Resource    *struct {
 		URI      string  `json:"uri"`
 		MIMEType string  `json:"mimeType"`
@@ -551,6 +503,8 @@ func extension(mimeType, uri string) string {
 	return ".bin"
 }
 
+// printCallResult prints a tool's result. Binary content goes to files, which the JSON content
+// items name by path and size in place of their data.
 func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir string) error {
 	var raws []json.RawMessage
 	if msg.ContentJson != "" {
@@ -558,20 +512,8 @@ func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir stri
 			return fmt.Errorf("unreadable content from %s.%s: %w", server, tool, err)
 		}
 	}
-	items := make([]wireContent, len(raws))
-	for i, raw := range raws {
-		if err := json.Unmarshal(raw, &items[i]); err != nil {
-			return fmt.Errorf("unreadable content from %s.%s: %w", server, tool, err)
-		}
-	}
 	files := &contentFiles{dir: saveDir}
-	document := mcpCallJSON{
-		MCPID:             server,
-		Tool:              tool,
-		IsError:           msg.IsError,
-		Content:           []any{},
-		StructuredContent: rawJSON(msg.StructuredContentJson),
-	}
+	content := []map[string]any{}
 	var human strings.Builder
 	out := ui.Stdout
 	line := func(text string) {
@@ -580,10 +522,15 @@ func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir stri
 			human.WriteString("\n")
 		}
 	}
-	for i, item := range items {
+	for _, raw := range raws {
+		var item wireContent
+		var fields map[string]any
+		if err := errors.Join(json.Unmarshal(raw, &item), json.Unmarshal(raw, &fields)); err != nil {
+			return fmt.Errorf("unreadable content from %s.%s: %w", server, tool, err)
+		}
+		content = append(content, fields)
 		switch item.Type {
 		case "text":
-			document.Content = append(document.Content, textContentJSON{Type: item.Type, Text: item.Text})
 			line(highlightJSON(out, item.Text))
 		case "image", "audio":
 			path, err := files.write(item.Data, item.MIMEType, "")
@@ -591,22 +538,12 @@ func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir stri
 				return err
 			}
 			size := int64(len(item.Data))
-			document.Content = append(document.Content, fileContentJSON{
-				Type: item.Type, MIMEType: item.MIMEType, Path: path, Size: size,
-			})
+			delete(fields, "data")
+			fields["path"], fields["size"] = path, size
 			line(
 				out.Muted(fmt.Sprintf("[%s, %s]", item.MIMEType, humanize.IBytes(uint64(size)))) + " " + out.Path(path),
 			)
 		case "resource_link":
-			document.Content = append(document.Content, linkContentJSON{
-				Type:        item.Type,
-				URI:         item.URI,
-				Name:        item.Name,
-				Title:       jsonString(item.Title),
-				Description: jsonString(item.Description),
-				MIMEType:    jsonString(item.MIMEType),
-				Size:        item.Size,
-			})
 			text := out.Muted("[link]") + " " + item.URI
 			if item.Name != "" {
 				text += "  " + item.Name
@@ -616,57 +553,62 @@ func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir stri
 			}
 			line(text)
 		case "resource":
-			if item.Resource == nil {
+			r := item.Resource
+			if r == nil {
 				continue
 			}
-			r := item.Resource
-			resource := resourceContentJSON{Type: item.Type, URI: r.URI, MIMEType: jsonString(r.MIMEType)}
 			if r.Text != nil {
-				resource.Text = r.Text
 				line(out.Muted("[resource "+r.URI+"]") + "\n" + *r.Text)
-			} else {
-				path, err := files.write(r.Blob, r.MIMEType, r.URI)
-				if err != nil {
-					return err
-				}
-				size := int64(len(r.Blob))
-				resource.Path, resource.Size = &path, &size
-				label := r.MIMEType
-				if label == "" {
-					label = "resource"
-				}
-				line(
-					out.Muted(
-						fmt.Sprintf("[%s, %s] %s", label, humanize.IBytes(uint64(size)), r.URI),
-					) + " " + out.Path(
-						path,
-					),
-				)
+				continue
 			}
-			document.Content = append(document.Content, resource)
+			path, err := files.write(r.Blob, r.MIMEType, r.URI)
+			if err != nil {
+				return err
+			}
+			size := int64(len(r.Blob))
+			if resource, ok := fields["resource"].(map[string]any); ok {
+				delete(resource, "blob")
+				resource["path"], resource["size"] = path, size
+			}
+			label := cmp.Or(r.MIMEType, "resource")
+			line(
+				out.Muted(
+					fmt.Sprintf("[%s, %s] %s", label, humanize.IBytes(uint64(size)), r.URI),
+				) + " " + out.Path(
+					path,
+				),
+			)
 		default:
-			document.Content = append(document.Content, otherContentJSON{Type: item.Type, Value: raws[i]})
 			line(out.Muted("[" + item.Type + "]"))
 		}
 	}
-	if len(items) == 0 && msg.StructuredContentJson != "" {
+	if len(raws) == 0 && msg.StructuredContentJson != "" {
 		var indented bytes.Buffer
 		if err := json.Indent(&indented, []byte(msg.StructuredContentJson), "", "  "); err != nil {
 			indented.WriteString(msg.StructuredContentJson)
 		}
 		line(highlightJSON(out, indented.String()))
 	}
-	if scripting.enabled {
-		if err := printJSON(document); err != nil {
-			return err
-		}
-	} else if _, err := io.WriteString(out, human.String()); err != nil {
+	var structured json.RawMessage
+	if msg.StructuredContentJson != "" {
+		structured = json.RawMessage(msg.StructuredContentJson)
+	}
+	document := struct {
+		MCPID             string           `json:"mcp_id"`
+		Tool              string           `json:"tool"`
+		IsError           bool             `json:"is_error"`
+		Content           []map[string]any `json:"content"`
+		StructuredContent json.RawMessage  `json:"structured_content"`
+	}{server, tool, msg.IsError, content, structured}
+	err := emit(document, func() error {
+		_, err := io.WriteString(out, human.String())
+		return err
+	})
+	if err != nil {
 		return err
 	}
 	if msg.IsError {
-		if !scripting.enabled {
-			ui.Diagnose(ui.Error, "%s.%s reported an error", server, tool)
-		}
+		ui.Diagnose(ui.Error, "%s.%s reported an error", server, tool)
 		return &ExitError{Code: 1}
 	}
 	return nil

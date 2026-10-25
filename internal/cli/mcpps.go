@@ -51,17 +51,13 @@ func mcpProcessesCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 			if err != nil {
 				return err
 			}
-			if scripting.enabled {
-				return printJSON(mcpProcessesDocument(response.Msg.Processes))
-			}
-			return printMCPProcesses(response.Msg.Processes, time.Now())
+			return emit(response.Msg, func() error { return printMCPProcesses(response.Msg.Processes, time.Now()) })
 		},
 	}
 	cmd.Flags().StringVar(&cwd, "cwd", "", "only processes whose working directory is this directory")
 	cmd.Flags().StringVar(&under, "under", "", "only processes working in this directory or below it")
 	_ = cmd.MarkFlagDirname("cwd")
 	_ = cmd.MarkFlagDirname("under")
-	jsonFlag(cmd)
 	return cmd
 }
 
@@ -94,47 +90,6 @@ func printMCPProcesses(processes []*v1.McpProcess, now time.Time) error {
 	return err
 }
 
-// mcpProcessesJSON lists running stdio MCP server processes. share is none, directory,
-// repo, or global; root is the directory a shared process is keyed on, null otherwise;
-// stops_at is when an idle shared process stops, null while sessions use it.
-type mcpProcessesJSON struct {
-	Processes []mcpProcessJSON `json:"processes"`
-}
-
-type mcpProcessJSON struct {
-	MCPID     string   `json:"mcp_id"`
-	PID       int64    `json:"pid"`
-	Directory string   `json:"directory"`
-	Share     string   `json:"share"`
-	Root      *string  `json:"root"`
-	LaunchIDs []string `json:"launch_ids"`
-	Sessions  int32    `json:"sessions"`
-	StartedAt *string  `json:"started_at"`
-	StopsAt   *string  `json:"stops_at"`
-}
-
-func mcpProcessesDocument(processes []*v1.McpProcess) mcpProcessesJSON {
-	items := []mcpProcessJSON{}
-	for _, p := range processes {
-		launches := p.LaunchIds
-		if launches == nil {
-			launches = []string{}
-		}
-		items = append(items, mcpProcessJSON{
-			MCPID:     p.McpId,
-			PID:       p.Pid,
-			Directory: p.Directory,
-			Share:     p.Share,
-			Root:      jsonString(p.Root),
-			LaunchIDs: launches,
-			Sessions:  p.Sessions,
-			StartedAt: jsonTimestamp(p.StartedAt),
-			StopsAt:   jsonTimestamp(p.StopsAt),
-		})
-	}
-	return mcpProcessesJSON{Processes: items}
-}
-
 func mcpStopCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stop <pid>",
@@ -151,19 +106,15 @@ func mcpStopCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 			if err != nil {
 				return err
 			}
-			if _, err := c.runtime.StopMcpProcess(
+			response, err := c.runtime.StopMcpProcess(
 				cmd.Context(),
 				connect.NewRequest(&v1.StopMcpProcessRequest{Pid: pid}),
-			); err != nil {
+			)
+			if err != nil {
 				return err
 			}
-			if scripting.enabled {
-				return printJSON(map[string]any{"pid": pid, "stopped": true})
-			}
-			_, err = fmt.Fprintf(ui.Stdout, "Stopped MCP server process %d.\n", pid)
-			return err
+			return emit(response.Msg, done(fmt.Sprintf("Stopped MCP server process %d.", pid)))
 		},
 	}
-	jsonFlag(cmd)
 	return cmd
 }

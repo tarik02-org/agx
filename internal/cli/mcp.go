@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -38,7 +37,6 @@ func mcpCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command
 			return testMCP(cmd.Context(), *paths, *builtins, args[0])
 		},
 	}
-	jsonFlag(test)
 	command.AddCommand(
 		mcpAddCommand(paths, builtins),
 		listCommand(paths, builtins, config.KindMCPServers),
@@ -203,7 +201,6 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 		},
 	}
 	flags.register(cmd, true)
-	jsonFlag(cmd)
 	cmd.Flags().
 		StringArrayVar(&headers, "header", nil, "HTTP header KEY=VALUE; VALUE may be '!secret id', '!env NAME', or '!file path'")
 	cmd.Flags().StringArrayVar(&env, "env", nil, "stdio environment KEY=VALUE; VALUE may be a tag as for --header")
@@ -269,8 +266,7 @@ func testMCP(ctx context.Context, paths platform.Paths, builtins config.Builtins
 	if err != nil {
 		return coded(codeConfigInvalid, err)
 	}
-	definition, ok := c.MCP[config.ID(id)]
-	if !ok {
+	if _, ok := c.MCP[config.ID(id)]; !ok {
 		return codedf(codeNotFound, "unknown MCP server %s", id)
 	}
 	// Only the variables the server's values read are forwarded, as for a launch.
@@ -297,59 +293,19 @@ func testMCP(ctx context.Context, paths platform.Paths, builtins config.Builtins
 		Directory:         directory,
 		EnvironmentInputs: inputs,
 	}))
-	if scripting.enabled {
-		return printMCPTest(id, definition.Transport, response, err)
-	}
 	if err != nil {
 		return fmt.Errorf("MCP server %s: %w", id, err)
 	}
-	out := ui.Stdout
 	msg := response.Msg
-	server := strings.TrimSpace(msg.ServerName + " " + msg.ServerVersion)
-	tools := slices.Sorted(slices.Values(msg.Tools))
-	_, err = fmt.Fprint(out,
-		out.Status(ui.OK, fmt.Sprintf("%s answered with %s.", id, plural(len(tools), "tool")))+"\n",
-		out.Fields([2]string{"server", server}, [2]string{"tools", strings.Join(tools, " ")}),
-	)
-	return err
-}
-
-// printMCPTest writes mcp test's document. A server that fails the test still gets one, with its
-// state and the endpoint's diagnosis, and exits 1; failures to reach the daemon are errors.
-func printMCPTest(id, transport string, response *connect.Response[v1.TestMcpServerResponse], err error) error {
-	if err != nil {
-		var state string
-		switch errorCode(err) {
-		case codeNeedsLogin:
-			state = "needs_auth"
-		case codeFailedPrecondition, codeTimeout:
-			state = "failed"
-		default:
-			return fmt.Errorf("MCP server %s: %w", id, err)
-		}
-		message := err.Error()
-		var rpc *connect.Error
-		if errors.As(err, &rpc) {
-			message = rpc.Message()
-		}
-		if printErr := printJSON(mcpTestJSON{
-			ID: id, Transport: transport, Tools: []mcpToolJSON{}, State: state, Message: &message,
-		}); printErr != nil {
-			return printErr
-		}
-		return &ExitError{Code: 1}
-	}
-	msg := response.Msg
-	tools := []mcpToolJSON{}
-	for _, t := range msg.ToolDetails {
-		tools = append(tools, mcpToolJSON{Name: t.Name, Description: jsonString(t.Description)})
-	}
-	return printJSON(mcpTestJSON{
-		ID:        id,
-		Transport: transport,
-		Server:    &mcpTestServerJSON{Name: jsonString(msg.ServerName), Version: jsonString(msg.ServerVersion)},
-		Tools:     tools,
-		State:     "ready",
+	return emit(msg, func() error {
+		out := ui.Stdout
+		server := strings.TrimSpace(msg.ServerName + " " + msg.ServerVersion)
+		tools := slices.Sorted(slices.Values(msg.Tools))
+		_, err := fmt.Fprint(out,
+			out.Status(ui.OK, fmt.Sprintf("%s answered with %s.", id, plural(len(tools), "tool")))+"\n",
+			out.Fields([2]string{"server", server}, [2]string{"tools", strings.Join(tools, " ")}),
+		)
+		return err
 	})
 }
 
@@ -357,7 +313,6 @@ func printMCPTest(id, transport string, response *connect.Response[v1.TestMcpSer
 func mcpRows(c *config.Config) ([]string, [][]string, any) {
 	out := ui.Stdout
 	rows := [][]string{}
-	items := []mcpServerJSON{}
 	for _, id := range slices.Sorted(maps.Keys(c.MCP)) {
 		server := c.MCP[id]
 		target := server.URL
@@ -365,21 +320,16 @@ func mcpRows(c *config.Config) ([]string, [][]string, any) {
 			target = strings.Join(server.Command, " ")
 		}
 		authText := ""
-		var auth *mcpAuthJSON
 		switch secret := c.Secrets[server.Auth.Secret]; {
 		case server.Auth.None:
 			authText = "none"
-			auth = &mcpAuthJSON{Kind: "none"}
 		case server.Transport == "stdio":
 		case secret.Owner == id && secret.Implicit:
 			authText = "oauth (on demand)"
-			auth = &mcpAuthJSON{Kind: secret.Kind, SecretID: jsonString(string(server.Auth.Secret)), OnDemand: true}
 		case secret.Owner == id:
 			authText = secret.Kind
-			auth = &mcpAuthJSON{Kind: secret.Kind, SecretID: jsonString(string(server.Auth.Secret))}
 		default:
 			authText = "!secret " + string(server.Auth.Secret)
-			auth = &mcpAuthJSON{Kind: secret.Kind, SecretID: jsonString(string(server.Auth.Secret))}
 		}
 		// Like auth for stdio, share does not apply to HTTP servers.
 		shareText := server.ShareMode()
@@ -390,20 +340,8 @@ func mcpRows(c *config.Config) ([]string, [][]string, any) {
 			out.ID(string(id)), server.Transport, target, authText, server.Load, shareText,
 			out.Path(location(c, server.Source)),
 		})
-		items = append(items, mcpServerJSON{
-			ID:          string(id),
-			Transport:   server.Transport,
-			URL:         jsonString(server.URL),
-			Command:     server.Command,
-			Auth:        auth,
-			Load:        server.Load,
-			Share:       server.ShareMode(),
-			Description: jsonString(server.Description),
-			Inline:      server.Inline,
-			Source:      configSource(server.Source),
-		})
 	}
-	return []string{"ID", "TRANSPORT", "TARGET", "AUTH", "LOAD", "SHARE", "SOURCE"}, rows, mcpListJSON{MCP: items}
+	return []string{"ID", "TRANSPORT", "TARGET", "AUTH", "LOAD", "SHARE", "SOURCE"}, rows, c.MCP
 }
 
 func location(c *config.Config, source config.Source) string {
@@ -445,18 +383,16 @@ func listCommand(paths *platform.Paths, builtins *config.Builtins, kind config.K
 			default:
 				headers, rows, document = harnessRows(c)
 			}
-			if scripting.enabled {
-				return printJSON(document)
-			}
-			if len(rows) == 0 {
-				_, err := fmt.Fprintln(ui.Stdout, ui.Stdout.Muted("None defined."))
+			return emit(document, func() error {
+				if len(rows) == 0 {
+					_, err := fmt.Fprintln(ui.Stdout, ui.Stdout.Muted("None defined."))
+					return err
+				}
+				_, err := io.WriteString(ui.Stdout, ui.Stdout.Table(headers, rows, 2))
 				return err
-			}
-			_, err = io.WriteString(ui.Stdout, ui.Stdout.Table(headers, rows, 2))
-			return err
+			})
 		},
 	}
-	jsonFlag(cmd)
 	return cmd
 }
 
@@ -499,7 +435,7 @@ func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind config
 			if err != nil {
 				return err
 			}
-			if written && isPackage && !scripting.enabled {
+			if written && isPackage {
 				disabled := []string{}
 				for _, d := range s.result.Disabled {
 					disabled = append(disabled, d.ID)
@@ -514,7 +450,6 @@ func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind config
 		},
 	}
 	flags.registerYes(cmd)
-	jsonFlag(cmd)
 	cmd.Flags().BoolVar(&force, "force", false, "also remove the entries that reference it")
 	return cmd
 }

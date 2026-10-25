@@ -87,7 +87,7 @@ harnesses:
 	var listed struct {
 		Processes []struct {
 			MCPID     string   `json:"mcp_id"`
-			PID       int64    `json:"pid"`
+			PID       int64    `json:"pid,string"`
 			Directory string   `json:"directory"`
 			Share     string   `json:"share"`
 			Root      *string  `json:"root"`

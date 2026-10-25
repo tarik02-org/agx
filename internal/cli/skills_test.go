@@ -59,8 +59,8 @@ func TestRemoveSkillPackage(t *testing.T) {
 	// The rule entry skill add wrote goes with the package.
 	var removed editDocument
 	okJSON(t, &removed, "skill", "remove", "kit")
-	if len(removed.Removed) != 1 || removed.Removed[0] != (definitionJSON{"packages", "kit"}) ||
-		len(removed.Disabled) != 1 || removed.Disabled[0] != (definitionJSON{"skills", "kit/alpha"}) {
+	if len(removed.Removed) != 1 || removed.Removed[0] != (definitionID{"packages", "kit"}) ||
+		len(removed.Disabled) != 1 || removed.Disabled[0] != (definitionID{"skills", "kit/alpha"}) {
 		t.Fatalf("skill remove = %+v", removed)
 	}
 	content, err := os.ReadFile(path)
@@ -91,7 +91,7 @@ func TestRemoveSkillPackage(t *testing.T) {
 	}
 	removed = editDocument{}
 	okJSON(t, &removed, "skill", "remove", "kit", "--force")
-	want := []definitionJSON{{"skills", "kit/alpha"}, {"skills", "kit/beta"}}
+	want := []definitionID{{"skills", "kit/alpha"}, {"skills", "kit/beta"}}
 	if !slices.Equal(removed.Disabled, want) {
 		t.Fatalf("skill remove --force disabled %+v, want %+v", removed.Disabled, want)
 	}

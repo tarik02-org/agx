@@ -106,19 +106,31 @@ type session struct {
 	// written lists the files the commit wrote.
 	written []string
 	// result records what the command did, for its JSON document.
-	result editJSON
+	result edits
 }
 
-func scopeJSONOf(s scope) *scopeJSON {
-	out := &scopeJSON{Harnesses: slices.Clone(s.Harnesses)}
-	if out.Harnesses == nil {
-		out.Harnesses = []string{}
-	}
-	if s.Directory != "" {
-		directory := s.Directory
-		out.Directory = &directory
-	}
-	return out
+// edits is the document of a command that edits configuration.
+type edits struct {
+	Files    []fileChange   `json:"files"`
+	Defined  []definitionID `json:"defined"`
+	Enabled  []definitionID `json:"enabled"`
+	Disabled []definitionID `json:"disabled"`
+	Removed  []definitionID `json:"removed"`
+	// Scope is where resources were enabled or disabled; null when the command changed no scope.
+	Scope *scope `json:"scope"`
+	// NeedsLogin says whether a server mcp add defined asks for an OAuth login.
+	NeedsLogin *bool `json:"needs_login,omitempty"`
+}
+
+type fileChange struct {
+	Path string `json:"path"`
+	Diff string `json:"diff"`
+}
+
+// definitionID names a definition by its configuration section, such as mcp or harnesses.
+type definitionID struct {
+	Kind config.Kind `json:"kind"`
+	ID   string      `json:"id"`
 }
 
 func newSession(ctx context.Context, paths platform.Paths, builtins config.Builtins, yes bool) (*session, error) {
@@ -138,22 +150,12 @@ func newSession(ctx context.Context, paths platform.Paths, builtins config.Built
 		ctx:         ctx,
 		yes:         yes || !tty,
 		interactive: tty,
-		result: editJSON{
-			Files:    []fileChangeJSON{},
-			Defined:  []definitionJSON{},
-			Enabled:  []definitionJSON{},
-			Disabled: []definitionJSON{},
-			Removed:  []definitionJSON{},
-		},
 	}, nil
 }
 
-// report prints the session's JSON document in JSON mode.
+// report prints the session's JSON document in JSON mode; a person saw the diff.
 func (s *session) report() error {
-	if !scripting.enabled {
-		return nil
-	}
-	return printJSON(s.result)
+	return emit(s.result, func() error { return nil })
 }
 
 // definitionFile is where new definitions go: --file, or the root configuration.
@@ -174,15 +176,15 @@ func (s *session) definitionFile(flag string) (string, error) {
 
 // enable selects id in the first rule matching target, or in a new rule in fallback.
 func (s *session) enable(kind config.Kind, id string, target scope, fallback string) (bool, error) {
-	s.result.Enabled = append(s.result.Enabled, definitionJSON{Kind: kind, ID: id})
-	s.result.Scope = scopeJSONOf(target)
+	s.result.Enabled = append(s.result.Enabled, definitionID{Kind: kind, ID: id})
+	s.result.Scope = &target
 	return s.Enable(kind, id, target, fallback)
 }
 
 // disable takes id out of the target scope.
 func (s *session) disable(kind config.Kind, id string, target scope, fallback string) (bool, error) {
-	s.result.Disabled = append(s.result.Disabled, definitionJSON{Kind: kind, ID: id})
-	s.result.Scope = scopeJSONOf(target)
+	s.result.Disabled = append(s.result.Disabled, definitionID{Kind: kind, ID: id})
+	s.result.Scope = &target
 	return s.Disable(kind, id, target, fallback)
 }
 
@@ -225,12 +227,10 @@ func (s *session) commit() (bool, error) {
 		return false, err
 	}
 	for _, p := range plan.Files {
-		s.result.Files = append(s.result.Files, fileChangeJSON{Path: p.Path, Diff: p.Diff(), Written: true})
+		s.result.Files = append(s.result.Files, fileChange{Path: p.Path, Diff: p.Diff()})
 	}
-	if !scripting.enabled {
-		for _, path := range s.written {
-			_, _ = fmt.Fprintln(ui.Stderr, ui.Stderr.Status(ui.OK, "Wrote "+ui.Stderr.Path(path)+"."))
-		}
+	for _, path := range s.written {
+		_, _ = fmt.Fprintln(ui.Stderr, ui.Stderr.Status(ui.OK, "Wrote "+ui.Stderr.Path(path)+"."))
 	}
 	s.Config = plan.Config
 	return true, nil
@@ -308,7 +308,7 @@ func (s *session) define(kind config.Kind, id, file string, value *yaml.Node) er
 		return err
 	}
 	f.Define(kind, id, value)
-	s.result.Defined = append(s.result.Defined, definitionJSON{Kind: kind, ID: id})
+	s.result.Defined = append(s.result.Defined, definitionID{Kind: kind, ID: id})
 	return nil
 }
 
@@ -331,7 +331,7 @@ func (s *session) removeDefinition(kind config.Kind, id string, force bool) erro
 	if err := s.RemoveDefinition(kind, id, force); err != nil {
 		return err
 	}
-	s.result.Removed = append(s.result.Removed, definitionJSON{Kind: kind, ID: id})
+	s.result.Removed = append(s.result.Removed, definitionID{Kind: kind, ID: id})
 	return nil
 }
 

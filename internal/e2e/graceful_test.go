@@ -48,7 +48,7 @@ func TestGracefulShutdown(t *testing.T) {
 			t.Fatalf("tool call after the restart = %q, sessions started again %d\n%s",
 				tools["agx-echo"], reinitialized, h.stderr.String())
 		}
-		if got := e.launches()[id]; got != "running" {
+		if got := e.launches()[id]; got != "STATE_RUNNING" {
 			t.Fatalf("launch after the restart is %q", got)
 		}
 	})
