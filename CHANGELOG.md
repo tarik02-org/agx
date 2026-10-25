@@ -158,6 +158,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Fixed
 
+- An OAuth refresh finishes and is stored even when the request that needed it is cancelled.
+  Authorization servers that rotate refresh tokens, such as T3 Code's, invalidated the old one
+  as soon as they answered, so a cancelled refresh left only a dead token and asked for
+  `agx secret login`. A refresh token the server refuses is retried once with the one another
+  daemon stored meanwhile.
 - Launches survive a daemon that dies without saving them: a wrapper whose daemon no longer
   holds its launch, or let its lease run out, re-attaches it with its ID and grant
   (`RestoreLaunch` with `launch` and `grant`), and a wrapper whose daemon was killed starts the

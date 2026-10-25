@@ -598,6 +598,30 @@ func TestRotate(t *testing.T) {
 	p.check(t)
 }
 
+// A harness cancelling its request mid-refresh must not lose the rotated refresh token: servers
+// that rotate invalidate the old one as soon as they answer.
+func TestCancelledRefreshKeepsRotatedToken(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	manager, callback := newManager(t)
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	login(t, manager, callback, p, secret)
+	time.Sleep(1100 * time.Millisecond)
+
+	// The provider takes 50 ms to answer a refresh; the caller gives up after 10.
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+	defer cancel()
+	_, _ = manager.Value(ctx, "fixture", secret, nil, nil, p.URL)
+	value, err := manager.Value(t.Context(), "fixture", secret, nil, nil, p.URL)
+	if err != nil || value != "refreshed" {
+		t.Fatalf("value after a cancelled refresh = %q, %v", value, err)
+	}
+	if n := p.refreshes.Load(); n != 1 {
+		t.Fatalf("%d refreshes, want the cancelled one to have finished and been kept", n)
+	}
+	p.check(t)
+}
+
 func TestStore(t *testing.T) {
 	keyring.MockInit()
 	dir := t.TempDir()

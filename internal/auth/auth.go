@@ -429,10 +429,31 @@ func (m *Manager) stored(k string, id config.ID) (credential, error) {
 	return saved, nil
 }
 
+// refreshTimeout bounds an OAuth refresh, which no caller can cancel.
+const refreshTimeout = 30 * time.Second
+
 // renew refreshes saved and stores the result under key k; callers hold the credential's lock.
 // A refused refresh is recorded, so renewals on use stop sending the refresh token.
 func (m *Manager) renew(ctx context.Context, k string, id config.ID, saved credential) (*oauth2.Token, error) {
+	// Authorization servers that rotate refresh tokens invalidate the one sent as soon as they
+	// answer, so a refresh cut off by its caller, such as a harness cancelling its MCP request,
+	// would lose the only valid refresh token. It finishes and is stored whatever the caller does.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
+	defer cancel()
 	token, refusal, err := m.refresh(ctx, saved)
+	if err != nil && refusal {
+		// Another agx daemon, such as one of another build that ran meanwhile, may have refreshed
+		// with the same token and stored the one the server rotated to.
+		if current, readErr := m.stored(
+			k,
+			id,
+		); readErr == nil &&
+			current.Token.RefreshToken != saved.Token.RefreshToken {
+			slog.Info("OAuth refresh token was rotated elsewhere; using the stored one", "secret", id)
+			token, refusal, err = m.refresh(ctx, current)
+			saved = current
+		}
+	}
 	if err != nil {
 		slog.Warn("OAuth refresh failed", "secret", id, "refused", refusal, "error", err)
 		if refusal {
