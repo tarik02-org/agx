@@ -173,14 +173,14 @@ func (s *session) definitionFile(flag string) (string, error) {
 }
 
 // enable selects id in the first rule matching target, or in a new rule in fallback.
-func (s *session) enable(kind, id string, target scope, fallback string) (bool, error) {
+func (s *session) enable(kind config.Kind, id string, target scope, fallback string) (bool, error) {
 	s.result.Enabled = append(s.result.Enabled, definitionJSON{Kind: kind, ID: id})
 	s.result.Scope = scopeJSONOf(target)
 	return s.Enable(kind, id, target, fallback)
 }
 
 // disable takes id out of the target scope.
-func (s *session) disable(kind, id string, target scope, fallback string) (bool, error) {
+func (s *session) disable(kind config.Kind, id string, target scope, fallback string) (bool, error) {
 	s.result.Disabled = append(s.result.Disabled, definitionJSON{Kind: kind, ID: id})
 	s.result.Scope = scopeJSONOf(target)
 	return s.Disable(kind, id, target, fallback)
@@ -291,15 +291,13 @@ func (s *session) ask(label, placeholder string, validate func(string) error) (s
 	return value, promptError(err)
 }
 
-func kindLabel(kind string) string { return configedit.KindLabel(kind) }
-
 // define adds a top-level definition to file, refusing an ID that is already defined.
-func (s *session) define(kind, id, file string, value *yaml.Node) error {
+func (s *session) define(kind config.Kind, id, file string, value *yaml.Node) error {
 	if at, exists := configedit.Lookup(s.Config, kind, id); exists {
 		return codedf(
 			codeConflict,
 			"%s %s is already defined at %s:%d",
-			kindLabel(kind),
+			kind.Label(),
 			id,
 			at.Source.Path,
 			at.Source.Line,
@@ -316,7 +314,7 @@ func (s *session) define(kind, id, file string, value *yaml.Node) error {
 
 // enableAfterDefine enables a new definition unless --define-only; scope edits go to a matching
 // rule, otherwise beside the definition.
-func (s *session) enableAfterDefine(kind, id, file string, flags editFlags) error {
+func (s *session) enableAfterDefine(kind config.Kind, id, file string, flags editFlags) error {
 	if flags.defineOnly {
 		return nil
 	}
@@ -329,7 +327,7 @@ func (s *session) enableAfterDefine(kind, id, file string, flags editFlags) erro
 }
 
 // removeDefinition deletes a fragment's definition of id, with its references when force is set.
-func (s *session) removeDefinition(kind, id string, force bool) error {
+func (s *session) removeDefinition(kind config.Kind, id string, force bool) error {
 	if err := s.RemoveDefinition(kind, id, force); err != nil {
 		return err
 	}

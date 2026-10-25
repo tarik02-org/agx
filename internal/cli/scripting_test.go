@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/daemon"
 )
 
@@ -280,7 +281,7 @@ func TestJSONValidate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if invalid.Valid || len(invalid.Diagnostics) != 1 || invalid.Diagnostics[0].Severity != "error" ||
-		invalid.Diagnostics[0].Source.Line == nil || *invalid.Diagnostics[0].Source.Line != 2 || !strings.HasSuffix(invalid.Diagnostics[0].Source.Path, "agx.yaml") {
+		invalid.Diagnostics[0].Source.Line == nil || *invalid.Diagnostics[0].Source.Line != 4 || !strings.HasSuffix(invalid.Diagnostics[0].Source.Path, "agx.yaml") {
 		t.Fatalf("invalid validate = %+v", invalid)
 	}
 
@@ -291,7 +292,7 @@ func TestJSONValidate(t *testing.T) {
 	}
 
 	d := failJSON(t, 1, codeConfigInvalid, "explain", "--json")
-	if d.Error.Source == nil || d.Error.Source.Line != 2 {
+	if d.Error.Source == nil || d.Error.Source.Line != 4 {
 		t.Fatalf("config error without its source: %+v", d.Error)
 	}
 	failJSON(t, 1, codeConfigInvalid, "mcp", "add", "x", "--json", "--", "y")
@@ -455,21 +456,16 @@ func TestErrorCodes(t *testing.T) {
 			t.Errorf("errorCode(%v) = %s, want %s", test.err, got, test.want)
 		}
 	}
-	// A drive-letter path on Windows exercises the colon after the drive.
-	path := "/etc/agx.yaml"
-	if runtime.GOOS == "windows" {
-		path = `C:\agx\agx.yaml`
-	}
-	for message, want := range map[string]*sourceJSON{
-		path + ":12: MCP server x: bad":                       {Path: path, Line: jsonInt(12)},
-		"configuration is invalid; fix it: " + path + ": bad": {Path: path},
-		path + ": yaml: construct errors: line 4: field x":    {Path: path, Line: jsonInt(4)},
-		path + ": load error in parser at L5.C1: no content":  {Path: path, Line: jsonInt(5)},
-		"package x is not installed; run agx install":         nil,
+	located := &config.SourceError{Path: "/etc/agx.yaml", Line: 12, Err: errors.New("bad")}
+	for err, want := range map[error]*sourceJSON{
+		located: {Path: "/etc/agx.yaml", Line: jsonInt(12)},
+		fmt.Errorf("configuration is invalid: %w", &config.SourceError{Path: "/etc/agx.yaml", Err: errors.New("bad")}): {
+			Path: "/etc/agx.yaml",
+		},
+		errors.New("package x is not installed; run agx install"): nil,
 	} {
-		got := errorSource(message)
-		if !reflect.DeepEqual(got, want) {
-			t.Errorf("errorSource(%q) = %+v, want %+v", message, got, want)
+		if got := errorSource(err); !reflect.DeepEqual(got, want) {
+			t.Errorf("errorSource(%v) = %+v, want %+v", err, got, want)
 		}
 	}
 }

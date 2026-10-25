@@ -15,19 +15,6 @@ import (
 	"github.com/tarik02-org/agx/internal/packages"
 )
 
-// Sections that are not selection kinds.
-const (
-	Secrets   = "secrets"
-	Packages  = "packages"
-	Harnesses = "harnesses"
-)
-
-// Kinds are the configuration sections holding definitions.
-var Kinds = []string{edit.Skills, edit.Instructions, edit.MCP, Secrets, edit.Bundles, Packages, Harnesses}
-
-// SelectionKinds are the kinds scope rules select.
-var SelectionKinds = []string{edit.Skills, edit.Instructions, edit.MCP, edit.Bundles}
-
 // Located is where a definition is, as configuration loading recorded it.
 type Located struct {
 	Source config.Source
@@ -38,28 +25,28 @@ type Located struct {
 // Lookup locates the definition of id of a kind. Inline secrets of MCP servers, the implicit
 // OAuth of servers without auth, and the anonymous packages of Git resources are not definitions
 // of their own.
-func Lookup(c *config.Config, kind, id string) (Located, bool) {
+func Lookup(c *config.Config, kind config.Kind, id string) (Located, bool) {
 	key := config.ID(id)
 	switch kind {
-	case edit.Skills:
+	case config.KindSkills:
 		d, ok := c.Skills[key]
 		return Located{d.Source, d.Inline}, ok
-	case edit.Instructions:
+	case config.KindInstructions:
 		d, ok := c.Instructions[key]
 		return Located{d.Source, d.Inline}, ok
-	case edit.MCP:
+	case config.KindMCPServers:
 		d, ok := c.MCP[key]
 		return Located{d.Source, d.Inline}, ok
-	case edit.Bundles:
+	case config.KindBundles:
 		d, ok := c.Bundles[key]
 		return Located{Source: d.Source}, ok
-	case Secrets:
+	case config.KindSecrets:
 		d, ok := c.Secrets[key]
 		return Located{Source: d.Source}, ok && d.Owner == "" && !d.Implicit
-	case Packages:
+	case config.KindPackages:
 		d, ok := c.Packages[key]
 		return Located{Source: d.Source}, ok && !d.Anonymous
-	case Harnesses:
+	case config.KindHarnesses:
 		d, ok := c.Harnesses[id]
 		return Located{Source: d.Source}, ok && d.Source.Path != ""
 	}
@@ -83,9 +70,14 @@ func Owner(c *config.Config, source config.Source, id string) config.ID {
 
 // Define creates or replaces the definition of id. An existing one is replaced in the file that
 // defines it; a new one goes to file.
-func (s *Session) Define(kind, id string, value *yaml.Node, file string) error {
-	if !slices.Contains(Kinds, kind) {
-		return errorf(InvalidRequest, "unknown definition kind %q; expected one of %s", kind, strings.Join(Kinds, ", "))
+func (s *Session) Define(kind config.Kind, id string, value *yaml.Node, file string) error {
+	if !slices.Contains(config.Kinds, kind) {
+		return errorf(
+			InvalidRequest,
+			"unknown definition kind %q; expected one of %s",
+			kind,
+			config.JoinKinds(config.Kinds),
+		)
 	}
 	if id == "" {
 		return errorf(InvalidRequest, "a definition needs an ID")
@@ -95,11 +87,11 @@ func (s *Session) Define(kind, id string, value *yaml.Node, file string) error {
 			return errorf(
 				Conflict,
 				"%s %s is defined inline in a selection list at %s:%d; move it under top-level %s: to edit it",
-				KindLabel(kind), id, at.Source.Path, at.Source.Line, kind,
+				kind.Label(), id, at.Source.Path, at.Source.Line, kind,
 			)
 		}
 		if !slices.Contains(s.Config.Files, at.Source.Path) {
-			return errorf(ReadOnly, "%s %s is defined by a package (%s)", KindLabel(kind), id, at.Source.Path)
+			return errorf(ReadOnly, "%s %s is defined by a package (%s)", kind.Label(), id, at.Source.Path)
 		}
 		if err := edit.Writable(at.Source.Path); err != nil {
 			return coded(ReadOnly, err)
@@ -115,11 +107,11 @@ func (s *Session) Define(kind, id string, value *yaml.Node, file string) error {
 }
 
 // Undefine removes the definition of id with every reference to it.
-func (s *Session) Undefine(kind, id string) error {
+func (s *Session) Undefine(kind config.Kind, id string) error {
 	switch kind {
-	case Harnesses:
+	case config.KindHarnesses:
 		return s.RemoveHarness(id, true)
-	case Packages:
+	case config.KindPackages:
 		at, exists := Lookup(s.Config, kind, id)
 		if !exists {
 			return errorf(NotFound, "unknown package %s", id)
@@ -129,7 +121,7 @@ func (s *Session) Undefine(kind, id string) error {
 		}
 		_, err := s.RemovePackage(config.ID(id), true)
 		return err
-	case Secrets:
+	case config.KindSecrets:
 		at, exists := Lookup(s.Config, kind, id)
 		if !exists {
 			return errorf(NotFound, "unknown secret %s", id)
@@ -145,23 +137,28 @@ func (s *Session) Undefine(kind, id string) error {
 			return fmt.Errorf("cannot find the definition of %s in %s", id, at.Source.Path)
 		}
 		return nil
-	case edit.Skills, edit.Instructions, edit.MCP, edit.Bundles:
+	case config.KindSkills, config.KindInstructions, config.KindMCPServers, config.KindBundles:
 		return s.RemoveDefinition(kind, id, true)
 	}
-	return errorf(InvalidRequest, "unknown definition kind %q; expected one of %s", kind, strings.Join(Kinds, ", "))
+	return errorf(
+		InvalidRequest,
+		"unknown definition kind %q; expected one of %s",
+		kind,
+		config.JoinKinds(config.Kinds),
+	)
 }
 
 // RemoveDefinition deletes a fragment's definition of id of a selection kind, with its
 // references when force is set.
-func (s *Session) RemoveDefinition(kind, id string, force bool) error {
+func (s *Session) RemoveDefinition(kind config.Kind, id string, force bool) error {
 	at, exists := Lookup(s.Config, kind, id)
 	if !exists {
-		return errorf(NotFound, "unknown %s %s", KindLabel(kind), id)
+		return errorf(NotFound, "unknown %s %s", kind.Label(), id)
 	}
 	if !slices.Contains(s.Config.Files, at.Source.Path) {
 		for prefix := config.ID(id); strings.Contains(string(prefix), "/"); {
 			prefix = prefix[:strings.LastIndex(string(prefix), "/")]
-			if kind == edit.Skills && s.SkillPackage(prefix) {
+			if kind == config.KindSkills && s.SkillPackage(prefix) {
 				return errorf(
 					ReadOnly,
 					"skill %s comes from package %s; remove the package with agx skill remove %s, "+
@@ -173,7 +170,7 @@ func (s *Session) RemoveDefinition(kind, id string, force bool) error {
 		return errorf(
 			ReadOnly,
 			"%s %s is defined by a package (%s); remove that package instead, or disable it with agx unuse %s",
-			KindLabel(kind),
+			kind.Label(),
 			id,
 			at.Source.Path,
 			id,
@@ -207,7 +204,7 @@ func (s *Session) RemoveDefinition(kind, id string, force bool) error {
 	}
 	if !force {
 		return errorf(Conflict, "%s %s is still referenced; pass --force to remove the references too:\n  %s",
-			KindLabel(kind), id, strings.Join(refs, "\n  "))
+			kind.Label(), id, strings.Join(refs, "\n  "))
 	}
 	return s.RemoveReferences(kind, id)
 }
@@ -229,7 +226,7 @@ func (s *Session) SkillPackage(id config.ID) bool {
 
 // Resource is a definition of a selection kind.
 type Resource struct {
-	Kind string
+	Kind config.Kind
 	ID   config.ID
 }
 
@@ -242,7 +239,7 @@ func (s *Session) RemovePackage(id config.ID, force bool) ([]Resource, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !f.Undefine(Packages, string(id)) {
+	if !f.Undefine(config.KindPackages, string(id)) {
 		return nil, fmt.Errorf("cannot find the definition of package %s in %s", id, p.Source.Path)
 	}
 	within := func(name config.ID) bool {
@@ -251,22 +248,22 @@ func (s *Session) RemovePackage(id config.ID, force bool) ([]Resource, error) {
 	resources := []Resource{}
 	for _, name := range slices.Sorted(maps.Keys(s.Config.Skills)) {
 		if within(name) {
-			resources = append(resources, Resource{edit.Skills, name})
+			resources = append(resources, Resource{config.KindSkills, name})
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(s.Config.Instructions)) {
 		if within(name) {
-			resources = append(resources, Resource{edit.Instructions, name})
+			resources = append(resources, Resource{config.KindInstructions, name})
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(s.Config.MCP)) {
 		if within(name) {
-			resources = append(resources, Resource{edit.MCP, name})
+			resources = append(resources, Resource{config.KindMCPServers, name})
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(s.Config.Bundles)) {
 		if within(name) {
-			resources = append(resources, Resource{edit.Bundles, name})
+			resources = append(resources, Resource{config.KindBundles, name})
 		}
 	}
 	// Rule entries enabling the package's skills are what skill add writes, so they go with the
@@ -279,7 +276,7 @@ func (s *Session) RemovePackage(id config.ID, force bool) ([]Resource, error) {
 				return nil, err
 			}
 			for _, ref := range f.References(r.Kind, string(r.ID)) {
-				if r.Kind != edit.Skills || !ref.Enables {
+				if r.Kind != config.KindSkills || !ref.Enables {
 					blocking = append(blocking, fmt.Sprintf("%s: %s", shortPath(path), ref.Where))
 				}
 			}
@@ -342,11 +339,11 @@ func (s *Session) RemoveHarness(name string, force bool) error {
 		if err != nil {
 			return err
 		}
-		if f.Definition(Harnesses, name) != nil {
+		if f.Definition(config.KindHarnesses, name) != nil {
 			if err := edit.Writable(path); err != nil {
 				return coded(ReadOnly, err)
 			}
-			f.Undefine(Harnesses, name)
+			f.Undefine(config.KindHarnesses, name)
 			declared = true
 		}
 		for _, r := range f.Rules() {
@@ -399,7 +396,7 @@ func (s *Session) RemoveHarness(name string, force bool) error {
 
 // RuleFile is where a new rule for id goes: the fragment defining it when it can be written,
 // else the root configuration.
-func (s *Session) RuleFile(kind, id string) string {
+func (s *Session) RuleFile(kind config.Kind, id string) string {
 	at, _ := Lookup(s.Config, kind, id)
 	if slices.Contains(s.Config.Files, at.Source.Path) && edit.Writable(at.Source.Path) == nil {
 		return at.Source.Path

@@ -10,15 +10,14 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
+	"strconv"
 	"strings"
-
-	"go.yaml.in/yaml/v4"
 
 	"github.com/tarik02-org/agx/internal/securefs"
 )
@@ -126,29 +125,27 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 		active[path] = true
 		defer delete(active, path)
 		inputs.file(path)
-		d, node, err := decode(path, overlay)
+		b, err := overlay.readFile(path)
 		if path == root && errors.Is(err, fs.ErrNotExist) {
-			d, node, err = decodeBytes(path, []byte(DefaultConfig))
+			b, err = []byte(DefaultConfig), nil
 		}
 		if err != nil {
 			return err
 		}
+		d, positions, err := decode(path, b, false, builtins)
+		if err != nil {
+			return err
+		}
 		for i, imp := range d.Imports {
-			at := path
-			if imports := position(node, path, "imports"); len(node.Content) > 0 {
-				if list := mappingValue(node.Content[0], "imports"); list != nil && i < len(list.Content) {
-					imports.Line = list.Content[i].Line
-				}
-				at = locate(imports)
-			}
+			at := positions.at("imports", strconv.Itoa(i))
 			p, err := ExpandHome(imp)
 			if err != nil {
-				return fmt.Errorf("%s: import %w", at, err)
+				return errorAt(at, "import %w", err)
 			}
 			p = relative(filepath.Dir(path), p)
 			if !isGlob(imp) {
 				if found, err := overlay.exists(p); err == nil && !found {
-					return fmt.Errorf("%s: import %s: %s does not exist", at, imp, p)
+					return errorAt(at, "import %s: %s does not exist", imp, p)
 				}
 				if err := load(p); err != nil {
 					return err
@@ -157,7 +154,7 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 			}
 			files, err := overlay.glob(p)
 			if err != nil {
-				return fmt.Errorf("%s: import %s: %w", at, imp, err)
+				return errorAt(at, "import %s: %w", imp, err)
 			}
 			inputs.glob(p, files)
 			for _, match := range files {
@@ -166,7 +163,7 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 				}
 			}
 		}
-		if err := c.merge(d, node, path, "", false); err != nil {
+		if err := c.merge(d, positions, path, "", false); err != nil {
 			return err
 		}
 		c.Files = append(c.Files, path)
@@ -193,37 +190,19 @@ func Load(root string, opts Options) (*Config, error) {
 	if err != nil || cache == "" {
 		return c, err
 	}
-	loaded := map[ID]bool{}
 	c.Missing = map[ID]MissingPackage{}
 	// skip leaves a package out because it is not installed; a launch goes on without it.
-	skip := func(id ID, format string) error {
+	skip := func(id ID, format string) (string, error) {
 		reason := fmt.Sprintf(format, id) + "; run agx install"
 		if p := c.Packages[id]; p.Anonymous {
 			kind, resource, _ := strings.Cut(string(id), ":")
 			reason = fmt.Sprintf("%s %s: its Git source is not installed; run agx install", kind, resource)
 		}
 		c.Missing[id] = MissingPackage{Root: id, Reason: reason}
-		loaded[id] = true
-		return nil
+		return "", nil
 	}
-	var load func(ID, []ID) error
-	load = func(id ID, chain []ID) error {
-		for _, parent := range chain {
-			if parent == id {
-				return fmt.Errorf("package dependency cycle: %v -> %s", chain, id)
-			}
-		}
-		if loaded[id] {
-			return nil
-		}
-		p := c.Packages[id]
-		// What a missing package declares, its dependencies and Git sources, is missing with it.
-		if owner, ok := c.missingParent(id, p); ok {
-			c.Missing[id] = MissingPackage{Root: owner}
-			loaded[id] = true
-			return nil
-		}
-		var entry LockedPackage
+	locked := map[ID][]ID{}
+	installed := func(id ID, p Package) (string, error) {
 		hash := p.Hash
 		switch {
 		case p.Pinned() && hash == "":
@@ -233,7 +212,7 @@ func Load(root string, opts Options) (*Config, error) {
 			if hash, err = ReadPin(pin); errors.Is(err, fs.ErrNotExist) {
 				return skip(id, "package %s is not installed")
 			} else if err != nil {
-				return fmt.Errorf("package %s: %w", id, err)
+				return "", fmt.Errorf("package %s: %w", id, err)
 			}
 		case !p.Pinned():
 			inputs.file(p.Lockfile)
@@ -241,90 +220,49 @@ func Load(root string, opts Options) (*Config, error) {
 			var newer *securefs.NewerFormatError
 			switch {
 			case errors.As(err, &newer):
-				return err
+				return "", err
 			case errors.Is(err, fs.ErrNotExist):
 				return skip(id, "package %s is not installed")
 			case err != nil:
-				return fmt.Errorf("%s: %w; run agx install", p.Lockfile, err)
+				return "", &SourceError{Path: p.Lockfile, Err: fmt.Errorf("%w; run agx install", err)}
 			}
-			var ok bool
-			entry, ok = lock.Packages[id]
+			entry, ok := lock.Packages[id]
 			switch {
 			case !ok:
 				return skip(id, "package %s is not installed")
 			case Digest(entry.Source) != Digest(p.LockSource()):
 				return skip(id, "package %s changed since it was installed")
+			case !ValidHash(entry.Hash):
+				return "", fmt.Errorf("invalid cache hash for %s", id)
 			}
-			if !ValidHash(entry.Hash) {
-				return fmt.Errorf("invalid cache hash for %s", id)
-			}
-			hash = entry.Hash
+			hash, locked[id] = entry.Hash, append([]ID{}, entry.Dependencies...)
+			slices.Sort(locked[id])
 		}
 		dir := filepath.Join(cache, "packages", hash)
 		inputs.file(dir)
 		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
 			return skip(id, "package %s is not installed")
 		} else if err != nil {
-			return fmt.Errorf("package %s cache: %w", id, err)
+			return "", fmt.Errorf("package %s cache: %w", id, err)
 		}
 		cached, err := TreeHash(dir)
 		if err != nil {
-			return fmt.Errorf("package %s cache: %w", id, err)
+			return "", fmt.Errorf("package %s cache: %w", id, err)
 		}
 		if cached != hash {
-			return fmt.Errorf("package %s cache content does not match its lock", id)
+			return "", fmt.Errorf("package %s cache content does not match its lock", id)
 		}
 		c.PackageHashes[id] = hash
-		if p.Anonymous {
-			if err := c.AddContent(id, dir); err != nil {
-				return err
-			}
-			loaded[id] = true
-			return nil
+		return dir, nil
+	}
+	merged := func(id ID, p Package, deps []ID) error {
+		if expected, ok := locked[id]; ok && !p.Anonymous && Digest(deps) != Digest(expected) {
+			return fmt.Errorf("stale dependency lock for %s", id)
 		}
-		d, err := c.AddPackage(id, dir)
-		if err != nil {
-			return err
-		}
-		deps := c.Dependencies(id, d)
-		if !p.Pinned() {
-			expected := append([]ID{}, entry.Dependencies...)
-			sort.Slice(expected, func(i, j int) bool { return expected[i] < expected[j] })
-			if Digest(deps) != Digest(expected) {
-				return fmt.Errorf("stale dependency lock for %s", id)
-			}
-		}
-		for _, dep := range deps {
-			if err := load(dep, append(chain, id)); err != nil {
-				return err
-			}
-		}
-		loaded[id] = true
 		return nil
 	}
-	ids := []ID{}
-	for id := range c.Packages {
-		ids = append(ids, id)
-	}
-	// Parents load before what they declare, so a missing parent is known when its declarations
-	// come up: named packages by depth, then the Git sources of resources.
-	anonymous := func(id ID) int {
-		if strings.Contains(string(id), ":") {
-			return 1
-		}
-		return 0
-	}
-	slices.SortFunc(ids, func(a, b ID) int {
-		return cmp.Or(
-			cmp.Compare(anonymous(a), anonymous(b)),
-			cmp.Compare(strings.Count(string(a), "/"), strings.Count(string(b), "/")),
-			cmp.Compare(a, b),
-		)
-	})
-	for _, id := range ids {
-		if err := load(id, nil); err != nil {
-			return nil, err
-		}
+	if err := c.MergePackages(installed, merged); err != nil {
+		return nil, err
 	}
 	// Definitions whose content is a missing Git source are left out, like a missing package's.
 	for name, s := range c.Skills {
@@ -341,6 +279,82 @@ func Load(root string, opts Options) (*Config, error) {
 		return nil, err
 	}
 	return c, nil
+}
+
+// MergePackages merges the declared packages and their dependencies, parents before what they
+// declare. locate returns the directory holding a package's content, or "" to leave it out with
+// everything it declares; merged receives each merged package with its dependencies.
+func (c *Config) MergePackages(
+	locate func(ID, Package) (string, error),
+	merged func(ID, Package, []ID) error,
+) error {
+	done := map[ID]bool{}
+	var visit func(ID, []ID) error
+	visit = func(id ID, chain []ID) error {
+		if slices.Contains(chain, id) {
+			return fmt.Errorf("package dependency cycle: %v -> %s", chain, id)
+		}
+		if done[id] {
+			return nil
+		}
+		done[id] = true
+		p, ok := c.Packages[id]
+		if !ok {
+			return fmt.Errorf("unknown package %s", id)
+		}
+		// What a missing package declares, its dependencies and Git sources, is missing with it.
+		if owner, ok := c.missingParent(id, p); ok {
+			c.Missing[id] = MissingPackage{Root: owner}
+			return nil
+		}
+		dir, err := locate(id, p)
+		if err != nil || dir == "" {
+			return err
+		}
+		deps := []ID{}
+		if p.Anonymous {
+			err = c.addContent(id, dir)
+		} else {
+			var d Document
+			if d, err = c.AddPackage(id, dir); err == nil {
+				deps = c.dependencies(id, d)
+			}
+		}
+		if err != nil {
+			return err
+		}
+		if err := merged(id, p, deps); err != nil {
+			return err
+		}
+		for _, dep := range deps {
+			if err := visit(dep, append(chain, id)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	ids := slices.Collect(maps.Keys(c.Packages))
+	// Parents merge before what they declare, so a missing parent is known when its declarations
+	// come up: named packages by depth, then the Git sources of resources.
+	anonymous := func(id ID) int {
+		if strings.Contains(string(id), ":") {
+			return 1
+		}
+		return 0
+	}
+	slices.SortFunc(ids, func(a, b ID) int {
+		return cmp.Or(
+			cmp.Compare(anonymous(a), anonymous(b)),
+			cmp.Compare(strings.Count(string(a), "/"), strings.Count(string(b), "/")),
+			cmp.Compare(a, b),
+		)
+	})
+	for _, id := range ids {
+		if err := visit(id, nil); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // missingParent reports the missing package that declared package id: the package of an
@@ -363,15 +377,34 @@ func (c *Config) missingParent(id ID, p Package) (ID, bool) {
 // without agx.package.yaml declares each directory holding SKILL.md as a skill named after its
 // folder, located at that SKILL.md.
 func (c *Config) AddPackage(id ID, dir string) (Document, error) {
-	d, node, manifest, err := decodePackage(dir)
+	manifest := filepath.Join(dir, "agx.package.yaml")
+	b, err := os.ReadFile(manifest)
+	if !errors.Is(err, fs.ErrNotExist) {
+		if err != nil {
+			return Document{}, err
+		}
+		d, positions, err := decode(manifest, b, true, c.builtins)
+		if err != nil {
+			return d, err
+		}
+		return d, c.merge(d, positions, manifest, string(id), true)
+	}
+	d := Document{Skills: map[ID]Skill{}}
+	skills, err := FindSkills(dir)
 	if err != nil {
 		return d, err
 	}
-	if err := c.merge(d, node, manifest, string(id), true); err != nil {
-		return d, err
+	for _, found := range skills {
+		if previous, taken := d.Skills[found.ID]; taken {
+			return d, fmt.Errorf(
+				"package %s: skills %s and %s share the ID %s; add agx.package.yaml to name them",
+				dir, previous.Path, found.Path, found.ID,
+			)
+		}
+		d.Skills[found.ID] = Skill{Path: found.Path}
 	}
-	if len(node.Content) > 0 {
-		return d, nil
+	if err := c.merge(d, positions{"": {Path: manifest, Line: 1, Column: 1}}, manifest, string(id), true); err != nil {
+		return d, err
 	}
 	for name := range d.Skills {
 		qualified := qualify(string(id), name)
@@ -383,40 +416,15 @@ func (c *Config) AddPackage(id ID, dir string) (Document, error) {
 	return d, nil
 }
 
-// decodePackage decodes a package's manifest, or discovers its skills when it has none. It
-// returns the manifest path, which anchors the package's paths.
-func decodePackage(dir string) (Document, *yaml.Node, string, error) {
-	manifest := filepath.Join(dir, "agx.package.yaml")
-	d, node, err := decode(manifest, nil)
-	if !errors.Is(err, fs.ErrNotExist) {
-		return d, node, manifest, err
-	}
-	d = Document{Skills: map[ID]Skill{}}
-	skills, err := FindSkills(dir)
-	if err != nil {
-		return d, nil, manifest, err
-	}
-	for _, found := range skills {
-		if previous, taken := d.Skills[found.ID]; taken {
-			return d, nil, manifest, fmt.Errorf(
-				"package %s: skills %s and %s share the ID %s; add agx.package.yaml to name them",
-				dir, previous.Path, found.Path, found.ID,
-			)
-		}
-		d.Skills[found.ID] = Skill{Path: found.Path}
-	}
-	return d, &yaml.Node{}, manifest, nil
-}
-
-// AddContent points the resources of an anonymous package at its installed checkout.
-func (c *Config) AddContent(id ID, dir string) error {
+// addContent points the resources of an anonymous package at its installed checkout.
+func (c *Config) addContent(id ID, dir string) error {
 	for name, s := range c.Skills {
 		if s.Package != id {
 			continue
 		}
 		path, err := securefs.Contained(dir, filepath.FromSlash(cmp.Or(s.Path, ".")))
 		if err != nil {
-			return fmt.Errorf("%s: skill %s: %w", locate(s.Source), name, err)
+			return errorAt(s.Source, "skill %s: %w", name, err)
 		}
 		s.Path = path
 		c.Skills[name] = s
@@ -427,7 +435,7 @@ func (c *Config) AddContent(id ID, dir string) error {
 		}
 		path, err := securefs.Contained(dir, filepath.FromSlash(i.Path))
 		if err != nil {
-			return fmt.Errorf("%s: instructions %s: %w", locate(i.Source), name, err)
+			return errorAt(i.Source, "instructions %s: %w", name, err)
 		}
 		i.Path = path
 		c.Instructions[name] = i
@@ -435,9 +443,9 @@ func (c *Config) AddContent(id ID, dir string) error {
 	return nil
 }
 
-// Dependencies lists the packages a manifest declares, including the anonymous Git sources of its
+// dependencies lists the packages a manifest declares, including the anonymous Git sources of its
 // resources, and moves those locked with it into its lockfile.
-func (c *Config) Dependencies(id ID, d Document) []ID {
+func (c *Config) dependencies(id ID, d Document) []ID {
 	lockfile := c.Packages[id].Lockfile
 	deps := []ID{}
 	for dep := range d.Packages {
@@ -497,46 +505,10 @@ func WritePin(path, hash string) error {
 	return securefs.WriteJSON(path, pin{Version: pinVersion, Hash: hash})
 }
 
-func decode(path string, overlay Overlay) (Document, *yaml.Node, error) {
-	b, err := overlay.readFile(path)
-	if err != nil {
-		return Document{}, nil, err
-	}
-	return decodeBytes(path, b)
-}
-
-func decodeBytes(path string, b []byte) (Document, *yaml.Node, error) {
-	var d Document
-	var n yaml.Node
-	if err := yaml.Unmarshal(b, &n); err != nil {
-		return d, nil, yamlError(path, b, nil, err)
-	}
-	// Decoding ignores tags on plain strings, so they are checked first.
-	tagErr := checkTags(path, &n, nil)
-	if tagErr != nil && !errors.As(tagErr, new(misplacedTagError)) {
-		return d, nil, tagErr
-	}
-	dec := yaml.NewDecoder(bytes.NewReader(b))
-	dec.KnownFields(true)
-	if err := dec.Decode(&d); errors.Is(err, io.EOF) {
-		return d, nil, fmt.Errorf("%s: file is empty; write {} for a fragment that declares nothing", path)
-	} else if err != nil {
-		return d, nil, yamlError(path, b, &n, err)
-	}
-	if tagErr != nil {
-		return d, nil, tagErr
-	}
-	var extra any
-	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		return d, nil, fmt.Errorf("%s: expected one YAML document", path)
-	}
-	return d, &n, nil
-}
-
 // merger merges one file: a configuration fragment, or a package manifest under its namespace.
 type merger struct {
 	c        *Config
-	node     *yaml.Node
+	at       positions
 	path     string
 	base     string
 	ns       string
@@ -549,28 +521,18 @@ type prior struct {
 	source         Source
 }
 
-var kindLabels = map[string]string{
-	"packages": "package", "skills": "skill", "instructions": "instructions", "mcp": "MCP server",
-	"secrets": "secret", "bundles": "bundle",
-}
-
-func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bool) error {
-	base := filepath.Dir(path)
-	if manifest &&
-		(len(d.Imports) > 0 || len(d.Scopes) > 0 || len(d.Harnesses) > 0 || d.Daemon != (Daemon{})) {
-		return fmt.Errorf("%s: package manifests may only declare resources, bundles, secrets, and dependencies", path)
-	}
-	m := &merger{c: c, node: node, path: path, base: base, ns: ns, manifest: manifest}
+func (c *Config) merge(d Document, at positions, path, ns string, manifest bool) error {
+	m := &merger{c: c, at: at, path: path, base: filepath.Dir(path), ns: ns, manifest: manifest}
 	if c.rootDefinitions == nil {
 		c.rootDefinitions = map[string]bool{}
 	}
 	for _, id := range sortedKeys(d.Packages) {
 		p := d.Packages[id]
 		name := qualify(ns, id)
-		at := m.source("packages", string(id))
+		at := m.at.at(string(KindPackages), string(id))
 		existing, exists := c.Packages[name]
 		if apply, err := m.conflict(
-			"packages",
+			KindPackages,
 			name,
 			prior{exists: exists, source: existing.Source},
 			p.Override,
@@ -587,30 +549,34 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 		c.Packages[name] = p
 	}
 	for _, id := range sortedKeys(d.Skills) {
-		if err := m.addSkill(id, d.Skills[id], m.source("skills", string(id)), false); err != nil {
+		if err := m.addSkill(id, d.Skills[id], m.at.at(string(KindSkills), string(id)), false); err != nil {
 			return err
 		}
 	}
 	for _, id := range sortedKeys(d.Instructions) {
-		if err := m.addInstructions(id, d.Instructions[id], m.source("instructions", string(id)), false); err != nil {
+		if err := m.addInstructions(
+			id,
+			d.Instructions[id],
+			m.at.at(string(KindInstructions), string(id)),
+			false,
+		); err != nil {
 			return err
 		}
 	}
 	for _, id := range sortedKeys(d.Secrets) {
 		secret := d.Secrets[id]
 		name := qualify(ns, id)
-		at := m.source("secrets", string(id))
+		at := m.at.at(string(KindSecrets), string(id))
 		existing, exists := c.Secrets[name]
 		if existing.Owner != "" {
-			return fmt.Errorf(
-				"%s: secret %s conflicts with the auth of MCP server %s, which uses that ID; rename one",
-				locate(at),
+			return errorAt(
+				at, "secret %s conflicts with the auth of MCP server %s, which uses that ID; rename one",
 				name,
 				existing.Owner,
 			)
 		}
 		if apply, err := m.conflict(
-			"secrets",
+			KindSecrets,
 			name,
 			prior{exists: exists, source: existing.Source},
 			secret.Override,
@@ -623,22 +589,22 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 		}
 		secret.Source = at
 		if err := m.placeSecret(&secret); err != nil {
-			return fmt.Errorf("%s: secret %s: %w", locate(at), name, err)
+			return errorAt(at, "secret %s: %w", name, err)
 		}
 		c.Secrets[name] = secret
 	}
 	for _, id := range sortedKeys(d.MCP) {
-		if err := m.addMCP(id, d.MCP[id], m.source("mcp", string(id)), false); err != nil {
+		if err := m.addMCP(id, d.MCP[id], m.at.at(string(KindMCPServers), string(id)), false); err != nil {
 			return err
 		}
 	}
 	for _, id := range sortedKeys(d.Bundles) {
 		b := d.Bundles[id]
 		name := qualify(ns, id)
-		at := m.source("bundles", string(id))
+		at := m.at.at(string(KindBundles), string(id))
 		existing, exists := c.Bundles[name]
 		if apply, err := m.conflict(
-			"bundles",
+			KindBundles,
 			name,
 			prior{exists: exists, source: existing.Source},
 			b.Override,
@@ -656,22 +622,12 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 		c.Bundles[name] = Bundle{Selection: selection, Source: at}
 	}
 	for i, s := range d.Scopes {
-		at := Source{Path: path, Line: 1, Column: 1}
-		if len(node.Content) > 0 {
-			n := node.Content[0]
-			for j := 0; j+1 < len(n.Content); j += 2 {
-				if n.Content[j].Value == "scopes" && i < len(n.Content[j+1].Content) {
-					pos := n.Content[j+1].Content[i]
-					at.Line = pos.Line
-					at.Column = pos.Column
-				}
-			}
-		}
+		at := m.at.at("scopes", strconv.Itoa(i))
 		directory := ""
 		if s.Directory != "" {
 			var err error
 			if directory, err = ScopeDirectory(path, s.Directory); err != nil {
-				return fmt.Errorf("%s: scope directory %w", locate(at), err)
+				return errorAt(at, "scope directory %w", err)
 			}
 		}
 		add, err := m.selection(s.Add)
@@ -704,7 +660,10 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 			continue
 		}
 		if previous, ok := c.daemonSet[field.name]; ok {
-			return fmt.Errorf("%s: daemon.%s is already set in %s; set it in one fragment", path, field.name, previous)
+			return &SourceError{
+				Path: path,
+				Err:  fmt.Errorf("daemon.%s is already set in %s; set it in one fragment", field.name, previous),
+			}
 		}
 		c.daemonSet[field.name] = path
 	}
@@ -720,19 +679,6 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 	return nil
 }
 
-// mappingValue returns the value of key in mapping n, or nil.
-func mappingValue(n *yaml.Node, key string) *yaml.Node {
-	if n.Kind != yaml.MappingNode {
-		return nil
-	}
-	for i := 0; i+1 < len(n.Content); i += 2 {
-		if n.Content[i].Value == key {
-			return n.Content[i+1]
-		}
-	}
-	return nil
-}
-
 // ScopeDirectory canonicalizes a scope directory as written in file.
 func ScopeDirectory(file, written string) (string, error) {
 	directory, err := ExpandHome(written)
@@ -742,59 +688,35 @@ func ScopeDirectory(file, written string) (string, error) {
 	return Canonical(relative(filepath.Dir(file), directory))
 }
 
-// source locates a top-level definition.
-func (m *merger) source(section, key string) Source {
-	out := Source{Path: m.path, Line: 1, Column: 1}
-	if len(m.node.Content) == 0 {
-		return out
-	}
-	root := m.node.Content[0]
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		if root.Content[i].Value != section {
-			continue
-		}
-		n := root.Content[i+1]
-		for j := 0; j+1 < len(n.Content); j += 2 {
-			if n.Content[j].Value == key {
-				return Source{m.path, n.Content[j].Line, n.Content[j].Column}
-			}
-		}
-	}
-	return out
-}
-
 // conflict decides whether a definition applies. Configuration fragments merge before package
 // manifests, so precedence is decided by origin rather than order: a configuration override wins
 // over package definitions, and packages can never replace configuration definitions. Inline
 // definitions are never replaced, so a reference never silently changes meaning.
-func (m *merger) conflict(kind string, id ID, p prior, override, inline bool, at Source) (bool, error) {
-	if !validID(id) {
-		return false, fmt.Errorf("%s: invalid ID %q", locate(at), id)
-	}
-	label := kindLabels[kind]
+func (m *merger) conflict(kind Kind, id ID, p prior, override, inline bool, at Source) (bool, error) {
+	label := kind.Label()
 	if p.exists && (p.inline || inline) {
-		return false, fmt.Errorf(
-			"%s: %s %s is also defined at %s; define it once, under top-level %s:, and reference its ID elsewhere",
-			locate(at), label, id, locate(p.source), kind,
+		return false, errorAt(
+			at, "%s %s is also defined at %s; define it once, under top-level %s:, and reference its ID elsewhere",
+			label, id, locate(p.source), kind,
 		)
 	}
-	key := kind + "\x00" + string(id)
+	key := string(kind) + "\x00" + string(id)
 	rootOverride, fromRoot := m.c.rootDefinitions[key]
 	if m.manifest && fromRoot {
 		if rootOverride {
 			return false, nil
 		}
-		return false, fmt.Errorf(
-			"%s: package definition %s conflicts with configuration at %s; set override: true on the configuration definition",
-			locate(at),
+		return false, errorAt(
+			at,
+			"package definition %s conflicts with configuration at %s; set override: true on the configuration definition",
 			id,
 			locate(p.source),
 		)
 	}
 	if p.exists && !override {
-		return false, fmt.Errorf(
-			"%s: conflicting definition of %s %s, also defined at %s; set override: true",
-			locate(at), label, id, locate(p.source),
+		return false, errorAt(
+			at, "conflicting definition of %s %s, also defined at %s; set override: true",
+			label, id, locate(p.source),
 		)
 	}
 	if !m.manifest {
@@ -858,7 +780,7 @@ func (m *merger) place(v Value) (Value, error) {
 	if v.File != "" {
 		file, err := m.file(v.File)
 		if err != nil {
-			return v, fmt.Errorf("%s:%d: !file %s: %w", m.path, v.Source.Line, v.File, err)
+			return v, errorAt(v.Source, "!file %s: %w", v.File, err)
 		}
 		v.File = file
 	}
@@ -867,12 +789,6 @@ func (m *merger) place(v Value) (Value, error) {
 
 func (m *merger) placePackage(name ID, p *Package, at Source) error {
 	p.Source = at
-	if (p.Path == "") == (p.Git == "") {
-		return fmt.Errorf("%s: package %s needs exactly one of path or git", locate(at), name)
-	}
-	if err := checkGitSource(p.Ref, p.Hash, p.Git != ""); err != nil {
-		return fmt.Errorf("%s: package %s: %w", locate(at), name, err)
-	}
 	p.Manifest = m.manifest
 	// The lockfile beside a fragment records the unpinned packages it declares.
 	p.Lockfile = filepath.Join(m.base, "agx.lock.json")
@@ -880,25 +796,25 @@ func (m *merger) placePackage(name ID, p *Package, at Source) error {
 		var err error
 		p.Path, err = m.file(p.Path)
 		if err != nil {
-			return fmt.Errorf("%s: package %s: %w", locate(at), name, err)
+			return errorAt(at, "package %s: %w", name, err)
 		}
 		p.LockPath = slashRel(filepath.Dir(p.Lockfile), p.Path)
 	}
 	if filepath.IsAbs(p.Subdir) || strings.HasPrefix(filepath.Clean(p.Subdir), "..") {
-		return fmt.Errorf("%s: invalid subdir for %s", locate(at), name)
+		return errorAt(at, "invalid subdir for %s", name)
 	}
 	if p.Git != "" {
 		if strings.HasPrefix(p.Git, "-") {
-			return fmt.Errorf("%s: invalid git source for %s", locate(at), name)
+			return errorAt(at, "invalid git source for %s", name)
 		}
 		transport := gitTransport(p.Git)
 		if m.manifest && transport != "https" && transport != "ssh" {
-			return fmt.Errorf("%s: package %s must use an https, ssh, or scp-style Git source", locate(at), name)
+			return errorAt(at, "package %s must use an https, ssh, or scp-style Git source", name)
 		}
 		if transport == "file" && !strings.HasPrefix(strings.ToLower(p.Git), "file:") {
 			git, err := ExpandHome(p.Git)
 			if err != nil {
-				return fmt.Errorf("%s: package %s: %w", locate(at), name, err)
+				return errorAt(at, "package %s: %w", name, err)
 			}
 			p.Git = relative(m.base, git)
 			p.LockPath = slashRel(filepath.Dir(p.Lockfile), p.Git)
@@ -922,7 +838,7 @@ func (m *merger) anonymous(kind string, resource ID, g GitSource, at Source) (ID
 // checkoutPath validates a path inside a Git checkout.
 func checkoutPath(at Source, kind string, id ID, path string) error {
 	if path != "" && (strings.HasPrefix(path, "~") || !filepath.IsLocal(filepath.FromSlash(path))) {
-		return fmt.Errorf("%s: %s %s: path %s must stay inside the Git checkout", locate(at), kind, id, path)
+		return errorAt(at, "%s %s: path %s must stay inside the Git checkout", kind, id, path)
 	}
 	return nil
 }
@@ -931,7 +847,7 @@ func (m *merger) addSkill(id ID, s Skill, at Source, inline bool) error {
 	name := qualify(m.ns, id)
 	existing, exists := m.c.Skills[name]
 	if apply, err := m.conflict(
-		"skills",
+		KindSkills,
 		name,
 		prior{exists, existing.Inline, existing.Source},
 		s.Override,
@@ -941,18 +857,24 @@ func (m *merger) addSkill(id ID, s Skill, at Source, inline bool) error {
 		!apply {
 		return err
 	}
-	if s.Git == "" && (s.Ref != "" || s.Hash != "") {
-		return fmt.Errorf("%s: skill %s: ref and hash apply only with git", locate(at), name)
-	}
 	if s.Generated() && s.Name == "" {
 		s.Name = string(name)[strings.LastIndex(string(name), "/")+1:]
+		if !skillNamePattern.MatchString(s.Name) || len(s.Name) > maxSkillName {
+			return errorAt(
+				at,
+				"skill %s: name %q must be lowercase letters, digits, and single hyphens, at most %d characters; set name",
+				name,
+				s.Name,
+				maxSkillName,
+			)
+		}
 	}
 	for key, f := range s.Files {
 		f.Directory = strings.HasSuffix(f.Path, "/") || strings.HasSuffix(f.Path, `\`)
 		s.Files[key] = f
 	}
-	if err := checkSkill(name, s); err != nil {
-		return fmt.Errorf("%s: %w", locate(at), err)
+	if err := checkSkillFiles(name, s.Files); err != nil {
+		return errorAt(at, "%w", err)
 	}
 	// A replaced definition takes its anonymous package with it.
 	if existing.Package != "" {
@@ -973,13 +895,13 @@ func (m *merger) addSkill(id ID, s Skill, at Source, inline bool) error {
 				continue
 			}
 			if f.Path, err = m.file(f.Path); err != nil {
-				return fmt.Errorf("%s: skill %s: files %s: %w", locate(at), name, key, err)
+				return errorAt(at, "skill %s: files %s: %w", name, key, err)
 			}
 			s.Files[key] = f
 		}
 	default:
 		if s.Path, err = m.file(s.Path); err != nil {
-			err = fmt.Errorf("%s: skill %s: %w", locate(at), name, err)
+			err = errorAt(at, "skill %s: %w", name, err)
 		}
 	}
 	if err != nil {
@@ -994,7 +916,7 @@ func (m *merger) addInstructions(id ID, i Instructions, at Source, inline bool) 
 	name := qualify(m.ns, id)
 	existing, exists := m.c.Instructions[name]
 	if apply, err := m.conflict(
-		"instructions",
+		KindInstructions,
 		name,
 		prior{exists, existing.Inline, existing.Source},
 		i.Override,
@@ -1003,12 +925,6 @@ func (m *merger) addInstructions(id ID, i Instructions, at Source, inline bool) 
 	); err != nil ||
 		!apply {
 		return err
-	}
-	if i.Git == "" && (i.Ref != "" || i.Hash != "") {
-		return fmt.Errorf("%s: instructions %s: ref and hash apply only with git", locate(at), name)
-	}
-	if err := checkInstructions(name, i); err != nil {
-		return fmt.Errorf("%s: %w", locate(at), err)
 	}
 	if existing.Package != "" {
 		delete(m.c.Packages, existing.Package)
@@ -1023,7 +939,7 @@ func (m *merger) addInstructions(id ID, i Instructions, at Source, inline bool) 
 		i.Package, err = m.anonymous("instructions", name, i.GitSource, at)
 	case i.Path != "":
 		if i.Path, err = m.file(i.Path); err != nil {
-			err = fmt.Errorf("%s: instructions %s: %w", locate(at), name, err)
+			err = errorAt(at, "instructions %s: %w", name, err)
 		}
 	}
 	if err != nil {
@@ -1039,7 +955,7 @@ func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
 	name := qualify(m.ns, id)
 	existing, exists := c.MCP[name]
 	if apply, err := m.conflict(
-		"mcp",
+		KindMCPServers,
 		name,
 		prior{exists, existing.Inline, existing.Source},
 		server.Override,
@@ -1050,50 +966,22 @@ func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
 		return err
 	}
 	server.Source, server.Inline, server.Override = at, inline, false
-	where := locate(at)
 	transport := "stdio"
-	switch {
-	case server.URL != "" && len(server.Command) > 0:
-		return fmt.Errorf(
-			"%s: MCP server %s sets both url and command; use url for HTTP or command for stdio",
-			where,
-			name,
-		)
-	case server.URL != "":
+	if server.URL != "" {
 		transport = "http"
-	case len(server.Command) == 0:
-		return fmt.Errorf("%s: MCP server %s needs url (HTTP) or command (stdio)", where, name)
 	}
 	server.Transport = transport
-	switch server.Load {
-	case "":
-		server.Load = LoadNative
-	case LoadNative, LoadOnDemand:
-	default:
-		return fmt.Errorf("%s: MCP server %s: load must be native or on_demand", where, name)
-	}
-	switch server.Share.Type {
-	case ShareNone:
+	server.Load = cmp.Or(server.Load, LoadNative)
+	if server.Share.Type == ShareNone {
 		if server.Share.Idle != nil {
-			return fmt.Errorf("%s: MCP server %s: share idle needs a share type other than none", where, name)
+			return errorAt(at, "MCP server %s: share idle needs a share type other than none", name)
 		}
 		server.Share.Type = ""
-	case "":
-	case ShareDirectory, ShareRepository, ShareGlobal:
-		if transport == "http" {
-			return fmt.Errorf(
-				"%s: MCP server %s: share applies to stdio servers; HTTP servers already serve many sessions",
-				where,
-				name,
-			)
-		}
-	default:
-		return fmt.Errorf("%s: MCP server %s: share must be none, directory, repo, or global", where, name)
 	}
 	if server.Cwd != "" {
 		cwd, err := m.expand(server.Cwd)
 		if err != nil {
-			return fmt.Errorf("%s: MCP server %s: cwd %w", where, name, err)
+			return errorAt(at, "MCP server %s: cwd %w", name, err)
 		}
 		server.Cwd = relative(m.base, cwd)
 	}
@@ -1101,7 +989,7 @@ func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
 		command := slices.Clone(server.Command)
 		var err error
 		if command[0], err = m.expand(command[0]); err != nil {
-			return fmt.Errorf("%s: MCP server %s: command %w", where, name, err)
+			return errorAt(at, "MCP server %s: command %w", name, err)
 		}
 		server.Command = command
 	}
@@ -1122,9 +1010,8 @@ func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
 			if server.Auth.Inline.Implicit {
 				what = "logs in on demand under its ID"
 			}
-			return fmt.Errorf(
-				"%s: MCP server %s %s, but secret %s is defined too; set auth: !secret %s or auth: none, or rename one",
-				where,
+			return errorAt(
+				at, "MCP server %s %s, but secret %s is defined too; set auth: !secret %s or auth: none, or rename one",
 				name,
 				what,
 				name,
@@ -1135,7 +1022,7 @@ func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
 		secret.Owner = name
 		secret.Source = server.Source
 		if err := m.placeSecret(&secret); err != nil {
-			return fmt.Errorf("%s: MCP server %s auth: %w", where, name, err)
+			return errorAt(at, "MCP server %s auth: %w", name, err)
 		}
 		c.Secrets[name] = secret
 		server.Auth.Secret = name
@@ -1161,18 +1048,18 @@ func (c *Config) Validate() error {
 		r := c.Skills[id]
 		// Apply the same symlink rules as hashing and copying, so a valid skill can always be launched.
 		if _, err := r.TreeHash(); err != nil {
-			return fmt.Errorf("%s: skill %s: %w", locate(r.Source), id, err)
+			return errorAt(r.Source, "skill %s: %w", id, err)
 		}
 		if !r.Generated() {
 			if _, err := os.ReadFile(filepath.Join(r.Path, "SKILL.md")); err != nil {
-				return fmt.Errorf("%s: skill %s: %w", locate(r.Source), id, err)
+				return errorAt(r.Source, "skill %s: %w", id, err)
 			}
 		}
 	}
 	for _, id := range sortedKeys(c.Instructions) {
 		r := c.Instructions[id]
 		if _, err := r.Read(); err != nil {
-			return fmt.Errorf("%s: instructions %s: %w", locate(r.Source), id, err)
+			return errorAt(r.Source, "instructions %s: %w", id, err)
 		}
 	}
 	for id, secret := range c.Secrets {
@@ -1180,68 +1067,60 @@ func (c *Config) Validate() error {
 		if secret.Owner != "" {
 			label = "MCP server " + string(secret.Owner) + " auth"
 		}
-		at := locate(secret.Source)
-		if secret.Kind != "sops" && len(secret.Key) > 0 {
-			return fmt.Errorf("%s: %s: key applies only to sops secrets", at, label)
-		}
-		if secret.Kind != "sops" && secret.Kind != "file" && secret.File != "" {
-			return fmt.Errorf("%s: %s: file applies only to file and sops secrets", at, label)
-		}
-		if secret.Kind != "sops" && secret.AgeKey != (Value{}) {
-			return fmt.Errorf("%s: %s: age_key applies only to sops secrets", at, label)
-		}
+		at := secret.Source
+		// The schema checks the fields of each kind, except for the auth shorthand, which names
+		// only a kind.
 		switch secret.Kind {
 		case "environment", "daemon_environment":
-			if !validEnvironment.MatchString(secret.Variable) {
-				return fmt.Errorf("%s: %s needs a valid variable", at, label)
+			if secret.Variable == "" {
+				return errorAt(at, "%s needs a variable", label)
 			}
 		case "command":
-			if len(secret.Command) == 0 || secret.Command[0] == "" {
-				return fmt.Errorf("%s: %s needs a command", at, label)
+			if len(secret.Command) == 0 {
+				return errorAt(at, "%s needs a command", label)
 			}
 		case "file":
 			// The file is runtime state, such as a decrypted secret under /run, so a missing one
 			// fails the launch that needs it rather than the configuration.
 			if secret.File == "" {
-				return fmt.Errorf("%s: %s needs a file", at, label)
+				return errorAt(at, "%s needs a file", label)
 			}
 		case "keychain":
 		case "sops":
 			// The encrypted file belongs to the configuration, so a missing one is an error
 			// rather than a runtime state: committing it is what makes the configuration portable.
 			if secret.File == "" {
-				return fmt.Errorf("%s: %s needs a file", at, label)
+				return errorAt(at, "%s needs a file", label)
 			}
 			info, err := os.Stat(secret.File)
 			if err != nil {
-				return fmt.Errorf("%s: %s: cannot read sops file: %w", at, label, err)
+				return errorAt(at, "%s: cannot read sops file: %w", label, err)
 			}
 			if !info.Mode().IsRegular() {
-				return fmt.Errorf("%s: %s: sops file %s is not a regular file", at, label, secret.File)
+				return errorAt(at, "%s: sops file %s is not a regular file", label, secret.File)
 			}
 			// A key written into configuration sits next to the file it decrypts, which
 			// defeats encrypting it.
 			if secret.AgeKey != (Value{}) && !secret.AgeKey.Tagged() {
-				return fmt.Errorf(
-					"%s: %s: age_key must be !secret ID, !env NAME, or !file PATH, not a literal key",
-					at,
+				return errorAt(
+					at, "%s: age_key must be !secret ID, !env NAME, or !file PATH, not a literal key",
 					label,
 				)
 			}
 		case "oauth":
 			if secret.Issuer != "" {
 				if err := validateURL(secret.Issuer); err != nil {
-					return fmt.Errorf("%s: %s: %w", at, label, err)
+					return errorAt(at, "%s: %w", label, err)
 				}
 			}
 		default:
 			if secret.Owner != "" {
-				return fmt.Errorf(
-					"%s: %s: unknown kind %q; reference a secret with auth: !secret %s",
-					at, label, secret.Kind, secret.Kind,
+				return errorAt(
+					at, "%s: unknown kind %q; reference a secret with auth: !secret %s",
+					label, secret.Kind, secret.Kind,
 				)
 			}
-			return fmt.Errorf("%s: %s: unknown kind %q", at, label, secret.Kind)
+			return errorAt(at, "%s: unknown kind %q", label, secret.Kind)
 		}
 	}
 	// checkSecret validates a !secret reference; OAuth tokens need login and refresh per
@@ -1252,21 +1131,19 @@ func (c *Config) Validate() error {
 		}
 		secret, ok := c.Secrets[i.Value.Secret]
 		if !ok {
-			return fmt.Errorf("%s: %s: unknown secret %s", locate(i.Source), i.Target, i.Value.Secret)
+			return errorAt(i.Source, "%s: unknown secret %s", i.Target, i.Value.Secret)
 		}
 		if secret.Owner != "" {
-			return fmt.Errorf(
-				"%s: %s: secret %s is the inline auth of MCP server %s; declare it under secrets: to share it",
-				locate(i.Source),
+			return errorAt(
+				i.Source, "%s: secret %s is the inline auth of MCP server %s; declare it under secrets: to share it",
 				i.Target,
 				i.Value.Secret,
 				secret.Owner,
 			)
 		}
 		if secret.Kind == "oauth" {
-			return fmt.Errorf(
-				"%s: %s: OAuth secret %s can only be an MCP server's auth",
-				locate(i.Source),
+			return errorAt(
+				i.Source, "%s: OAuth secret %s can only be an MCP server's auth",
 				i.Target,
 				i.Value.Secret,
 			)
@@ -1290,9 +1167,8 @@ func (c *Config) Validate() error {
 		for next := secret.AgeKey.Secret; next != ""; next = c.Secrets[next].AgeKey.Secret {
 			chain = append(chain, string(next))
 			if next == id {
-				return fmt.Errorf(
-					"%s: %s: age_key forms a cycle: %s",
-					locate(secret.AgeKey.Source),
+				return errorAt(
+					secret.AgeKey.Source, "%s: age_key forms a cycle: %s",
 					target,
 					strings.Join(chain, " -> "),
 				)
@@ -1309,35 +1185,17 @@ func (c *Config) Validate() error {
 	}{}
 	for _, id := range sortedKeys(c.MCP) {
 		server := c.MCP[id]
-		at := locate(server.Source)
-		switch server.Transport {
-		case "stdio":
-			if server.Command[0] == "" || server.Auth != (MCPAuth{}) || len(server.Headers) > 0 {
-				return fmt.Errorf(
-					"%s: stdio MCP server %s needs a command and cannot set headers or auth",
-					at,
-					id,
-				)
-			}
-		case "http":
+		at := server.Source
+		if server.Transport == "http" {
 			if err := validateURL(server.URL); err != nil {
-				return fmt.Errorf("%s: MCP server %s: %w", at, id, err)
-			}
-			if len(server.Environment) > 0 || server.Cwd != "" {
-				return fmt.Errorf("%s: HTTP MCP server %s cannot set environment or cwd", at, id)
-			}
-		}
-		for name := range server.Environment {
-			if !validEnvironment.MatchString(name) {
-				return fmt.Errorf("%s: MCP server %s: invalid environment name %q", at, id, name)
+				return errorAt(at, "MCP server %s: %w", id, err)
 			}
 		}
 		for name := range server.Headers {
 			switch strings.ToLower(name) {
 			case "authorization", "proxy-authorization", "cookie", "host", "mcp-session-id":
-				return fmt.Errorf(
-					"%s: MCP server %s: header %s is managed by agx; use auth for bearer credentials",
-					at,
+				return errorAt(
+					at, "MCP server %s: header %s is managed by agx; use auth for bearer credentials",
 					id,
 					name,
 				)
@@ -1347,11 +1205,11 @@ func (c *Config) Validate() error {
 			secret, ok := c.Secrets[ref]
 			switch {
 			case !ok:
-				return fmt.Errorf("%s: MCP server %s: unknown secret %s", at, id, ref)
+				return errorAt(at, "MCP server %s: unknown secret %s", id, ref)
 			case secret.Owner != "" && secret.Owner != id:
-				return fmt.Errorf(
-					"%s: MCP server %s: secret %s is the inline auth of MCP server %s; declare it under secrets: to share it",
+				return errorAt(
 					at,
+					"MCP server %s: secret %s is the inline auth of MCP server %s; declare it under secrets: to share it",
 					id,
 					ref,
 					secret.Owner,
@@ -1360,9 +1218,9 @@ func (c *Config) Validate() error {
 				// A stored OAuth credential is bound to one server origin.
 				origin := strings.ToLower(serverOrigin(server.URL))
 				if other, seen := oauthOrigins[ref]; seen && other.origin != origin {
-					return fmt.Errorf(
-						"%s: MCP servers %s and %s share OAuth secret %s but have different origins",
-						at, other.id, id, ref,
+					return errorAt(
+						at, "MCP servers %s and %s share OAuth secret %s but have different origins",
+						other.id, id, ref,
 					)
 				}
 				oauthOrigins[ref] = struct {
@@ -1397,7 +1255,7 @@ func (c *Config) Validate() error {
 	for _, s := range c.Scopes {
 		for _, sel := range []Selection{s.Add, s.Remove} {
 			if err := c.expand(sel, nil, visit); err != nil {
-				return fmt.Errorf("%s:%d: %w", s.Source.Path, s.Source.Line, err)
+				return errorAt(s.Source, "%w", err)
 			}
 		}
 	}
@@ -1405,7 +1263,7 @@ func (c *Config) Validate() error {
 		for _, s := range h.Selections {
 			for _, sel := range []Selection{s.Add, s.Remove} {
 				if err := c.expand(sel, nil, visit); err != nil {
-					return fmt.Errorf("%s: harness %s: %w", locate(s.Source), name, err)
+					return errorAt(s.Source, "harness %s: %w", name, err)
 				}
 			}
 		}

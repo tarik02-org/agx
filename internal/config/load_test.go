@@ -211,7 +211,7 @@ func TestPackageManifests(t *testing.T) {
 		}
 	})
 	for _, tt := range []struct{ name, manifest, want string }{
-		{"no scopes", "scopes: [{add: {}}]\n", "package manifests may only declare"},
+		{"no scopes", "scopes: [{add: {}}]\n", "unknown key scopes"},
 		{"no home paths", "instructions:\n  x: {path: ~/x.md}\n", "package manifests cannot use home-relative paths"},
 		{"https or ssh Git", "packages:\n  dep: {git: /srv/repo.git}\n", "must use an https, ssh, or scp-style Git source"},
 		{"paths stay inside", "instructions:\n  x: {path: ../x.md}\n", "path escapes package"},
@@ -334,22 +334,22 @@ scopes:
 		{
 			name:    "content skill needs an id",
 			content: "scopes:\n  - add: {skills: [{description: d, content: c}]}\n",
-			want:    []string{"an inline skill with content needs an id"},
+			want:    []string{"skills[0]: missing id"},
 		},
 		{
 			name:    "inline MCP needs an id",
 			content: "scopes:\n  - add: {mcp: [{url: 'https://a.example/mcp'}]}\n",
-			want:    []string{"an inline MCP server needs an id"},
+			want:    []string{"mcp[0]: missing id"},
 		},
 		{
 			name:    "MCP servers have no path form",
 			content: "scopes:\n  - add: {mcp: [./server]}\n",
-			want:    []string{"MCP servers are referenced by ID or defined inline"},
+			want:    []string{"mcp[0]: \"./server\" is not valid here"},
 		},
 		{
 			name:    "inline definitions cannot override",
 			content: "scopes:\n  - add: {instructions: [{id: t, text: hi, override: true}]}\n",
-			want:    []string{"inline definitions cannot set override"},
+			want:    []string{"unknown key override"},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -361,17 +361,17 @@ scopes:
 
 func TestGeneratedSkillValidation(t *testing.T) {
 	for _, tt := range []struct{ name, skill, want string }{
-		{"needs a description", "{content: body}", "with content needs a description"},
-		{"invalid name", "{name: Deploy_X, description: d, content: body}", `name "Deploy_X" must be lowercase`},
+		{"needs a description", "{content: body}", "skills.d: missing description"},
+		{"invalid name", "{name: Deploy_X, description: d, content: body}", `skills.d.name: "Deploy_X" is not valid here`},
 		{"name from an invalid ID", "{description: d, content: body}", "must be lowercase letters"},
-		{"frontmatter cannot set name", "{description: d, content: body, frontmatter: {name: x}}", "frontmatter cannot set name"},
-		{"files escape", "{description: d, content: body, files: {../x: {content: y}}}", "must be a relative path inside the skill"},
-		{"files name SKILL.md", "{description: d, content: body, files: {skill.md: {content: y}}}", "files cannot name SKILL.md"},
-		{"files contain .git", "{description: d, content: body, files: {.git/config: {content: y}}}", "cannot contain .git"},
+		{"frontmatter: key \"name\" is not allowed", "{description: d, content: body, frontmatter: {name: x}}", "frontmatter: key \"name\" is not allowed"},
+		{"files escape", "{description: d, content: body, files: {../x: {content: y}}}", "files: key \"../x\" is not allowed"},
+		{"files name SKILL.md", "{description: d, content: body, files: {skill.md: {content: y}}}", "files: key \"skill.md\" is not allowed"},
+		{"files contain .git", "{description: d, content: body, files: {.git/config: {content: y}}}", "files: key \".git/config\" is not allowed"},
 		{"files overlap", "{description: d, content: body, files: {a: {content: x}, a/b: {content: y}}}", "files a and a/b overlap"},
-		{"file as a string", "{description: d, content: body, files: {a: ./x}}", "skill file must be {content, executable} or {path}"},
-		{"file with content and path", "{description: d, content: body, files: {a: {content: x, path: ./x}}}", "exactly one of content or path"},
-		{"name on a path skill", "{path: ./s, name: foo}", "name applies only to skills with content"},
+		{"file as a string", "{description: d, content: body, files: {a: ./x}}", "files.a: expected a mapping, not a string"},
+		{"file with content and path", "{description: d, content: body, files: {a: {content: x, path: ./x}}}", "files.a.path: not allowed here"},
+		{"name on a path skill", "{path: ./s, name: foo}", "skills.d.name: not allowed here"},
 		{"rev", "{git: 'https://example.com/r.git', rev: abc123}", "unknown key rev"},
 		{"Git path escapes", "{git: 'https://example.com/r.git', path: ../x}", "must stay inside the Git checkout"},
 	} {
@@ -411,9 +411,9 @@ func TestPinnedSources(t *testing.T) {
 	}
 
 	for _, tt := range []struct{ name, pkg, want string }{
-		{"ref on a path", "{path: ./x, ref: " + rev + "}", "ref applies only to git sources"},
-		{"malformed hash", "{path: ./x, hash: abc}", "hash must be a 64-character content hash"},
-		{"path and git", "{path: ./x, git: 'https://example.com/r.git'}", "needs exactly one of path or git"},
+		{"ref on a path", "{path: ./x, ref: " + rev + "}", "packages.p.ref: not allowed here"},
+		{"malformed hash", "{path: ./x, hash: abc}", "packages.p.hash: \"abc\" is not valid here"},
+		{"path and git", "{path: ./x, git: 'https://example.com/r.git'}", "packages.p.path: not allowed here"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), "packages:\n  p: "+tt.pkg+"\n")
@@ -643,7 +643,7 @@ func TestMCPLoad(t *testing.T) {
 	}
 	bad := write(t, filepath.Join(t.TempDir(), "agx.yaml"), "mcp:\n  x: {command: [x], load: lazy}\n")
 	if _, err := config.Load(bad, config.Options{Builtins: builtins}); err == nil ||
-		!strings.Contains(err.Error(), "load must be native or on_demand") {
+		!strings.Contains(err.Error(), "mcp.x.load: lazy must be one of native, on_demand") {
 		t.Fatalf("invalid load: %v", err)
 	}
 }
@@ -667,10 +667,10 @@ func TestMCPShare(t *testing.T) {
 	}
 	for content, want := range map[string]string{
 		"mcp:\n  x: {command: [x], share: {type: global, idle: soon}}\n": "share idle must be a duration",
-		"mcp:\n  x: {command: [x], share: {idle: 1m}}\n":                 "share needs a type",
+		"mcp:\n  x: {command: [x], share: {idle: 1m}}\n":                 "mcp.x.share: missing type",
 		"mcp:\n  x: {command: [x], share: {type: none, idle: 1m}}\n":     "share idle needs a share type other than none",
-		"mcp:\n  x: {command: [x], share: project}\n":                    "share must be none, directory, repo, or global",
-		"mcp:\n  x: {url: https://x.example/mcp, share: global}\n":       "share applies to stdio servers",
+		"mcp:\n  x: {command: [x], share: project}\n":                    "project must be one of none, directory, repo, global",
+		"mcp:\n  x: {url: https://x.example/mcp, share: global}\n":       "mcp.x.share: not allowed here",
 	} {
 		bad := write(t, filepath.Join(t.TempDir(), "agx.yaml"), content)
 		if _, err := config.Load(

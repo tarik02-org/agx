@@ -24,14 +24,14 @@ import (
 
 func skillCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
 	command := &cobra.Command{Use: "skill", Short: "Add, list, and remove skills", GroupID: "config"}
-	remove := removeCommand(paths, builtins, edit.Skills)
+	remove := removeCommand(paths, builtins, config.KindSkills)
 	remove.Use = "remove <id | package-id>"
 	remove.Short = "Remove a skill definition, or a package that skill add declared with its skills"
 	remove.Example = "  agx skill remove deploy\n" +
 		"  agx skill remove anthropics      # the package agx skill add anthropics/skills declared"
 	command.AddCommand(
 		skillAddCommand(paths, builtins),
-		listCommand(paths, builtins, edit.Skills),
+		listCommand(paths, builtins, config.KindSkills),
 		remove,
 	)
 	return command
@@ -45,7 +45,7 @@ func (s *session) removePackage(id config.ID, force bool) error {
 	if err != nil {
 		return err
 	}
-	s.result.Removed = append(s.result.Removed, definitionJSON{Kind: "packages", ID: string(id)})
+	s.result.Removed = append(s.result.Removed, definitionJSON{Kind: config.KindPackages, ID: string(id)})
 	for _, r := range disabled {
 		s.result.Disabled = append(s.result.Disabled, definitionJSON{Kind: r.Kind, ID: string(r.ID)})
 	}
@@ -217,10 +217,10 @@ func (s *session) addLocalSkills(dir, file string, choice skillChoice, flags edi
 	for _, skill := range chosen {
 		id := string(skill.ID)
 		path := filepath.Join(dir, filepath.FromSlash(skill.Path))
-		if err := s.define(edit.Skills, id, file, edit.Mapping("path", writtenPath(file, path))); err != nil {
+		if err := s.define(config.KindSkills, id, file, edit.Mapping("path", writtenPath(file, path))); err != nil {
 			return err
 		}
-		if err := s.enableAfterDefine(edit.Skills, id, file, flags); err != nil {
+		if err := s.enableAfterDefine(config.KindSkills, id, file, flags); err != nil {
 			return err
 		}
 	}
@@ -250,7 +250,7 @@ func (s *session) addPackageSkills(
 		return err
 	}
 	if declared {
-		s.result.Defined = append(s.result.Defined, definitionJSON{Kind: "packages", ID: string(id)})
+		s.result.Defined = append(s.result.Defined, definitionJSON{Kind: config.KindPackages, ID: string(id)})
 	}
 	progress("Fetching " + source.Git)
 	if err := s.Install(s.ctx, file); err != nil {
@@ -286,7 +286,7 @@ func (s *session) addPackageSkills(
 		return err
 	}
 	for _, skill := range chosen {
-		if err := s.enableAfterDefine(edit.Skills, prefix+string(skill.ID), file, flags); err != nil {
+		if err := s.enableAfterDefine(config.KindSkills, prefix+string(skill.ID), file, flags); err != nil {
 			return err
 		}
 	}

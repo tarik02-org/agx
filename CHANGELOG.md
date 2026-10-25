@@ -46,3 +46,6 @@ agx has not been released yet. What it does today:
 - `agx daemon restart --json` reports `kept_launches` instead of `restored`.
 - Passthrough harness commands replace the agx process on Unix.
 - Codex plugin checks ask `codex features list` instead of reading Codex configuration.
+- Fragments and package manifests are checked against the published JSON Schema when they load.
+- Daemon errors about configuration carry the file and line in `ErrorDetail.source`.
+- Git packages fetch only the requested commit instead of cloning the repository.

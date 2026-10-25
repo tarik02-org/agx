@@ -12,7 +12,6 @@ import (
 
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/configedit"
 	"github.com/tarik02-org/agx/internal/platform"
 )
@@ -129,14 +128,14 @@ func TestDefineCreatesAndReplaces(t *testing.T) {
 	w := newWorkspace(t, base)
 	fragment := w.write(t, "agx.d/10-mcp.yaml", "mcp:\n  fs:\n    command: [server-fs] # local\n")
 	s := w.session(t)
-	if err := s.Define(edit.MCP, "docs", node(t, "url: https://example.com/mcp\n"), s.Root); err != nil {
+	if err := s.Define(config.KindMCPServers, "docs", node(t, "url: https://example.com/mcp\n"), s.Root); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Define(edit.Skills, "alpha", node(t, "path: ./skills/beta\n"), ""); err != nil {
+	if err := s.Define(config.KindSkills, "alpha", node(t, "path: ./skills/beta\n"), ""); err != nil {
 		t.Fatal(err)
 	}
 	// An existing definition is replaced where it is, whatever file the change names.
-	if err := s.Define(edit.MCP, "fs", node(t, "command: [server-fs, --root, /]\n"), s.Root); err != nil {
+	if err := s.Define(config.KindMCPServers, "fs", node(t, "command: [server-fs, --root, /]\n"), s.Root); err != nil {
 		t.Fatal(err)
 	}
 	p := plan(t, s)
@@ -175,8 +174,8 @@ func TestDefineRefusesReadOnlyFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := w.session(t)
-	wantCode(t, s.Define(edit.MCP, "fs", node(t, "command: [other]\n"), ""), configedit.ReadOnly)
-	if err := s.Define(edit.MCP, "new", node(t, "command: [new]\n"), fragment); err != nil {
+	wantCode(t, s.Define(config.KindMCPServers, "fs", node(t, "command: [other]\n"), ""), configedit.ReadOnly)
+	if err := s.Define(config.KindMCPServers, "new", node(t, "command: [new]\n"), fragment); err != nil {
 		t.Fatal(err)
 	}
 	_, err := s.Plan()
@@ -195,7 +194,7 @@ scopes:
       bundles: [dev]
 `)
 	s := w.session(t)
-	if err := s.Undefine(edit.Skills, "alpha"); err != nil {
+	if err := s.Undefine(config.KindSkills, "alpha"); err != nil {
 		t.Fatal(err)
 	}
 	got := after(t, plan(t, s), s.Root)
@@ -205,7 +204,7 @@ scopes:
 	if !strings.Contains(got, "instructions: [agents]") || !strings.Contains(got, "bundles: [dev]") {
 		t.Fatalf("unrelated entries went:\n%s", got)
 	}
-	wantCode(t, s.Undefine(edit.MCP, "missing"), configedit.NotFound)
+	wantCode(t, s.Undefine(config.KindMCPServers, "missing"), configedit.NotFound)
 }
 
 func TestEnableDisable(t *testing.T) {
@@ -217,11 +216,11 @@ func TestEnableDisable(t *testing.T) {
 	}
 	// Rules spell directories under the home directory with ~/, as on Windows runners' temp.
 	written := configedit.HomeRelative(work)
-	if _, err := s.Enable(edit.Skills, "alpha", configedit.NewScope("", nil), s.Root); err != nil {
+	if _, err := s.Enable(config.KindSkills, "alpha", configedit.NewScope("", nil), s.Root); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Enable(
-		edit.Instructions,
+		config.KindInstructions,
 		"agents",
 		configedit.NewScope(work, []string{"codex"}),
 		s.Root,
@@ -247,7 +246,7 @@ func TestEnableDisable(t *testing.T) {
 	// Disabling what a matching rule selects drops the entry, and the rule it empties.
 	s = w.session(t)
 	if _, err := s.Disable(
-		edit.Instructions,
+		config.KindInstructions,
 		"agents",
 		configedit.NewScope(work, []string{"codex"}),
 		s.Root,
@@ -255,7 +254,7 @@ func TestEnableDisable(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Disabling in a directory what an outer rule selects writes a remove entry.
-	if _, err := s.Disable(edit.Skills, "alpha", configedit.NewScope(work, nil), s.Root); err != nil {
+	if _, err := s.Disable(config.KindSkills, "alpha", configedit.NewScope(work, nil), s.Root); err != nil {
 		t.Fatal(err)
 	}
 	got = after(t, plan(t, s), s.Root)
@@ -330,10 +329,10 @@ func TestPlanHashesAndApplyConflicts(t *testing.T) {
 	w := newWorkspace(t, base)
 	s := w.session(t)
 	fragment := filepath.Join(w.dir, "agx.d", "20-new.yaml")
-	if err := s.Define(edit.MCP, "docs", node(t, "url: https://example.com/mcp\n"), fragment); err != nil {
+	if err := s.Define(config.KindMCPServers, "docs", node(t, "url: https://example.com/mcp\n"), fragment); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Enable(edit.MCP, "docs", configedit.NewScope("", nil), s.Root); err != nil {
+	if _, err := s.Enable(config.KindMCPServers, "docs", configedit.NewScope("", nil), s.Root); err != nil {
 		t.Fatal(err)
 	}
 	p := plan(t, s)
@@ -374,7 +373,7 @@ func TestPlanHashesAndApplyConflicts(t *testing.T) {
 func TestInvalidChangeWritesNothing(t *testing.T) {
 	w := newWorkspace(t, base)
 	s := w.session(t)
-	if _, err := s.Enable(edit.Skills, "missing", configedit.NewScope("", nil), s.Root); err != nil {
+	if _, err := s.Enable(config.KindSkills, "missing", configedit.NewScope("", nil), s.Root); err != nil {
 		t.Fatal(err)
 	}
 	_, err := s.Plan()

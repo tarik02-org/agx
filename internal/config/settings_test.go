@@ -89,7 +89,7 @@ func TestHarnessSettingsErrors(t *testing.T) {
 		},
 		"not a map": {
 			"harnesses:\n  codex:\n    settings: [a]\n",
-			"settings must be a mapping",
+			"settings: expected a mapping, not a list",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

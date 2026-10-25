@@ -57,7 +57,7 @@ func printValidation(root string, c *config.Config, loadErr error) error {
 			Root:  root,
 			Files: []string{},
 			Diagnostics: []diagnosticJSON{
-				{Severity: "error", Code: &code, Message: message, Source: errorSource(message)},
+				{Severity: "error", Code: &code, Message: message, Source: errorSource(loadErr)},
 			},
 		})
 		if err != nil {

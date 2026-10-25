@@ -41,8 +41,8 @@ func mcpCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command
 	jsonFlag(test)
 	command.AddCommand(
 		mcpAddCommand(paths, builtins),
-		listCommand(paths, builtins, edit.MCP),
-		removeCommand(paths, builtins, edit.MCP),
+		listCommand(paths, builtins, config.KindMCPServers),
+		removeCommand(paths, builtins, config.KindMCPServers),
 		test,
 		mcpToolsCommand(paths, builtins),
 		mcpCallCommand(paths, builtins),
@@ -181,10 +181,10 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			if err != nil {
 				return err
 			}
-			if err := s.define(edit.MCP, id, file, definition); err != nil {
+			if err := s.define(config.KindMCPServers, id, file, definition); err != nil {
 				return err
 			}
-			if err := s.enableAfterDefine(edit.MCP, id, file, flags); err != nil {
+			if err := s.enableAfterDefine(config.KindMCPServers, id, file, flags); err != nil {
 				return err
 			}
 			needsLogin := false
@@ -411,20 +411,20 @@ func location(c *config.Config, source config.Source) string {
 }
 
 // listCommand lists the definitions of a kind as a table or JSON.
-func listCommand(paths *platform.Paths, builtins *config.Builtins, kind string) *cobra.Command {
+func listCommand(paths *platform.Paths, builtins *config.Builtins, kind config.Kind) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "list",
-		Short: map[string]string{
-			edit.MCP:          "List MCP servers",
-			edit.Skills:       "List skills",
-			edit.Instructions: "List instructions",
-			"harnesses":       "List harnesses",
+		Short: map[config.Kind]string{
+			config.KindMCPServers:   "List MCP servers",
+			config.KindSkills:       "List skills",
+			config.KindInstructions: "List instructions",
+			config.KindHarnesses:    "List harnesses",
 		}[kind],
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var c *config.Config
 			var err error
-			if kind == "harnesses" {
+			if kind == config.KindHarnesses {
 				c, err = config.Load(paths.Config, config.Options{Builtins: *builtins})
 			} else {
 				c, err = config.Load(paths.Config, config.Options{Builtins: *builtins, Cache: paths.Cache})
@@ -436,11 +436,11 @@ func listCommand(paths *platform.Paths, builtins *config.Builtins, kind string) 
 			var rows [][]string
 			var document any
 			switch kind {
-			case edit.MCP:
+			case config.KindMCPServers:
 				headers, rows, document = mcpRows(c)
-			case edit.Skills:
+			case config.KindSkills:
 				headers, rows, document = skillRows(c)
-			case edit.Instructions:
+			case config.KindInstructions:
 				headers, rows, document = instructionsRows(c)
 			default:
 				headers, rows, document = harnessRows(c)
@@ -461,12 +461,12 @@ func listCommand(paths *platform.Paths, builtins *config.Builtins, kind string) 
 }
 
 // removeCommand deletes a definition, refusing while other entries reference it unless forced.
-func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind string) *cobra.Command {
+func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind config.Kind) *cobra.Command {
 	var flags editFlags
 	force := false
 	cmd := &cobra.Command{
 		Use:   "remove <id>",
-		Short: removeShort(kindLabel(kind)),
+		Short: removeShort(kind.Label()),
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := newSession(cmd.Context(), *paths, *builtins, flags.yes)
@@ -483,9 +483,9 @@ func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind string
 				}
 			}
 			_, isSkill := s.Config.Skills[config.ID(id)]
-			isPackage := kind == edit.Skills && !isSkill && s.SkillPackage(config.ID(id))
+			isPackage := kind == config.KindSkills && !isSkill && s.SkillPackage(config.ID(id))
 			switch {
-			case kind == "harnesses":
+			case kind == config.KindHarnesses:
 				err = s.removeHarness(id, force)
 			case isPackage:
 				err = s.removePackage(config.ID(id), force)

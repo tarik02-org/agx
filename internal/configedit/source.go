@@ -108,7 +108,7 @@ func (s *Session) DeclarePackage(id config.ID, source Source, file string) (bool
 	if err != nil {
 		return false, err
 	}
-	if f.Definition(Packages, string(id)) != nil {
+	if f.Definition(config.KindPackages, string(id)) != nil {
 		return false, errorf(
 			Conflict,
 			"package %s is already defined in %s; pass --package to choose another ID",
@@ -116,7 +116,7 @@ func (s *Session) DeclarePackage(id config.ID, source Source, file string) (bool
 			file,
 		)
 	}
-	f.Define(Packages, string(id), definition)
+	f.Define(config.KindPackages, string(id), definition)
 	return true, nil
 }
 

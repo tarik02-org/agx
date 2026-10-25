@@ -90,22 +90,18 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 	}
 	locks := map[string]config.Lock{}
 	loaded := map[config.ID]bool{}
-	var install func(config.ID, []config.ID) error
-	install = func(id config.ID, chain []config.ID) error {
-		for _, parent := range chain {
-			if parent == id {
-				return fmt.Errorf("package dependency cycle: %v -> %s", chain, id)
-			}
-		}
-		if loaded[id] {
-			return nil
-		}
+	// fetched holds what fetch found out about each package until it merges.
+	type fetchedPackage struct {
+		previous       config.LockedPackage
+		hash, revision string
+		pinned         bool
+		lock           config.Lock
+		source         config.Package
+	}
+	fetched := map[config.ID]fetchedPackage{}
+	fetch := func(id config.ID, p config.Package) (string, error) {
 		if err := ctx.Err(); err != nil {
-			return err
-		}
-		p, ok := c.Packages[id]
-		if !ok {
-			return mark(ErrUnknown, fmt.Errorf("unknown package %s", id))
+			return "", err
 		}
 		pinned := p.Pinned()
 		l, ok := locks[p.Lockfile]
@@ -115,11 +111,11 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 			case err == nil:
 				locks[p.Lockfile] = l
 			case !os.IsNotExist(err):
-				return err
+				return "", err
 			// Pinned packages need no lockfile, so none is created for them.
 			case pinned:
 			case frozen:
-				return mark(ErrStaleLock, fmt.Errorf("missing lockfile %s", p.Lockfile))
+				return "", mark(ErrStaleLock, fmt.Errorf("missing lockfile %s", p.Lockfile))
 			default:
 				l = config.Lock{Version: 1, Packages: map[config.ID]config.LockedPackage{}}
 				locks[p.Lockfile] = l
@@ -129,7 +125,7 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 		source := p.LockSource()
 		sourceMatches := !pinned && locked && config.Digest(previous.Source) == config.Digest(source)
 		if frozen && !pinned && !sourceMatches {
-			return mark(ErrStaleLock, fmt.Errorf("stale lock for %s", id))
+			return "", mark(ErrStaleLock, fmt.Errorf("stale lock for %s", id))
 		}
 		hash, revision, dest := "", "", ""
 		reuse := func(candidateHash, candidateRevision string) {
@@ -156,7 +152,7 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 		if dest == "" {
 			stage, err := os.MkdirTemp(filepath.Join(cache, "packages"), ".install-*")
 			if err != nil {
-				return err
+				return "", err
 			}
 			defer func() { _ = os.RemoveAll(stage) }()
 			src := p.Path
@@ -174,91 +170,74 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 				}
 				revision, err = checkoutGit(ctx, gitDir, p.Git, protocols, ref)
 				if errors.Is(err, errUnresolved) {
-					return fmt.Errorf("cannot resolve revision for package %s", id)
+					return "", fmt.Errorf("cannot resolve revision for package %s", id)
 				}
 				if err != nil {
-					return err
+					return "", err
 				}
 				src = gitDir
 			}
 			if p.Subdir != "" {
 				src, err = securefs.Contained(src, p.Subdir)
 				if err != nil {
-					return err
+					return "", err
 				}
 			}
 			content := filepath.Join(stage, "content")
 			if err := securefs.CopyTree(src, content); err != nil {
-				return fmt.Errorf("package %s: %w", id, err)
+				return "", fmt.Errorf("package %s: %w", id, err)
 			}
 			hash, err = config.TreeHash(content)
 			if err != nil {
-				return err
+				return "", err
 			}
 			if p.Hash != "" && hash != p.Hash {
-				return fmt.Errorf("package %s content hash %s does not match its pinned hash %s", id, hash, p.Hash)
+				return "", fmt.Errorf("package %s content hash %s does not match its pinned hash %s", id, hash, p.Hash)
 			}
 			if frozen && !pinned && (hash != previous.Hash || revision != previous.Revision) {
-				return mark(ErrStaleLock, fmt.Errorf("locked package %s content changed", id))
+				return "", mark(ErrStaleLock, fmt.Errorf("locked package %s content changed", id))
 			}
 			dest = filepath.Join(cache, "packages", hash)
 			if _, err := os.Stat(dest); os.IsNotExist(err) {
 				if err := os.Rename(content, dest); err != nil {
-					return err
+					return "", err
 				}
 			} else if err != nil {
-				return err
+				return "", err
 			} else {
 				existing, err := config.TreeHash(dest)
 				if err != nil {
-					return fmt.Errorf("cache entry for %s: %w", id, err)
+					return "", fmt.Errorf("cache entry for %s: %w", id, err)
 				}
 				if existing != hash {
-					return fmt.Errorf("corrupt cache entry for %s", id)
+					return "", fmt.Errorf("corrupt cache entry for %s", id)
 				}
 			}
 			if pinned && p.Hash == "" {
 				if err := config.WritePin(pin, hash); err != nil {
-					return err
+					return "", err
 				}
 			}
 		}
-		deps := []config.ID{}
-		if p.Anonymous {
-			if err := c.AddContent(id, dest); err != nil {
-				return err
-			}
-		} else {
-			d, err := c.AddPackage(id, dest)
-			if err != nil {
-				return err
-			}
-			deps = c.Dependencies(id, d)
-		}
-		if !pinned {
-			if frozen && config.Digest(deps) != config.Digest(previous.Dependencies) {
+		fetched[id] = fetchedPackage{previous, hash, revision, pinned, l, source}
+		return dest, nil
+	}
+	merged := func(id config.ID, _ config.Package, deps []config.ID) error {
+		f := fetched[id]
+		if !f.pinned {
+			if frozen && config.Digest(deps) != config.Digest(f.previous.Dependencies) {
 				return fmt.Errorf("stale dependencies for %s", id)
 			}
-			l.Packages[id] = config.LockedPackage{Source: source, Revision: revision, Hash: hash, Dependencies: deps}
-		}
-		for _, dep := range deps {
-			if err := install(dep, append(chain, id)); err != nil {
-				return err
+			f.lock.Packages[id] = config.LockedPackage{
+				Source: f.source, Revision: f.revision, Hash: f.hash, Dependencies: deps,
 			}
 		}
 		loaded[id] = true
 		result.PackageIDs = append(result.PackageIDs, id)
 		return nil
 	}
-	ids := []config.ID{}
-	for id := range c.Packages {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	for _, id := range ids {
-		if err := install(id, nil); err != nil {
-			return result, err
-		}
+	if err := c.MergePackages(fetch, merged); err != nil {
+		return result, err
 	}
 	for id := range wanted {
 		if !loaded[id] {
@@ -358,41 +337,26 @@ func pinnedCommit(ref string) string {
 	return ""
 }
 
-// errUnresolved is a ref or revision a cloned repository does not have.
+// errUnresolved is a ref or revision the repository does not have.
 var errUnresolved = errors.New("cannot resolve revision")
 
-// checkoutGit clones url into dir and checks out ref, returning the commit. A ref names a tag,
-// the default branch, another branch, which a clone holds only as a remote ref, or a full commit,
-// fetched by its hash when no branch reaches it.
+// checkoutGit fetches ref of url, a branch, a tag, HEAD, or a full commit, into a new repository
+// at dir, checks it out, and returns the commit. Only that commit is fetched, without history.
 func checkoutGit(ctx context.Context, dir, url, protocols, ref string) (string, error) {
-	commit := config.IsCommit(ref)
-	if _, err := git(ctx, protocols, false, "clone", "--quiet", "--no-checkout", "--", url, dir); err != nil {
-		return "", cloneError(url, err)
+	if _, err := git(ctx, protocols, true, "init", "--quiet", dir); err != nil {
+		return "", err
 	}
-	resolve := func() ([]byte, error) {
-		out, err := git(
-			ctx, protocols, true, "-C", dir, "rev-parse", "--verify", "--end-of-options", ref+"^{commit}",
-		)
-		// A clone checks out only the default branch; other branches are remote refs.
-		if err != nil && !commit && ref != "HEAD" {
-			if remote, remoteErr := git(
-				ctx, protocols, true, "-C", dir, "rev-parse", "--verify", "--end-of-options",
-				"refs/remotes/origin/"+ref+"^{commit}",
-			); remoteErr == nil {
-				return remote, nil
-			}
+	if _, err := git(
+		ctx, protocols, false, "-C", dir, "fetch", "--quiet", "--depth", "1", "--end-of-options", url, ref,
+	); err != nil {
+		var failed gitError
+		if errors.As(err, &failed) && (strings.Contains(failed.stderr, "couldn't find remote ref") ||
+			strings.Contains(failed.stderr, "not our ref") || strings.Contains(failed.stderr, "unadvertised object")) {
+			return "", errUnresolved
 		}
-		return out, err
+		return "", fetchError(url, err)
 	}
-	out, err := resolve()
-	// A pinned commit may be reachable only by its hash, which a clone does not fetch.
-	if err != nil && commit {
-		if _, fetchErr := git(
-			ctx, protocols, false, "-C", dir, "fetch", "--quiet", "origin", "--end-of-options", ref,
-		); fetchErr == nil {
-			out, err = resolve()
-		}
-	}
+	out, err := git(ctx, protocols, true, "-C", dir, "rev-parse", "--verify", "FETCH_HEAD^{commit}")
 	if err != nil {
 		return "", errUnresolved
 	}
@@ -413,6 +377,8 @@ func git(ctx context.Context, protocols string, isolated bool, args ...string) (
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_ALLOW_PROTOCOL="+protocols,
 		"GIT_LFS_SKIP_SMUDGE=1",
+		// Failures are classified by git's messages, which translations would change.
+		"LC_ALL=C",
 	)
 	if isolated {
 		env = append(env, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_ATTR_NOSYSTEM=1")
@@ -469,9 +435,9 @@ var unreachable = []string{
 	"Could not read from remote repository",
 }
 
-// cloneError explains a failed clone of url whose repository is missing or private, keeping git's
+// fetchError explains a failed fetch of url whose repository is missing or private, keeping git's
 // own words as detail.
-func cloneError(url string, err error) error {
+func fetchError(url string, err error) error {
 	var failed gitError
 	if !errors.As(err, &failed) {
 		return err
@@ -486,7 +452,7 @@ func cloneError(url string, err error) error {
 				access = "set up git credentials for HTTPS (such as gh auth setup-git) or use an SSH URL"
 			}
 			return mark(ErrFetch, fmt.Errorf(
-				"cannot clone %s: the repository does not exist, or it is private and git has no "+
+				"cannot fetch %s: the repository does not exist, or it is private and git has no "+
 					"credentials for it; for a private repository, %s (git: %s)",
 				url,
 				access,
