@@ -106,7 +106,16 @@ func TestStdioRelaySurvivesNotificationsWithoutStream(t *testing.T) {
 		Command:     []string{executable, "-test.run=^$"},
 		Environment: map[string]config.Value{fakeServerEnv: {Literal: "1"}},
 	}
-	e := mcpruntime.New(t.Context(), "fake", server, nil, nil, auth.New("http://127.0.0.1:1/callback"), nil, "")
+	e := mcpruntime.New(
+		t.Context(),
+		"fake",
+		server,
+		nil,
+		nil,
+		auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir())),
+		nil,
+		"",
+	)
 	t.Cleanup(e.Close)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()

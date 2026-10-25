@@ -44,6 +44,7 @@ type Manager struct {
 	refused  map[string]string
 	client   *http.Client
 	callback string
+	store    *Store
 }
 
 var (
@@ -74,8 +75,11 @@ type Status struct {
 	Problem string
 }
 
-func New(callback string) *Manager {
+// New returns a manager whose OAuth logins return to callback and whose stored secrets live in
+// store, which may be nil for a manager that only checks whether a server needs a login.
+func New(callback string, store *Store) *Manager {
 	return &Manager{
+		store:       store,
 		pending:     map[string]*Attempt{},
 		begins:      map[config.ID]*beginCall{},
 		locks:       map[string]*sync.Mutex{},
@@ -139,7 +143,7 @@ func (m *Manager) Value(
 			return m.Value(ctx, ref, secrets[ref], secrets, inputs, "")
 		})
 	}
-	return LocalValue(ctx, id, s, secrets, env)
+	return LocalValue(ctx, m.store, id, s, secrets, env)
 }
 
 // LocalValue resolves secrets that need no daemon state, for commands that run without the
@@ -147,6 +151,7 @@ func (m *Manager) Value(
 // the caller's environment.
 func LocalValue(
 	ctx context.Context,
+	store *Store,
 	id config.ID,
 	s config.Secret,
 	secrets map[config.ID]config.Secret,
@@ -164,11 +169,11 @@ func LocalValue(
 		return fileValue(id, s.File)
 	case "sops":
 		return sopsValue(ctx, id, s, env, func(ref config.ID) (string, error) {
-			return LocalValue(ctx, ref, secrets[ref], secrets, env)
+			return LocalValue(ctx, store, ref, secrets[ref], secrets, env)
 		})
 	case "keychain":
-		value, err := keychainGet(key(id, s))
-		if errors.Is(err, keyring.ErrNotFound) {
+		value, err := store.Get(key(id, s))
+		if errors.Is(err, errNotStored) {
 			return "", fmt.Errorf("keychain secret %s is not stored; store it with agx secret set %s --stdin", id, id)
 		} else if err != nil {
 			return "", fmt.Errorf("keychain secret %s: %w", id, err)
@@ -411,8 +416,8 @@ func (m *Manager) stored(k string, id config.ID) (credential, error) {
 	if cached {
 		return saved, nil
 	}
-	data, err := keychainGet(k)
-	if errors.Is(err, keyring.ErrNotFound) {
+	data, err := m.store.Get(k)
+	if errors.Is(err, errNotStored) {
 		return credential{}, fmt.Errorf("secret %s needs login; run agx secret login %s: %w", id, id, ErrNoCredential)
 	}
 	if err != nil {
@@ -446,7 +451,7 @@ func (m *Manager) renew(ctx context.Context, k string, id config.ID, saved crede
 	m.mu.Lock()
 	delete(m.refused, k)
 	m.mu.Unlock()
-	if err := keychainSet(k, string(data)); err != nil {
+	if err := m.store.Set(k, string(data)); err != nil {
 		// The refresh token may have rotated; dropping it would force a new login.
 		m.mu.Lock()
 		m.unpersisted[k] = saved
@@ -565,7 +570,7 @@ func (m *Manager) Set(id config.ID, a config.Secret, secret []byte) error {
 	lock := m.credentialLock(k)
 	lock.Lock()
 	defer lock.Unlock()
-	if err := keychainSet(k, value); err != nil {
+	if err := m.store.Set(k, value); err != nil {
 		return fmt.Errorf("secret %s was not stored: %w", id, err)
 	}
 	return nil
@@ -589,7 +594,7 @@ func (m *Manager) Logout(id config.ID, a config.Secret) error {
 		}
 	}
 	m.mu.Unlock()
-	if err := keychainDelete(k); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+	if err := m.store.Delete(k); err != nil {
 		return fmt.Errorf("secret %s was not removed: %w", id, err)
 	}
 	return nil
@@ -663,11 +668,11 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 			s.Refreshable = memory.Token.RefreshToken != ""
 			break
 		}
-		data, err := keychainGet(k)
+		data, err := m.store.Get(k)
 		switch {
-		case errors.Is(err, keyring.ErrNotFound) && a.Implicit && !required:
+		case errors.Is(err, errNotStored) && a.Implicit && !required:
 			// On-demand OAuth needs no login until its server asks for one.
-		case errors.Is(err, keyring.ErrNotFound):
+		case errors.Is(err, errNotStored):
 			s.State = "needs_login"
 		case err != nil:
 			s.State = "unavailable"
