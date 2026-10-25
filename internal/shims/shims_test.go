@@ -193,7 +193,7 @@ func TestDir(t *testing.T) {
 	}
 }
 
-// A shim runs the agx it was made for, whatever build the shim's own file holds.
+// A Windows shim hands off to the agx it was made for, whatever build its own file holds.
 func TestOrigin(t *testing.T) {
 	agx := target(t)
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
@@ -203,7 +203,8 @@ func TestOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	install(t, dir, agx, "claude-cpa")
-	if origin, ok := Origin(filepath.Join(dir, fileName("claude-cpa"))); !ok || origin != agx {
+	if origin, ok := Origin(filepath.Join(dir, fileName("claude-cpa"))); ok != (runtime.GOOS == "windows") ||
+		ok && origin != agx {
 		t.Fatalf("Origin = %q, %v", origin, ok)
 	}
 	if _, ok := Origin(agx); ok {

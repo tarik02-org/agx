@@ -192,7 +192,7 @@ func warnShims(dir, target string, names []string) {
 	}
 }
 
-// handOff runs a harness definition through the agx a shim records, which on Windows is not the
+// handOff runs a harness definition through the agx a Windows shim records rather than the
 // shim's own copy, and returns its exit status.
 func handOff(current, name string, args []string) int {
 	cmd := exec.CommandContext(context.Background(), current, append([]string{name}, args...)...)

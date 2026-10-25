@@ -158,14 +158,10 @@ func copyFile(src, dst string) error {
 	return errors.Join(err, out.Close())
 }
 
-// Origin reports the agx executable the shim at path runs, when path is one of agx's shims.
+// Origin reports the agx a Windows shim at path hands off to. Symbolic links run agx itself.
 func Origin(path string) (string, bool) {
-	if !IsShim(path) {
+	if runtime.GOOS != "windows" || !IsShim(path) {
 		return "", false
-	}
-	if runtime.GOOS != "windows" {
-		target, err := os.Readlink(path)
-		return target, err == nil
 	}
 	target := recorded(filepath.Dir(path))
 	return target, target != ""

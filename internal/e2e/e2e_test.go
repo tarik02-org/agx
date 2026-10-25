@@ -366,7 +366,7 @@ func TestEndToEnd(t *testing.T) {
 
 	t.Run("links named after harnesses", func(t *testing.T) {
 		if runtime.GOOS == "windows" {
-			t.Skip("shims are hard links or copies on Windows")
+			t.Skip("shims are copies on Windows")
 		}
 		links, native := filepath.Join(e.dir, "links"), filepath.Join(e.dir, "native")
 		for _, d := range []string{links, native} {
