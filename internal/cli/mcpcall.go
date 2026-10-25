@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
@@ -115,7 +116,7 @@ func newToolTarget(
 func (t *toolTarget) listTools(ctx context.Context, server string) ([]*v1.McpTools, error) {
 	response, err := t.client.runtime.ListTools(
 		ctx,
-		request(&v1.ListToolsRequest{Scope: t.scope, McpId: server}, t.token),
+		withToken(&v1.ListToolsRequest{Scope: t.scope, McpId: server}, t.token),
 	)
 	if err != nil {
 		return nil, err
@@ -406,7 +407,7 @@ func mcpCallCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 			if err != nil {
 				return err
 			}
-			response, err := target.client.runtime.CallTool(ctx, request(&v1.CallToolRequest{
+			response, err := target.client.runtime.CallTool(ctx, withToken(&v1.CallToolRequest{
 				Scope:         target.scope,
 				McpId:         server,
 				Tool:          tool,
@@ -593,7 +594,9 @@ func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir stri
 			document.Content = append(document.Content, fileContentJSON{
 				Type: item.Type, MIMEType: item.MIMEType, Path: path, Size: size,
 			})
-			line(out.Muted(fmt.Sprintf("[%s, %s]", item.MIMEType, formatSize(size))) + " " + out.Path(path))
+			line(
+				out.Muted(fmt.Sprintf("[%s, %s]", item.MIMEType, humanize.IBytes(uint64(size)))) + " " + out.Path(path),
+			)
 		case "resource_link":
 			document.Content = append(document.Content, linkContentJSON{
 				Type:        item.Type,
@@ -632,7 +635,13 @@ func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir stri
 				if label == "" {
 					label = "resource"
 				}
-				line(out.Muted(fmt.Sprintf("[%s, %s] %s", label, formatSize(size), r.URI)) + " " + out.Path(path))
+				line(
+					out.Muted(
+						fmt.Sprintf("[%s, %s] %s", label, humanize.IBytes(uint64(size)), r.URI),
+					) + " " + out.Path(
+						path,
+					),
+				)
 			}
 			document.Content = append(document.Content, resource)
 		default:
@@ -661,15 +670,4 @@ func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir stri
 		return &ExitError{Code: 1}
 	}
 	return nil
-}
-
-// formatSize writes a byte count for people: 512 B, 34 KB, 2.5 MB.
-func formatSize(n int64) string {
-	switch {
-	case n < 1024:
-		return fmt.Sprintf("%d B", n)
-	case n < 1024*1024:
-		return fmt.Sprintf("%d KB", (n+512)/1024)
-	}
-	return fmt.Sprintf("%.1f MB", float64(n)/(1024*1024))
 }

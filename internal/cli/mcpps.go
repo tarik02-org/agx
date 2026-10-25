@@ -1,12 +1,12 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"strconv"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
@@ -40,15 +40,13 @@ func mcpProcessesCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 				}
 				*f.into = directory
 			}
-			c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
+			c, err := commandClient(cmd, paths, builtins)
 			if err != nil {
 				return err
 			}
-			ctx, cancel := context.WithTimeout(cmd.Context(), callTimeout)
-			defer cancel()
 			response, err := c.runtime.ListMcpProcesses(
-				ctx,
-				request(filter, c.discovery.Token),
+				cmd.Context(),
+				connect.NewRequest(filter),
 			)
 			if err != nil {
 				return err
@@ -149,15 +147,13 @@ func mcpStopCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 			if err != nil {
 				return &usageError{fmt.Errorf("pid must be a number, not %q", args[0])}
 			}
-			c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
+			c, err := commandClient(cmd, paths, builtins)
 			if err != nil {
 				return err
 			}
-			ctx, cancel := context.WithTimeout(cmd.Context(), callTimeout)
-			defer cancel()
 			if _, err := c.runtime.StopMcpProcess(
-				ctx,
-				request(&v1.StopMcpProcessRequest{Pid: pid}, c.discovery.Token),
+				cmd.Context(),
+				connect.NewRequest(&v1.StopMcpProcessRequest{Pid: pid}),
 			); err != nil {
 				return err
 			}

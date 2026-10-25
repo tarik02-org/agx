@@ -347,10 +347,15 @@ func TestBuildCodexAppServer(t *testing.T) {
 }
 
 func TestBuildCodexPluginsDisabled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake Codex is a shell script")
+	}
 	f := newFixture(t)
+	// Codex reports plugins off, and runs no other command.
+	write(t, filepath.Join(filepath.Dir(f.work), "bin", "fake"), "#!/bin/sh\n"+
+		`[ "$*" = "features list" ] && printf 'plugins  stable  false\n' || exit 1`+"\n")
 	home := t.TempDir()
 	t.Setenv("CODEX_HOME", home)
-	write(t, filepath.Join(home, "config.toml"), "model = \"x\"\n\n[features]\nplugins = false\n")
 	plan, s, err := f.build(t, "codex", "exec", "hi")
 	if err != nil {
 		t.Fatal(err)
@@ -367,10 +372,9 @@ func TestBuildCodexPluginsDisabled(t *testing.T) {
 		"exec",
 		"hi",
 	})
-	// The configured executable cannot run, so the installation it is given fails and the
-	// launch reports why plugins are off.
+	// The launch reports why plugins are off.
 	want := "Codex plugins are disabled (features.plugins = false in " + filepath.Join(home, "config.toml") +
-		"); agx skills for Codex need them: set features.plugins = true, or pass -c features.plugins=true " +
+		" or the harness arguments); agx skills for Codex need them: set features.plugins = true, or pass -c features.plugins=true " +
 		"in the harness definition's args; launching without skills"
 	if !slices.Equal(plan.Warnings, []string{want}) {
 		t.Errorf("warnings = %q, want %q", plan.Warnings, want)

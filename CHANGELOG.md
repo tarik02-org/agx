@@ -39,5 +39,7 @@ agx has not been released yet. What it does today:
 - Removed `daemon.shutdown_grace_seconds` and `daemon.override`.
 - Harness `args` groups are `{values, modes}` only; skill `files` take `{content}` or `{path}` only.
 - Removed `agx mcp login` (use `agx secret login`) and `agx resolve` (use `agx explain`).
-- `agx secret set` reads stdin without `--stdin`.
+- `agx secret set` prompts without echo on a terminal and reads piped stdin otherwise.
 - A daemon of another agx build is always replaced, keeping its launches.
+- Passthrough harness commands replace the agx process on Unix.
+- Codex plugin checks ask `codex features list` instead of reading Codex configuration.

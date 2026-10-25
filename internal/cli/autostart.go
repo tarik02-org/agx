@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/gofrs/flock"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -99,7 +100,7 @@ func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*cli
 	if err == nil || errors.Is(err, daemon.ErrVersionMismatch) {
 		current = dial(d)
 		probe, cancel := context.WithTimeout(ctx, probeTimeout)
-		view, probeErr := current.runtime.GetRuntime(probe, request(&v1.GetRuntimeRequest{}, d.Token))
+		view, probeErr := current.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{}))
 		cancel()
 		if probeErr == nil {
 			state.reachable = true
@@ -218,7 +219,7 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 		lastErr = err
 		if err == nil {
 			probe, cancel := context.WithTimeout(ctx, time.Second)
-			_, err = c.runtime.GetRuntime(probe, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
+			_, err = c.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{}))
 			cancel()
 			if err == nil {
 				return logPath, nil
@@ -246,9 +247,7 @@ func stopDaemon(ctx context.Context, c *client, force bool, grace time.Duration)
 	if grace > 0 {
 		req.Grace = durationpb.New(grace)
 	}
-	ctx, cancel := context.WithTimeout(ctx, callTimeout)
-	defer cancel()
-	resp, err := c.runtime.Stop(ctx, request(req, c.discovery.Token))
+	resp, err := c.runtime.Stop(ctx, connect.NewRequest(req))
 	if err != nil {
 		return 0, err
 	}

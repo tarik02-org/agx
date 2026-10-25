@@ -78,7 +78,7 @@ func (l *lease) replaceCrashed(ctx context.Context) bool {
 		return false
 	}
 	probe, cancel := context.WithTimeout(ctx, time.Second)
-	_, err = c.runtime.GetRuntime(probe, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
+	_, err = c.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{}))
 	cancel()
 	if err == nil || connect.CodeOf(err) != connect.CodeUnavailable {
 		return false
@@ -141,7 +141,7 @@ func (l *lease) reattach(ctx context.Context) error {
 		return errors.New("the launch cannot be re-attached")
 	}
 	return l.call(func(c *client) error {
-		_, err := c.launches.RestoreLaunch(ctx, request(restore, c.discovery.Token))
+		_, err := c.launches.RestoreLaunch(ctx, connect.NewRequest(restore))
 		return err
 	})
 }
@@ -217,7 +217,7 @@ func (l *lease) call(fn func(*client) error) error {
 func (l *lease) renew(ctx context.Context, msg *v1.RenewLaunchRequest) (*v1.RenewLaunchResponse, error) {
 	var response *v1.RenewLaunchResponse
 	err := l.call(func(c *client) error {
-		r, err := c.launches.RenewLaunch(ctx, request(msg, l.lifecycle))
+		r, err := c.launches.RenewLaunch(ctx, withToken(msg, l.lifecycle))
 		if err == nil {
 			response = r.Msg
 		}
@@ -234,7 +234,7 @@ func (l *lease) renew(ctx context.Context, msg *v1.RenewLaunchRequest) (*v1.Rene
 			continue
 		}
 		err := l.call(func(c *client) error {
-			_, err := c.launches.RestoreLaunch(ctx, request(restore, c.discovery.Token))
+			_, err := c.launches.RestoreLaunch(ctx, connect.NewRequest(restore))
 			return err
 		})
 		// The daemon asks again with the next renewal.

@@ -260,9 +260,7 @@ func daemonReachable(paths platform.Paths) bool {
 	if err != nil {
 		return false
 	}
-	ctx, cancel := boundedContext()
-	defer cancel()
-	_, err = c.runtime.GetRuntime(ctx, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
+	_, err = c.runtime.GetRuntime(context.Background(), connect.NewRequest(&v1.GetRuntimeRequest{}))
 	return err == nil
 }
 
@@ -294,11 +292,11 @@ func testMCP(ctx context.Context, paths platform.Paths, builtins config.Builtins
 	progress("Connecting to " + id)
 	call, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	response, err := client.runtime.TestMcpServer(call, request(&v1.TestMcpServerRequest{
+	response, err := client.runtime.TestMcpServer(call, connect.NewRequest(&v1.TestMcpServerRequest{
 		McpId:             id,
 		Directory:         directory,
 		EnvironmentInputs: inputs,
-	}, client.discovery.Token))
+	}))
 	if scripting.enabled {
 		return printMCPTest(id, definition.Transport, response, err)
 	}

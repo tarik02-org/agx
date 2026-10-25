@@ -133,7 +133,7 @@ func runHarness(
 			cmd.Env = append(cmd.Env, key+"="+harnessEnv[key])
 		}
 		cmd.Env = guardEnviron(cmd.Env)
-		return supervise(cmd, nil, nil)
+		return passthrough(cmd)
 	}
 	directory, nativeArgs, err := adapter.Directory(args, cwd)
 	if err != nil {
@@ -169,12 +169,10 @@ func runHarness(
 			shellQuote(c.discovery.Config),
 		)
 	}
-	resolveCtx, cancel := context.WithTimeout(ctx, callTimeout)
 	resolved, err := c.config.Resolve(
-		resolveCtx,
-		request(&v1.ResolveRequest{Directory: directory, Harness: name}, c.discovery.Token),
+		ctx,
+		connect.NewRequest(&v1.ResolveRequest{Directory: directory, Harness: name}),
 	)
-	cancel()
 	if err != nil {
 		return err
 	}
@@ -191,22 +189,18 @@ func runHarness(
 	for _, name := range adapter.Forwarded() {
 		inputs[name] = os.Getenv(name)
 	}
-	prepare := request(
-		&v1.PrepareLaunchRequest{
-			SnapshotId:        resolved.Msg.Snapshot.Id,
-			Directory:         directory,
-			Harness:           name,
-			NativeArguments:   nativeArgs,
-			EnvironmentInputs: inputs,
-			Executable:        executable,
-		},
-		c.discovery.Token,
-	)
+	prepare := &v1.PrepareLaunchRequest{
+		SnapshotId:        resolved.Msg.Snapshot.Id,
+		Directory:         directory,
+		Harness:           name,
+		NativeArguments:   nativeArgs,
+		EnvironmentInputs: inputs,
+		Executable:        executable,
+	}
 	prepareLaunch := func() (*connect.Response[v1.PrepareLaunchResponse], error) {
 		ctx, cancel := context.WithTimeout(ctx, launchTimeout)
 		defer cancel()
-		prepare.Header().Set("Authorization", "Bearer "+c.discovery.Token)
-		return c.launches.PrepareLaunch(ctx, prepare)
+		return c.launches.PrepareLaunch(ctx, connect.NewRequest(prepare))
 	}
 	prepared, err := prepareLaunch()
 	// A restarting daemon refuses new launches; the next one, which the restart or this command
@@ -288,10 +282,8 @@ func runHarness(
 		// one restore the launch, or one that lost it, as a killed daemon does, take it back.
 		paused := false
 		renew := func() (bool, bool) {
-			ctx, cancel := boundedContext()
-			defer cancel()
 			response, err := link.renew(
-				ctx,
+				context.Background(),
 				&v1.RenewLaunchRequest{LaunchId: p.Launch.Id, HarnessPid: uint64(cmd.Process.Pid)},
 			)
 			if err == nil {
@@ -439,10 +431,8 @@ func runHarness(
 	if err := records.Finish(p.Launch.Id, time.Now()); err != nil {
 		ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
 	}
-	finishCtx, cancel := boundedContext()
-	defer cancel()
 	if err := link.call(func(c *client) error {
-		_, err := c.launches.FinishLaunch(finishCtx, request(finish, p.LifecycleToken))
+		_, err := c.launches.FinishLaunch(context.Background(), withToken(finish, p.LifecycleToken))
 		return err
 	}); err != nil {
 		ui.Diagnose(ui.Warn, "launch cleanup unavailable; lease expiry will release MCP resources")

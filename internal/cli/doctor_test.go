@@ -58,10 +58,6 @@ func TestHarnessCheck(t *testing.T) {
 			t.Errorf("%s %q: %s without a hint", test.name, test.output, got.Status)
 		}
 	}
-	if compareVersions("0.160.0", "0.99.0") != 1 || compareVersions("2.1.29", "2.1.290") != -1 ||
-		compareVersions("1.2.0", "1.2.0") != 0 {
-		t.Error("compareVersions misorders versions")
-	}
 }
 
 func TestPackageChecks(t *testing.T) {
@@ -100,12 +96,22 @@ func TestCodexChecks(t *testing.T) {
 
 // Each Codex-based definition is checked with its own CODEX_HOME and arguments.
 func TestCodexDefinitionChecks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake codex is a shell script")
+	}
 	dir := t.TempDir()
 	home := filepath.Join(dir, "work-codex")
 	for path, content := range map[string]string{
-		filepath.Join(home, "config.toml"):                 "[features]\nplugins = false\n",
 		filepath.Join(dir, "skills", "review", "SKILL.md"): "---\nname: review\ndescription: r\n---\nR.\n",
-		filepath.Join(dir, "codex"):                        "not run",
+		// Plugins are off in work-codex unless the arguments turn them on.
+		filepath.Join(dir, "codex"): `#!/bin/sh
+case "$*" in *"features list"*) ;; *) exit 1 ;; esac
+case "$CODEX_HOME $*" in
+*features.plugins=true*) echo "plugins  stable  true" ;;
+*work-codex*) echo "plugins  stable  false" ;;
+*) echo "plugins  stable  true" ;;
+esac
+`,
 	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)

@@ -454,6 +454,30 @@ func TestLoginWithoutClientRegistration(t *testing.T) {
 	}
 }
 
+func TestOpenIDDiscoveryWithPathInsertion(t *testing.T) {
+	keyring.MockInit()
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/.well-known/openid-configuration/tenant" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer": server.URL + "/tenant", "authorization_endpoint": server.URL + "/authorize",
+			"token_endpoint": server.URL + "/token",
+		})
+	}))
+	t.Cleanup(server.Close)
+	manager, _ := newManager(t)
+	secret := config.Secret{Kind: "oauth", Issuer: server.URL + "/tenant", ClientID: "agx"}
+	attempt, err := manager.Begin(t.Context(), "fixture", secret, server.URL+"/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.Release(attempt)
+}
+
 func TestLoginRequiresHTTPS(t *testing.T) {
 	keyring.MockInit()
 	manager, _ := newManager(t)

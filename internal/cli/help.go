@@ -1,87 +1,91 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
-	"image/color"
-	"os"
+	"regexp"
+	"strings"
 
-	"charm.land/fang/v2"
-	"charm.land/lipgloss/v2"
 	mango "github.com/muesli/mango-cobra"
 	"github.com/muesli/roff"
 	"github.com/spf13/cobra"
+
+	"github.com/tarik02-org/agx/internal/cli/ui"
 )
 
-// helpColors styles help with the standard ANSI colors of agx's other output, so it follows the
-// terminal theme: command names are cyan like identifiers, flags blue like keys of highlighted
-// code, strings green, and headings only bold. fang takes colors but not faint, so muted text
-// is bright black.
-func helpColors(lipgloss.LightDarkFunc) fang.ColorScheme {
-	plain := lipgloss.NoColor{}
-	muted := lipgloss.BrightBlack
-	return fang.ColorScheme{
-		Base:           plain,
-		Title:          plain,
-		Description:    plain,
-		Codeblock:      plain,
-		Program:        lipgloss.Cyan,
-		DimmedArgument: muted,
-		Comment:        muted,
-		Flag:           lipgloss.Blue,
-		FlagDefault:    muted,
-		Command:        lipgloss.Cyan,
-		QuotedString:   lipgloss.Green,
-		Argument:       plain,
-		Help:           plain,
-		Dash:           plain,
-		ErrorHeader:    [2]color.Color{plain, plain},
-		ErrorDetails:   plain,
-	}
-}
+// flagName matches the flag names of a pflag usage line.
+var flagName = regexp.MustCompile(`(^|[ ,])(--?[A-Za-z0-9][\w-]*)`)
 
-// helpEnvironment makes the process environment state agx's color decision for stdout, as fang
-// detects the color of help from the environment rather than from --color, and returns a
-// function that restores the environment. Harness processes must never inherit it.
-func helpEnvironment(styled bool) (restore func()) {
-	values := map[string]*string{}
-	unset := (*string)(nil)
-	force := "1"
-	dumb := "dumb"
-	values["TTY_FORCE"] = unset
-	if styled {
-		values["CLICOLOR_FORCE"] = &force
-		values["NO_COLOR"] = unset
-	} else {
-		// colorprofile strips every escape for a dumb terminal, where NO_COLOR keeps bold.
-		values["CLICOLOR_FORCE"] = unset
-		values["TERM"] = &dumb
+// help prints a command's help in the styles of agx's other output: headings bold, command
+// names cyan like identifiers, flags blue like keys of highlighted code.
+func help(cmd *cobra.Command, _ []string) {
+	out := ui.Stdout
+	var b strings.Builder
+	section := func(title string, lines ...string) {
+		fmt.Fprintf(&b, "%s\n%s\n\n", out.Heading(title), strings.Join(lines, "\n"))
 	}
-	saved := map[string]*string{}
-	for name, value := range values {
-		if old, ok := os.LookupEnv(name); ok {
-			saved[name] = &old
-		} else {
-			saved[name] = unset
+	if text := cmp.Or(cmd.Long, cmd.Short); text != "" {
+		b.WriteString(text + "\n\n")
+	}
+	usage := []string{}
+	if cmd.Runnable() {
+		usage = append(usage, "  "+cmd.UseLine())
+	}
+	if cmd.HasAvailableSubCommands() {
+		usage = append(usage, "  "+cmd.CommandPath()+" [command]")
+	}
+	section("Usage:", usage...)
+	if len(cmd.Aliases) > 0 {
+		section("Aliases:", "  "+strings.Join(cmd.Aliases, ", "))
+	}
+	if cmd.HasExample() {
+		section("Examples:", cmd.Example)
+	}
+	groups := append([]*cobra.Group{}, cmd.Groups()...)
+	title := "Commands:"
+	if len(groups) > 0 {
+		title = "Additional Commands:"
+	}
+	groups = append(groups, &cobra.Group{Title: title})
+	for _, group := range groups {
+		lines := []string{}
+		for _, sub := range cmd.Commands() {
+			if sub.GroupID == group.ID && (sub.IsAvailableCommand() || sub.Name() == "help") {
+				name := out.ID(fmt.Sprintf("%-*s", sub.NamePadding(), sub.Name()))
+				lines = append(lines, "  "+name+" "+sub.Short)
+			}
 		}
-		setEnv(name, value)
-	}
-	return func() {
-		for name, value := range saved {
-			setEnv(name, value)
+		if len(lines) > 0 {
+			section(strings.TrimSuffix(group.Title, ":")+":", lines...)
 		}
 	}
-}
-
-func setEnv(name string, value *string) {
-	// Setting and unsetting fail only for invalid names, and these are constant.
-	if value == nil {
-		_ = os.Unsetenv(name)
-		return
+	flags := func(title, usages string) {
+		lines := strings.Split(strings.TrimRight(usages, "\n"), "\n")
+		for i, line := range lines {
+			lines[i] = flagName.ReplaceAllStringFunc(line, func(m string) string {
+				if m[0] != '-' {
+					return m[:1] + out.Code(ui.SyntaxKey, m[1:])
+				}
+				return out.Code(ui.SyntaxKey, m)
+			})
+		}
+		section(title, lines...)
 	}
-	_ = os.Setenv(name, *value)
+	if cmd.HasAvailableLocalFlags() {
+		flags("Flags:", cmd.LocalFlags().FlagUsages())
+	}
+	if cmd.HasAvailableInheritedFlags() {
+		flags("Global Flags:", cmd.InheritedFlags().FlagUsages())
+	}
+	if cmd.HasAvailableSubCommands() {
+		b.WriteString(
+			out.Muted(`Use "` + cmd.CommandPath() + ` [command] --help" for more information about a command.`),
+		)
+	}
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), strings.TrimRight(b.String(), "\n"))
 }
 
-// manCommand prints a man page of the whole command tree, as fang's man command does.
+// manCommand prints a man page of the whole command tree.
 func manCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:                   "man",

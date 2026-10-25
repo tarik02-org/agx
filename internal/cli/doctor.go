@@ -15,13 +15,13 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
+	"golang.org/x/mod/semver"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
@@ -328,7 +328,7 @@ func harnessCheck(
 		return row
 	}
 	row.Detail = fmt.Sprintf("%s %s (%s)", name, version, executable)
-	if minimum != "" && compareVersions(version, minimum) < 0 {
+	if minimum != "" && semver.Compare("v"+version, "v"+minimum) < 0 {
 		row.Status = checkWarn
 		if defined {
 			row.Status = checkFail
@@ -343,27 +343,6 @@ func harnessCheck(
 	}
 	row.Status = checkPass
 	return row
-}
-
-// compareVersions compares dotted numeric versions.
-func compareVersions(a, b string) int {
-	as, bs := strings.Split(a, "."), strings.Split(b, ".")
-	for i := range max(len(as), len(bs)) {
-		var x, y int
-		if i < len(as) {
-			x, _ = strconv.Atoi(as[i])
-		}
-		if i < len(bs) {
-			y, _ = strconv.Atoi(bs[i])
-		}
-		if x != y {
-			if x < y {
-				return -1
-			}
-			return 1
-		}
-	}
-	return 0
 }
 
 // codexDefinitionChecks checks the skill plugins of every Codex-based harness definition, each
@@ -492,9 +471,7 @@ func daemonClientCheck(
 	started bool,
 ) (*client, check) {
 	row := check{Group: "daemon", Name: "daemon"}
-	probe, cancel := context.WithTimeout(ctx, callTimeout)
-	view, err := c.runtime.GetRuntime(probe, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
-	cancel()
+	view, err := c.runtime.GetRuntime(ctx, connect.NewRequest(&v1.GetRuntimeRequest{}))
 	if err != nil {
 		row.Status, row.Detail = checkFail, "not answering: "+errorMessage(err)
 		row.Hint = "inspect " + shownPath(filepath.Join(paths.Runtime, "daemon.log"))
@@ -600,11 +577,11 @@ func mcpChecks(ctx context.Context, c *client, cfg *config.Config, directory str
 		wg.Go(func() {
 			call, cancel := context.WithTimeout(ctx, doctorMCPTimeout)
 			defer cancel()
-			response, err := c.runtime.TestMcpServer(call, request(&v1.TestMcpServerRequest{
+			response, err := c.runtime.TestMcpServer(call, connect.NewRequest(&v1.TestMcpServerRequest{
 				McpId:             string(id),
 				Directory:         directory,
 				EnvironmentInputs: inputs,
-			}, c.discovery.Token))
+			}))
 			var msg *v1.TestMcpServerResponse
 			if err == nil {
 				msg = response.Msg
@@ -647,9 +624,7 @@ func mcpCheck(id config.ID, server config.MCPServer, response *v1.TestMcpServerR
 }
 
 func secretChecks(ctx context.Context, c *client, cfg *config.Config) []check {
-	call, cancel := context.WithTimeout(ctx, callTimeout)
-	defer cancel()
-	response, err := c.secrets.GetSecretStatus(call, request(&v1.GetSecretStatusRequest{}, c.discovery.Token))
+	response, err := c.secrets.GetSecretStatus(ctx, connect.NewRequest(&v1.GetSecretStatusRequest{}))
 	if err != nil {
 		return []check{{
 			Group:  "secret",

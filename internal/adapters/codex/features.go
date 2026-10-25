@@ -1,11 +1,15 @@
 package codex
 
 import (
-	"fmt"
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 
@@ -27,148 +31,98 @@ func home(t adapters.Target) (string, error) {
 	return filepath.Join(user, ".codex"), nil
 }
 
-// document is the part of a Codex configuration layer that decides whether plugins are on.
-type document struct {
-	// Profile is the legacy default profile, which Codex 0.162 rejects in favour of --profile.
-	Profile  string `toml:"profile"`
-	Features struct {
-		Plugins *bool `toml:"plugins"`
-	} `toml:"features"`
-	Profiles map[string]struct {
-		Features struct {
-			Plugins *bool `toml:"plugins"`
-		} `toml:"features"`
-	} `toml:"profiles"`
-}
-
-func readDocument(path string) (document, bool, error) {
-	var d document
-	b, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return d, false, nil
-	}
-	if err != nil {
-		return d, false, err
-	}
-	if err := toml.Unmarshal(b, &d); err != nil {
-		return d, false, fmt.Errorf("reading Codex configuration %s: %w", path, err)
-	}
-	return d, true, nil
-}
-
-// invocation is what native arguments say about Codex's configuration layers.
-type invocation struct {
-	// profile is the last --profile, "" for none.
-	profile string
-	// overrides are the -c/--config values in order.
-	overrides []string
-	// enable and disable hold the --enable and --disable features.
-	enable, disable []string
-}
-
-// parseInvocation reads the configuration options of a Codex command line. Codex takes them
-// before and after the subcommand, so every argument before "--" counts.
-func parseInvocation(args []string) invocation {
-	var in invocation
+// configArgs keeps the options of a Codex command line that `codex features list` takes:
+// -c/--config, --enable and --disable, which Codex reads before and after the subcommand, so
+// every argument before "--" counts. features list rejects --profile, so the last one returns
+// separately.
+func configArgs(args []string) (kept []string, profile string) {
 	for i := 0; i < len(args) && args[i] != "--"; i++ {
-		arg := args[i]
-		value := func(long, short string) (string, bool) {
-			switch {
-			case arg == long || short != "" && arg == short:
-				if i+1 < len(args) {
-					i++
-					return args[i], true
-				}
-				return "", false
-			case strings.HasPrefix(arg, long+"="):
-				return strings.TrimPrefix(arg, long+"="), true
-			case short != "" && strings.HasPrefix(arg, short) && len(arg) > len(short):
-				return strings.TrimPrefix(arg, short), true
-			}
-			return "", false
-		}
-		if v, ok := value("--config", "-c"); ok {
-			in.overrides = append(in.overrides, v)
-		} else if v, ok := value("--profile", "-p"); ok {
-			in.profile = v
-		} else if v, ok := value("--enable", ""); ok {
-			in.enable = append(in.enable, v)
-		} else if v, ok := value("--disable", ""); ok {
-			in.disable = append(in.disable, v)
-		} else if i+1 < len(args) && takesValue(arg) {
+		flag, value, found := args[i], "", false
+		if f, v, ok := strings.Cut(flag, "="); ok && strings.HasPrefix(f, "--") {
+			flag, value, found = f, v, true
+		} else if len(flag) > 2 && (flag[:2] == "-c" || flag[:2] == "-p") {
+			flag, value, found = flag[:2], flag[2:], true
+		} else if slices.Contains(valueFlags, flag) && i+1 < len(args) {
 			i++
+			value, found = args[i], true
+		}
+		switch {
+		case !found:
+		case flag == "-c" || flag == "--config":
+			kept = append(kept, "--config="+value)
+		case flag == "--enable" || flag == "--disable":
+			kept = append(kept, flag+"="+value)
+		case flag == "-p" || flag == "--profile":
+			profile = value
 		}
 	}
-	return in
+	return kept, profile
 }
 
-// takesValue reports whether arg is an option whose value is the next argument.
-func takesValue(arg string) bool { return slices.Contains(valueFlags, arg) }
+// codexExecutable is the Codex executable native commands for t run.
+func codexExecutable(t adapters.Target) (string, error) {
+	if t.Resolved != "" {
+		return t.Resolved, nil
+	}
+	return Adapter{}.Executable(t.Executable)
+}
 
-// pluginsDisabled explains how the configuration a Codex process reads disables plugins, or
-// returns "" when it does not. Layers apply as Codex applies them: config.toml in home, the
-// selected profile ([profiles.<name>] there, then <name>.config.toml), -c overrides in order,
-// then --enable and --disable, where --disable wins. Codex's managed configuration is not read.
-func pluginsDisabled(home string, args []string) (string, error) {
-	enabled, cause := true, ""
-	set := func(value *bool, where string) {
-		if value != nil {
-			enabled, cause = *value, fmt.Sprintf("features.plugins = %t %s", *value, where)
-		}
-	}
-	path := filepath.Join(home, "config.toml")
-	base, _, err := readDocument(path)
-	if err != nil {
-		return "", err
-	}
-	set(base.Features.Plugins, "in "+path)
-	in := parseInvocation(args)
-	overrides := map[string]document{}
-	profile := base.Profile
-	for _, raw := range in.overrides {
-		key, value, _ := strings.Cut(raw, "=")
-		var d document
-		// Codex reads a value that is not TOML as a string, which never sets a boolean.
-		if toml.Unmarshal([]byte(strings.TrimSpace(key)+" = "+value), &d) != nil {
-			continue
-		}
-		if d.Profile != "" {
-			profile = d.Profile
-		}
-		overrides[raw] = d
-	}
-	if in.profile != "" {
-		profile = in.profile
-	}
+// featureKey is what a features list answer depends on.
+type featureKey struct {
+	executable, home, args string
+	modified               [2]time.Time
+}
+
+// featureCache holds features list answers by featureKey.
+var featureCache sync.Map
+
+// pluginsDisabled asks Codex whether the configuration a harness process of t reads disables
+// plugins, and explains how, or returns "" when it does not. It runs `codex features list` with
+// the configuration options of t's arguments; a profile's features.plugins goes before them as an
+// override, since features list takes no --profile. When Codex cannot be found or fails, plugins
+// count as enabled: launching and installing then report Codex's own error. Answers are kept
+// until config.toml or the profile file changes.
+func pluginsDisabled(ctx context.Context, executable, home string, t adapters.Target) string {
+	args, profile := configArgs(t.Arguments)
+	files := [2]string{filepath.Join(home, "config.toml")}
 	if profile != "" {
-		set(base.Profiles[profile].Features.Plugins, "in profile "+profile+" of "+path)
-		file := filepath.Join(home, profile+".config.toml")
-		layer, _, err := readDocument(file)
-		if err != nil {
-			return "", err
+		files[1] = filepath.Join(home, profile+".config.toml")
+		var d struct {
+			Features struct {
+				Plugins *bool `toml:"plugins"`
+			} `toml:"features"`
 		}
-		set(layer.Features.Plugins, "in "+file)
-	}
-	for _, raw := range in.overrides {
-		set(overrides[raw].Features.Plugins, "from -c "+raw)
-	}
-	for _, feature := range in.enable {
-		if feature == "plugins" {
-			enabled, cause = true, ""
+		if b, err := os.ReadFile(files[1]); err == nil && toml.Unmarshal(b, &d) == nil && d.Features.Plugins != nil {
+			args = append([]string{"--config=features.plugins=" + strconv.FormatBool(*d.Features.Plugins)}, args...)
 		}
 	}
-	for _, feature := range in.disable {
-		if feature == "plugins" {
-			enabled, cause = false, "--disable plugins"
+	key := featureKey{executable: executable, home: home, args: strings.Join(args, "\x00")}
+	for i, file := range files {
+		if info, err := os.Stat(file); file != "" && err == nil {
+			key.modified[i] = info.ModTime()
 		}
 	}
-	if enabled {
-		return "", nil
+	if cached, ok := featureCache.Load(key); ok {
+		return cached.(string)
 	}
-	return disabledMessage(cause), nil
-}
-
-func disabledMessage(cause string) string {
-	return "Codex plugins are disabled (" + cause + "); agx skills for Codex need them: set features.plugins = true, " +
-		"or pass -c features.plugins=true in the harness definition's args"
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, executable, append(args, "features", "list")...)
+	cmd.Env = t.Environ(homeVariable)
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	disabled := ""
+	for line := range strings.Lines(string(out)) {
+		// Each line is a feature, its stage, and whether it is on: "plugins  stable  false".
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "plugins" && fields[len(fields)-1] == "false" {
+			disabled = "Codex plugins are disabled (features.plugins = false in " + files[0] +
+				" or the harness arguments); agx skills for Codex need them: set features.plugins = true, " +
+				"or pass -c features.plugins=true in the harness definition's args"
+		}
+	}
+	featureCache.Store(key, disabled)
+	return disabled
 }
