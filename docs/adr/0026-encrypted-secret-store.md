@@ -20,17 +20,15 @@ Values live in `secrets.json` in the state directory. The file is versioned JSON
 atomically with mode 0600 (a private ACL on Windows), and every read-modify-write holds
 `secrets.json.lock`. Each record is sealed with AES-256-GCM under one 256-bit key, with the
 record's key as additional data, so a record cannot be moved under another key. The OS keychain
-holds only that key, as the item `store-key:<digest of the store path>`, so isolated state
-directories (`AGX_STATE`, `--cache`) do not share one. A process asks the keychain for the key
-once and keeps it in memory.
+holds only that key, as the single item `master-key`. A process asks the keychain for it once and
+keeps it in memory.
 
-- **Migration:** a value found only in the keychain, under its old item name, moves into the
-  file on its first read, and the item is deleted.
-- **Lost key:** when the file has records but the keychain has no key, as after a keychain
-  reset, the file moves aside to `secrets.json.lost-<UTC time>` and the store starts empty;
-  its secrets read as not stored, so `agx secret status` asks for `agx secret set` or `login`.
+- **Lost key:** a store with records whose master key the keychain no longer has, as after a
+  keychain reset, cannot be read; agx says so and names the file to delete to start over.
 - **No keychain:** the store fails as the keychain items did; nothing is ever stored in
   plaintext.
+- **Earlier keychain items** are not read; secrets stored before need storing or logging in
+  again.
 
 ## Consequences
 

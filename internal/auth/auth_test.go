@@ -617,19 +617,6 @@ func TestStore(t *testing.T) {
 	if strings.Contains(string(b), "xxxx") {
 		t.Fatal("the store file holds a value in plaintext")
 	}
-	// Values the keychain holds from before the store move into it.
-	if err := keyring.Set("agx", "legacy", "old value"); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := store.Get("legacy"); err != nil || got != "old value" {
-		t.Fatalf("legacy Get = %q, %v", got, err)
-	}
-	if _, err := keyring.Get("agx", "legacy"); !errors.Is(err, keyring.ErrNotFound) {
-		t.Fatalf("the migrated keychain item remains: %v", err)
-	}
-	if got, err := auth.OpenStore(dir).Get("legacy"); err != nil || got != "old value" {
-		t.Fatalf("migrated value = %q, %v", got, err)
-	}
 	if err := store.Delete("a"); err != nil {
 		t.Fatal(err)
 	}
@@ -637,15 +624,12 @@ func TestStore(t *testing.T) {
 		t.Fatal("a deleted value is still there")
 	}
 
-	// A keychain that lost the key, as after a reset, moves the unreadable store aside.
+	if err := store.Set("b", "kept"); err != nil {
+		t.Fatal(err)
+	}
+	// A keychain that lost the master key, as after a reset, leaves the store unreadable.
 	keyring.MockInit()
-	if _, err := auth.OpenStore(dir).Get("legacy"); err == nil {
-		t.Fatal("a store without its key returned a value")
-	}
-	if matches, _ := filepath.Glob(filepath.Join(dir, "secrets.json.lost-*")); len(matches) != 1 {
-		t.Fatalf("store files moved aside: %v", matches)
-	}
-	if err := auth.OpenStore(dir).Set("b", "new"); err != nil {
-		t.Fatalf("a new store after losing the key: %v", err)
+	if _, err := auth.OpenStore(dir).Get("b"); err == nil || !strings.Contains(err.Error(), "no master key") {
+		t.Fatalf("a store without its master key: %v", err)
 	}
 }

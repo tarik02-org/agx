@@ -94,10 +94,9 @@ access token: see [MCP servers](mcp.md#github).
 
 agx keeps these values, and OAuth logins, encrypted in `secrets.json` in its
 state directory. The OS keychain holds only the key, so agx asks it once per
-process, whatever the number or size of the secrets. Values agx stored in the
-keychain before move into the file the first time they are read. If the
-keychain loses the key, for example after a keychain reset, agx moves the
-unreadable file aside and asks for the secrets again.
+process, whatever the number or size of the secrets. If the keychain loses the
+key, for example after a keychain reset, the file cannot be read: delete it and
+store the secrets again.
 
 There is no plaintext fallback: when the OS keychain is unavailable, keychain
 and OAuth secrets fail with an error.

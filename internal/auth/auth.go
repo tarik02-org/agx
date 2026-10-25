@@ -767,11 +767,6 @@ func keychainSet(k, value string) error {
 	return err
 }
 
-func keychainDelete(k string) error {
-	_, err := keychainCall(func() (struct{}, error) { return struct{}{}, keyring.Delete("agx", k) })
-	return err
-}
-
 // keychainCall runs op with keychainTimeout. A call that times out keeps running in the
 // background, as keychain APIs cannot be cancelled; its result is discarded.
 func keychainCall[T any](op func() (T, error)) (T, error) {
