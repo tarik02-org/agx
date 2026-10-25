@@ -14,7 +14,6 @@ import (
 	"os/exec"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -775,79 +774,18 @@ var keychainTimeout = 10 * time.Second
 const keychainAdvice = "unlock the OS keychain (or start its secret service) and retry, " +
 	"or use a secret of kind command or sops instead"
 
-// chunkSize keeps each keychain item within Windows Credential Manager's 2560-byte limit on a
-// secret; larger values, such as OAuth credentials with long tokens, span several items.
-const chunkSize = 2048
-
-// chunkedPrefix marks an item whose value is split across items k#1 through k#n.
-const chunkedPrefix = "agx-chunks:"
-
 func keychainGet(k string) (string, error) {
-	value, err := keychainCall(func() (string, error) { return keyring.Get("agx", k) })
-	if err != nil {
-		return "", err
-	}
-	count, chunked := strings.CutPrefix(value, chunkedPrefix)
-	if !chunked {
-		return value, nil
-	}
-	n, err := strconv.Atoi(count)
-	if err != nil || n < 1 || n > 64 {
-		return "", fmt.Errorf("keychain item %s is damaged", k)
-	}
-	var b strings.Builder
-	for i := 1; i <= n; i++ {
-		part, err := keychainCall(func() (string, error) { return keyring.Get("agx", fmt.Sprintf("%s#%d", k, i)) })
-		if err != nil {
-			return "", fmt.Errorf("keychain item %s is incomplete: %w", k, err)
-		}
-		b.WriteString(part)
-	}
-	return b.String(), nil
+	return keychainCall(func() (string, error) { return keyring.Get("agx", k) })
 }
 
 func keychainSet(k, value string) error {
-	set := func(key, value string) error {
-		_, err := keychainCall(func() (struct{}, error) { return struct{}{}, keyring.Set("agx", key, value) })
-		return err
-	}
-	if len(value) <= chunkSize && !strings.HasPrefix(value, chunkedPrefix) {
-		if err := set(k, value); err != nil {
-			return err
-		}
-		deleteChunks(k, 1)
-		return nil
-	}
-	n := (len(value) + chunkSize - 1) / chunkSize
-	// The parts go first, so the index never names parts that are missing.
-	for i := 1; i <= n; i++ {
-		if err := set(fmt.Sprintf("%s#%d", k, i), value[(i-1)*chunkSize:min(i*chunkSize, len(value))]); err != nil {
-			return err
-		}
-	}
-	if err := set(k, chunkedPrefix+strconv.Itoa(n)); err != nil {
-		return err
-	}
-	deleteChunks(k, n+1)
-	return nil
+	_, err := keychainCall(func() (struct{}, error) { return struct{}{}, keyring.Set("agx", k, value) })
+	return err
 }
 
 func keychainDelete(k string) error {
 	_, err := keychainCall(func() (struct{}, error) { return struct{}{}, keyring.Delete("agx", k) })
-	deleteChunks(k, 1)
 	return err
-}
-
-// deleteChunks removes the parts of k from part from on, which a shorter value no longer uses.
-func deleteChunks(k string, from int) {
-	for i := from; i <= 64; i++ {
-		_, err := keychainCall(
-			func() (struct{}, error) { return struct{}{}, keyring.Delete("agx", fmt.Sprintf("%s#%d", k, i)) },
-		)
-		if err != nil {
-			return
-		}
-	}
 }
 
 // keychainCall runs op with keychainTimeout. A call that times out keeps running in the
