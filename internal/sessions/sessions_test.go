@@ -47,13 +47,24 @@ func TestMatchAssignsSessionsToLaunches(t *testing.T) {
 			Finished:  finished(at(30)),
 		},
 		{Launch: "claude", Harness: "claude-x", Builtin: "claude", Directory: "/work", Started: at(0)},
+		// A launch that named its session claims no other, though it started later.
+		{
+			Launch:    "named",
+			Harness:   "claude-y",
+			Builtin:   "claude",
+			Directory: "/work",
+			Started:   at(1),
+			Sessions:  []string{"g"},
+			Exact:     true,
+		},
 	}
 	entries := []Entry{
 		entry("codex", "a", "/work", at(5)),
 		entry("codex", "b", "/work", at(15)),
 		entry("codex", "c", "/other", at(15)),
 		entry("codex", "d", "/work", at(60)),
-		entry("claude", "e", "/work", at(1)),
+		entry("claude", "e", "/work", at(2)),
+		entry("claude", "g", "/work", at(2)),
 	}
 	got := match(entries, records, nil, at(61))
 	if got == nil {
@@ -65,7 +76,7 @@ func TestMatchAssignsSessionsToLaunches(t *testing.T) {
 			harness[e.ID] = e.Harness
 		}
 	}
-	want := map[string]string{"a": "codex-cpa", "b": "codex-x", "e": "claude-x"}
+	want := map[string]string{"a": "codex-cpa", "b": "codex-x", "e": "claude-x", "g": "claude-y"}
 	if len(harness) != len(want) {
 		t.Fatalf("recorded = %v, want %v", harness, want)
 	}

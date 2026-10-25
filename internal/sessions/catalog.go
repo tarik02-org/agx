@@ -107,7 +107,7 @@ func match(entries []Entry, records []Record, failed map[string]error, now time.
 			j = -1
 			for k, r := range records {
 				from, to := r.window()
-				if r.Builtin != e.Builtin || r.Directory != e.Directory || e.Started.Before(from) ||
+				if r.Exact || r.Builtin != e.Builtin || r.Directory != e.Directory || e.Started.Before(from) ||
 					e.Started.After(to) {
 					continue
 				}

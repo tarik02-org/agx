@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -138,6 +139,10 @@ func runHarness(
 	if err != nil {
 		return err
 	}
+	assigned := ""
+	if a, ok := adapter.(adapters.SessionAssigner); ok {
+		assigned, nativeArgs = a.AssignSession(nativeArgs, newUUID())
+	}
 	// The daemon cannot tell a directory missing here from one it cannot resolve.
 	if info, err := os.Stat(directory); err != nil {
 		return statError("directory", directory, err)
@@ -265,6 +270,9 @@ func runHarness(
 	}
 	if resumed != "" {
 		record.Sessions = []string{resumed}
+	}
+	if assigned != "" {
+		record.Sessions, record.Exact = []string{assigned}, true
 	}
 	if err := records.Start(record); err != nil {
 		ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
@@ -507,4 +515,13 @@ func warnDiagnostics(diagnostics []*v1.Diagnostic) {
 			ui.Diagnose(ui.Warn, "%s", d.Summary)
 		}
 	}
+}
+
+// newUUID returns a random version 4 UUID.
+func newUUID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }

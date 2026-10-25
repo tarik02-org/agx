@@ -56,7 +56,11 @@ func pluginChecks(state PluginState, err error) []adapters.Check {
 		marketplace.Hint = "run agx install; a Codex launch also registers it"
 	}
 	rows = append(rows, marketplace)
-	plugins := adapters.Check{Name: "skill plugins", Status: "pass", Detail: skills(len(state.Installed)) + " installed"}
+	plugins := adapters.Check{
+		Name:   "skill plugins",
+		Status: "pass",
+		Detail: skills(len(state.Installed)) + " installed",
+	}
 	if len(state.Missing) > 0 {
 		plugins.Status = "warn"
 		plugins.Detail = "not installed: " + strings.Join(state.Missing, ", ")

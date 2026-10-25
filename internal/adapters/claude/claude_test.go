@@ -1,6 +1,7 @@
 package claude_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/tarik02-org/agx/internal/adapters/claude"
@@ -34,6 +35,26 @@ func TestClassify(t *testing.T) {
 	} {
 		if got := (claude.Adapter{}).Classify(tt.args); got != tt.mode {
 			t.Errorf("Classify(%q) = %s, want %s", tt.args, got, tt.mode)
+		}
+	}
+}
+
+func TestAssignSession(t *testing.T) {
+	for _, tt := range []struct {
+		args     []string
+		id       string
+		wantArgs []string
+	}{
+		{[]string{"-p", "hi"}, "new", []string{"--session-id", "new", "-p", "hi"}},
+		{[]string{"--session-id", "mine", "-p", "hi"}, "mine", []string{"--session-id", "mine", "-p", "hi"}},
+		{[]string{"--session-id=mine"}, "mine", []string{"--session-id=mine"}},
+		{[]string{"--resume", "abc", "-p", "hi"}, "", []string{"--resume", "abc", "-p", "hi"}},
+		{[]string{"-c"}, "", []string{"-c"}},
+		{[]string{"--", "--resume"}, "new", []string{"--session-id", "new", "--", "--resume"}},
+	} {
+		id, args := claude.Adapter{}.AssignSession(tt.args, "new")
+		if id != tt.id || !slices.Equal(args, tt.wantArgs) {
+			t.Errorf("AssignSession(%q) = %q, %q; want %q, %q", tt.args, id, args, tt.id, tt.wantArgs)
 		}
 	}
 }

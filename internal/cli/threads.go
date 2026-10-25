@@ -136,6 +136,7 @@ func (h *threadHost) Bind(ctx context.Context, launch adapters.ThreadLaunch, thr
 		Directory: launch.Directory,
 		Started:   time.Now(),
 		Sessions:  []string{thread},
+		Exact:     true,
 	})
 }
 

@@ -123,4 +123,3 @@ func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
 	}
 	return prefix, nil
 }
-

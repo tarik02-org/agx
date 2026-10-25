@@ -54,3 +54,5 @@ agx has not been released yet. What it does today:
   `file`, and `daemon_environment` secret kinds.
 - agx owns its shim directory: removed `agx shims --dir`, and `install` removes other files there.
   Windows shims are copies that run the agx recorded beside them.
+- New Claude launches pass `--session-id`, so `agx sessions` resumes exactly the session a
+  launch started with its definition.

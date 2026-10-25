@@ -437,8 +437,26 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("exit %d: %s", r.code, r.stderr)
 		}
 		launched = d
-		if n := len(d.Args); n < 3 || !slices.Equal(d.Args[n-3:], []string{"--from-definition", "-p", "hello"}) {
-			t.Errorf("args = %q, want the definition's group before the native arguments", d.Args)
+		n := len(d.Args)
+		if n < 5 || !slices.Equal(d.Args[n-5:n-3], []string{"--from-definition", "--session-id"}) ||
+			!slices.Equal(d.Args[n-2:], []string{"-p", "hello"}) {
+			t.Fatalf("args = %q, want the definition's group, then the session ID, before the native arguments", d.Args)
+		}
+		// The launch records the session it started, so it never claims another by time.
+		var records struct {
+			Records []struct {
+				Sessions []string `json:"sessions"`
+				Exact    bool     `json:"exact"`
+			} `json:"records"`
+		}
+		b, err := os.ReadFile(filepath.Join(e.dir, "state", "launch-records.json"))
+		if err == nil {
+			err = json.Unmarshal(b, &records)
+		}
+		last := len(records.Records) - 1
+		if err != nil || last < 0 || !records.Records[last].Exact ||
+			!slices.Equal(records.Records[last].Sessions, []string{d.Args[n-3]}) {
+			t.Errorf("launch records = %s, %v", b, err)
 		}
 		work, err := filepath.EvalSymlinks(e.work)
 		if err != nil {

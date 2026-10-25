@@ -76,7 +76,14 @@ func Forwarded(a Adapter) []string {
 type Doctor interface {
 	// Doctor checks definition h, whose native executable is executable and whose processes
 	// installation describes as target.
-	Doctor(ctx context.Context, c *config.Config, cache string, h config.ResolvedHarness, executable string, target Target) []Check
+	Doctor(
+		ctx context.Context,
+		c *config.Config,
+		cache string,
+		h config.ResolvedHarness,
+		executable string,
+		target Target,
+	) []Check
 }
 
 // Check is one row of agx doctor.
@@ -84,6 +91,14 @@ type Check struct {
 	Name string
 	// Status is pass, warn, or fail.
 	Status, Detail, Hint string
+}
+
+// SessionAssigner is an adapter whose harness starts a session under an ID agx chooses, so the
+// launch's record names its session instead of matching sessions by time.
+type SessionAssigner interface {
+	// AssignSession returns the ID of the session native args start, and args that start it
+	// under that ID: id, unless args name one. It returns "" when args resume a session.
+	AssignSession(args []string, id string) (string, []string)
 }
 
 // SettingsAdapter is an adapter whose harness takes a definition's native settings.
