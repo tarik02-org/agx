@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -106,7 +108,7 @@ func newManager(t *testing.T) (*auth.Manager, string) {
 		manager.Callback(w, r)
 	}))
 	t.Cleanup(callback.Close)
-	manager = auth.New(callback.URL + "/oauth/callback")
+	manager = auth.New(callback.URL+"/oauth/callback", auth.OpenStore(t.TempDir()))
 	return manager, callback.URL + "/oauth/callback"
 }
 
@@ -246,9 +248,11 @@ func TestKeychainWithoutFallback(t *testing.T) {
 	if err := manager.Set("token", config.Secret{Kind: "environment"}, []byte("x")); err == nil {
 		t.Fatal("a non-keychain secret was stored")
 	}
+	// Without the store key's keychain item, another process cannot read or write the store.
 	keyring.MockInitWithError(errors.New("storage unavailable"))
 	t.Cleanup(keyring.MockInit)
-	err := manager.Set("other", secret, []byte("value"))
+	fresh, _ := newManager(t)
+	err := fresh.Set("other", secret, []byte("value"))
 	if err == nil {
 		t.Fatal("storage failure was not reported; there is no plaintext fallback")
 	}
@@ -592,4 +596,40 @@ func TestRotate(t *testing.T) {
 		t.Fatalf("%d refreshes, want 3", n)
 	}
 	p.check(t)
+}
+
+func TestStore(t *testing.T) {
+	keyring.MockInit()
+	dir := t.TempDir()
+	store := auth.OpenStore(dir)
+	long := strings.Repeat("x", 10000)
+	if err := store.Set("a", long); err != nil {
+		t.Fatal(err)
+	}
+	// Another process opens the same store and asks the keychain for the key itself.
+	if got, err := auth.OpenStore(dir).Get("a"); err != nil || got != long {
+		t.Fatalf("Get from another store = %d bytes, %v", len(got), err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "secrets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "xxxx") {
+		t.Fatal("the store file holds a value in plaintext")
+	}
+	if err := store.Delete("a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := auth.OpenStore(dir).Get("a"); err == nil {
+		t.Fatal("a deleted value is still there")
+	}
+
+	if err := store.Set("b", "kept"); err != nil {
+		t.Fatal(err)
+	}
+	// A keychain that lost the master key, as after a reset, leaves the store unreadable.
+	keyring.MockInit()
+	if _, err := auth.OpenStore(dir).Get("b"); err == nil || !strings.Contains(err.Error(), "no master key") {
+		t.Fatalf("a store without its master key: %v", err)
+	}
 }

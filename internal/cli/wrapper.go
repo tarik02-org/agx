@@ -121,7 +121,7 @@ func runHarness(
 			if !ok {
 				return "", fmt.Errorf("unknown secret %s; passthrough commands read only configuration fragments", id)
 			}
-			return auth.LocalValue(ctx, id, secret, harnesses.config.Secrets, os.LookupEnv)
+			return auth.LocalValue(ctx, auth.OpenStore(paths.State), id, secret, harnesses.config.Secrets, os.LookupEnv)
 		})
 		if err != nil {
 			// Native commands agx does not manage, such as --help or login, still run as the

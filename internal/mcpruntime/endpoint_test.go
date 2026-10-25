@@ -53,7 +53,16 @@ func TestSopsFailureNeedsAuth(t *testing.T) {
 		URL:       "http://127.0.0.1:1/mcp",
 		Auth:      config.MCPAuth{Secret: "token"},
 	}
-	e := mcpruntime.New(t.Context(), "remote", server, secrets, nil, auth.New("http://127.0.0.1:1/callback"), nil, "")
+	e := mcpruntime.New(
+		t.Context(),
+		"remote",
+		server,
+		secrets,
+		nil,
+		auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir())),
+		nil,
+		"",
+	)
 	t.Cleanup(e.Close)
 
 	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`
@@ -119,7 +128,7 @@ func TestRemoteRefreshesRejectedToken(t *testing.T) {
 		manager.Callback(w, r)
 	}))
 	t.Cleanup(callback.Close)
-	manager = auth.New(callback.URL + "/oauth/callback")
+	manager = auth.New(callback.URL+"/oauth/callback", auth.OpenStore(t.TempDir()))
 	secret := config.Secret{Kind: "oauth", Issuer: upstream.URL, ClientID: "public-fixture"}
 	attempt, err := manager.Begin(t.Context(), "token", secret, upstream.URL+"/mcp")
 	if err != nil {

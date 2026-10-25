@@ -103,7 +103,14 @@ func newSharedFixture(t *testing.T, share string) *sharedFixture {
 // endpoint is a launch's endpoint of the fake server, rooted at root.
 func (f *sharedFixture) endpoint(root string) *mcpruntime.Endpoint {
 	e := mcpruntime.New(
-		f.t.Context(), "fake", f.server, nil, nil, auth.New("http://127.0.0.1:1/callback"), f.shared, root,
+		f.t.Context(),
+		"fake",
+		f.server,
+		nil,
+		nil,
+		auth.New("http://127.0.0.1:1/callback", auth.OpenStore(f.t.TempDir())),
+		f.shared,
+		root,
 	)
 	f.t.Cleanup(e.Close)
 	return e
@@ -279,7 +286,14 @@ func TestSharedServerStopsOnSecretReset(t *testing.T) {
 	secrets := map[config.ID]config.Secret{"token": {Kind: "daemon_environment", Variable: "AGX_TEST_SHARED_TOKEN"}}
 	t.Setenv("AGX_TEST_SHARED_TOKEN", "value")
 	e := mcpruntime.New(
-		t.Context(), "fake", f.server, secrets, nil, auth.New("http://127.0.0.1:1/callback"), f.shared, "",
+		t.Context(),
+		"fake",
+		f.server,
+		secrets,
+		nil,
+		auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir())),
+		f.shared,
+		"",
 	)
 	t.Cleanup(e.Close)
 	session := connect(t, e)

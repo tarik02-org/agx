@@ -14,10 +14,17 @@ func TestFileSecret(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "token")
 	secret := config.Secret{Kind: "file", File: file}
-	manager := auth.New("http://127.0.0.1:1/callback")
+	manager := auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir()))
 
 	t.Run("missing", func(t *testing.T) {
-		if _, err := auth.LocalValue(t.Context(), "token", secret, nil, noEnv); err == nil {
+		if _, err := auth.LocalValue(
+			t.Context(),
+			auth.OpenStore(t.TempDir()),
+			"token",
+			secret,
+			nil,
+			noEnv,
+		); err == nil {
 			t.Fatal("a missing file resolved")
 		}
 		if status := manager.Status("token", secret, nil); status.State != "unavailable" || status.Problem == "" {
@@ -29,7 +36,7 @@ func TestFileSecret(t *testing.T) {
 		if err := os.WriteFile(file, []byte("s3cret\n\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		got, err := auth.LocalValue(t.Context(), "token", secret, nil, noEnv)
+		got, err := auth.LocalValue(t.Context(), auth.OpenStore(t.TempDir()), "token", secret, nil, noEnv)
 		if err != nil || got != "s3cret" {
 			t.Fatalf("value = %q, %v", got, err)
 		}
@@ -42,7 +49,7 @@ func TestFileSecret(t *testing.T) {
 		if err := os.WriteFile(file, []byte("\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		_, err := auth.LocalValue(t.Context(), "token", secret, nil, noEnv)
+		_, err := auth.LocalValue(t.Context(), auth.OpenStore(t.TempDir()), "token", secret, nil, noEnv)
 		if err == nil || !strings.Contains(err.Error(), "is empty") {
 			t.Fatalf("err = %v, want an empty-file error", err)
 		}

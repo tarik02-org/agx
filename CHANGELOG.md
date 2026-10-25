@@ -98,6 +98,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ### Changed
 
+- Keychain secrets and OAuth credentials live in `secrets.json` in the state directory,
+  encrypted with AES-256-GCM under one key that the OS keychain holds, instead of one keychain
+  item each. Values have no size limit, so long OAuth credentials fit on Windows, the keychain
+  is asked once per process, and processes sharing the store see each other's refreshed
+  tokens. Secrets stored in the keychain before need `agx secret set` or `login` again. See
+  ADR 0026.
 - Every `master` commit that passes CI publishes its own nightly prerelease, tagged
   `nightly-<version>.<commits>-<commit>`, instead of replacing one rolling `nightly` release.
 - A failed package installation the daemon runs reports git's error, with credentials in
