@@ -80,6 +80,11 @@ type Discovery struct {
 	PID int `json:"pid,omitempty"`
 }
 
+// verifier hashes a launch credential, so the daemon never holds one it could leak.
+func verifier(value string) [32]byte { return sha256.Sum256([]byte(value)) }
+
+func matches(hash [32]byte, value string) bool { return hash == verifier(value) }
+
 type launch struct {
 	// view.ExpiresAt shows expires, which alone decides expiry: it holds a monotonic clock
 	// reading, so that a wall clock jump expires no lease early or late.
@@ -689,7 +694,7 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	_, revoked := s.revoked[parts[0]]
 	grant, bearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	attaching := !revoked && (l == nil || l.view.State == v1.Launch_STATE_EXPIRED || time.Now().After(l.expires))
-	valid := !revoked && l != nil && active(l.view.State) && bearer && auth.Match(l.grant, grant)
+	valid := !revoked && l != nil && active(l.view.State) && bearer && matches(l.grant, grant)
 	s.mu.Unlock()
 	if attaching {
 		// The launch's wrapper attaches it once it notices this daemon.

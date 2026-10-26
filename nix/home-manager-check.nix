@@ -100,7 +100,7 @@ pkgs.runCommand "agx-home-manager-module" { } ''
   grep -q 'X-Api-Key: !secret docs-key' ${dropIn}
   grep -q 'HOME_DIR: !env HOME' ${dropIn}
   grep -q 'executable: /nix/store/.*/bin/codex' ${dropIn}
-  grep -q 'shims install --dir /home/test/.local/share/agx/shims' ${activation}
+  grep -q "XDG_DATA_HOME='\?/home/test/.local/share'\? .*" ${activation}
   grep -q 'does not import agx.d' ${activation}
   [ -L ${links}/bin/codex ] && [ -L ${links}/bin/claude ]
   [ ${lib.escapeShellArg (toString cfg.home.sessionPath)} = /home/test/.local/share/agx/shims ]

@@ -245,7 +245,7 @@ func TestKeychainWithoutFallback(t *testing.T) {
 	); err == nil {
 		t.Fatal("an inline secret read a top-level secret's item")
 	}
-	if err := manager.Set("token", config.Secret{Kind: "environment"}, []byte("x")); err == nil {
+	if err := manager.Set("token", config.Secret{Kind: "command"}, []byte("x")); err == nil {
 		t.Fatal("a non-keychain secret was stored")
 	}
 	// Without the store key's keychain item, another process cannot read or write the store.

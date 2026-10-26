@@ -123,18 +123,14 @@ func TestJSONShapes(t *testing.T) {
 		}
 	}
 
-	dir := t.TempDir()
-	changes := "{changes:[{action:string,file:string,kind:string,name:string,target:string}],directory:string,on_path:bool}"
+	changes := "{changes:[{action:string,file:string,name:string}],directory:string,on_path:bool}"
 	for _, test := range []struct {
 		args []string
 		want string
 	}{
-		{
-			[]string{"shims", "list", "--dir", dir},
-			"{directory:string,on_path:bool,shims:[{file:string,name:string,state:string}],target:string}",
-		},
-		{[]string{"shims", "install", "--dir", dir}, changes},
-		{[]string{"shims", "remove", "--dir", dir}, changes},
+		{[]string{"shims", "list"}, "{directory:string,on_path:bool,shims:[{file:string,name:string,state:string}],target:string}"},
+		{[]string{"shims", "install"}, changes},
+		{[]string{"shims", "remove"}, changes},
 	} {
 		var data any
 		okJSON(t, &data, test.args...)
@@ -151,6 +147,49 @@ func TestJSONShapes(t *testing.T) {
 	}
 	if got, want := shape(document), "{error:{code:string,message:string},version:number}"; got != want {
 		t.Errorf("error document:\n got %s\nwant %s", got, want)
+	}
+}
+
+// TestListRedactsLiterals keeps credentials typed into headers and environment values out of
+// list documents, while tagged values keep their reference.
+func TestListRedactsLiterals(t *testing.T) {
+	isolate(t, `
+mcp:
+  docs:
+    url: https://docs.example/mcp
+    auth: none
+    headers:
+      X-Token: literal-header-token
+      X-Key: !env DOCS_KEY
+  fs:
+    command: [server-filesystem]
+    environment:
+      TOKEN: literal-env-token
+harnesses:
+  codex-work:
+    base: codex
+    environment:
+      OPENAI_API_KEY: literal-harness-token
+`)
+	t.Setenv("AGX_NO_AUTOSTART", "1")
+	for _, args := range [][]string{{"mcp", "list"}, {"harness", "list"}} {
+		_, docs := runJSON(t, append([]string{"--json"}, args...)...)
+		if len(docs) != 1 || docs[0].Data == nil {
+			t.Fatalf("agx %q: %+v", args, docs[0].Error)
+		}
+		if data := string(docs[0].Data); strings.Contains(data, "literal-") {
+			t.Errorf("agx %q --json shows a literal value: %s", args, data)
+		}
+	}
+	var servers map[string]struct {
+		Headers map[string]map[string]string `json:"headers"`
+	}
+	okJSON(t, &servers, "mcp", "list")
+	if got := servers["docs"].Headers["X-Key"]["env"]; got != "DOCS_KEY" {
+		t.Errorf("tagged header = %q, want its reference", got)
+	}
+	if _, ok := servers["docs"].Headers["X-Token"]; !ok {
+		t.Error("redacted header is missing")
 	}
 }
 

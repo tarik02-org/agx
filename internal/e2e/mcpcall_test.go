@@ -16,13 +16,11 @@ func TestMCPCalls(t *testing.T) {
 	e := newEnv(t)
 	starts := filepath.Join(e.dir, "starts")
 	mcp := filepath.ToSlash(binaries.mcp)
-	e.write("config/agx.yaml", `secrets:
-  token: {kind: environment, variable: E2E_TOKEN}
-mcp:
+	e.write("config/agx.yaml", `mcp:
   echo:
     command: ['`+mcp+`']
     environment:
-      ECHO_TOKEN: !secret token
+      ECHO_TOKEN: !env E2E_TOKEN
       FAKEMCP_STARTS: '`+filepath.ToSlash(starts)+`'
   tracker:
     command: ['`+mcp+`']

@@ -24,7 +24,6 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
-	"github.com/tarik02-org/agx/internal/adapters/codex"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/daemon"
@@ -169,7 +168,7 @@ func runDoctor(
 	add(harnessRows...)
 
 	if loaded && len(c.Skills) > 0 {
-		add(codexDefinitionChecks(ctx, c, registry, paths.Cache)...)
+		add(definitionChecks(ctx, c, registry, paths.Cache)...)
 	}
 
 	client, daemonRow := connectDaemon(ctx, paths, c)
@@ -178,7 +177,7 @@ func runDoctor(
 		add(mcpChecks(ctx, client, c, directory, all)...)
 	}
 	if client != nil {
-		add(secretChecks(ctx, client, c)...)
+		add(secretChecks(ctx, client)...)
 	}
 	add(sopsChecks(c, exec.LookPath)...)
 	add(shimChecks(c, registry)...)
@@ -338,9 +337,9 @@ func harnessCheck(
 	return row
 }
 
-// codexDefinitionChecks checks the skill plugins of every Codex-based harness definition, each
-// with the CODEX_HOME and arguments its launches from this environment use.
-func codexDefinitionChecks(ctx context.Context, c *config.Config, registry adapters.Registry, cache string) []check {
+// definitionChecks runs the checks of the adapters that have their own, for every harness
+// definition based on them.
+func definitionChecks(ctx context.Context, c *config.Config, registry adapters.Registry, cache string) []check {
 	names := registry.Names()
 	for name := range c.Harnesses {
 		if !slices.Contains(names, name) {
@@ -348,11 +347,15 @@ func codexDefinitionChecks(ctx context.Context, c *config.Config, registry adapt
 		}
 	}
 	slices.Sort(names)
-	adapter, _ := registry.Adapter("codex")
 	rows := []check{}
 	for _, name := range names {
 		h, err := c.Harness(name)
-		if err != nil || h.Builtin != "codex" {
+		if err != nil {
+			continue
+		}
+		adapter, _ := registry.Adapter(h.Builtin)
+		doctor, ok := adapter.(adapters.Doctor)
+		if !ok {
 			continue
 		}
 		// The harness checks report an executable that is missing.
@@ -360,69 +363,15 @@ func codexDefinitionChecks(ctx context.Context, c *config.Config, registry adapt
 		if err != nil {
 			continue
 		}
-		target := adapters.InstallTarget(h, os.LookupEnv)
-		checks := []check{}
-		if len(h.Settings) > 0 {
-			settings, err := codex.Adapter{}.SettingsArguments(h.Settings, "")
-			if err == nil {
-				err = codex.CheckSettings(ctx, executable, target, settings)
-			}
-			row := check{Group: "codex", Name: "settings", Status: checkPass, Detail: "Codex loads them"}
-			if err != nil {
-				row.Status, row.Detail = checkFail, err.Error()
-				row.Hint = "fix the definition's settings; agx explain --harness " + name + " shows them"
-			}
-			checks = append(checks, row)
-			target.Arguments = append(settings, target.Arguments...)
-		}
-		state, err := codex.Plugins(ctx, executable, c, cache, target)
-		for _, row := range append(checks, codexChecks(state, err)...) {
-			if name != "codex" {
+		for _, r := range doctor.Doctor(ctx, c, cache, h, executable, adapters.InstallTarget(h, os.LookupEnv)) {
+			row := check{Group: h.Builtin, Name: r.Name, Status: checkStatus(r.Status), Detail: r.Detail, Hint: r.Hint}
+			if name != h.Builtin {
 				row.Name = name + " " + row.Name
 			}
 			rows = append(rows, row)
 		}
 	}
 	return rows
-}
-
-func codexChecks(state codex.PluginState, err error) []check {
-	if err != nil {
-		return []check{{Group: "codex", Name: "plugins", Status: checkFail, Detail: err.Error()}}
-	}
-	if state.Disabled != "" {
-		return []check{{
-			Group:  "codex",
-			Name:   "plugins feature",
-			Status: checkWarn,
-			Detail: state.Disabled,
-			Hint:   "Codex launches run without skills until plugins are enabled",
-		}}
-	}
-	rows := []check{{Group: "codex", Name: "plugins feature", Status: checkPass, Detail: "enabled in " + state.Home}}
-	marketplace := check{
-		Group:  "codex",
-		Name:   "marketplace",
-		Status: checkPass,
-		Detail: "registered: " + state.Marketplace,
-	}
-	if !state.Registered {
-		marketplace.Status, marketplace.Detail = checkWarn, "agx marketplace not registered with Codex"
-		marketplace.Hint = "run agx install; a Codex launch also registers it"
-	}
-	rows = append(rows, marketplace)
-	plugins := check{
-		Group:  "codex",
-		Name:   "skill plugins",
-		Status: checkPass,
-		Detail: plural(len(state.Installed), "skill") + " installed",
-	}
-	if len(state.Missing) > 0 {
-		plugins.Status = checkWarn
-		plugins.Detail = "not installed: " + strings.Join(state.Missing, ", ")
-		plugins.Hint = "run agx install; a Codex launch also installs them"
-	}
-	return append(rows, plugins)
 }
 
 // connectDaemon reaches a daemon of this build, starting it as other commands do, and reports
@@ -582,8 +531,10 @@ func mcpCheck(id config.ID, server config.MCPServer, response *v1.TestMcpServerR
 	switch errorCode(err) {
 	case codeNeedsLogin:
 		row.Status, row.Detail = checkWarn, "needs authorization: "+message
-		secret := cmp.Or(server.Auth.Secret, id)
-		row.Hint = "run agx secret login " + string(secret)
+		row.Hint = "run agx secret login " + string(cmp.Or(server.Auth.Secret, id))
+		if server.Auth.Env != "" || server.Auth.File != "" {
+			row.Hint = "check " + server.Auth.String()
+		}
 	case codeTimeout:
 		row.Status, row.Detail = checkFail, fmt.Sprintf("no answer within %s", doctorMCPTimeout)
 		row.Hint = "run agx mcp test " + string(id) + " for details"
@@ -594,7 +545,7 @@ func mcpCheck(id config.ID, server config.MCPServer, response *v1.TestMcpServerR
 	return row
 }
 
-func secretChecks(ctx context.Context, c *client, cfg *config.Config) []check {
+func secretChecks(ctx context.Context, c *client) []check {
 	response, err := c.secrets.GetSecretStatus(ctx, connect.NewRequest(&v1.GetSecretStatusRequest{}))
 	if err != nil {
 		return []check{{
@@ -608,14 +559,13 @@ func secretChecks(ctx context.Context, c *client, cfg *config.Config) []check {
 	slices.SortFunc(statuses, func(a, b *v1.SecretStatus) int { return strings.Compare(a.SecretId, b.SecretId) })
 	rows := []check{}
 	for _, s := range statuses {
-		rows = append(rows, secretCheck(s, cfg.Secrets[config.ID(s.SecretId)], os.LookupEnv))
+		rows = append(rows, secretCheck(s))
 	}
 	return rows
 }
 
-// secretCheck judges a secret by the daemon's view. Secrets read from the caller's environment
-// exist for the daemon only at launch, so their variable is checked here instead.
-func secretCheck(s *v1.SecretStatus, secret config.Secret, lookup func(string) (string, bool)) check {
+// secretCheck judges a secret by the daemon's view.
+func secretCheck(s *v1.SecretStatus) check {
 	row := check{Group: "secret", Name: s.SecretId, Detail: s.Kind}
 	problems := []string{}
 	for _, d := range s.Diagnostics {
@@ -644,20 +594,10 @@ func secretCheck(s *v1.SecretStatus, secret config.Secret, lookup func(string) (
 			row.Detail += ": " + strings.Join(problems, "; ")
 		}
 	default:
-		switch {
-		case s.Kind == "environment" && secret.Variable != "":
-			if value, ok := lookup(secret.Variable); ok && value != "" {
-				row.Status = checkPass
-				row.Detail += ": $" + secret.Variable + " is set"
-			} else {
-				row.Status = checkWarn
-				row.Detail += ": $" + secret.Variable + " is not set here"
-				row.Hint = "set " + secret.Variable + " in the shell that launches harnesses"
-			}
-		case s.Kind == "sops":
+		if s.Kind == "sops" {
 			row.Status = checkPass
 			row.Detail += ": age key resolves at launch"
-		default:
+		} else {
 			row.Status = checkWarn
 			row.Detail += ": not configured"
 		}
@@ -701,7 +641,7 @@ func shimChecks(c *config.Config, registry adapters.Registry) []check {
 	if len(names) == 0 {
 		return nil
 	}
-	dir, err := shims.DefaultDir()
+	dir, err := shims.Dir()
 	if err != nil {
 		return []check{{Group: "shims", Name: "shims", Status: checkWarn, Detail: err.Error()}}
 	}
@@ -772,10 +712,6 @@ func shimRows(dir string, entries []shims.Entry, onPath bool, collisions []shims
 			", ",
 		)
 		row.Hint = "run agx shims install"
-	case len(counts[shims.Modified])+len(counts[shims.Conflict]) > 0:
-		row.Status = checkWarn
-		row.Detail = "not agx's: " + strings.Join(slices.Concat(counts[shims.Modified], counts[shims.Conflict]), ", ")
-		row.Hint = "remove or rename those files, then run agx shims install"
 	}
 	rows := []check{row}
 	path := check{Group: "shims", Name: "PATH", Status: checkPass, Detail: dir + " is on PATH"}

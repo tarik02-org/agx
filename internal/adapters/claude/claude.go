@@ -3,7 +3,6 @@
 package claude
 
 import (
-	"context"
 	"encoding/json"
 	"path/filepath"
 	"strings"
@@ -63,6 +62,23 @@ func (Adapter) Classify(args []string) string {
 	return mode
 }
 
+// AssignSession starts a new session under id with --session-id.
+func (Adapter) AssignSession(args []string, id string) (string, []string) {
+	for i := 0; i < len(args) && args[i] != "--"; i++ {
+		name, value, hasValue := strings.Cut(args[i], "=")
+		switch {
+		case name == "-r" || name == "--resume" || name == "-c" || name == "--continue" ||
+			name == "--from-pr" || name == "--teleport":
+			return "", args
+		case name == "--session-id" && hasValue:
+			return value, args
+		case name == "--session-id" && i+1 < len(args):
+			return args[i+1], args
+		}
+	}
+	return id, append([]string{"--session-id", id}, args...)
+}
+
 // streamInput reports whether args read stream-json messages from standard input; the last
 // --input-format wins.
 func streamInput(args []string) bool {
@@ -101,11 +117,3 @@ func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
 	}
 	return prefix, nil
 }
-
-// Install does nothing: the session plugin directory needs no registration.
-func (Adapter) Install(context.Context, *config.Config, string, []adapters.Target) error {
-	return nil
-}
-
-// Forwarded is empty: installation reads none of the harness's own configuration.
-func (Adapter) Forwarded() []string { return nil }

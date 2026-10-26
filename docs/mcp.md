@@ -119,6 +119,9 @@ mcp:
   shared:
     url: https://shared.example.com/mcp
     auth: !secret team-token                  # a secret defined under secrets
+  ci:
+    url: https://ci.example.com/mcp
+    auth: !env CI_TOKEN                       # or !file PATH
   public:
     url: https://public.example.com/mcp
     auth: none                                # never send credentials
@@ -129,8 +132,10 @@ mcp:
 - **`oauth`**, or a mapping with `kind: oauth`: always OAuth.
 - **`keychain`**: a token stored with `agx secret set github`, sent as
   a bearer token.
-- **`!secret <id>`**: any [secret](secrets.md), such as an environment variable
-  or a command's output, sent as a bearer token. Several servers can share one.
+- **`!secret <id>`**: any [secret](secrets.md), such as a command's output,
+  sent as a bearer token. Several servers can share one.
+- **`!env <NAME>`** or **`!file <path>`**: a variable of the shell you launch
+  from, or a file's contents, sent as a bearer token.
 - **`none`**: no credentials.
 
 The secret of an inline `auth` takes the server's ID: `agx secret set github`,

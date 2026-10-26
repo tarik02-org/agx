@@ -997,8 +997,12 @@ func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
 	if previous, ok := c.Secrets[name]; ok && previous.Owner == name {
 		delete(c.Secrets, name)
 	}
-	if server.Auth.Secret != "" {
-		server.Auth.Secret = qualify(m.ns, server.Auth.Secret)
+	if server.Auth.Tagged() {
+		placed, err := m.place(server.Auth.Value)
+		if err != nil {
+			return err
+		}
+		server.Auth.Value = placed
 	}
 	if transport == "http" && server.Auth == (MCPAuth{}) {
 		server.Auth.Inline = &Secret{Kind: "oauth", Implicit: true}
@@ -1068,30 +1072,11 @@ func (c *Config) Validate() error {
 			label = "MCP server " + string(secret.Owner) + " auth"
 		}
 		at := secret.Source
-		// The schema checks the fields of each kind, except for the auth shorthand, which names
-		// only a kind.
+		// The schema checks the fields of each kind.
 		switch secret.Kind {
-		case "environment", "daemon_environment":
-			if secret.Variable == "" {
-				return errorAt(at, "%s needs a variable", label)
-			}
-		case "command":
-			if len(secret.Command) == 0 {
-				return errorAt(at, "%s needs a command", label)
-			}
-		case "file":
-			// The file is runtime state, such as a decrypted secret under /run, so a missing one
-			// fails the launch that needs it rather than the configuration.
-			if secret.File == "" {
-				return errorAt(at, "%s needs a file", label)
-			}
-		case "keychain":
 		case "sops":
 			// The encrypted file belongs to the configuration, so a missing one is an error
 			// rather than a runtime state: committing it is what makes the configuration portable.
-			if secret.File == "" {
-				return errorAt(at, "%s needs a file", label)
-			}
 			info, err := os.Stat(secret.File)
 			if err != nil {
 				return errorAt(at, "%s: cannot read sops file: %w", label, err)
@@ -1099,28 +1084,12 @@ func (c *Config) Validate() error {
 			if !info.Mode().IsRegular() {
 				return errorAt(at, "%s: sops file %s is not a regular file", label, secret.File)
 			}
-			// A key written into configuration sits next to the file it decrypts, which
-			// defeats encrypting it.
-			if secret.AgeKey != (Value{}) && !secret.AgeKey.Tagged() {
-				return errorAt(
-					at, "%s: age_key must be !secret ID, !env NAME, or !file PATH, not a literal key",
-					label,
-				)
-			}
 		case "oauth":
 			if secret.Issuer != "" {
 				if err := validateURL(secret.Issuer); err != nil {
 					return errorAt(at, "%s: %w", label, err)
 				}
 			}
-		default:
-			if secret.Owner != "" {
-				return errorAt(
-					at, "%s: unknown kind %q; reference a secret with auth: !secret %s",
-					label, secret.Kind, secret.Kind,
-				)
-			}
-			return errorAt(at, "%s: unknown kind %q", label, secret.Kind)
 		}
 	}
 	// checkSecret validates a !secret reference; OAuth tokens need login and refresh per

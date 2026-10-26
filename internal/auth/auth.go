@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,7 +41,6 @@ type Manager struct {
 	// refused maps credential keys whose refresh token the authorization server refused to the
 	// reason, until a new login or logout; refreshing again could not succeed.
 	refused  map[string]string
-	client   *http.Client
 	callback string
 	store    *Store
 }
@@ -76,7 +74,7 @@ type Status struct {
 }
 
 // New returns a manager whose OAuth logins return to callback and whose stored secrets live in
-// store, which may be nil for a manager that only checks whether a server needs a login.
+// store.
 func New(callback string, store *Store) *Manager {
 	return &Manager{
 		store:       store,
@@ -88,12 +86,14 @@ func New(callback string, store *Store) *Manager {
 		required:    map[string]bool{},
 		hints:       map[string]string{},
 		refused:     map[string]string{},
-		client: &http.Client{
-			Timeout:       20 * time.Second,
-			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
-		},
-		callback: callback,
+		callback:    callback,
 	}
+}
+
+// client makes every OAuth and discovery request; it does not follow redirects.
+var client = &http.Client{
+	Timeout:       20 * time.Second,
+	CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 }
 
 // key names a secret's keychain item. It covers the definition, so editing a secret starts
@@ -131,11 +131,6 @@ func (m *Manager) Value(
 		return value, ok
 	}
 	switch s.Kind {
-	case "daemon_environment":
-		if value := os.Getenv(s.Variable); value != "" {
-			return value, nil
-		}
-		return "", fmt.Errorf("secret %s: daemon environment variable %s is not set", id, s.Variable)
 	case "oauth":
 		return m.oauthValue(ctx, id, s, origin)
 	case "sops":
@@ -158,15 +153,8 @@ func LocalValue(
 	env func(string) (string, bool),
 ) (string, error) {
 	switch s.Kind {
-	case "environment":
-		if value, ok := env(s.Variable); ok && value != "" {
-			return value, nil
-		}
-		return "", fmt.Errorf("secret %s: environment variable %s is not set", id, s.Variable)
 	case "command":
 		return runHelper(ctx, id, s.Command)
-	case "file":
-		return fileValue(id, s.File)
 	case "sops":
 		return sopsValue(ctx, id, s, env, func(ref config.ID) (string, error) {
 			return LocalValue(ctx, store, ref, secrets[ref], secrets, env)
@@ -179,40 +167,10 @@ func LocalValue(
 			return "", fmt.Errorf("keychain secret %s: %w", id, err)
 		}
 		return value, nil
-	case "daemon_environment":
-		return "", fmt.Errorf("secret %s reads the daemon environment, which needs a managed launch", id)
 	case "oauth":
 		return "", fmt.Errorf("OAuth secret %s authenticates only HTTP MCP servers", id)
 	}
 	return "", fmt.Errorf("secret %s has unsupported kind %q", id, s.Kind)
-}
-
-// fileValue reads a file secret like a !file value: at most 1 MiB, without trailing newlines.
-func fileValue(id config.ID, path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", fmt.Errorf("secret %s: %w", id, err)
-	}
-	defer func() { _ = f.Close() }()
-	info, err := f.Stat()
-	if err != nil {
-		return "", fmt.Errorf("secret %s: %w", id, err)
-	}
-	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("secret %s: %s is not a regular file", id, path)
-	}
-	data, err := io.ReadAll(io.LimitReader(f, 1024*1024+1))
-	if err != nil {
-		return "", fmt.Errorf("secret %s: %w", id, err)
-	}
-	if len(data) > 1024*1024 {
-		return "", fmt.Errorf("secret %s: %s exceeds 1 MiB", id, path)
-	}
-	value := strings.TrimRight(string(data), "\r\n")
-	if strings.TrimSpace(value) == "" {
-		return "", fmt.Errorf("secret %s: %s is empty", id, path)
-	}
-	return value, nil
 }
 
 func runHelper(ctx context.Context, id config.ID, command []string) (string, error) {
@@ -484,7 +442,7 @@ func (m *Manager) refresh(ctx context.Context, saved credential) (token *oauth2.
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	resp, err := m.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, false, fmt.Errorf("cannot reach the token endpoint: %w", err)
 	}
@@ -539,9 +497,6 @@ func isErrorCode(code string) bool {
 func (m *Manager) Set(id config.ID, a config.Secret, secret []byte) error {
 	if a.Kind == "sops" {
 		return fmt.Errorf("secret %s is encrypted in %s; edit it with sops %s", id, a.File, a.File)
-	}
-	if a.Kind == "file" {
-		return fmt.Errorf("secret %s is read from %s; write that file instead", id, a.File)
 	}
 	if a.Kind != "keychain" {
 		return fmt.Errorf("secret %s is not keychain-backed; only keychain secrets can be set", id)
@@ -612,24 +567,10 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 	refused, wasRefused := m.refused[k]
 	m.mu.Unlock()
 	switch a.Kind {
-	case "environment":
-		s.State = "unconfigured"
-	case "daemon_environment":
-		if os.Getenv(a.Variable) != "" {
-			s.State = "ready"
-		}
 	case "command":
 		s.State = "ready"
-	case "file":
-		if _, err := fileValue(id, a.File); err != nil {
-			s.State = "unavailable"
-			s.Problem = err.Error()
-		} else {
-			s.State = "ready"
-		}
 	case "sops":
-		// An age key from the caller's environment exists only at launch, like an
-		// environment secret.
+		// An age key from the caller's environment exists only at launch.
 		if config.Variable(secrets, a.AgeKey) != "" {
 			s.State = "unconfigured"
 			break
@@ -683,7 +624,7 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 	return s
 }
 
-func (m *Manager) getJSON(ctx context.Context, endpoint string, out any) error {
+func getJSON(ctx context.Context, endpoint string, out any) error {
 	if err := secureURL(endpoint); err != nil {
 		return err
 	}
@@ -691,7 +632,7 @@ func (m *Manager) getJSON(ctx context.Context, endpoint string, out any) error {
 	if err != nil {
 		return err
 	}
-	resp, err := m.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("discovery request failed")
 	}
@@ -741,9 +682,6 @@ func SystemEnvironment() []string {
 	}
 	return env
 }
-
-func Verifier(value string) [32]byte         { return sha256.Sum256([]byte(value)) }
-func Match(hash [32]byte, value string) bool { return hash == Verifier(value) }
 
 // keychainTimeout bounds an OS keychain call, which blocks while the keychain is locked or shows
 // an access prompt, so callers get an explanation before their own deadline instead of a timeout.

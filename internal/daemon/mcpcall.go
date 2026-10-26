@@ -17,7 +17,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
-	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/mcpruntime"
 	"github.com/tarik02-org/agx/internal/mcptools"
@@ -113,7 +112,7 @@ func (s *Server) launchScope(authorization string, management bool, id string) (
 	l := s.launches[id]
 	token, bearer := strings.CutPrefix(authorization, "Bearer ")
 	if l == nil || !active(l.view.State) || time.Now().After(l.expires) ||
-		!management && (!bearer || !auth.Match(l.grant, token)) {
+		!management && (!bearer || !matches(l.grant, token)) {
 		s.mu.Unlock()
 		return nil, rpcError(connect.CodeUnauthenticated, "invalid or expired launch grant")
 	}

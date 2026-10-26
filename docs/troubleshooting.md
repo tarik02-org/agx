@@ -79,7 +79,7 @@ A daemon from another agx build is running and the command could not replace
 it. Run `agx daemon stop`, then try again.
 
 **"upgrade agx".**
-A newer agx wrote one of agx's own files (package pins, the shim manifest), and
+A newer agx wrote one of agx's own files (package pins), and
 this older agx will not overwrite them. Use the newer agx.
 
 **"the agx wrapper started agx again instead of the native harness".**

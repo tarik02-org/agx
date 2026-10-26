@@ -66,7 +66,10 @@ rebuilt and a cache wipe must not lose them; `AGX_STATE` overrides it, and a
 non-default `AGX_CACHE` or `--cache` keeps state in `<cache>/state` so isolated
 runs stay isolated. Each record holds the definition name, its built-in, the
 canonical directory, and the start and finish times. A launch the launcher started as a resume records that
-session's ID directly. Otherwise a session belongs to the latest launch of the
+session's ID directly. A new Claude launch starts its session with
+`--session-id` and a UUID agx chooses, and its record lists exactly that
+session: no session matches it by time, so one started later in the launch
+(`/clear`) resumes with the built-in. Otherwise a session belongs to the latest launch of the
 same built-in and directory whose window contains the session's start: from
 5 seconds before the launch started to 5 seconds after it finished, or 24 hours
 after it started when the wrapper died without finishing. Launch duration rather

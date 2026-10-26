@@ -269,7 +269,7 @@ func run(osArgs []string, stdout io.Writer) int {
 	builtins = registry.Builtins(reserved)
 	if name := invokedName(osArgs[0]); name != root.Name() {
 		if self, err := os.Executable(); err == nil {
-			if current, outdated := shims.Outdated(self); outdated {
+			if current, ok := shims.Origin(self); ok {
 				return handOff(current, name, osArgs[1:])
 			}
 		}

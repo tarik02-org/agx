@@ -114,8 +114,8 @@ per-user permissions or ACLs), the wrapper's lifecycle credential, and the
 harness's MCP grant. Tokens are opaque and only their hashes are stored. Every MCP
 request is checked against both its launch and the selected server; a session ID
 or URL path authorizes nothing. The wrapper, not the daemon, resolves the native
-executable (a configured absolute path, else the caller's `PATH`, skipping agx,
-the shim directory, and files the shim manifest lists), so per-directory shells
+executable (a configured absolute path, else the caller's `PATH`, skipping agx
+and the shim directory), so per-directory shells
 apply; it sets `AGX_WRAPPER_PID` so agx refuses to wrap itself again. It forwards
 only the environment variables the snapshot needs, never its whole environment;
 the daemon rejects a stale snapshot before using them and takes the definition's

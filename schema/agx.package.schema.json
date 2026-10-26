@@ -213,9 +213,6 @@
       "if": {
         "type": "string"
       },
-      "then": {
-        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
-      },
       "else": {
         "$ref": "#/$defs/Secret",
         "not": {
@@ -224,7 +221,7 @@
           ]
         }
       },
-      "description": "http: bearer credential: oauth or keychain, none, an inline secret, or !secret ID; omitted means OAuth when the server asks for it."
+      "description": "http: bearer credential: oauth or keychain, none, an inline secret, or !secret ID, !env NAME, or !file PATH; omitted means OAuth when the server asks for it."
     },
     "MCPItem": {
       "if": {
@@ -511,51 +508,17 @@
               "kind"
             ]
           },
+          "then": {
+            "required": [
+              "file"
+            ]
+          },
           "else": {
             "properties": {
+              "file": false,
               "key": false,
               "age_key": false
             }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "enum": [
-                  "file",
-                  "sops"
-                ]
-              }
-            },
-            "required": [
-              "kind"
-            ]
-          },
-          "else": {
-            "properties": {
-              "file": false
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "enum": [
-                  "environment",
-                  "daemon_environment"
-                ]
-              }
-            },
-            "required": [
-              "kind"
-            ]
-          },
-          "then": {
-            "required": [
-              "variable"
-            ]
           }
         },
         {
@@ -574,46 +537,18 @@
               "command"
             ]
           }
-        },
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "enum": [
-                  "file",
-                  "sops"
-                ]
-              }
-            },
-            "required": [
-              "kind"
-            ]
-          },
-          "then": {
-            "required": [
-              "file"
-            ]
-          }
         }
       ],
       "properties": {
         "kind": {
           "type": "string",
           "enum": [
-            "environment",
-            "daemon_environment",
             "command",
-            "file",
             "keychain",
             "oauth",
             "sops"
           ],
           "description": "How the secret is obtained."
-        },
-        "variable": {
-          "type": "string",
-          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
-          "description": "Environment variable holding the secret."
         },
         "command": {
           "prefixItems": [
@@ -630,7 +565,7 @@
         },
         "file": {
           "type": "string",
-          "description": "sops: encrypted file; file: file holding the secret. Relative to the declaring fragment."
+          "description": "sops: encrypted file, relative to the declaring fragment."
         },
         "key": {
           "$ref": "#/$defs/SecretKey",
@@ -638,7 +573,7 @@
         },
         "age_key": {
           "$ref": "#/$defs/Value",
-          "description": "sops: age identity passed to sops as SOPS_AGE_KEY: !secret ID, !env NAME, or !file PATH."
+          "description": "sops: age identity passed to sops as SOPS_AGE_KEY."
         },
         "issuer": {
           "type": "string",

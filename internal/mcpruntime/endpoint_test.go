@@ -51,7 +51,7 @@ func TestSopsFailureNeedsAuth(t *testing.T) {
 	server := config.MCPServer{
 		Transport: "http",
 		URL:       "http://127.0.0.1:1/mcp",
-		Auth:      config.MCPAuth{Secret: "token"},
+		Auth:      config.MCPAuth{Value: config.Value{Secret: "token"}},
 	}
 	e := mcpruntime.New(
 		t.Context(),
@@ -78,6 +78,44 @@ func TestSopsFailureNeedsAuth(t *testing.T) {
 	if !strings.Contains(problem, "sops cannot decrypt "+file+": Error getting data key") ||
 		strings.Contains(problem, "Group 0") {
 		t.Fatalf("problem = %q; want sops's first error line", problem)
+	}
+}
+
+// An auth value read from the caller's environment is sent as the bearer token, and a rejected
+// one needs the user's attention rather than a login.
+func TestEnvironmentAuth(t *testing.T) {
+	var authorization string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorization = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(upstream.Close)
+	server := config.MCPServer{
+		Transport: "http",
+		URL:       upstream.URL + "/mcp",
+		Auth:      config.MCPAuth{Value: config.Value{Env: "REMOTE_TOKEN"}},
+	}
+	e := mcpruntime.New(
+		t.Context(),
+		"remote",
+		server,
+		nil,
+		map[string]string{"REMOTE_TOKEN": "env-token"},
+		auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir())),
+		nil,
+		"",
+	)
+	t.Cleanup(e.Close)
+	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	e.ServeHTTP(httptest.NewRecorder(), req)
+	if authorization != "Bearer env-token" {
+		t.Fatalf("authorization = %q", authorization)
+	}
+	if state, problem := e.State(); state != "needs_auth" || !strings.Contains(problem, "!env REMOTE_TOKEN") {
+		t.Fatalf("state = %s (%s)", state, problem)
 	}
 }
 
@@ -157,7 +195,11 @@ func TestRemoteRefreshesRejectedToken(t *testing.T) {
 		t.Fatalf("login: %v", err)
 	}
 
-	server := config.MCPServer{Transport: "http", URL: upstream.URL + "/mcp", Auth: config.MCPAuth{Secret: "token"}}
+	server := config.MCPServer{
+		Transport: "http",
+		URL:       upstream.URL + "/mcp",
+		Auth:      config.MCPAuth{Value: config.Value{Secret: "token"}},
+	}
 	secrets := map[config.ID]config.Secret{"token": secret}
 	e := mcpruntime.New(t.Context(), "remote", server, secrets, nil, manager, nil, "")
 	t.Cleanup(e.Close)

@@ -202,13 +202,13 @@ func (c MCPServer) ShareMode() string {
 	return c.Share.Type
 }
 
-// MCPAuth is the credential an HTTP MCP server sends as its bearer token: a top-level secret
-// referenced with !secret, an inline secret owned by the entry, or none. Merging stores an
+// MCPAuth is the credential an HTTP MCP server sends as its bearer token: a tagged value
+// (!secret, !env, or !file), an inline secret owned by the entry, or none. Merging stores an
 // inline secret, including the implicit on-demand OAuth of an HTTP entry without auth, in
 // Config.Secrets under the entry's ID and points Secret at it.
 type MCPAuth struct {
-	Secret ID   `json:"secret,omitempty"`
-	None   bool `json:"none,omitempty"`
+	Value
+	None bool `json:"none,omitempty"`
 	// Inline is the entry's own secret as configured; nil for references, none, and stdio.
 	Inline *Secret `json:"-"`
 }
@@ -216,11 +216,10 @@ type MCPAuth struct {
 // Secret defines how a credential is obtained.
 type Secret struct {
 	Kind     string    `yaml:"kind"      json:"kind"                jsonschema:"required"`
-	Variable string    `yaml:"variable"  json:"variable,omitempty"                        jsonschema_description:"Environment variable holding the secret."`
 	Command  []string  `yaml:"command"   json:"command,omitempty"                         jsonschema_description:"Command whose trimmed stdout is the secret."`
-	File     string    `yaml:"file"      json:"file,omitempty"                            jsonschema_description:"sops: encrypted file; file: file holding the secret. Relative to the declaring fragment."`
+	File     string    `yaml:"file"      json:"file,omitempty"                            jsonschema_description:"sops: encrypted file, relative to the declaring fragment."`
 	Key      SecretKey `yaml:"key"       json:"key,omitempty"                             jsonschema_description:"sops: dotted key path or list of segments to extract; omit to read the whole file."`
-	AgeKey   Value     `yaml:"age_key"   json:"age_key,omitzero"                          jsonschema_description:"sops: age identity passed to sops as SOPS_AGE_KEY: !secret ID, !env NAME, or !file PATH."`
+	AgeKey   Value     `yaml:"age_key"   json:"age_key,omitzero"                          jsonschema_description:"sops: age identity passed to sops as SOPS_AGE_KEY."`
 	Issuer   string    `yaml:"issuer"    json:"issuer,omitempty"                          jsonschema_description:"OAuth issuer URL; discovered when omitted."`
 	ClientID string    `yaml:"client_id" json:"client_id,omitempty"                       jsonschema_description:"OAuth public client ID."`
 	Resource string    `yaml:"resource"  json:"resource,omitempty"                        jsonschema_description:"OAuth resource indicator."`
@@ -618,9 +617,9 @@ func (s *Snapshot) MCPInjections() []Injection {
 			continue
 		}
 		server := s.Config.MCP[r.ID]
-		if id := server.Auth.Secret; id != "" {
-			auth := injection("mcp "+string(r.ID)+" auth", Value{Secret: id, Source: server.Source})
-			if secret := s.Config.Secrets[id]; secret.Owner != "" {
+		if server.Auth.Tagged() {
+			auth := injection("mcp "+string(r.ID)+" auth", server.Auth.Value)
+			if secret := s.Config.Secrets[server.Auth.Secret]; server.Auth.Secret != "" && secret.Owner != "" {
 				auth.Text = secret.Kind
 				if secret.Implicit {
 					auth.Text += " (on demand)"

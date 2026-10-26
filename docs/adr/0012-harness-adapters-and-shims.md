@@ -15,9 +15,17 @@ type Adapter interface {
 	Executable(configured string) (string, error)
 	Directory(args []string, cwd string) (string, []string, error)
 	Arguments(launch Launch) ([]string, error)
-	Install(ctx context.Context, c *config.Config, cache string) error
+	Sessions(ctx context.Context, files SessionFiles) ([]Session, error)
+	Resume(session Session) []string
 }
 ```
+
+What only some harnesses need is an optional interface an adapter may also
+implement: `Installer` (native installation), `Forwarder` (caller variables that
+locate the harness's configuration), `SettingsAdapter` (native settings), and
+`Doctor` (checks `agx doctor` runs per definition). Only Codex implements
+`Installer`, `Forwarder`, and `Doctor`, so other adapters carry no stubs and
+`agx doctor` names no harness.
 
 `internal/adapters/{codex,claude,pi}` hold everything harness-specific: the mode
 set and classification, passthrough commands, working-directory flags, how
@@ -56,11 +64,12 @@ considered and deferred until a harness needs one.
 `agx shims install` creates one executable per harness definition, so
 `codex-cpa` runs `agx codex-cpa` from any shell or tool. Shims point at the agx
 binary itself, which dispatches on the name it was invoked as (minus `.exe`): a
-symlink on Unix, and a hard link or else a copy named `<name>.exe` on Windows,
-where symlinks need Developer Mode. Linking preserves signals, exit codes, and
-arguments exactly. A script (`sh`, or `.cmd` on Windows) that runs
-`agx <name> <args>` is written only where neither works, and reports itself in
-`agx shims list`.
+symlink on Unix, which preserves signals, exit codes, and arguments exactly. On
+Windows, where symlinks need Developer Mode, a shim is a copy named
+`<name>.exe` that hands off to the agx recorded in `agx-target` beside it, so
+an agx updated in place never leaves shims running the old build. Hard links
+and scripts were dropped: a hard link keeps the old build after an update, and
+one kind per platform needs no per-shim bookkeeping.
 
 A shim targets the path agx was invoked through (`argv[0]`, looked up on PATH
 when bare) when that reaches the running executable and is outside
@@ -71,16 +80,15 @@ versioned directory that an upgrade or garbage collection removes. A target
 inside `/nix/store` gets a warning. Running `install` again after agx moves
 updates the shims.
 
-Shims go to `$XDG_DATA_HOME/agx/shims` (`~/.local/share/agx/shims`, also on macOS, where Application Support would put a space on PATH; `%LOCALAPPDATA%\agx\shims` on Windows) or `--dir`, a directory only agx writes to.
-`.agx-shims.json` in that directory records each shim's file, kind, and target,
-plus a content hash for hard links, copies, and scripts, so agx recognizes its
-own files: `install` adds, updates, and removes shims to match the current
-definitions, `remove` deletes them all, and a file agx did not create, or one
-changed since, is reported and left alone. `install` and `list` warn when the
+Shims go to `$XDG_DATA_HOME/agx/shims` (`~/.local/share/agx/shims`, also on macOS, where Application Support would put a space on PATH; `%LOCALAPPDATA%\agx\shims` on Windows),
+a directory agx owns outright: `install` makes it hold exactly the current
+definitions' shims, removing anything else, and `remove` deletes it. A manifest
+of agx's own files and a `--dir` option were dropped with the second kind of
+shim: without them there is nothing to protect. `install` and `list` warn when the
 directory is not on PATH and when another executable on PATH has a shim's name.
 Built-in names (`codex`, `claude`, `pi`) get no shim: shadowing the native
-executables is deferred. Native executable lookup still skips agx itself, the
-default shim directory, and files a shim manifest lists, so a link or shim
+executables is deferred. Native executable lookup still skips agx itself and the
+shim directory, so a link or shim
 named after a native harness cannot be taken for it. As a last guard, the
 wrapper sets `AGX_WRAPPER_PID` for the harness it starts; agx started directly
 by that wrapper, through a link lookup could not recognize, refuses with an

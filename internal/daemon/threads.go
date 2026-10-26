@@ -12,7 +12,6 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
-	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/securefs"
 )
@@ -176,7 +175,7 @@ func (s *Server) PrepareThreadLaunch(
 	if err := s.addThreadLaunch(p.launch, &launch{
 		view:      view,
 		expires:   expires,
-		grant:     auth.Verifier(grant),
+		grant:     verifier(grant),
 		lifecycle: p.launch.lifecycle,
 		ctx:       launchCtx,
 		cancel:    cancel,

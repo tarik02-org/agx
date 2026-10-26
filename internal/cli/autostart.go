@@ -21,7 +21,6 @@ import (
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/daemon"
 	"github.com/tarik02-org/agx/internal/platform"
-	"github.com/tarik02-org/agx/internal/shims"
 )
 
 const (
@@ -144,9 +143,6 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return "", err
-	}
-	if origin, ok := shims.Origin(executable); ok {
-		executable = origin
 	}
 	if err := os.MkdirAll(paths.Runtime, 0o700); err != nil {
 		return "", err

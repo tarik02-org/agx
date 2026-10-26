@@ -25,11 +25,14 @@ type Record struct {
 	// Sessions holds the sessions known to belong to the launch: the one it resumed, and those
 	// matched to it since.
 	Sessions []string `json:"sessions,omitempty"`
+	// Exact records list every session of the launch, which named them itself, so no session
+	// matches them by time.
+	Exact bool `json:"exact,omitempty"`
 }
 
-// Harnesses stamp a session when it begins, which for Claude is its first message, so a launch
-// claims the sessions of its harness and directory that started while it ran. skew absorbs the
-// gap between the wrapper's clock reading and the harness's.
+// Harnesses stamp a session when it begins, so a launch that cannot name its sessions claims those
+// of its harness and directory that started while it ran. skew absorbs the gap between the
+// wrapper's clock reading and the harness's.
 const (
 	skew = 5 * time.Second
 	// maxLaunch closes the window of a launch whose wrapper died before recording its end.

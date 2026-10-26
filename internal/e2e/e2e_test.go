@@ -128,13 +128,12 @@ func newEnv(t *testing.T) *env {
 instructions:
   rules: {text: E2E instructions.}
 secrets:
-  token: {kind: environment, variable: E2E_TOKEN}
   sealed: {kind: sops, file: ./sealed.json, key: echo.extra}
 mcp:
   echo:
     command: ['`+filepath.ToSlash(binaries.mcp)+`']
     environment:
-      ECHO_TOKEN: !secret token
+      ECHO_TOKEN: !env E2E_TOKEN
       ECHO_EXTRA: !secret sealed
 scopes:
   - directory: ../work
@@ -367,7 +366,7 @@ func TestEndToEnd(t *testing.T) {
 
 	t.Run("links named after harnesses", func(t *testing.T) {
 		if runtime.GOOS == "windows" {
-			t.Skip("shims are hard links or copies on Windows")
+			t.Skip("shims are copies on Windows")
 		}
 		links, native := filepath.Join(e.dir, "links"), filepath.Join(e.dir, "native")
 		for _, d := range []string{links, native} {
@@ -438,8 +437,26 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("exit %d: %s", r.code, r.stderr)
 		}
 		launched = d
-		if n := len(d.Args); n < 3 || !slices.Equal(d.Args[n-3:], []string{"--from-definition", "-p", "hello"}) {
-			t.Errorf("args = %q, want the definition's group before the native arguments", d.Args)
+		n := len(d.Args)
+		if n < 5 || !slices.Equal(d.Args[n-5:n-3], []string{"--from-definition", "--session-id"}) ||
+			!slices.Equal(d.Args[n-2:], []string{"-p", "hello"}) {
+			t.Fatalf("args = %q, want the definition's group, then the session ID, before the native arguments", d.Args)
+		}
+		// The launch records the session it started, so it never claims another by time.
+		var records struct {
+			Records []struct {
+				Sessions []string `json:"sessions"`
+				Exact    bool     `json:"exact"`
+			} `json:"records"`
+		}
+		b, err := os.ReadFile(filepath.Join(e.dir, "state", "launch-records.json"))
+		if err == nil {
+			err = json.Unmarshal(b, &records)
+		}
+		last := len(records.Records) - 1
+		if err != nil || last < 0 || !records.Records[last].Exact ||
+			!slices.Equal(records.Records[last].Sessions, []string{d.Args[n-3]}) {
+			t.Errorf("launch records = %s, %v", b, err)
 		}
 		work, err := filepath.EvalSymlinks(e.work)
 		if err != nil {
@@ -556,7 +573,7 @@ func TestEndToEnd(t *testing.T) {
 			} `json:"statuses"`
 		}
 		e.jsonOK(&secrets, "secret", "status")
-		if len(secrets.Secrets) != 2 || secrets.Secrets[0].ID == "" || secrets.Secrets[0].State == "" {
+		if len(secrets.Secrets) != 1 || secrets.Secrets[0].ID == "" || secrets.Secrets[0].State == "" {
 			t.Fatalf("secret status = %+v", secrets)
 		}
 		e.jsonFail("failed_precondition", "secret", "set", "sealed")
@@ -794,7 +811,6 @@ func TestDoctor(t *testing.T) {
 		{"harness", "claude", "warn"},
 		{"daemon", "daemon", "pass"},
 		{"mcp", "echo", "pass"},
-		{"secret", "token", "pass"},
 		{"secret", "sealed", "pass"},
 		{"secret", "sops", "pass"},
 		{"shims", "shims", "warn"},

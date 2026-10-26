@@ -4811,7 +4811,7 @@ type SecretStatus struct {
 	State       SecretStatus_State     `protobuf:"varint,2,opt,name=state,proto3,enum=agx.v1.SecretStatus_State" json:"state,omitempty"`
 	ExpiresAt   *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	Diagnostics []*Diagnostic          `protobuf:"bytes,4,rep,name=diagnostics,proto3" json:"diagnostics,omitempty"`
-	// environment, daemon_environment, command, keychain, oauth, or sops.
+	// command, keychain, oauth, or sops.
 	Kind string `protobuf:"bytes,5,opt,name=kind,proto3" json:"kind,omitempty"`
 	// Set for a secret declared inline in this MCP server's auth; equal to secret_id.
 	McpId string `protobuf:"bytes,6,opt,name=mcp_id,json=mcpId,proto3" json:"mcp_id,omitempty"`

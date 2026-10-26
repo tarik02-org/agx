@@ -39,7 +39,7 @@ See [Where files live](configuration.md#where-files-live) for the defaults.
 | `agx <definition> [args...]` | launch one of your [harness definitions](harnesses.md#harness-definitions) |
 | `agx run <harness> -- [args...]` | launch a harness by name |
 | `agx sessions [query] [--all]` | list sessions to resume, here or (`--all`) everywhere |
-| `agx shims install\|list\|remove [--dir <dir>]` | manage [shims](harnesses.md#shims) |
+| `agx shims install\|list\|remove` | manage [shims](harnesses.md#shims) |
 
 Arguments after a harness name go to the harness unchanged; agx's own options
 go before it.
@@ -92,7 +92,7 @@ Command-specific flags:
 
 | Command | Flags |
 | --- | --- |
-| `mcp add` | `--header KEY=VALUE` (remote), `--env KEY=VALUE` (local), `--auth none\|oauth\|keychain\|'!secret <id>'`, `--client-id <id>` (OAuth public client), `--description <text>`, `--load native\|on_demand`, `--share none\|directory\|repository\|global` (local), `--no-browser` |
+| `mcp add` | `--header KEY=VALUE` (remote), `--env KEY=VALUE` (local), `--auth none\|oauth\|keychain\|'!secret <id>'\|'!env NAME'\|'!file PATH'`, `--client-id <id>` (OAuth public client), `--description <text>`, `--load native\|on_demand`, `--share none\|directory\|repository\|global` (local), `--no-browser` |
 | `skill add` | `--skill <name>` (repeatable), `--all`, `--ref <ref>`, `--path <dir>`, `--package <id>` |
 | `instructions add` | `--id <id>`, `--text <text>` |
 | `harness add` | `--base <harness>`, `--executable <path>`, `--env KEY=VALUE` (repeatable) |

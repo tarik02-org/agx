@@ -11,7 +11,6 @@ import (
 	"connectrpc.com/connect"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
-	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
@@ -53,8 +52,8 @@ func TestAttachable(t *testing.T) {
 	held := func(id string, state v1.Launch_State) {
 		s.launches[id] = &launch{
 			view:      &v1.Launch{Id: id, State: state},
-			grant:     auth.Verifier("grant"),
-			lifecycle: auth.Verifier("lifecycle"),
+			grant:     verifier("grant"),
+			lifecycle: verifier("lifecycle"),
 		}
 	}
 	held("running", v1.Launch_STATE_RUNNING)

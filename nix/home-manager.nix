@@ -34,6 +34,8 @@ let
 
   dropInPath = "${cfg.configDirectory}/agx.d/${cfg.dropInName}.yaml";
   configRoot = "${config.home.homeDirectory}/${cfg.configDirectory}/agx.yaml";
+  # agx shims install writes here, given this XDG_DATA_HOME.
+  shimsDirectory = "${config.xdg.dataHome}/agx/shims";
 
   dropIn =
     pkgs.runCommand "agx-${cfg.dropInName}.yaml"
@@ -169,13 +171,6 @@ in
           a command, and put the shims directory on PATH. A failure only warns.
         '';
       };
-
-      directory = lib.mkOption {
-        type = lib.types.str;
-        default = "${config.xdg.dataHome}/agx/shims";
-        defaultText = lib.literalExpression ''"''${config.xdg.dataHome}/agx/shims"'';
-        description = "Directory activation installs shims in.";
-      };
     };
 
     harnesses = lib.mkOption {
@@ -215,7 +210,7 @@ in
         ''
       );
 
-      home.sessionPath = lib.mkIf cfg.shims.enable [ cfg.shims.directory ];
+      home.sessionPath = lib.mkIf cfg.shims.enable [ shimsDirectory ];
 
       # Shims run agx through the profile link, which outlives this
       # generation's store path. A broken agx.yaml leaves the previous shims in
@@ -223,13 +218,14 @@ in
       home.activation.agxInstallShims = lib.mkIf cfg.shims.enable (
         lib.hm.dag.entryAfter [ "linkGeneration" "installPackages" ] ''
           if [[ -v DRY_RUN ]]; then
-            verboseEcho "Would install agx shims in ${cfg.shims.directory}"
+            verboseEcho "Would install agx shims in ${shimsDirectory}"
           else
             agx_bin=${lib.escapeShellArg "${config.home.profileDirectory}/bin/agx"}
             [[ -x "$agx_bin" ]] || agx_bin=${lib.getExe cfg.package}
             # AGX_CONFIG, unlike --config, accepts a root file that does not exist.
-            if agx_shims="$(AGX_CONFIG=${lib.escapeShellArg configRoot} "$agx_bin" --color never \
-              shims install --dir ${lib.escapeShellArg cfg.shims.directory} --json 2>/dev/null)"; then
+            if agx_shims="$(AGX_CONFIG=${lib.escapeShellArg configRoot} \
+              XDG_DATA_HOME=${lib.escapeShellArg config.xdg.dataHome} "$agx_bin" --color never \
+              shims install --json 2>/dev/null)"; then
               ${lib.getExe pkgs.jq} -r '.data.changes[]
                 | select(.action != "unchanged")
                 | "agx shims: \(.action) \(.name)"' <<< "$agx_shims"
