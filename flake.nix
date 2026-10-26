@@ -15,7 +15,9 @@
     in
     {
       packages = forAllSystems (pkgs: rec {
-        agx = pkgs.callPackage ./package.nix { };
+        agx = pkgs.callPackage ./package.nix {
+          rev = self.shortRev or self.dirtyShortRev or null;
+        };
         default = agx;
       });
 

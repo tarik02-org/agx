@@ -1,6 +1,6 @@
 # Provision configuration from a service
 
-Status: proposed.
+Status: deferred. Not implemented.
 
 Platforms that run harnesses for users, such as hosted sandboxes or a company
 control plane, often hold configuration in a database rather than in files under

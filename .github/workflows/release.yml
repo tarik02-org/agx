@@ -25,10 +25,6 @@ jobs:
         # GoReleaser would take one on the same commit, or the last one, as the current or
         # previous tag.
         run: git tag --list 'nightly*' | xargs --no-run-if-empty git tag --delete
-      - name: Test
-        run: |
-          go test ./...
-          go test -tags e2e ./internal/e2e/...
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"

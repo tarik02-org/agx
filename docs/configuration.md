@@ -96,8 +96,10 @@ rules win:
 3. Within one rule, `add` happens before `remove`.
 
 A deeper rule can remove what a parent added, and an even deeper rule can add
-it back. Directories match by whole path components: `~/work/app` does not
-match `~/work/apple`. Symlinks are resolved first.
+it back. Removing a skill removes it however many bundles supplied it, and
+removing a bundle removes each of its resources. Directories match by whole path
+components: `~/work/app` does not match `~/work/apple`. Symlinks are resolved
+first.
 
 Limit a rule to some harnesses with `harnesses`:
 
@@ -305,6 +307,10 @@ daemon:
 ```
 
 All of these are optional. See [The daemon](daemon.md).
+
+The daemon rereads configuration when a file it read changes. A configuration
+that fails to load does not replace the last valid one: running launches keep
+theirs, and new launches fail until it is fixed.
 
 ## Related pages
 

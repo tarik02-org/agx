@@ -80,6 +80,13 @@ while it has some, harness launches with the other configuration are refused, so
 the running harnesses keep their MCP servers. For a separate setup with another
 configuration used at the same time, also use another cache.
 
+Starting is safe to race. A starting daemon takes a per-user lock before it
+binds a loopback port, and writes `daemon.json` (with an ID that changes on every
+start) only once it serves. Commands that start one at the same time may each
+spawn a daemon; the extras exit and every command connects to the winner. A
+command reports a failed start, with the log's last line, only once the lock is
+free and nothing answers.
+
 ## Launches
 
 Every running harness is a launch:
