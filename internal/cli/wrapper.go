@@ -28,7 +28,6 @@ import (
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/daemon"
 	"github.com/tarik02-org/agx/internal/platform"
-	"github.com/tarik02-org/agx/internal/securefs"
 	"github.com/tarik02-org/agx/internal/sessions"
 )
 
@@ -61,7 +60,7 @@ type harnessConfig struct {
 
 func loadHarnesses(path string, builtins config.Builtins) harnessConfig {
 	// Harnesses come only from configuration fragments, so packages need not be installed.
-	c, err := config.Read(path, builtins)
+	c, err := config.Load(path, config.Options{Builtins: builtins})
 	if err != nil {
 		return harnessConfig{config: config.Bare(builtins), err: err}
 	}
@@ -194,7 +193,6 @@ func runHarness(
 	}
 	prepare := request(
 		&v1.PrepareLaunchRequest{
-			RequestId:         securefs.Token(),
 			SnapshotId:        resolved.Msg.Snapshot.Id,
 			Directory:         directory,
 			Harness:           name,
@@ -211,9 +209,6 @@ func runHarness(
 		return c.launches.PrepareLaunch(ctx, prepare)
 	}
 	prepared, err := prepareLaunch()
-	if err != nil && connect.CodeOf(err) == connect.CodeUnavailable && !stopping(err) {
-		prepared, err = prepareLaunch()
-	}
 	// A restarting daemon refuses new launches; the next one, which the restart or this command
 	// starts, takes the same request.
 	deadline := time.Now().Add(restartWait)

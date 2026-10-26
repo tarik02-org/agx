@@ -95,7 +95,7 @@ func restartDaemon(
 	}
 	if result.Stopped {
 		if grace <= 0 {
-			grace = configuredGrace(paths, builtins)
+			grace = daemon.ShutdownGrace
 		}
 		// Shutting down also lets MCP servers exit, which takes a few seconds more.
 		if err := awaitExit(ctx, paths, grace+startupTimeout); err != nil {
@@ -124,45 +124,13 @@ func restartDaemon(
 	return result, nil
 }
 
-// configuredGrace is daemon.shutdown_grace_seconds from configuration fragments.
-func configuredGrace(paths platform.Paths, builtins config.Builtins) time.Duration {
-	seconds := config.DefaultShutdownGraceSeconds
-	if c, err := config.Read(paths.Config, builtins); err == nil && c.Daemon.ShutdownGraceSeconds > 0 {
-		seconds = c.Daemon.ShutdownGraceSeconds
-	}
-	return time.Duration(seconds) * time.Second
-}
-
-// startRefusal is why a daemon of this build cannot start, as far as files tell before trying:
-// saved launches of a newer agx, which it must not replace.
-func startRefusal(paths platform.Paths) error {
-	if err := daemon.CheckState(daemon.StatePath(paths)); errors.Is(err, daemon.ErrNewerState) {
-		return err
-	}
-	return nil
-}
-
-// printDaemonAbsent reports daemon status without a running daemon, and why none can start when
-// a file says so.
-func printDaemonAbsent(paths platform.Paths) error {
-	refusal := startRefusal(paths)
+// printDaemonAbsent reports daemon status without a running daemon.
+func printDaemonAbsent() error {
 	if scripting.enabled {
-		document := daemonStatusJSON{Diagnostics: []diagnosticJSON{}}
-		if refusal != nil {
-			document.Diagnostics = append(
-				document.Diagnostics,
-				diagnosticJSON{Severity: "error", Message: "the daemon cannot start: " + refusal.Error()},
-			)
-		}
-		return printJSON(document)
+		return printJSON(daemonStatusJSON{Diagnostics: []diagnosticJSON{}})
 	}
-	if _, err := fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, "Daemon is not running.")); err != nil {
-		return err
-	}
-	if refusal != nil {
-		ui.Diagnose(ui.Error, "the daemon cannot start: %v", refusal)
-	}
-	return nil
+	_, err := fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, "Daemon is not running."))
+	return err
 }
 
 // printDaemonStarted reports daemon start; started is false when a daemon already ran.

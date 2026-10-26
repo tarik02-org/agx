@@ -29,3 +29,15 @@ agx has not been released yet. What it does today:
 - `agx doctor`, `--json` on every command, shell completions, `agx man`, JSON Schemas for
   configuration and package manifests, a Home Manager module, and a nightly prerelease per
   `master` build.
+
+### Changed
+
+- `imports` is a list of strings: a path that must exist, or a glob that may match nothing.
+- Removed `rev`; a full commit hash in `ref` pins a Git source.
+- Removed the `lockfile` key; unpinned packages lock in `agx.lock.json` beside their fragment.
+- Removed the MCP `transport` key; `url` means HTTP and `command` means stdio.
+- Removed `daemon.shutdown_grace_seconds` and `daemon.override`.
+- Harness `args` groups are `{values, modes}` only; skill `files` take `{content}` or `{path}` only.
+- Removed `agx mcp login` (use `agx secret login`) and `agx resolve` (use `agx explain`).
+- `agx secret set` reads stdin without `--stdin`.
+- A daemon of another agx build is always replaced, keeping its launches.

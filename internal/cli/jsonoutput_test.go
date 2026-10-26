@@ -86,10 +86,6 @@ func TestJSONShapes(t *testing.T) {
 				"secrets:number,skills:number},diagnostics:[],files:[string],root:string,valid:bool}",
 		},
 		{
-			[]string{"resolve"},
-			"{directory:string,harness:null,id:string,required_environment:[],resources:[{id:string,kind:string,load:null,share:null}]}",
-		},
-		{
 			[]string{"explain", "--harness", "codex-work"},
 			"{directory:string,harness:string,id:string,injections:[],required_environment:[]," +
 				"resources:[{id:string,kind:string,load:null,share:null}],settings:[],traces:[{order:null,resource:{id:string,kind:string,load:null,share:null},selected:bool," +

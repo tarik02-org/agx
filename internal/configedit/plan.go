@@ -99,7 +99,7 @@ func (s *Session) Plan() (*Plan, error) {
 			return nil, coded(ReadOnly, err)
 		}
 	}
-	c, err := config.LoadWith(s.Paths.Config, s.Paths.Cache, s.Builtins, overlay)
+	c, err := config.Load(s.Paths.Config, config.Options{Builtins: s.Builtins, Cache: s.Paths.Cache, Overlay: overlay})
 	if err != nil {
 		return nil, errorf(
 			ConfigInvalid,
@@ -112,7 +112,10 @@ func (s *Session) Plan() (*Plan, error) {
 			continue
 		}
 		// A fragment outside the configuration is checked on its own.
-		if _, err := config.LoadWith(p.Path, s.Paths.Cache, s.Builtins, overlay); err != nil {
+		if _, err := config.Load(
+			p.Path,
+			config.Options{Builtins: s.Builtins, Cache: s.Paths.Cache, Overlay: overlay},
+		); err != nil {
 			return nil, errorf(
 				ConfigInvalid,
 				"the change would make %s invalid, so nothing was written: %w",

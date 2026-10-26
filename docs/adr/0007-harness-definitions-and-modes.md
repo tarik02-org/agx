@@ -16,7 +16,7 @@ harnesses:
   codex-cpa:
     base: codex
     args:
-      - [-c, 'model_provider="cpa"']
+      - values: [-c, 'model_provider="cpa"']
       - values: [--profile, cpa]
         modes: [interactive, exec, resume]
     environment:
@@ -46,7 +46,7 @@ and the parent's `add`/`exclude` apply before the child's.
 Redefining a name in another fragment merges field by field. `base`,
 `executable`, and each `environment` key may be set once; argument groups append in
 fragment order; `add` and `exclude` accumulate. `override: true` replaces the
-earlier definition entirely. This matches daemon settings and resource overrides.
+earlier definition entirely, as for resource overrides.
 
 Selection gains a harness dimension. A harness's `add`/`exclude` apply after
 directory scopes, so they hold everywhere for that harness. Scope rules accept an

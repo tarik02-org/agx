@@ -70,7 +70,7 @@ secrets:
 | `daemon_environment` | `variable` in the daemon's environment (from the shell that started it) |
 | `command` | the trimmed output of a command, run with a minimal environment and a time limit |
 | `file` | a file's contents without trailing newlines, up to 1 MiB, read at each use |
-| `keychain` | the OS keychain; store it with `agx secret set <id> --stdin` |
+| `keychain` | the OS keychain; store it with `agx secret set <id>`, which reads stdin |
 | `sops` | a value in a [sops](https://getsops.io)-encrypted file; see [below](#sops-encrypted-files) |
 | `oauth` | an OAuth login; only for an MCP server's `auth`, see [MCP servers](mcp.md#logging-in) |
 
@@ -78,8 +78,8 @@ Store a keychain secret by piping it in, so it never appears in your shell
 history or process list:
 
 ```sh
-pbpaste | agx secret set docs-key --stdin
-agx secret set docs-key --stdin < ~/Downloads/token.txt
+pbpaste | agx secret set docs-key
+agx secret set docs-key < ~/Downloads/token.txt
 ```
 
 A `file` secret suits files another tool keeps up to date, such as one decrypted
@@ -106,8 +106,8 @@ and OAuth secrets fail with an error.
 ```sh
 agx secret status            # every secret's kind and state, never values
 agx secret status docs-key
-agx secret set docs-key --stdin
-agx secret login team-login  # OAuth; agx mcp login <id> does the same for a server
+agx secret set docs-key < token.txt
+agx secret login team-login  # OAuth: a top-level secret, or a server's own login by its ID
 agx secret logout docs-key   # delete the stored value or OAuth tokens
 agx secret rotate team-login # renew an OAuth access token now
 ```
@@ -165,7 +165,7 @@ secrets:
 ```
 
 ```sh
-agx secret set age --stdin < ~/.config/sops/age/keys.txt
+agx secret set age < ~/.config/sops/age/keys.txt
 ```
 
 `age_key` takes `!secret`, `!env`, or `!file`; a literal key is rejected. To

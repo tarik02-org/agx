@@ -14,7 +14,7 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
-	"github.com/tarik02-org/agx/internal/yaml"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/tarik02-org/agx/internal/cli/prompt"
 	"github.com/tarik02-org/agx/internal/cli/ui"
@@ -122,7 +122,7 @@ func scopeJSONOf(s scope) *scopeJSON {
 }
 
 func newSession(ctx context.Context, paths platform.Paths, builtins config.Builtins, yes bool) (*session, error) {
-	c, err := config.Load(paths.Config, paths.Cache, builtins)
+	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
 	if err != nil {
 		return nil, codedf(codeConfigInvalid, "configuration is invalid; fix it before editing: %w", err)
 	}

@@ -37,7 +37,7 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 	}
 	// Shims exist for definitions only: a built-in's shim would shadow its native executable.
 	definitions := func() ([]string, error) {
-		c, err := config.Read(paths.Config, *builtins)
+		c, err := config.Load(paths.Config, config.Options{Builtins: *builtins})
 		if err != nil {
 			return nil, coded(codeConfigInvalid, err)
 		}

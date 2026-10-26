@@ -19,11 +19,11 @@ func TestReadableDecodeErrors(t *testing.T) {
 		{"misspelled key", "harnesses:\n  codex:\n    env: {A: b}\n", "agx.yaml:3: harnesses.codex: unknown key env (did you mean environment?)"},
 		{"nested unknown key", "harnesses:\n  codex:\n    args:\n      - {values: [a], mode: [x]}\n", "agx.yaml:4: harnesses.codex.args[0]: unknown key mode"},
 		{"number expected", "daemon:\n  lease_seconds: abc\n", "agx.yaml:2: daemon.lease_seconds: expected a number, not a string"},
-		{"missing import", "imports: [{path: other.yaml}]\n", "agx.yaml:1: import other.yaml: "},
+		{"missing import", "imports: [other.yaml]\n", "agx.yaml:1: import other.yaml: "},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), tt.content)
-			_, err := config.Read(root, builtins)
+			_, err := config.Load(root, config.Options{Builtins: builtins})
 			wantError(t, err, tt.want)
 			for _, internal := range []string{"go-yaml", "construct", "config.", "!!"} {
 				if strings.Contains(err.Error(), internal) {

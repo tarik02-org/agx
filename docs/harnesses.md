@@ -116,14 +116,14 @@ For example, `codex exec …` is `exec`, `claude -p …` is `print`, and `claude
 --resume …` is `resume`; help, version, and login commands are `passthrough`.
 
 `args` is either a flat list, used for every mode except `passthrough`, or a
-list of groups:
+list of `{values, modes}` groups:
 
 ```yaml
 harnesses:
   codex-cpa:
     base: codex
     args:
-      - [--search]                               # every mode except passthrough
+      - values: [--search]                       # every mode except passthrough
       - values: [--profile, cpa]
         modes: [interactive, exec, resume]       # only these modes
 ```

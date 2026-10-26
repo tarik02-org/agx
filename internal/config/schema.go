@@ -21,7 +21,7 @@ var (
 )
 
 // manifestExcluded lists the top-level fields package manifests cannot declare.
-var manifestExcluded = []string{"imports", "lockfile", "scopes", "harnesses", "daemon"}
+var manifestExcluded = []string{"imports", "scopes", "harnesses", "daemon"}
 
 // Schema renders the JSON Schema of configuration fragments, or of package manifests.
 func Schema(manifest bool, builtins Builtins) ([]byte, error) {
@@ -123,17 +123,9 @@ func (ID) JSONSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{Type: "string", Pattern: idPattern}
 }
 
-// argsSchema accepts a flat list of values, or a list of groups; an empty list is both.
+// argsSchema accepts a flat list of values, or a list of {values, modes} groups; an empty list
+// is both.
 func argsSchema(builtins Builtins) *jsonschema.Schema {
-	return &jsonschema.Schema{
-		AnyOf: []*jsonschema.Schema{
-			{Type: "array", Items: &jsonschema.Schema{Ref: "#/$defs/Value"}},
-			{Type: "array", Items: argGroupSchema(builtins)},
-		},
-	}
-}
-
-func argGroupSchema(builtins Builtins) *jsonschema.Schema {
 	one := uint64(1)
 	values := &jsonschema.Schema{Type: "array", Items: &jsonschema.Schema{Ref: "#/$defs/Value"}, MinItems: &one}
 	modes := []any{}
@@ -153,16 +145,17 @@ func argGroupSchema(builtins Builtins) *jsonschema.Schema {
 		MinItems:    &one,
 		Description: "Session modes the group applies to; omit for every mode except passthrough.",
 	})
+	group := &jsonschema.Schema{
+		Description:          "Native arguments limited to session modes.",
+		Type:                 "object",
+		Properties:           properties,
+		Required:             []string{"values"},
+		AdditionalProperties: jsonschema.FalseSchema,
+	}
 	return &jsonschema.Schema{
-		Description: "Native arguments: a list, or {values, modes} to limit them to session modes.",
-		OneOf: []*jsonschema.Schema{
-			values,
-			{
-				Type:                 "object",
-				Properties:           properties,
-				Required:             []string{"values"},
-				AdditionalProperties: jsonschema.FalseSchema,
-			},
+		AnyOf: []*jsonschema.Schema{
+			{Type: "array", Items: &jsonschema.Schema{Ref: "#/$defs/Value"}},
+			{Type: "array", Items: group},
 		},
 	}
 }
@@ -174,29 +167,19 @@ func (Harness) JSONSchemaExtend(s *jsonschema.Schema) {
 	env.PropertyNames = &jsonschema.Schema{Pattern: environmentPattern}
 }
 
-func (Import) JSONSchemaExtend(s *jsonschema.Schema) {
-	s.OneOf = []*jsonschema.Schema{requires("path"), requires("glob")}
-	s.If = requires("glob")
-	s.Then = forbid()
-	s.Then.Properties.Set("optional", &jsonschema.Schema{Const: false})
-}
-
 func (Package) JSONSchemaExtend(s *jsonschema.Schema) {
 	pinning(s)
 	s.OneOf = []*jsonschema.Schema{requires("path"), requires("git")}
-	s.AllOf = append(s.AllOf, &jsonschema.Schema{If: requires("rev"), Then: requires("git")})
+	s.AllOf = append(s.AllOf, &jsonschema.Schema{If: requires("ref"), Then: requires("git")})
 }
 
-// pinning constrains the rev and hash fields of a source and keeps ref and rev apart.
+// pinning constrains the hash field of a source.
 func pinning(s *jsonschema.Schema) {
-	rev, _ := s.Properties.Get("rev")
-	rev.Pattern = revPattern.String()
 	hash, _ := s.Properties.Get("hash")
 	hash.Pattern = contentHashPattern.String()
-	s.AllOf = append(s.AllOf, &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{"ref", "rev"}}})
 }
 
-var gitFields = []string{"git", "ref", "rev", "hash"}
+var gitFields = []string{"git", "ref", "hash"}
 
 func (Skill) JSONSchemaExtend(s *jsonschema.Schema) { skillSchema(s) }
 
@@ -232,19 +215,29 @@ func instructionsSchema(s *jsonschema.Schema) {
 	s.OneOf = []*jsonschema.Schema{text, git, local}
 }
 
-// JSONSchema accepts text, a path to copy, or {content, executable}.
+// JSONSchema accepts {content, executable} or {path}.
 func (SkillFile) JSONSchema() *jsonschema.Schema {
-	properties := jsonschema.NewProperties()
-	properties.Set("content", &jsonschema.Schema{Type: "string"})
-	properties.Set("executable", &jsonschema.Schema{Type: "boolean"})
+	content := jsonschema.NewProperties()
+	content.Set("content", &jsonschema.Schema{Type: "string"})
+	content.Set("executable", &jsonschema.Schema{Type: "boolean"})
+	path := jsonschema.NewProperties()
+	path.Set("path", &jsonschema.Schema{
+		Type:        "string",
+		Description: "File to copy, relative to this file; ending in / copies a directory.",
+	})
 	return &jsonschema.Schema{
-		Description: "File text, a path to copy (ending in / for a directory), or {content, executable}.",
+		Description: "{content, executable} for file text, or {path} to copy a file or directory.",
 		OneOf: []*jsonschema.Schema{
-			{Type: "string"},
 			{
 				Type:                 "object",
-				Properties:           properties,
+				Properties:           content,
 				Required:             []string{"content"},
+				AdditionalProperties: jsonschema.FalseSchema,
+			},
+			{
+				Type:                 "object",
+				Properties:           path,
+				Required:             []string{"path"},
 				AdditionalProperties: jsonschema.FalseSchema,
 			},
 		},
@@ -292,9 +285,7 @@ func mcpSchema(s *jsonschema.Schema) {
 	env, _ := s.Properties.Get("environment")
 	env.PropertyNames = &jsonschema.Schema{Pattern: `^[a-zA-Z_][a-zA-Z0-9_]*$`}
 	stdio := forbid("url", "headers", "auth")
-	stdio.Properties.Set("transport", &jsonschema.Schema{Const: "stdio"})
 	http := forbid("command", "environment", "cwd")
-	http.Properties.Set("transport", &jsonschema.Schema{Const: "http"})
 	s.OneOf = []*jsonschema.Schema{requires("url"), requires("command")}
 	s.AllOf = []*jsonschema.Schema{
 		{If: requires("command"), Then: stdio},

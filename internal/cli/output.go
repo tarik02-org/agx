@@ -140,27 +140,6 @@ func snapshotFields(out *ui.Printer, snapshot *config.Snapshot) string {
 	)
 }
 
-func printResolve(snapshot *config.Snapshot) error {
-	out := ui.Stdout
-	var b strings.Builder
-	b.WriteString(snapshotFields(out, snapshot))
-	b.WriteString("\n")
-	if len(snapshot.Resources) == 0 {
-		b.WriteString(out.Muted("No resources selected.") + "\n")
-	} else {
-		if out.Styled() {
-			b.WriteString(out.Heading("Resources") + "\n")
-		}
-		rows := [][]string{}
-		for _, r := range snapshot.Resources {
-			rows = append(rows, []string{r.Kind, out.ID(string(r.ID)) + mcpMark(out, snapshot.Config, r)})
-		}
-		b.WriteString(out.Table([]string{"KIND", "ID"}, rows))
-	}
-	_, err := io.WriteString(out, b.String())
-	return err
-}
-
 // printExplain keeps the unstyled form line-oriented ("skill x (selected)", indented steps,
 // "inject <target> = <value>"); styled output draws the same lines as a tree.
 func printExplain(snapshot *config.Snapshot) error {

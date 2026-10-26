@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 )
@@ -49,23 +48,22 @@ enabled = true
 }
 
 func TestStale(t *testing.T) {
+	native := t.TempDir()
 	now := time.Now()
-	superseded := map[string]time.Time{
-		"old":    now.Add(-supersededGrace - time.Hour),
-		"recent": now.Add(-time.Hour),
-		// Configured again by the installation: its mark is no reason to remove it.
-		"current": now.Add(-supersededGrace - time.Hour),
+	for _, name := range []string{"old", "current"} {
+		writeFile(t, filepath.Join(native, "superseded", name), "")
+		old := now.Add(-supersededGrace - time.Hour)
+		if err := os.Chtimes(filepath.Join(native, "superseded", name), old, old); err != nil {
+			t.Fatal(err)
+		}
 	}
-	got := stale([]string{"current", "old", "recent", "unknown"}, []string{"current"}, superseded, now)
-	if !slices.Equal(got, []string{"old"}) {
-		t.Errorf("stale = %q", got)
+	writeFile(t, filepath.Join(native, "superseded", "recent"), "")
+	// "current" is configured again: its mark is no reason to remove it. "unknown" is marked now.
+	got, err := stale(native, []string{"current", "old", "recent", "unknown"}, []string{"current"}, now)
+	if err != nil || !slices.Equal(got, []string{"old"}) {
+		t.Errorf("stale = %q, %v", got, err)
 	}
-}
-
-func TestCatalogFromNewerAgx(t *testing.T) {
-	cache := t.TempDir()
-	writeFile(t, filepath.Join(cache, "native", "catalog.json"), `{"version":2,"names":[]}`)
-	if _, err := readCatalog(cache); err == nil || !strings.Contains(err.Error(), "uses format version 2") {
-		t.Fatalf("readCatalog = %v, want the newer catalog rejected", err)
+	if _, err := os.Stat(filepath.Join(native, "superseded", "unknown")); err != nil {
+		t.Errorf("unknown not marked: %v", err)
 	}
 }

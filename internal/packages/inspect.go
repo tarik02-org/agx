@@ -26,9 +26,9 @@ type Inspection struct {
 }
 
 // Inspect checks out a Git source the way Install does, without configuring or caching it: url
-// is a package's git source, ref and rev its pins, and subdir the directory whose content hash
+// is a package's git source, ref its pin, and subdir the directory whose content hash
 // is wanted. The checkout is staged under cache and removed afterwards.
-func Inspect(ctx context.Context, cache, url, ref, rev, subdir string) (Inspection, error) {
+func Inspect(ctx context.Context, cache, url, ref, subdir string) (Inspection, error) {
 	staging := filepath.Join(cache, "packages")
 	if err := os.MkdirAll(staging, 0o700); err != nil {
 		return Inspection{}, err
@@ -39,7 +39,7 @@ func Inspect(ctx context.Context, cache, url, ref, rev, subdir string) (Inspecti
 	}
 	defer func() { _ = os.RemoveAll(stage) }()
 	gitDir := filepath.Join(stage, "git")
-	revision, err := checkoutGit(ctx, gitDir, url, "https:ssh:git:file", cmp.Or(rev, ref, "HEAD"), rev)
+	revision, err := checkoutGit(ctx, gitDir, url, "https:ssh:git:file", cmp.Or(ref, "HEAD"))
 	if err != nil {
 		return Inspection{}, err
 	}

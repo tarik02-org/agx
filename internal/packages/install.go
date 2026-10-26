@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gofrs/flock"
 
@@ -60,6 +61,10 @@ type Options struct {
 	Stage bool
 }
 
+// lockRetry is how often installation retries the lock of another one sharing the cache,
+// until ctx ends.
+const lockRetry = 100 * time.Millisecond
+
 func Install(ctx context.Context, root, cache string, builtins config.Builtins, opts Options) (Result, error) {
 	frozen, updates, updateAll := opts.Frozen, opts.Updates, opts.UpdateAll
 	result := Result{PackageIDs: []config.ID{}, Lockfiles: []string{}}
@@ -67,7 +72,7 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 		return result, err
 	}
 	lock := flock.New(filepath.Join(cache, "install.lock"))
-	ok, err := lock.TryLockContext(ctx, 100000000)
+	ok, err := lock.TryLockContext(ctx, lockRetry)
 	if err != nil {
 		return result, err
 	}
@@ -75,7 +80,7 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 		return result, mark(ErrBusy, fmt.Errorf("package installer is busy"))
 	}
 	defer func() { _ = lock.Unlock() }()
-	c, err := config.ReadWith(root, builtins, opts.Overlay)
+	c, err := config.Load(root, config.Options{Builtins: builtins, Overlay: opts.Overlay})
 	if err != nil {
 		return result, err
 	}
@@ -140,10 +145,10 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 		pin := config.PinPath(cache, p)
 		switch {
 		case p.Hash != "":
-			reuse(p.Hash, p.Rev)
+			reuse(p.Hash, pinnedCommit(p.Ref))
 		case pinned:
 			if recorded, err := config.ReadPin(pin); err == nil {
-				reuse(recorded, p.Rev)
+				reuse(recorded, pinnedCommit(p.Ref))
 			}
 		case p.Git != "" && sourceMatches && !updateAll && !wanted[id]:
 			reuse(previous.Hash, previous.Revision)
@@ -163,11 +168,11 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 				if !p.Manifest {
 					protocols += ":file"
 				}
-				ref := cmp.Or(p.Rev, p.Ref, "HEAD")
+				ref := cmp.Or(p.Ref, "HEAD")
 				if sourceMatches && !updateAll && !wanted[id] {
 					ref = previous.Revision
 				}
-				revision, err = checkoutGit(ctx, gitDir, p.Git, protocols, ref, p.Rev)
+				revision, err = checkoutGit(ctx, gitDir, p.Git, protocols, ref)
 				if errors.Is(err, errUnresolved) {
 					return fmt.Errorf("cannot resolve revision for package %s", id)
 				}
@@ -345,13 +350,22 @@ func EncodeLock(l config.Lock) ([]byte, error) {
 	return append(b, '\n'), err
 }
 
+// pinnedCommit is ref when it is a full commit, the revision a pinned source installs.
+func pinnedCommit(ref string) string {
+	if config.IsCommit(ref) {
+		return ref
+	}
+	return ""
+}
+
 // errUnresolved is a ref or revision a cloned repository does not have.
 var errUnresolved = errors.New("cannot resolve revision")
 
 // checkoutGit clones url into dir and checks out ref, returning the commit. A ref names a tag,
-// the default branch, or another branch, which a clone holds only as a remote ref; rev, when
-// set, is a pinned commit, fetched by its hash when no branch reaches it.
-func checkoutGit(ctx context.Context, dir, url, protocols, ref, rev string) (string, error) {
+// the default branch, another branch, which a clone holds only as a remote ref, or a full commit,
+// fetched by its hash when no branch reaches it.
+func checkoutGit(ctx context.Context, dir, url, protocols, ref string) (string, error) {
+	commit := config.IsCommit(ref)
 	if _, err := git(ctx, protocols, false, "clone", "--quiet", "--no-checkout", "--", url, dir); err != nil {
 		return "", cloneError(url, err)
 	}
@@ -360,7 +374,7 @@ func checkoutGit(ctx context.Context, dir, url, protocols, ref, rev string) (str
 			ctx, protocols, true, "-C", dir, "rev-parse", "--verify", "--end-of-options", ref+"^{commit}",
 		)
 		// A clone checks out only the default branch; other branches are remote refs.
-		if err != nil && rev == "" && ref != "HEAD" {
+		if err != nil && !commit && ref != "HEAD" {
 			if remote, remoteErr := git(
 				ctx, protocols, true, "-C", dir, "rev-parse", "--verify", "--end-of-options",
 				"refs/remotes/origin/"+ref+"^{commit}",
@@ -372,9 +386,9 @@ func checkoutGit(ctx context.Context, dir, url, protocols, ref, rev string) (str
 	}
 	out, err := resolve()
 	// A pinned commit may be reachable only by its hash, which a clone does not fetch.
-	if err != nil && rev != "" {
+	if err != nil && commit {
 		if _, fetchErr := git(
-			ctx, protocols, false, "-C", dir, "fetch", "--quiet", "origin", "--end-of-options", rev,
+			ctx, protocols, false, "-C", dir, "fetch", "--quiet", "origin", "--end-of-options", ref,
 		); fetchErr == nil {
 			out, err = resolve()
 		}

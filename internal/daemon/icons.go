@@ -19,8 +19,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"go.yaml.in/yaml/v4"
+
 	"github.com/tarik02-org/agx/internal/securefs"
-	"github.com/tarik02-org/agx/internal/yaml"
 )
 
 // Icons the web UI draws for definitions arrive as data URIs, so that the UI loads nothing from

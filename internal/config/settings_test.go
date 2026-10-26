@@ -17,7 +17,7 @@ func TestHarnessSettings(t *testing.T) {
       model_providers:
         cpa: {wire_api: responses}
 `)
-	root := write(t, filepath.Join(dir, "agx.yaml"), `imports: [{path: more.yaml}]
+	root := write(t, filepath.Join(dir, "agx.yaml"), `imports: [more.yaml]
 harnesses:
   codex:
     settings:
@@ -34,7 +34,7 @@ harnesses:
       model_providers:
         cpa: {name: CPA, base_url: "http://127.0.0.1:8317/v1", max_retries: 3}
 `)
-	c, err := config.Load(root, filepath.Join(dir, "cache"), builtins)
+	c, err := config.Load(root, config.Options{Builtins: builtins, Cache: filepath.Join(dir, "cache")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestHarnessSettingsErrors(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), tt.config)
-			_, err := config.Load(root, filepath.Join(t.TempDir(), "cache"), builtins)
+			_, err := config.Load(root, config.Options{Builtins: builtins, Cache: filepath.Join(t.TempDir(), "cache")})
 			wantError(t, err, tt.want)
 		})
 	}
@@ -106,8 +106,8 @@ func TestHarnessSettingsErrors(t *testing.T) {
 			"harnesses:\n  codex:\n    settings: {model_providers: {cpa: {name: A}}}\n",
 		)
 		root := write(t, filepath.Join(dir, "agx.yaml"),
-			"imports: [{path: a.yaml}]\nharnesses:\n  codex:\n    settings: {model_providers: {cpa: {name: B}}}\n")
-		_, err := config.Load(root, filepath.Join(dir, "cache"), builtins)
+			"imports: [a.yaml]\nharnesses:\n  codex:\n    settings: {model_providers: {cpa: {name: B}}}\n")
+		_, err := config.Load(root, config.Options{Builtins: builtins, Cache: filepath.Join(dir, "cache")})
 		wantError(t, err, "settings model_providers.cpa.name already set at", "a.yaml:3")
 	})
 }

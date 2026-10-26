@@ -45,9 +45,9 @@ func (k *completer) load() *config.Config {
 	if err != nil {
 		return nil
 	}
-	if c, err := config.Load(root, cache, *k.builtins); err == nil {
+	if c, err := config.Load(root, config.Options{Builtins: *k.builtins, Cache: cache}); err == nil {
 		k.config = c
-	} else if c, err := config.Read(root, *k.builtins); err == nil {
+	} else if c, err := config.Load(root, config.Options{Builtins: *k.builtins}); err == nil {
 		k.config = c
 	}
 	return k.config
@@ -217,21 +217,6 @@ func mcpTarget(server config.MCPServer) string {
 	return server.URL
 }
 
-// loginServers lists the MCP servers mcp login accepts.
-func (k *completer) loginServers() []candidate {
-	c := k.load()
-	if c == nil {
-		return nil
-	}
-	out := []candidate{}
-	for _, id := range slices.Sorted(maps.Keys(c.MCP)) {
-		if _, err := loginSecret(c, string(id)); err == nil {
-			out = append(out, candidate{string(id), c.MCP[id].URL})
-		}
-	}
-	return out
-}
-
 // resources completes use and unuse: every kind the ID may name, narrowed by --kind.
 func (k *completer) resources(
 	cmd *cobra.Command,
@@ -389,7 +374,6 @@ func (k *completer) registerCompletions(root *cobra.Command) {
 	}
 	set(firstArg(func() []candidate { return k.definitions(edit.MCP, true) }), "mcp", "remove")
 	set(firstArg(func() []candidate { return k.definitions(edit.MCP, false) }), "mcp", "test")
-	set(firstArg(k.loginServers), "mcp", "login")
 	set(firstArg(func() []candidate { return k.definitions(edit.MCP, false) }), "mcp", "tools")
 	set(k.toolServers, "mcp", "call")
 	set(func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
@@ -414,7 +398,6 @@ func (k *completer) registerCompletions(root *cobra.Command) {
 	set(k.packages, "update")
 	set(firstArg(k.launches), "launch", "show")
 	set(firstArg(k.launches), "launch", "revoke")
-	set(firstArgThen(directories), "resolve")
 	set(firstArgThen(directories), "explain")
 	set(firstArgThen(directories), "doctor")
 	set(firstArgThen(files), "skill", "add")

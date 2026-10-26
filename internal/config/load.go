@@ -19,7 +19,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/tarik02-org/agx/internal/yaml"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/tarik02-org/agx/internal/securefs"
 )
@@ -41,15 +41,19 @@ type Lock struct {
 }
 
 // DefaultConfig is used when the root configuration file does not exist.
-const DefaultConfig = "imports:\n  - glob: agx.d/*.yaml\n"
+const DefaultConfig = "imports: [agx.d/*.yaml]\n"
 
-func Read(root string, builtins Builtins) (*Config, error) {
-	return read(root, builtins, &Inputs{}, nil)
-}
-
-// ReadWith reads configuration fragments as Read does, with overlay replacing files.
-func ReadWith(root string, builtins Builtins, overlay Overlay) (*Config, error) {
-	return read(root, builtins, &Inputs{}, overlay)
+// Options configures Load.
+type Options struct {
+	Builtins Builtins
+	// Cache is the package cache. Without it, Load reads only configuration fragments, without
+	// loading packages or validating the result.
+	Cache string
+	// Overlay replaces fragments and lockfiles while loading.
+	Overlay Overlay
+	// Inputs, when set, records the files loading read, including after a failure, so callers
+	// can skip reloading until one of them changes.
+	Inputs *Inputs
 }
 
 // Overlay maps canonical paths to contents that replace those files while loading, so an edit
@@ -104,7 +108,7 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 		Bundles:       map[ID]Bundle{},
 		Harnesses:     map[string]HarnessDefinition{},
 		PackageHashes: map[ID]string{},
-		Daemon:        Daemon{LeaseSeconds: 60, RenewSeconds: 20, ShutdownGraceSeconds: DefaultShutdownGraceSeconds},
+		Daemon:        Daemon{LeaseSeconds: 60, RenewSeconds: 20},
 		builtins:      builtins,
 	}
 	active, seen := map[string]bool{}, map[string]bool{}
@@ -138,51 +142,29 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 				}
 				at = locate(imports)
 			}
-			if (imp.Path == "") == (imp.Glob == "") {
-				return fmt.Errorf("%s: import needs exactly one of path or glob", at)
-			}
-			if imp.Glob != "" {
-				if imp.Optional {
-					return fmt.Errorf(
-						"%s: import %s: optional applies only to path imports; globs may match nothing",
-						path,
-						imp.Glob,
-					)
-				}
-				glob, err := ExpandHome(imp.Glob)
-				if err != nil {
-					return fmt.Errorf("%s: import %w", at, err)
-				}
-				pattern := relative(filepath.Dir(path), glob)
-				files, err := overlay.glob(pattern)
-				if err != nil {
-					return fmt.Errorf("%s: import %s: %w", at, imp.Glob, err)
-				}
-				inputs.glob(pattern, files)
-				for _, match := range files {
-					if err := load(match); err != nil {
-						return err
-					}
-				}
-				continue
-			}
-			p, err := ExpandHome(imp.Path)
+			p, err := ExpandHome(imp)
 			if err != nil {
 				return fmt.Errorf("%s: import %w", at, err)
 			}
 			p = relative(filepath.Dir(path), p)
-			if imp.Optional {
-				inputs.file(p)
-				if found, err := overlay.exists(p); err != nil {
-					return fmt.Errorf("%s: import %s: %w", at, imp.Path, err)
-				} else if !found {
-					continue
+			if !isGlob(imp) {
+				if found, err := overlay.exists(p); err == nil && !found {
+					return fmt.Errorf("%s: import %s: %s does not exist", at, imp, p)
 				}
-			} else if found, err := overlay.exists(p); err == nil && !found {
-				return fmt.Errorf("%s: import %s: %s does not exist; create it, or set optional: true", at, imp.Path, p)
+				if err := load(p); err != nil {
+					return err
+				}
+				continue
 			}
-			if err := load(p); err != nil {
-				return err
+			files, err := overlay.glob(p)
+			if err != nil {
+				return fmt.Errorf("%s: import %s: %w", at, imp, err)
+			}
+			inputs.glob(p, files)
+			for _, match := range files {
+				if err := load(match); err != nil {
+					return err
+				}
 			}
 		}
 		if err := c.merge(d, node, path, "", false); err != nil {
@@ -201,29 +183,16 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 	return c, nil
 }
 
-func Load(root, cache string, builtins Builtins) (*Config, error) {
-	c, _, err := LoadTracked(root, cache, builtins)
-	return c, err
-}
+// isGlob reports whether an import is a pattern rather than a literal path.
+func isGlob(path string) bool { return strings.ContainsAny(path, "*?[") }
 
-// LoadTracked also returns the files it read, including after a failure, so callers can skip
-// reloading until one of them changes.
-func LoadTracked(root, cache string, builtins Builtins) (*Config, *Inputs, error) {
-	inputs := &Inputs{}
-	c, err := loadConfig(root, cache, builtins, inputs, nil)
-	return c, inputs, err
-}
-
-// LoadWith loads and validates configuration as Load does, with overlay replacing fragments and
-// lockfiles.
-func LoadWith(root, cache string, builtins Builtins, overlay Overlay) (*Config, error) {
-	return loadConfig(root, cache, builtins, &Inputs{}, overlay)
-}
-
-func loadConfig(root, cache string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Config, error) {
-	c, err := read(root, builtins, inputs, overlay)
-	if err != nil {
-		return nil, err
+// Load reads the configuration fragments from root and, given a cache, the installed packages
+// they declare, and validates the result.
+func Load(root string, opts Options) (*Config, error) {
+	inputs, overlay, cache := cmp.Or(opts.Inputs, &Inputs{}), opts.Overlay, opts.Cache
+	c, err := read(root, opts.Builtins, inputs, overlay)
+	if err != nil || cache == "" {
+		return c, err
 	}
 	loaded := map[ID]bool{}
 	c.Missing = map[ID]MissingPackage{}
@@ -492,10 +461,10 @@ func (c *Config) Dependencies(id ID, d Document) []ID {
 	return deps
 }
 
-// PinPath locates the cache record of the content a pinned rev or /nix/store source installed;
+// PinPath locates the cache record of the content a pinned commit or /nix/store source installed;
 // a hash pin names its cache entry directly.
 func PinPath(cache string, p Package) string {
-	key := Digest(Package{Path: p.Path, Git: p.Git, Rev: p.Rev, Subdir: p.Subdir})
+	key := Digest(Package{Path: p.Path, Git: p.Git, Ref: p.Ref, Subdir: p.Subdir})
 	return filepath.Join(cache, "packages", "pins", key+".json")
 }
 
@@ -573,8 +542,6 @@ type merger struct {
 	base     string
 	ns       string
 	manifest bool
-	// lockfile records the unpinned packages this file declares.
-	lockfile string
 }
 
 // prior describes an existing definition with the ID being merged.
@@ -591,20 +558,10 @@ var kindLabels = map[string]string{
 func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bool) error {
 	base := filepath.Dir(path)
 	if manifest &&
-		(len(d.Imports) > 0 || len(d.Scopes) > 0 || len(d.Harnesses) > 0 || d.Lockfile != "" || d.Daemon != (Daemon{})) {
+		(len(d.Imports) > 0 || len(d.Scopes) > 0 || len(d.Harnesses) > 0 || d.Daemon != (Daemon{})) {
 		return fmt.Errorf("%s: package manifests may only declare resources, bundles, secrets, and dependencies", path)
 	}
-	m := &merger{
-		c: c, node: node, path: path, base: base, ns: ns, manifest: manifest,
-		lockfile: filepath.Join(base, "agx.lock.json"),
-	}
-	if d.Lockfile != "" {
-		lockfile, err := ExpandHome(d.Lockfile)
-		if err != nil {
-			return fmt.Errorf("%s: lockfile %w", path, err)
-		}
-		m.lockfile = relative(base, lockfile)
-	}
+	m := &merger{c: c, node: node, path: path, base: base, ns: ns, manifest: manifest}
 	if c.rootDefinitions == nil {
 		c.rootDefinitions = map[string]bool{}
 	}
@@ -734,33 +691,32 @@ func (c *Config) merge(d Document, node *yaml.Node, path, ns string, manifest bo
 		return err
 	}
 	if c.daemonSet == nil {
-		c.daemonSet = map[string]bool{}
+		c.daemonSet = map[string]string{}
 	}
-	// Daemon settings merge field by field; only fields set again need an override.
 	for _, field := range []struct {
-		name   string
-		value  int
-		target *int
+		name string
+		set  bool
 	}{
-		{"lease_seconds", d.Daemon.LeaseSeconds, &c.Daemon.LeaseSeconds},
-		{"renew_seconds", d.Daemon.RenewSeconds, &c.Daemon.RenewSeconds},
-		{"shutdown_grace_seconds", d.Daemon.ShutdownGraceSeconds, &c.Daemon.ShutdownGraceSeconds},
+		{"lease_seconds", d.Daemon.LeaseSeconds != 0},
+		{"renew_seconds", d.Daemon.RenewSeconds != 0},
+		{"autostart", d.Daemon.Autostart != nil},
 	} {
-		if field.value == 0 {
+		if !field.set {
 			continue
 		}
-		if c.daemonSet[field.name] && !d.Daemon.Override {
-			return fmt.Errorf("%s: conflicting daemon.%s; set daemon.override: true", path, field.name)
+		if previous, ok := c.daemonSet[field.name]; ok {
+			return fmt.Errorf("%s: daemon.%s is already set in %s; set it in one fragment", path, field.name, previous)
 		}
-		*field.target = field.value
-		c.daemonSet[field.name] = true
+		c.daemonSet[field.name] = path
+	}
+	if d.Daemon.LeaseSeconds != 0 {
+		c.Daemon.LeaseSeconds = d.Daemon.LeaseSeconds
+	}
+	if d.Daemon.RenewSeconds != 0 {
+		c.Daemon.RenewSeconds = d.Daemon.RenewSeconds
 	}
 	if d.Daemon.Autostart != nil {
-		if c.daemonSet["autostart"] && !d.Daemon.Override {
-			return fmt.Errorf("%s: conflicting daemon.autostart; set daemon.override: true", path)
-		}
 		c.Daemon.Autostart = d.Daemon.Autostart
-		c.daemonSet["autostart"] = true
 	}
 	return nil
 }
@@ -915,11 +871,12 @@ func (m *merger) placePackage(name ID, p *Package, at Source) error {
 	if (p.Path == "") == (p.Git == "") {
 		return fmt.Errorf("%s: package %s needs exactly one of path or git", locate(at), name)
 	}
-	if err := checkGitSource(p.Rev, p.Ref, p.Hash, p.Git != ""); err != nil {
+	if err := checkGitSource(p.Ref, p.Hash, p.Git != ""); err != nil {
 		return fmt.Errorf("%s: package %s: %w", locate(at), name, err)
 	}
 	p.Manifest = m.manifest
-	p.Lockfile = m.lockfile
+	// The lockfile beside a fragment records the unpinned packages it declares.
+	p.Lockfile = filepath.Join(m.base, "agx.lock.json")
 	if p.Path != "" {
 		var err error
 		p.Path, err = m.file(p.Path)
@@ -963,7 +920,7 @@ func (m *merger) placePackage(name ID, p *Package, at Source) error {
 // contains a colon, which declared package IDs cannot, and names the resource it holds.
 func (m *merger) anonymous(kind string, resource ID, g GitSource, at Source) (ID, error) {
 	id := ID(kind + ":" + string(resource))
-	p := Package{Git: g.Git, Ref: g.Ref, Rev: g.Rev, Hash: g.Hash, Anonymous: true, Parent: ID(m.ns)}
+	p := Package{Git: g.Git, Ref: g.Ref, Hash: g.Hash, Anonymous: true, Parent: ID(m.ns)}
 	if err := m.placePackage(id, &p, at); err != nil {
 		return "", err
 	}
@@ -993,8 +950,8 @@ func (m *merger) addSkill(id ID, s Skill, at Source, inline bool) error {
 		!apply {
 		return err
 	}
-	if s.Git == "" && (s.Ref != "" || s.Rev != "" || s.Hash != "") {
-		return fmt.Errorf("%s: skill %s: ref, rev, and hash apply only with git", locate(at), name)
+	if s.Git == "" && (s.Ref != "" || s.Hash != "") {
+		return fmt.Errorf("%s: skill %s: ref and hash apply only with git", locate(at), name)
 	}
 	if s.Generated() && s.Name == "" {
 		s.Name = string(name)[strings.LastIndex(string(name), "/")+1:]
@@ -1056,8 +1013,8 @@ func (m *merger) addInstructions(id ID, i Instructions, at Source, inline bool) 
 		!apply {
 		return err
 	}
-	if i.Git == "" && (i.Ref != "" || i.Rev != "" || i.Hash != "") {
-		return fmt.Errorf("%s: instructions %s: ref, rev, and hash apply only with git", locate(at), name)
+	if i.Git == "" && (i.Ref != "" || i.Hash != "") {
+		return fmt.Errorf("%s: instructions %s: ref and hash apply only with git", locate(at), name)
 	}
 	if err := checkInstructions(name, i); err != nil {
 		return fmt.Errorf("%s: %w", locate(at), err)
@@ -1115,13 +1072,6 @@ func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
 		transport = "http"
 	case len(server.Command) == 0:
 		return fmt.Errorf("%s: MCP server %s needs url (HTTP) or command (stdio)", where, name)
-	}
-	if server.Transport != "" && server.Transport != transport {
-		field := "command"
-		if transport == "http" {
-			field = "url"
-		}
-		return fmt.Errorf("%s: MCP server %s: transport %s contradicts its %s", where, name, server.Transport, field)
 	}
 	server.Transport = transport
 	switch server.Load {
@@ -1215,9 +1165,6 @@ func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
 func (c *Config) Validate() error {
 	if c.Daemon.LeaseSeconds < 3 || c.Daemon.RenewSeconds < 1 || c.Daemon.RenewSeconds >= c.Daemon.LeaseSeconds {
 		return fmt.Errorf("daemon renewal must be positive and shorter than lease (minimum 3 seconds)")
-	}
-	if c.Daemon.ShutdownGraceSeconds < 1 {
-		return fmt.Errorf("daemon.shutdown_grace_seconds must be positive")
 	}
 	for _, id := range sortedKeys(c.Skills) {
 		r := c.Skills[id]
@@ -1388,8 +1335,6 @@ func (c *Config) Validate() error {
 			if len(server.Environment) > 0 || server.Cwd != "" {
 				return fmt.Errorf("%s: HTTP MCP server %s cannot set environment or cwd", at, id)
 			}
-		default:
-			return fmt.Errorf("%s: MCP server %s: transport must be stdio or http", at, id)
 		}
 		for name := range server.Environment {
 			if !validEnvironment.MatchString(name) {

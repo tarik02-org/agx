@@ -174,7 +174,7 @@ func LocalValue(
 	case "keychain":
 		value, err := store.Get(key(id, s))
 		if errors.Is(err, errNotStored) {
-			return "", fmt.Errorf("keychain secret %s is not stored; store it with agx secret set %s --stdin", id, id)
+			return "", fmt.Errorf("keychain secret %s is not stored; store it with agx secret set %s", id, id)
 		} else if err != nil {
 			return "", fmt.Errorf("keychain secret %s: %w", id, err)
 		}

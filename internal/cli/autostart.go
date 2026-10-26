@@ -6,16 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gofrs/flock"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/cli/ui"
@@ -43,7 +41,7 @@ func autostart(c *config.Config) bool {
 // configuredAutostart reads only configuration fragments, so commands that need no packages
 // stay fast. A configuration that does not load leaves autostart on; the daemon then reports why.
 func configuredAutostart(paths platform.Paths, builtins config.Builtins) bool {
-	c, err := config.Read(paths.Config, builtins)
+	c, err := config.Load(paths.Config, config.Options{Builtins: builtins})
 	if err != nil {
 		return autostart(nil)
 	}
@@ -56,7 +54,6 @@ const (
 	useDaemon daemonAction = iota
 	startNewDaemon
 	replaceDaemon
-	refuseDaemon
 )
 
 // daemonState is what a command found about the running daemon before using it.
@@ -69,14 +66,12 @@ type daemonState struct {
 	sameConfig bool
 	// activeLaunches counts launches of a reachable daemon that still hold MCP access.
 	activeLaunches int
-	// restores is whether the daemon keeps its active launches for the next one when it stops.
-	restores bool
 }
 
-// action decides how to reach a daemon of this build. A daemon is replaced when no launch loses
-// MCP access by that: it has no active launches, or it runs another build that restores them for
-// a successor serving the same configuration. A daemon of this build serving another
-// configuration with active launches stays; the launch check reports it.
+// action decides how to reach a daemon of this build. A daemon of another build is replaced; it
+// keeps its active launches for its successor. A daemon of this build serving another
+// configuration is replaced when it has no active launches; otherwise it stays, and the launch
+// check reports it.
 func (s daemonState) action() daemonAction {
 	switch {
 	case s.discovery == nil && s.reachable:
@@ -84,13 +79,8 @@ func (s daemonState) action() daemonAction {
 			return replaceDaemon
 		}
 		return useDaemon
-	case errors.Is(s.discovery, daemon.ErrNewerDiscovery):
-		return refuseDaemon
 	case errors.Is(s.discovery, daemon.ErrVersionMismatch) && s.reachable:
-		if s.activeLaunches == 0 || s.sameConfig && s.restores {
-			return replaceDaemon
-		}
-		return refuseDaemon
+		return replaceDaemon
 	default:
 		// Missing, invalid, or stale discovery: the startup lock lets a new daemon replace it.
 		return startNewDaemon
@@ -101,17 +91,10 @@ func (s daemonState) action() daemonAction {
 // starts one in the background, as agx daemon start does, and waits until it is ready.
 func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*client, error) {
 	if !enabled {
-		c, err := newClient(paths)
-		// Suggesting agx daemon start is no help when it would be refused.
-		if errors.Is(err, daemon.ErrUnavailable) {
-			if refusal := startRefusal(paths); refusal != nil {
-				return nil, fmt.Errorf("daemon is not running and cannot start: %w", refusal)
-			}
-		}
-		return c, err
+		return newClient(paths)
 	}
 	d, err := daemon.ReadDiscovery(paths)
-	state := daemonState{discovery: err, sameConfig: d.Config == paths.Config, restores: d.RestoresLaunches}
+	state := daemonState{discovery: err, sameConfig: d.Config == paths.Config}
 	var current *client
 	if err == nil || errors.Is(err, daemon.ErrVersionMismatch) {
 		current = dial(d)
@@ -126,23 +109,8 @@ func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*cli
 	switch state.action() {
 	case useDaemon:
 		return current, nil
-	case refuseDaemon:
-		if state.activeLaunches > 0 && state.sameConfig {
-			launches := fmt.Sprintf("%d active launches", state.activeLaunches)
-			if state.activeLaunches == 1 {
-				launches = "an active launch"
-			}
-			// Only builds that predate restoring launches get here.
-			return nil, fmt.Errorf(
-				"%w: it runs an older agx build and has %s it cannot hand over; "+
-					"run agx daemon stop --force, which revokes their MCP access, then retry",
-				daemon.ErrVersionMismatch,
-				launches,
-			)
-		}
-		return nil, err
 	case replaceDaemon:
-		if state.sameConfig {
+		if err != nil {
 			ui.Diagnose(ui.Info, "restarting daemon %s, which runs another agx build", d.Version)
 		} else {
 			ui.Diagnose(
@@ -248,10 +216,6 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 		}
 		c, err := newClient(paths)
 		lastErr = err
-		// The daemon holding the startup lock belongs to a newer agx; this one cannot replace it.
-		if errors.Is(err, daemon.ErrNewerDiscovery) {
-			return "", err
-		}
 		if err == nil {
 			probe, cancel := context.WithTimeout(ctx, time.Second)
 			_, err = c.runtime.GetRuntime(probe, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
@@ -278,44 +242,17 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 // one to restore; force revokes their MCP access instead. A positive grace replaces how long the
 // daemon lets requests in flight finish.
 func stopDaemon(ctx context.Context, c *client, force bool, grace time.Duration) (int, error) {
-	query := url.Values{}
-	if force {
-		query.Set("force", "true")
-	}
+	req := &v1.StopRequest{Force: force}
 	if grace > 0 {
-		query.Set("grace", grace.String())
-	}
-	endpoint := c.discovery.URL + "/stop"
-	if len(query) > 0 {
-		endpoint += "?" + query.Encode()
+		req.Grace = durationpb.New(grace)
 	}
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
-	req, err := newStopRequest(ctx, endpoint, c.discovery.Token)
+	resp, err := c.runtime.Stop(ctx, request(req, c.discovery.Token))
 	if err != nil {
 		return 0, err
 	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	switch resp.StatusCode {
-	case http.StatusNoContent:
-		kept, _ := strconv.Atoi(resp.Header.Get(daemon.KeptLaunchesHeader))
-		return kept, nil
-	case http.StatusConflict:
-		// Only builds that predate restoring launches refuse.
-		return 0, codedf(
-			codeConflict,
-			"daemon has active launches; run agx daemon stop --force to stop it and revoke their MCP access",
-		)
-	case http.StatusUnauthorized:
-		return 0, fmt.Errorf("daemon rejected the discovery token; its discovery file is stale or replaced")
-	default:
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return 0, fmt.Errorf("daemon stop failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
+	return int(resp.Msg.KeptLaunches), nil
 }
 
 // awaitExit waits up to timeout until a stopping daemon released the startup lock, so a new one

@@ -13,7 +13,7 @@ import (
 const original = `# yaml-language-server: $schema=https://example/agx.schema.json
 # Personal agx configuration.
 imports:
-  - glob: agx.d/*.yaml   # machine drop-ins
+  - agx.d/*.yaml   # machine drop-ins
 
 secrets:
   gh: {kind: keychain}   # stored with agx secret set

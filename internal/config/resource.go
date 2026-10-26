@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/tarik02-org/agx/internal/yaml"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/tarik02-org/agx/internal/securefs"
 )
@@ -18,7 +18,7 @@ import (
 var (
 	// skillNamePattern follows the native naming rules harnesses apply to skill names.
 	skillNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
-	revPattern       = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	commitPattern    = regexp.MustCompile(`^[0-9a-f]{40}$`)
 )
 
 // maxSkillName is the longest skill name native harnesses accept.
@@ -36,34 +36,27 @@ type SkillFile struct {
 }
 
 type skillFileFields struct {
-	Content    string `yaml:"content"`
-	Executable bool   `yaml:"executable"`
+	Content    *string `yaml:"content"`
+	Executable bool    `yaml:"executable"`
+	Path       string  `yaml:"path"`
 }
 
 func (f *SkillFile) UnmarshalYAML(node *yaml.Node) error {
-	*f = SkillFile{}
-	switch node.Kind {
-	case yaml.ScalarNode:
-		if node.ShortTag() != "!!str" {
-			return errors.New("skill file must be text, a path to copy, or {content, executable}")
-		}
-		// A one-line string written like a path copies that path; other text is file content.
-		if !strings.Contains(node.Value, "\n") && IsPath(node.Value) {
-			f.Path = node.Value
-		} else {
-			f.Content = node.Value
-		}
-		return nil
-	case yaml.MappingNode:
-		var fields skillFileFields
-		if err := node.Load(&fields, yaml.WithKnownFields()); err != nil {
-			return err
-		}
-		f.Content, f.Executable = fields.Content, fields.Executable
-		return nil
-	default:
-		return errors.New("skill file must be text, a path to copy, or {content, executable}")
+	var fields skillFileFields
+	if node.Kind != yaml.MappingNode {
+		return errors.New("skill file must be {content, executable} or {path}")
 	}
+	if err := node.Load(&fields, yaml.WithKnownFields()); err != nil {
+		return err
+	}
+	if (fields.Content == nil) == (fields.Path == "") {
+		return errors.New("skill file needs exactly one of content or path")
+	}
+	*f = SkillFile{Executable: fields.Executable, Path: fields.Path}
+	if fields.Content != nil {
+		f.Content = *fields.Content
+	}
+	return nil
 }
 
 // Generated reports whether the skill is written in configuration rather than read from a directory.
@@ -250,7 +243,7 @@ func (i Instructions) Read() ([]byte, error) {
 	return os.ReadFile(i.Path)
 }
 
-// IsPath reports whether a selection entry or file value names a path rather than an ID or text.
+// IsPath reports whether a selection entry names a path rather than an ID.
 // IDs cannot contain ':' or '\', so absolute Windows paths never read as IDs.
 func IsPath(value string) bool {
 	return strings.HasPrefix(value, ".") || strings.HasPrefix(value, "/") || strings.HasPrefix(value, "~") ||
@@ -374,21 +367,13 @@ func checkInstructions(id ID, i Instructions) error {
 	return nil
 }
 
+// IsCommit reports whether a Git ref is a full commit hash, which pins its source.
+func IsCommit(ref string) bool { return commitPattern.MatchString(ref) }
+
 // checkGitSource validates the pinning fields of a Git source.
-func checkGitSource(rev, ref, hash string, git bool) error {
-	if rev != "" {
-		if !git {
-			return errors.New("rev applies only to git sources; pin a local source with hash")
-		}
-		if ref != "" {
-			return errors.New("set ref or rev, not both")
-		}
-		if !revPattern.MatchString(rev) {
-			return errors.New("rev must be a full 40-character lowercase commit hash; use ref for branches and tags")
-		}
-	}
+func checkGitSource(ref, hash string, git bool) error {
 	if ref != "" && !git {
-		return errors.New("ref applies only to git sources")
+		return errors.New("ref applies only to git sources; pin a local source with hash")
 	}
 	if hash != "" && !ValidHash(hash) {
 		return errors.New("hash must be a 64-character content hash, as recorded in lockfiles")

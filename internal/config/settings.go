@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tarik02-org/agx/internal/yaml"
+	"go.yaml.in/yaml/v4"
 )
 
 // Settings is a harness definition's native settings as one fragment writes them: a map in the

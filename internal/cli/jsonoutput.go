@@ -115,18 +115,14 @@ func resourceDocument(c *config.Config, r config.Resource) resourceJSON {
 	return out
 }
 
-type resolveJSON struct {
+type explainJSON struct {
 	ID        string `json:"id"`
 	Directory string `json:"directory"`
 	// Harness is null when resolved without one.
 	Harness             *string        `json:"harness"`
 	Resources           []resourceJSON `json:"resources"`
 	RequiredEnvironment []string       `json:"required_environment"`
-}
-
-type explainJSON struct {
-	resolveJSON
-	Traces []traceJSON `json:"traces"`
+	Traces              []traceJSON    `json:"traces"`
 	// Injections are tagged values as configured, never resolved.
 	Injections []injectionJSON `json:"injections"`
 	// Settings are the native settings of the harness explained, one per leaf; empty without
@@ -166,21 +162,11 @@ type injectionJSON struct {
 	Source sourceJSON `json:"source"`
 }
 
-func resolveDocument(snapshot *config.Snapshot) resolveJSON {
+func explainDocument(snapshot *config.Snapshot) explainJSON {
 	resources := []resourceJSON{}
 	for _, r := range snapshot.Resources {
 		resources = append(resources, resourceDocument(snapshot.Config, r))
 	}
-	return resolveJSON{
-		ID:                  snapshot.ID,
-		Directory:           snapshot.Directory,
-		Harness:             jsonString(snapshot.Harness),
-		Resources:           resources,
-		RequiredEnvironment: jsonList(snapshot.RequiredEnvironment),
-	}
-}
-
-func explainDocument(snapshot *config.Snapshot) explainJSON {
 	traces := []traceJSON{}
 	for _, t := range snapshot.Traces {
 		steps := []stepJSON{}
@@ -213,10 +199,14 @@ func explainDocument(snapshot *config.Snapshot) explainJSON {
 		settings = append(settings, settingJSON{Path: leaf.Path, Value: leaf.Value, Source: configSource(leaf.Source)})
 	}
 	return explainJSON{
-		resolveJSON: resolveDocument(snapshot),
-		Traces:      traces,
-		Injections:  injections,
-		Settings:    settings,
+		ID:                  snapshot.ID,
+		Directory:           snapshot.Directory,
+		Harness:             jsonString(snapshot.Harness),
+		Resources:           resources,
+		RequiredEnvironment: jsonList(snapshot.RequiredEnvironment),
+		Traces:              traces,
+		Injections:          injections,
+		Settings:            settings,
 	}
 }
 

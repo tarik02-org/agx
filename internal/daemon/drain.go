@@ -15,6 +15,9 @@ import (
 )
 
 const (
+	// ShutdownGrace is how long a stopping daemon lets requests in flight finish when the stop
+	// does not set a timeout.
+	ShutdownGrace = 10 * time.Second
 	// forcedGrace bounds draining for a stop that revokes launches anyway.
 	forcedGrace = 2 * time.Second
 	// StoppingHeader marks an Unavailable error, or a 503 response, from a daemon that stops
@@ -86,9 +89,8 @@ func (d *drain) wait(ctx context.Context) bool {
 
 // streams are the Connect procedures that stay open until their caller or the daemon ends them.
 var streams = map[string]bool{
-	agxv1connect.PackageServiceWatchOperationProcedure: true,
-	agxv1connect.RuntimeServiceWatchRuntimeProcedure:   true,
-	agxv1connect.SecretServiceLoginProcedure:           true,
+	agxv1connect.RuntimeServiceWatchRuntimeProcedure: true,
+	agxv1connect.SecretServiceLoginProcedure:         true,
 }
 
 // track counts the requests next serves, except long-lived streams: an MCP event stream (GET)

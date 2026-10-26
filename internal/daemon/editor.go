@@ -16,7 +16,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/tarik02-org/agx/internal/yaml"
+	"go.yaml.in/yaml/v4"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/config"
@@ -601,7 +601,7 @@ func (s *Server) InspectSource(
 	ctx, cancel := context.WithTimeout(ctx, inspectTimeout)
 	defer cancel()
 	inspection, err := packages.Inspect(
-		ctx, s.paths.Cache, source, strings.TrimSpace(req.Msg.Ref), strings.TrimSpace(req.Msg.Rev),
+		ctx, s.paths.Cache, source, strings.TrimSpace(req.Msg.Ref),
 		strings.Trim(strings.TrimSpace(req.Msg.Subdir), "/"),
 	)
 	if err != nil {

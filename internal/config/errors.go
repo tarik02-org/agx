@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/tarik02-org/agx/internal/yaml"
+	"go.yaml.in/yaml/v4"
 )
 
 var (

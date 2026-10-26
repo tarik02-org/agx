@@ -49,7 +49,6 @@ go before it.
 | --- | --- |
 | `agx config validate [--json]` | load and check the whole configuration |
 | `agx config schema [--package]` | print the JSON Schema for configuration files or package manifests |
-| `agx resolve [dir] [--harness <name>] [--json]` | show the resources selected for a directory |
 | `agx explain [dir] [--harness <name>] [--verbose] [--json]` | show why each resource is selected or removed |
 | `agx install [--frozen] [--json]` | install packages and write lockfiles; register Codex skill plugins |
 | `agx update [package-id...] [--json]` | move packages to their newest commit (all when none given) |
@@ -62,7 +61,6 @@ go before it.
 | `agx mcp add <id> -- <command> [args...]` | define a local MCP server and enable it |
 | `agx mcp list` | list MCP servers |
 | `agx mcp remove <id>` | remove an MCP server definition |
-| `agx mcp login <id> [--no-browser]` | log in to an MCP server with OAuth, as `agx secret login <id>` |
 | `agx mcp test <id>` | connect to an MCP server and list its tools |
 | `agx skill add <source>` | add skills from a folder, Git URL, or `owner/repo[@ref][/path]` |
 | `agx skill list` | list skills |
@@ -114,7 +112,7 @@ In `--header` and `--env`, a value written `!secret <id>`, `!env NAME`, or
 | `agx launch show <launch-id> [--json]` | show one launch and its MCP servers |
 | `agx launch revoke <launch-id> [--json]` | cut off a launch's MCP access |
 | `agx secret status [secret-id] [--json]` | show secret states, never values |
-| `agx secret set <secret-id> --stdin [--json]` | store a keychain secret read from stdin |
+| `agx secret set <secret-id> [--json]` | store a keychain secret read from stdin |
 | `agx secret login <secret-id> [--no-browser] [--json]` | log in to an OAuth secret |
 | `agx secret logout <secret-id> [--json]` | delete a stored secret or OAuth login |
 | `agx secret rotate <secret-id> [--json]` | renew an OAuth secret's access token now |
@@ -231,8 +229,8 @@ Conventions:
 The fields of each command's `data` are what `--json` prints; try a command to
 see its shape.
 
-`agx secret login` and `agx mcp login` stream events instead, one per line, as
-the login progresses:
+`agx secret login` streams events instead, one per line, as the login
+progresses:
 
 ```json
 {"version":1,"event":"started","secret_id":"github","mcp_id":"github","url":"https://github.com/login/oauth/authorize?…","expires_at":"2026-10-19T12:05:00Z"}

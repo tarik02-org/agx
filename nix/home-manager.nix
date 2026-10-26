@@ -210,7 +210,7 @@ in
         lib.hm.dag.entryAfter [ "writeBoundary" ] ''
           agx_root=${lib.escapeShellArg configRoot}
           if [[ -e "$agx_root" ]] && ! ${lib.getExe pkgs.gnugrep} -q 'agx\.d/' "$agx_root"; then
-            warnEcho "$agx_root does not import agx.d/*.yaml; add 'imports: [{glob: agx.d/*.yaml}]' to load ${dropInPath}"
+            warnEcho "$agx_root does not import agx.d/*.yaml; add 'imports: [agx.d/*.yaml]' to load ${dropInPath}"
           fi
         ''
       );

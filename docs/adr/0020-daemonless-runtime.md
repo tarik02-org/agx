@@ -31,7 +31,7 @@ The MCP runtime and launch bookkeeping move behind one interface with two
 implementations, RPC to the daemon and in-process, so both modes share
 endpoints, relays, and grant checks. Daemonless runs write nothing to the
 user's state or cache unless `--cache` points somewhere; package and harness
-sources must then be pinned (`rev`, `hash`, store paths) or pre-installed.
+sources must then be pinned (commit `ref`, `hash`, store paths) or pre-installed.
 
 ## Secret providers
 

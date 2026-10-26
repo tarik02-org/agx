@@ -55,13 +55,6 @@ func init() {
 // discovery when the running daemon has a different version.
 var ErrVersionMismatch = errors.New("daemon version mismatch")
 
-// ErrNewerDiscovery is returned by ReadDiscovery when the discovery file has a format newer than
-// this build reads, written by a newer agx; this build must neither use nor replace that daemon.
-var ErrNewerDiscovery = errors.New("daemon discovery from a newer agx")
-
-// discoveryFormat is the format version of the discovery file.
-const discoveryFormat = 1
-
 // ErrUnavailable marks ReadDiscovery errors that leave no daemon to reach: it is not running,
 // or its discovery file is invalid.
 var ErrUnavailable = errors.New("daemon unavailable")
@@ -73,27 +66,16 @@ func (u unavailable) Error() string { return string(u) }
 
 func (u unavailable) Is(target error) bool { return target == ErrUnavailable }
 
-// KeptLaunchesHeader carries, in a response to a stop without force, how many active launches
-// the daemon keeps for the next one to restore.
-const KeptLaunchesHeader = "Agx-Kept-Launches"
-
-// historyRetention keeps ended launches and finished operations
-// around long enough for idempotent replays and status inspection.
+// historyRetention keeps ended launches around for status inspection.
 const historyRetention = time.Hour
 
 type Discovery struct {
-	// Format is the file's format version, discoveryFormat; files from builds before it have none.
-	// Version names the agx release, which older builds compare, so it keeps its name.
-	Format     int    `json:"format"`
 	Version    string `json:"version"`
 	Build      string `json:"build"`
 	InstanceID string `json:"instance_id"`
 	URL        string `json:"url"`
 	Token      string `json:"token"`
 	Config     string `json:"config"`
-	// RestoresLaunches marks a daemon that keeps its active launches for the next one when it
-	// stops without force, so replacing it does not end their MCP access.
-	RestoresLaunches bool `json:"restores_launches,omitempty"`
 	// PID is the daemon's process, for diagnosing one that stopped answering.
 	PID int `json:"pid,omitempty"`
 }
@@ -128,44 +110,27 @@ type launch struct {
 	reviving sync.Mutex
 }
 
-type prepareRecord struct {
-	fingerprint string
-	response    []byte
-	launchID    string
-}
-
-type operation struct {
-	fingerprint string
-	requestID   string
-	state       *v1.WatchOperationResponse
-	finished    time.Time
-}
-
 type Server struct {
-	mu           sync.Mutex
-	reloadMu     sync.Mutex
-	paths        platform.Paths
-	adapters     adapters.Registry
-	builtins     config.Builtins
-	config       *config.Config
-	configErr    error
-	inputs       *config.Inputs
-	discovery    Discovery
-	manager      *auth.Manager
-	launches     map[string]*launch
-	preparations map[string]prepareRecord
-	operations   map[string]*operation
-	// operationRequests maps idempotency keys to operations also held in operations.
-	operationRequests map[string]*operation
-	ctx               context.Context
-	cancel            context.CancelFunc
-	stop              chan struct{}
+	mu        sync.Mutex
+	reloadMu  sync.Mutex
+	paths     platform.Paths
+	adapters  adapters.Registry
+	builtins  config.Builtins
+	config    *config.Config
+	configErr error
+	inputs    *config.Inputs
+	discovery Discovery
+	manager   *auth.Manager
+	launches  map[string]*launch
+	ctx       context.Context
+	cancel    context.CancelFunc
+	stop      chan struct{}
 	// forced is set by a stop that revokes active launches instead of keeping them.
 	forced bool
 	// revoked maps launches revoked within revokedRetention, by this daemon or one before it, to
 	// when; their wrappers cannot re-attach them.
 	revoked map[string]time.Time
-	// grace, when set by a stop, replaces daemon.shutdown_grace_seconds.
+	// grace, when set by a stop, replaces ShutdownGrace.
 	grace time.Duration
 	drain *drain
 	// flushed is set once a stopping daemon collected the state the next one gets; new launches
@@ -229,7 +194,8 @@ func Serve(
 	if err := os.Remove(discoveryPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	c, inputs, err := config.LoadTracked(paths.Config, paths.Cache, builtins)
+	inputs := &config.Inputs{}
+	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache, Inputs: inputs})
 	if err != nil {
 		return err
 	}
@@ -239,11 +205,8 @@ func Serve(
 	port, restored, revoked, err := loadState(store.path, paths.Config, time.Now())
 	// Without a readable state, launch files may still belong to launches a daemon could restore.
 	sweep := err == nil
-	var newer newerState
 	var invalid invalidState
 	switch {
-	case errors.As(err, &newer):
-		return err
 	case errors.As(err, &invalid):
 		aside := store.path + ".bad-" + time.Now().UTC().Format("20060102T150405Z")
 		if renameErr := os.Rename(store.path, aside); renameErr != nil {
@@ -271,37 +234,32 @@ func Serve(
 	serverCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 	discovery := Discovery{
-		Format:           discoveryFormat,
-		Version:          Version,
-		Build:            Build(),
-		InstanceID:       securefs.Token(),
-		URL:              "http://" + listener.Addr().String(),
-		Token:            securefs.Token(),
-		Config:           paths.Config,
-		RestoresLaunches: true,
-		PID:              os.Getpid(),
+		Version:    Version,
+		Build:      Build(),
+		InstanceID: securefs.Token(),
+		URL:        "http://" + listener.Addr().String(),
+		Token:      securefs.Token(),
+		Config:     paths.Config,
+		PID:        os.Getpid(),
 	}
 	s := &Server{
-		paths:             paths,
-		adapters:          registry,
-		builtins:          builtins,
-		config:            c,
-		inputs:            inputs,
-		discovery:         discovery,
-		ctx:               serverCtx,
-		cancel:            cancel,
-		stop:              make(chan struct{}),
-		drain:             newDrain(),
-		launches:          map[string]*launch{},
-		preparations:      map[string]prepareRecord{},
-		operations:        map[string]*operation{},
-		operationRequests: map[string]*operation{},
-		store:             store,
-		revoked:           revoked,
-		port:              listener.Addr().(*net.TCPAddr).Port,
-		clients:           newClientPool(),
-		icons:             newMCPIcons(filepath.Join(paths.Cache, "mcp-icons.json")),
-		shared:            mcpruntime.NewShared(serverCtx, Version),
+		paths:     paths,
+		adapters:  registry,
+		builtins:  builtins,
+		config:    c,
+		inputs:    inputs,
+		discovery: discovery,
+		ctx:       serverCtx,
+		cancel:    cancel,
+		stop:      make(chan struct{}),
+		drain:     newDrain(),
+		launches:  map[string]*launch{},
+		store:     store,
+		revoked:   revoked,
+		port:      listener.Addr().(*net.TCPAddr).Port,
+		clients:   newClientPool(),
+		icons:     newMCPIcons(filepath.Join(paths.Cache, "mcp-icons.json")),
+		shared:    mcpruntime.NewShared(serverCtx, Version),
 	}
 	if port != 0 && port != s.port && len(restored) > 0 {
 		fmt.Fprintf(
@@ -351,46 +309,6 @@ func Serve(
 	mux.Handle(path, handler)
 	mux.HandleFunc("/launch/", s.serveMCP)
 	mux.HandleFunc("/oauth/callback", s.manager.Callback)
-	mux.HandleFunc("/stop", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if !equalBearer(r.Header.Get("Authorization"), discovery.Token) {
-			http.Error(w, "unauthenticated", http.StatusUnauthorized)
-			return
-		}
-		var grace time.Duration
-		if value := r.URL.Query().Get("grace"); value != "" {
-			parsed, err := time.ParseDuration(value)
-			if err != nil || parsed <= 0 {
-				http.Error(w, "grace must be a positive duration", http.StatusBadRequest)
-				return
-			}
-			grace = parsed
-		}
-		s.expire()
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		// Without force, active launches stay in the state file for the next daemon to restore.
-		s.forced = s.forced || r.URL.Query().Get("force") == "true"
-		if grace > 0 {
-			s.grace = grace
-		}
-		kept := 0
-		for _, l := range s.launches {
-			if active(l.view.State) && l.view.ParentLaunchId == "" && !s.forced {
-				kept++
-			}
-		}
-		select {
-		case <-s.stop:
-		default:
-			close(s.stop)
-		}
-		w.Header().Set(KeptLaunchesHeader, strconv.Itoa(kept))
-		w.WriteHeader(http.StatusNoContent)
-	})
 	tracked := s.drain.track(mux)
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Host != listener.Addr().String() {
@@ -489,7 +407,6 @@ var startsWork = map[string]bool{
 	agxv1connect.LaunchServicePrepareLaunchProcedure:       true,
 	agxv1connect.LaunchServicePrepareThreadLaunchProcedure: true,
 	agxv1connect.PackageServiceInstallProcedure:            true,
-	agxv1connect.PackageServiceUpdateProcedure:             true,
 	agxv1connect.PackageServicePreviewSourceProcedure:      true,
 	agxv1connect.ConfigurationServicePlanChangesProcedure:  true,
 	agxv1connect.ConfigurationServiceApplyChangesProcedure: true,
@@ -500,12 +417,8 @@ var startsWork = map[string]bool{
 
 // settle waits for the grace period until requests in flight finished, or ctx ends.
 func (s *Server) settle(ctx context.Context) {
-	c, _ := s.reload()
 	s.mu.Lock()
-	if c == nil {
-		c = s.config
-	}
-	grace := time.Duration(c.Daemon.ShutdownGraceSeconds) * time.Second
+	grace := ShutdownGrace
 	if s.grace > 0 {
 		grace = s.grace
 	}
@@ -555,7 +468,8 @@ func (s *Server) reload() (*config.Config, error) {
 		}
 		return current, nil
 	}
-	c, inputs, err := config.LoadTracked(s.paths.Config, s.paths.Cache, s.builtins)
+	inputs = &config.Inputs{}
+	c, err := config.Load(s.paths.Config, config.Options{Builtins: s.builtins, Cache: s.paths.Cache, Inputs: inputs})
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.configErr = err
@@ -624,6 +538,37 @@ func closeEndpoints(endpoints map[config.ID]*mcpruntime.Endpoint) {
 		wg.Go(e.Close)
 	}
 	wg.Wait()
+}
+
+// Stop makes the daemon stop; without force, its active launches stay in the state file for the
+// next daemon to restore.
+func (s *Server) Stop(
+	ctx context.Context,
+	req *connect.Request[v1.StopRequest],
+) (*connect.Response[v1.StopResponse], error) {
+	grace := req.Msg.Grace.AsDuration()
+	if req.Msg.Grace != nil && grace <= 0 {
+		return nil, rpcError(connect.CodeInvalidArgument, "grace must be a positive duration")
+	}
+	s.expire()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.forced = s.forced || req.Msg.Force
+	if grace > 0 {
+		s.grace = grace
+	}
+	var kept uint32
+	for _, l := range s.launches {
+		if active(l.view.State) && l.view.ParentLaunchId == "" && !s.forced {
+			kept++
+		}
+	}
+	select {
+	case <-s.stop:
+	default:
+		close(s.stop)
+	}
+	return connect.NewResponse(&v1.StopResponse{KeptLaunches: kept}), nil
 }
 
 func (s *Server) expire() {
@@ -759,17 +704,6 @@ func (s *Server) prune(now time.Time) {
 	for id, l := range s.launches {
 		if !active(l.view.State) && l.ended.Before(cutoff) {
 			delete(s.launches, id)
-		}
-	}
-	for requestID, record := range s.preparations {
-		if s.launches[record.launchID] == nil {
-			delete(s.preparations, requestID)
-		}
-	}
-	for id, op := range s.operations {
-		if !op.finished.IsZero() && op.finished.Before(cutoff) {
-			delete(s.operations, id)
-			delete(s.operationRequests, op.requestID)
 		}
 	}
 }
@@ -1040,19 +974,6 @@ func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 	if err != nil {
 		return d, unavailable("daemon unavailable; run agx daemon start")
 	}
-	// The format decodes first, so a newer one is recognized even when its fields changed.
-	var header struct {
-		Format int `json:"format"`
-	}
-	if err := json.Unmarshal(b, &header); err == nil && header.Format > discoveryFormat {
-		return Discovery{}, fmt.Errorf(
-			"%w: %s has format %d, newer than this agx reads (%d); the daemon runs a newer agx, so upgrade agx",
-			ErrNewerDiscovery,
-			path,
-			header.Format,
-			discoveryFormat,
-		)
-	}
 	if err := json.Unmarshal(b, &d); err != nil {
 		return d, unavailable("invalid daemon discovery; restart the daemon")
 	}
@@ -1068,8 +989,7 @@ func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 	if err != nil || port < 1 || port > 65535 {
 		return d, unavailable("invalid daemon port")
 	}
-
-	if d.Version != Version || d.Build != Build() {
+	if d.Build != Build() {
 		return d, fmt.Errorf(
 			"%w: it runs a different agx build; run agx daemon stop, then retry",
 			ErrVersionMismatch,

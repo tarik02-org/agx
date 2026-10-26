@@ -119,29 +119,6 @@ func (r restoredLaunch) view() *v1.Launch {
 	}
 }
 
-// newerState is the error of a state file written by a newer agx, which this one must not
-// replace: the launches it holds would be lost.
-type newerState struct {
-	path    string
-	version int
-}
-
-// ErrNewerState matches the error of a state file written by a newer agx, which keeps a daemon
-// of this build from starting.
-var ErrNewerState = errors.New("daemon state from a newer agx")
-
-func (e newerState) Is(target error) bool { return target == ErrNewerState }
-
-func (e newerState) Error() string {
-	return fmt.Sprintf(
-		"daemon state %s has format version %d, newer than this agx reads (%d); upgrade agx, "+
-			"or run a daemon of the agx that wrote it",
-		e.path,
-		e.version,
-		stateVersion,
-	)
-}
-
 // invalidState is the error of a state file that does not decode. Writes are atomic, so only
 // an edit by hand or a damaged disk leaves one; the daemon moves it aside.
 type invalidState struct {
@@ -155,31 +132,7 @@ func (e invalidState) Error() string {
 
 func (e invalidState) Unwrap() error { return e.err }
 
-// CheckState reports whether a daemon of this build can read the state file at path: a missing
-// file is fine, one of a newer format version or one that does not decode is not.
-func CheckState(path string) error {
-	b, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	_, err = decodeState(path, b)
-	return err
-}
-
 func decodeState(path string, b []byte) (savedState, error) {
-	// The version decodes first, so a newer format is recognized even when its fields changed.
-	var header struct {
-		Version int `json:"version"`
-	}
-	if err := json.Unmarshal(b, &header); err != nil {
-		return savedState{}, invalidState{path: path, err: err}
-	}
-	if header.Version > stateVersion {
-		return savedState{}, newerState{path: path, version: header.Version}
-	}
 	var saved savedState
 	if err := json.Unmarshal(b, &saved); err != nil {
 		return savedState{}, invalidState{path: path, err: err}
@@ -193,7 +146,7 @@ func decodeState(path string, b []byte) (savedState, error) {
 // loadState reads the state file for configuration root config at now. It keeps the launches
 // still active, parents before their thread launches, and drops expired ones, those of another
 // configuration, and thread launches whose parent is gone. A missing file holds nothing; a file
-// of a newer format version is a newerState error, and one that does not decode an invalidState.
+// that does not decode is an invalidState error.
 func loadState(path, config string, now time.Time) (int, []restoredLaunch, map[string]time.Time, error) {
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {

@@ -94,8 +94,8 @@ skills:
           #!/bin/sh
           set -eu
           make deploy
-      references/checklist.md: ./docs/release-checklist.md   # copied from a file
-      assets/: ./deploy-assets/                              # copied directory
+      references/checklist.md: {path: ./docs/release-checklist.md}   # copied file
+      assets/: {path: ./deploy-assets/}                              # copied directory
 ```
 
 For an inline skill, `description` is required and `content` is the body of
@@ -104,8 +104,8 @@ For an inline skill, `description` is required and `content` is the body of
 - `name`: the name harnesses show; defaults to the last part of the ID.
   Lowercase letters, digits, and hyphens, up to 64 characters.
 - `frontmatter`: extra `SKILL.md` front matter, such as `allowed-tools: [Bash]`.
-- `files`: other files in the skill, as inline text, `{content, executable}`, or
-  a path to copy (a directory when both sides end in `/`).
+- `files`: other files in the skill, as `{content, executable}`, or `{path}` to
+  copy a file (a directory when both the key and the path end in `/`).
 
 Folder and Git skills take their name and description from their own
 `SKILL.md`.
@@ -190,7 +190,7 @@ A source that names an exact version needs no lock entry:
 packages:
   team:
     git: https://github.com/example/agent-resources.git
-    rev: 3f2c9e1a8b7d6c5e4f3a2b1c0d9e8f7a6b5c4d3e   # a full commit
+    ref: 3f2c9e1a8b7d6c5e4f3a2b1c0d9e8f7a6b5c4d3e   # a full commit
   vendored:
     path: ./vendor/resources
     hash: 2610e87326d59c6c9d74031fc4e5bbec8f87d9cf0f63cf89ee7373113a1cc88d  # from the lockfile
@@ -198,9 +198,6 @@ packages:
 
 A `path` inside `/nix/store` is pinned too, which suits configuration generated
 by Nix. `update` leaves pinned sources alone.
-
-Set `lockfile: <path>` in a configuration file to keep its lock somewhere else,
-for example a machine-local file.
 
 ## Seeing what applies
 

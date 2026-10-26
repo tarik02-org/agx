@@ -206,7 +206,7 @@ func runDoctor(
 // configChecks loads the configuration. When it does not load, the fragments alone, or else
 // only the built-ins, still let the other checks run; loaded reports a complete load.
 func configChecks(paths platform.Paths, builtins config.Builtins) (*config.Config, bool, []check) {
-	read, readErr := config.Read(paths.Config, builtins)
+	read, readErr := config.Load(paths.Config, config.Options{Builtins: builtins})
 	if readErr != nil {
 		return config.Bare(builtins), false, []check{{
 			Group:  "config",
@@ -216,7 +216,7 @@ func configChecks(paths platform.Paths, builtins config.Builtins) (*config.Confi
 			Hint:   "fix the reported fragment; agx config validate shows the error",
 		}}
 	}
-	c, loadErr := config.Load(paths.Config, paths.Cache, builtins)
+	c, loadErr := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
 	return packageChecks(read, c, loadErr, filesDetail(read))
 }
 
@@ -530,16 +530,6 @@ func stateCheck(path string) check {
 		row.Status = checkFail
 		row.Detail = fmt.Sprintf("%s is accessible to other users (mode %04o)", path, info.Mode().Perm())
 		row.Hint = "run chmod 600 " + path
-	default:
-		switch err := daemon.CheckState(path); {
-		case errors.Is(err, daemon.ErrNewerState):
-			row.Status, row.Detail = checkFail, err.Error()
-			row.Hint = "upgrade agx; a daemon of this agx cannot start while the file holds a newer format"
-		case err != nil:
-			// The daemon moves a file it cannot read aside and starts without its launches.
-			row.Status, row.Detail = checkWarn, err.Error()
-			row.Hint = "the next daemon moves it aside and forgets its saved launches"
-		}
 	}
 	return row
 }
@@ -697,7 +687,7 @@ func secretCheck(s *v1.SecretStatus, secret config.Secret, lookup func(string) (
 		row.Status = checkWarn
 		row.Detail += ": not stored"
 		if s.Kind == "keychain" {
-			row.Hint = "run agx secret set " + s.SecretId + " --stdin"
+			row.Hint = "run agx secret set " + s.SecretId
 		} else {
 			row.Hint = "run agx secret login " + s.SecretId
 		}

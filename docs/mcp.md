@@ -46,8 +46,6 @@ with:
 agx secret login tracker
 ```
 
-`agx mcp login tracker` does the same for a server's own login.
-
 This opens the authorization page in your browser and waits until you finish.
 `--no-browser` prints the URL instead, for example to open it on another device
 of yours; the browser must still be able to reach `127.0.0.1` on this machine,
@@ -99,7 +97,7 @@ instead, stored in the OS keychain:
 
 ```sh
 agx mcp add github https://api.githubcopilot.com/mcp/ --auth keychain
-agx secret set github --stdin < github-token.txt
+agx secret set github < github-token.txt
 ```
 
 agx sends the token as a bearer token. To replace it, run `secret set` again.
@@ -129,14 +127,14 @@ mcp:
 - **Omitted**: the server is used without credentials until it answers with an
   OAuth challenge; then it needs `agx secret login <id>`.
 - **`oauth`**, or a mapping with `kind: oauth`: always OAuth.
-- **`keychain`**: a token stored with `agx secret set github --stdin`, sent as
+- **`keychain`**: a token stored with `agx secret set github`, sent as
   a bearer token.
 - **`!secret <id>`**: any [secret](secrets.md), such as an environment variable
   or a command's output, sent as a bearer token. Several servers can share one.
 - **`none`**: no credentials.
 
-The secret of an inline `auth` takes the server's ID: `agx secret set github
---stdin`, `agx secret login sso`, `agx secret logout github`.
+The secret of an inline `auth` takes the server's ID: `agx secret set github`,
+`agx secret login sso`, `agx secret logout github`.
 
 ## Testing a server
 
@@ -247,8 +245,8 @@ mcp:
 `load: on_demand` keeps the server out of every harness's configuration, while
 launches still select it as usual: `agx mcp tools` lists it, with its
 description, and `agx mcp call jira.<tool> …` calls it. `agx mcp add` takes
-`--load on_demand` and `--description <text>`; `agx mcp list`, `agx resolve`,
-and `agx explain` show the load mode.
+`--load on_demand` and `--description <text>`; `agx mcp list` and
+`agx explain` show the load mode.
 
 agx does not tell agents about on-demand servers itself. Add an instruction that
 does, worded for your setup, for example:
@@ -312,7 +310,7 @@ with the shared directory or repository (none for `global`) and refuses
 sampling and elicitation. `share` applies only to local servers; remote servers
 already serve many sessions.
 
-`agx mcp add` takes `--share`; `agx mcp list`, `agx resolve`, and `agx explain`
+`agx mcp add` takes `--share`; `agx mcp list` and `agx explain`
 show the share mode. `agx mcp ps` lists the local server processes running now,
 shared or not, with their sessions and launches, and when an idle one stops.
 `--cwd <directory>` keeps those working in exactly that directory, `--under

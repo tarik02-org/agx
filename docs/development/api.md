@@ -11,7 +11,7 @@ The Go module path is `github.com/tarik02-org/agx`.
 - `ConfigurationService`: validate the daemon's configured root and resolve a
   directory for an optional harness, including provenance and required
   environment names.
-- `PackageService`: start install/update operations and watch their progress.
+- `PackageService`: install packages, streaming progress and then the result.
   The CLI installs in-process instead; both paths share the installer lock.
 - `LaunchService`: prepare, renew, finish, and administratively revoke a launch;
   resolve and prepare thread launches of a process serving many threads; restore
@@ -22,7 +22,7 @@ The Go module path is `github.com/tarik02-org/agx`.
   environment variables the server's values name and reporting failures with the
   endpoint's diagnostics; and `ListTools` and `CallTool`, which list and call the
   tools of the MCP servers in a call scope (`agx mcp tools`, `agx mcp call`, and
-  the client of `agx mcp types`).
+  the client of `agx mcp types`); and `Stop`, which stops the daemon.
 - `SecretService`: log in with OAuth, set a keychain secret, inspect secret
   state, and log out.
 
@@ -103,21 +103,19 @@ the environment inputs (plus, for the launch itself, the native arguments and
 executable) it was prepared with, which the state file never holds. Until then a restored process
 serving threads answers `Unavailable` to thread preparation.
 
-Use management authorization for other RPCs. Preparation and package mutations
-require an idempotency key: retries within the same daemon instance return the
-same operation/launch instead of duplicating effects. Renew and finish are
-idempotent; a terminal launch cannot be revived. Revoke releases its MCP runtime
-without signaling the harness process.
-Reject reuse of an idempotency key with different parameters.
+Use management authorization for other RPCs. Preparation is not idempotent: a
+retried preparation prepares another launch. Renew and finish are idempotent; a
+terminal launch cannot be revived. Revoke releases its MCP runtime without
+signaling the harness process.
 
 ## Watches and failures
 
 Runtime watches start with a complete redacted view and send replacement views
 when state changes. Clients reconnect by requesting a fresh view; v1 does not
 promise durable event replay. Slow observers must not block MCP traffic.
-Package-operation watches likewise emit current state through a terminal outcome.
-Losing an observer does not cancel package installation. Daemon restart may abort
-operations; atomic cache/lock writes allow a safe retry.
+`Install` streams progress through a terminal outcome. Losing the caller does not
+cancel the installation. Daemon restart may abort it; atomic cache/lock writes
+allow a safe retry.
 
 `Login` is server-streaming and takes a secret ID: a top-level OAuth secret or an
 MCP server with inline or on-demand OAuth. Its first message, `started`, carries
