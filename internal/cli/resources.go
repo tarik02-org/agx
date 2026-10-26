@@ -91,7 +91,6 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 		},
 	}
 	flags.register(add, true)
-	jsonFlag(add)
 	add.Flags().StringVar(&id, "id", "", "instructions ID (default: the file stem)")
 	add.Flags().StringVar(&text, "text", "", "instructions text instead of a file")
 	command.AddCommand(
@@ -105,7 +104,6 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 func instructionsRows(c *config.Config) ([]string, [][]string, any) {
 	out := ui.Stdout
 	rows := [][]string{}
-	items := []instructionsJSON{}
 	for _, id := range slices.Sorted(maps.Keys(c.Instructions)) {
 		i := c.Instructions[id]
 		kind, from := "file", ui.ShortPath(i.Path, "")
@@ -122,16 +120,8 @@ func instructionsRows(c *config.Config) ([]string, [][]string, any) {
 			order = strconv.Itoa(i.Order)
 		}
 		rows = append(rows, []string{out.ID(string(id)), kind, order, from, out.Path(location(c, i.Source))})
-		items = append(items, instructionsJSON{
-			ID:     string(id),
-			Kind:   kind,
-			Path:   jsonString(i.Path),
-			Order:  jsonInt(i.Order),
-			Inline: i.Inline,
-			Source: configSource(i.Source),
-		})
 	}
-	return []string{"ID", "KIND", "ORDER", "FROM", "SOURCE"}, rows, instructionsListJSON{Instructions: items}
+	return []string{"ID", "KIND", "ORDER", "FROM", "SOURCE"}, rows, c.Instructions
 }
 
 func excerpt(text string, limit int) string {
@@ -214,7 +204,7 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 				return err
 			}
 			f.Define(config.KindHarnesses, name, definition)
-			s.result.Defined = append(s.result.Defined, definitionJSON{Kind: config.KindHarnesses, ID: name})
+			s.result.Defined = append(s.result.Defined, definitionID{Kind: config.KindHarnesses, ID: name})
 			ok, err := s.commit()
 			if err != nil {
 				return err
@@ -226,7 +216,6 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 		},
 	}
 	flags.registerYes(add)
-	jsonFlag(add)
 	add.Flags().
 		StringVar(&flags.file, "file", "", "fragment to write the definition to (default: the root configuration)")
 	add.Flags().StringVar(&base, "base", "", "harness this definition extends")
@@ -244,7 +233,7 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 func harnessRows(c *config.Config) ([]string, [][]string, any) {
 	out := ui.Stdout
 	rows := [][]string{}
-	items := []harnessJSON{}
+	items := []config.ResolvedHarness{}
 	for _, name := range c.HarnessNames() {
 		h, err := c.Harness(name)
 		if err != nil {
@@ -256,24 +245,13 @@ func harnessRows(c *config.Config) ([]string, [][]string, any) {
 			base = "built-in"
 		}
 		source := ""
-		var sourceDocument *sourceJSON
 		if defined {
 			source = location(c, def.Source)
-			document := configSource(def.Source)
-			sourceDocument = &document
 		}
 		rows = append(rows, []string{out.ID(name), base, h.Builtin, ui.ShortPath(h.Executable, ""), out.Path(source)})
-		items = append(items, harnessJSON{
-			Name:             name,
-			Base:             jsonString(def.Base),
-			Builtin:          h.Builtin,
-			Executable:       jsonString(h.Executable),
-			Settings:         def.Settings,
-			ResolvedSettings: h.Settings,
-			Source:           sourceDocument,
-		})
+		items = append(items, h)
 	}
-	return []string{"NAME", "BASE", "BUILT-IN", "EXECUTABLE", "SOURCE"}, rows, harnessListJSON{Harnesses: items}
+	return []string{"NAME", "BASE", "BUILT-IN", "EXECUTABLE", "SOURCE"}, rows, items
 }
 
 // removeHarness deletes every fragment's declaration of a harness. Definitions extending it must
@@ -283,7 +261,7 @@ func (s *session) removeHarness(name string, force bool) error {
 	if err := s.RemoveHarness(name, force); err != nil {
 		return err
 	}
-	s.result.Removed = append(s.result.Removed, definitionJSON{Kind: config.KindHarnesses, ID: name})
+	s.result.Removed = append(s.result.Removed, definitionID{Kind: config.KindHarnesses, ID: name})
 	return nil
 }
 
@@ -359,7 +337,6 @@ func useCommands(paths *platform.Paths, builtins *config.Builtins) []*cobra.Comm
 		cmd.Flags().StringVar(&flags.file, "file", "", "fragment for a new rule (default: beside the definition)")
 		cmd.Flags().StringVar(&kind, "kind", "", "skills, instructions, mcp, or bundles, when the ID names several")
 		flags.registerYes(cmd)
-		jsonFlag(cmd)
 		out = append(out, cmd)
 	}
 	return out

@@ -71,17 +71,9 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 				return err
 			}
 			changes, err := shims.Install(dir, target, names)
-			if scripting.enabled {
-				return printShimChangesJSON(dir, target, changes, err)
-			}
-			if printErr := printShimChanges(dir, changes); printErr != nil {
-				return printErr
-			}
-			warnShims(dir, target, names)
-			return err
+			return emitShimChanges(dir, changes, err, func() { warnShims(dir, target, names) })
 		},
 	}
-	jsonFlag(install)
 	command.AddCommand(install)
 	list := &cobra.Command{
 		Use:   "list",
@@ -96,27 +88,21 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 			if err != nil {
 				return err
 			}
-			if scripting.enabled {
-				items := []shimJSON{}
-				for _, e := range entries {
-					items = append(items, shimJSON{
-						Name:   e.Name,
-						File:   e.File,
-						Kind:   jsonString(string(e.Kind)),
-						Target: jsonString(e.Target),
-						State:  string(e.State),
-					})
+			document := struct {
+				Directory string        `json:"directory"`
+				OnPath    bool          `json:"on_path"`
+				Target    string        `json:"target"`
+				Shims     []shims.Entry `json:"shims"`
+			}{dir, shims.OnPath(dir), target, entries}
+			return emit(document, func() error {
+				if err := printShims(dir, entries); err != nil {
+					return err
 				}
-				return printJSON(shimListJSON{Directory: dir, OnPath: shims.OnPath(dir), Target: target, Shims: items})
-			}
-			if err := printShims(dir, entries); err != nil {
-				return err
-			}
-			warnShims(dir, target, names)
-			return nil
+				warnShims(dir, target, names)
+				return nil
+			})
 		},
 	}
-	jsonFlag(list)
 	remove := &cobra.Command{
 		Use:   "remove",
 		Short: "Delete the shims agx created",
@@ -127,43 +113,34 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 				return err
 			}
 			changes, err := shims.Remove(dir)
-			if scripting.enabled {
-				return printShimChangesJSON(dir, "", changes, err)
-			}
-			if printErr := printShimChanges(dir, changes); printErr != nil {
-				return printErr
-			}
-			return err
+			return emitShimChanges(dir, changes, err, func() {})
 		},
 	}
-	jsonFlag(remove)
 	command.AddCommand(list, remove)
 	return command
 }
 
-// printShimChangesJSON writes the document of shims install and remove. A failure is reported
-// as an error document; the changes made before it remain recorded in the shim directory.
-func printShimChangesJSON(dir, target string, changes []shims.Change, err error) error {
-	if err != nil {
+// emitShimChanges reports what shims install or remove did. A person sees the changes made
+// before a failure; JSON mode reports the failure alone, as the shim directory records them.
+func emitShimChanges(dir string, changes []shims.Change, err error, warn func()) error {
+	if err != nil && scripting.enabled {
 		return err
 	}
-	items := []shimChangeJSON{}
-	for _, c := range changes {
-		items = append(items, shimChangeJSON{
-			Name:   c.Name,
-			File:   c.File,
-			Kind:   jsonString(string(c.Kind)),
-			Target: jsonString(c.Target),
-			Action: string(c.Action),
-			State:  jsonString(string(c.State)),
-		})
+	// Only copies and hard links carry a hash, for the manifest; the document is the same on
+	// every platform without it.
+	for i := range changes {
+		changes[i].Hash = ""
 	}
-	return printJSON(shimChangesJSON{
-		Directory: dir,
-		OnPath:    shims.OnPath(dir),
-		Target:    jsonString(target),
-		Changes:   items,
-	})
+	document := struct {
+		Directory string         `json:"directory"`
+		OnPath    bool           `json:"on_path"`
+		Changes   []shims.Change `json:"changes"`
+	}{dir, shims.OnPath(dir), changes}
+	if printErr := emit(document, func() error { return printShimChanges(dir, changes) }); printErr != nil {
+		return printErr
+	}
+	warn()
+	return err
 }
 
 func printShimChanges(dir string, changes []shims.Change) error {

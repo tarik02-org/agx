@@ -26,70 +26,27 @@ func progress(text string) {
 	}
 }
 
-func countDefinitions(c *config.Config) definitionCounts {
+func printValid(c *config.Config) error {
+	out := ui.Stdout
 	secrets := 0
 	for _, secret := range c.Secrets {
+		// On-demand OAuth secrets are implied, not defined.
 		if !secret.Implicit {
 			secrets++
 		}
 	}
-	return definitionCounts{
-		Skills:       len(c.Skills),
-		Instructions: len(c.Instructions),
-		MCP:          len(c.MCP),
-		Secrets:      secrets,
-		Harnesses:    len(c.Harnesses),
-		Scopes:       len(c.Scopes),
-		Packages:     len(c.Packages),
-	}
-}
-
-// printValidation writes config validate's document. An invalid configuration gets one too,
-// carrying the failure as a diagnostic, and exits 1.
-func printValidation(root string, c *config.Config, loadErr error) error {
-	if loadErr != nil {
-		if canonical, err := config.Canonical(root); err == nil {
-			root = canonical
-		}
-		message := loadErr.Error()
-		code := codeConfigInvalid
-		err := printJSON(validationJSON{
-			Root:  root,
-			Files: []string{},
-			Diagnostics: []diagnosticJSON{
-				{Severity: "error", Code: &code, Message: message, Source: errorSource(loadErr)},
-			},
-		})
-		if err != nil {
-			return err
-		}
-		return &ExitError{Code: 1}
-	}
-	counts := countDefinitions(c)
-	return printJSON(validationJSON{
-		Valid:       true,
-		Root:        c.Root,
-		Files:       jsonList(configFiles(c)),
-		Counts:      &counts,
-		Diagnostics: []diagnosticJSON{},
-	})
-}
-
-func printValid(c *config.Config) error {
-	out := ui.Stdout
-	n := countDefinitions(c)
 	counts := []string{}
 	for _, count := range []struct {
 		n    int
 		noun string
 	}{
-		{n.Skills, "skill"},
-		{n.Instructions, "instruction"},
-		{n.MCP, "MCP server"},
-		{n.Secrets, "secret"},
-		{n.Harnesses, "harness definition"},
-		{n.Scopes, "scope"},
-		{n.Packages, "package"},
+		{len(c.Skills), "skill"},
+		{len(c.Instructions), "instruction"},
+		{len(c.MCP), "MCP server"},
+		{secrets, "secret"},
+		{len(c.Harnesses), "harness definition"},
+		{len(c.Scopes), "scope"},
+		{len(c.Packages), "package"},
 	} {
 		counts = append(counts, plural(count.n, count.noun))
 	}
@@ -632,9 +589,9 @@ func printSecretStatuses(statuses []*v1.SecretStatus) error {
 
 // explainedSetting is a resolved native setting of the explained harness and where it is set.
 type explainedSetting struct {
-	Path   []string
-	Value  any
-	Source config.Source
+	Path   []string      `json:"path"`
+	Value  any           `json:"value"`
+	Source config.Source `json:"source"`
 }
 
 // explainSettings lists the native settings of the harness a snapshot was resolved for.

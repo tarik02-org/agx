@@ -44,6 +44,8 @@ agx has not been released yet. What it does today:
 - Wrappers attach their launches, `codex app-server` threads included, to a daemon that does not
   hold them; the daemon keeps only its port and revoked launches in `daemon-state.json`.
 - `agx daemon restart --json` reports `kept_launches` instead of `restored`.
+- `--json` is a global flag; daemon-backed commands print the API's messages, and list and
+  explain commands the loaded definitions, instead of separate JSON shapes.
 - Passthrough harness commands replace the agx process on Unix.
 - Codex plugin checks ask `codex features list` instead of reading Codex configuration.
 - Fragments and package manifests are checked against the published JSON Schema when they load.

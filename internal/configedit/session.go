@@ -106,10 +106,10 @@ func (s *Session) Overlay() (config.Overlay, error) {
 // Scope is where an edit enables or disables a resource: a directory, or everywhere.
 type Scope struct {
 	// Directory is canonical, or empty for everywhere.
-	Directory string
+	Directory string `json:"directory"`
 	// Written is the directory as a new rule spells it: ~/ under the home directory.
-	Written   string
-	Harnesses []string
+	Written   string   `json:"-"`
+	Harnesses []string `json:"harnesses"`
 }
 
 // NewScope is the scope of a canonical directory, or everywhere when it is empty, for harnesses.

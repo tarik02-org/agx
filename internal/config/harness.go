@@ -113,20 +113,20 @@ type HarnessSelection struct {
 
 // ResolvedHarness layers a definition over its base chain.
 type ResolvedHarness struct {
-	Name    string
-	Builtin string
+	Name    string `json:"name"`
+	Builtin string `json:"builtin"`
 	// Chain lists the built-in first and Name last.
-	Chain       []string
-	Executable  string
-	Args        []ArgGroup
-	Environment map[string]Value
+	Chain       []string         `json:"chain"`
+	Executable  string           `json:"executable"`
+	Args        []ArgGroup       `json:"args"`
+	Environment map[string]Value `json:"environment"`
 	// Hidden keeps the harness out of the launcher's new-session list. Definitions based on it do
 	// not inherit it, so hiding a built-in leaves its variants offered.
-	Hidden bool
+	Hidden bool `json:"hidden"`
 	// Settings are the native settings layered along the chain, without nulls.
-	Settings map[string]any
+	Settings map[string]any `json:"settings"`
 	// SettingSources locates each resolved leaf in the definition that set it.
-	SettingSources []SettingSource
+	SettingSources []SettingSource `json:"setting_sources"`
 }
 
 // Arguments returns the argument groups that apply to mode, in order.

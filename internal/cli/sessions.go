@@ -45,44 +45,23 @@ func sessionsCommand(paths *platform.Paths, registry adapters.Registry, harnesse
 			}
 			query := strings.Join(args, " ")
 			entries = sessions.Search(entries, query)
-			if scripting.enabled {
-				errs := map[string]string{}
-				for name, err := range listing.Errors {
-					errs[name] = err.Error()
-				}
-				scope := "here"
-				if all {
-					scope = "all"
-				}
-				items := []sessionJSON{}
-				for _, e := range entries {
-					items = append(items, sessionJSON{
-						ID:        e.ID,
-						Harness:   e.Harness,
-						Builtin:   e.Builtin,
-						Recorded:  e.Recorded,
-						Directory: e.Directory,
-						Title:     jsonString(e.Title),
-						Message:   jsonString(e.Message),
-						StartedAt: jsonTime(e.Started),
-						UpdatedAt: jsonTime(e.Updated),
-					})
-				}
-				return printJSON(sessionsJSON{
-					Scope:     scope,
-					Directory: directory,
-					Query:     jsonString(query),
-					Sessions:  items,
-					Files:     sessionFilesJSON(listing.Stats),
-					Errors:    errs,
-				})
+			errs := map[string]string{}
+			for name, err := range listing.Errors {
+				errs[name] = err.Error()
 			}
-			reportListing(listing)
-			return printSessions(entries, directory, all, query != "")
+			document := struct {
+				Sessions []sessions.Entry `json:"sessions"`
+				Files    sessions.Stats   `json:"files"`
+				// Errors holds why a harness's sessions could not be listed, by built-in name.
+				Errors map[string]string `json:"errors"`
+			}{entries, listing.Stats, errs}
+			return emit(document, func() error {
+				reportListing(listing)
+				return printSessions(entries, directory, all, query != "")
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "list sessions of every directory, not only this one and below")
-	jsonFlag(cmd)
 	return cmd
 }
 

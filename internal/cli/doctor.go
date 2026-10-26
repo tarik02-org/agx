@@ -100,12 +100,7 @@ func doctorCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 				return err
 			}
 			report := runDoctor(cmd.Context(), *paths, registry, *builtins, directory, all)
-			if scripting.enabled {
-				err = printJSON(doctorDocument(report))
-			} else {
-				err = printDoctor(report)
-			}
-			if err != nil {
+			if err := emit(report, func() error { return printDoctor(report) }); err != nil {
 				return err
 			}
 			if report.Summary.Fail > 0 {
@@ -115,7 +110,6 @@ func doctorCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 		},
 	}
 	command.Flags().BoolVar(&all, "all", false, "test every MCP server, not only those selected for the directory")
-	jsonFlag(command)
 	return command
 }
 

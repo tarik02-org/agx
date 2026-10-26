@@ -8,11 +8,12 @@ import (
 	"io"
 	"io/fs"
 	"net"
-	"strconv"
+	"slices"
 	"strings"
 
 	"connectrpc.com/connect"
-	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/auth"
@@ -23,65 +24,58 @@ import (
 	"github.com/tarik02-org/agx/internal/packages"
 )
 
-// scripting is the --json decision of this invocation. run decides it from the arguments, so
-// usage errors cobra reports before a command runs are JSON too, and the command's parsed flag
-// confirms it. In JSON mode a command writes one document, or a login's event stream, to stdout,
-// never prompts, and reports errors as documents.
+// scripting is the --json decision of this invocation: the persistent --json flag, or for usage
+// errors reported before cobra parses flags, wantsJSON. In JSON mode a command writes one
+// document, or a login's stream of them, to stdout, never prompts, and reports errors as
+// documents.
 var scripting struct {
 	enabled bool
 	stdout  io.Writer
 }
 
-// jsonFlag gives a command the --json flag; scripting carries its value.
-func jsonFlag(cmd *cobra.Command) {
-	cmd.Flags().Bool("json", false, "versioned JSON output; never prompts (implies --yes)")
-}
-
-// wantsJSON finds --json among the flags of a command line that cobra parses, before any "--".
-func wantsJSON(cmd *cobra.Command, args []string) bool {
-	if cmd != nil && cmd.DisableFlagParsing {
-		return false
+// wantsJSON finds --json among the arguments before any "--".
+func wantsJSON(args []string) bool {
+	end := slices.Index(args, "--")
+	if end < 0 {
+		end = len(args)
 	}
-	enabled := false
-	for _, arg := range args {
-		if arg == "--" {
-			break
-		}
-		name, value, inline := strings.Cut(arg, "=")
-		if name != "--json" {
-			continue
-		}
-		enabled = true
-		if inline {
-			// A malformed value is a usage error, which is then reported as JSON.
-			if parsed, err := strconv.ParseBool(value); err == nil {
-				enabled = parsed
-			}
-		}
-	}
-	return enabled
+	return slices.Contains(args[:end], "--json")
 }
 
 const jsonVersion = 1
 
+// protoJSON prints daemon messages as the API defines them, every field present.
+var protoJSON = protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}
+
 func printJSON(value any) error {
+	if m, ok := value.(proto.Message); ok {
+		b, err := protoJSON.Marshal(m)
+		if err != nil {
+			return err
+		}
+		value = json.RawMessage(b)
+	}
 	return json.NewEncoder(scripting.stdout).Encode(struct {
 		Version int `json:"version"`
 		Data    any `json:"data"`
 	}{jsonVersion, value})
 }
 
-// event leads each line of an event stream, such as a login's; the event's fields follow it.
-type event struct {
-	Version int    `json:"version"`
-	Event   string `json:"event"`
+// emit is the one output path of a command's result: data as a JSON document, or text for a
+// person.
+func emit(data any, text func() error) error {
+	if scripting.enabled {
+		return printJSON(data)
+	}
+	return text()
 }
 
-func newEvent(name string) event { return event{Version: jsonVersion, Event: name} }
-
-// printEvent writes one line of an event stream.
-func printEvent(value any) error {
-	return json.NewEncoder(scripting.stdout).Encode(value)
+// done is the text of a result that a status line says all about.
+func done(message string) func() error {
+	return func() error {
+		_, err := fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, message))
+		return err
+	}
 }
 
 // hint writes a note for a person; in JSON mode only a terminal on stderr gets it.
@@ -222,10 +216,10 @@ func connectCode(err *connect.Error) string {
 
 // errorSource is where a configuration error locates its problem, as loading here or in the
 // daemon found it.
-func errorSource(err error) *sourceJSON {
+func errorSource(err error) *config.Source {
 	var located *config.SourceError
 	if errors.As(err, &located) {
-		return &sourceJSON{Path: located.Path, Line: jsonInt(located.Line)}
+		return &config.Source{Path: located.Path, Line: located.Line}
 	}
 	var rpc *connect.Error
 	if !errors.As(err, &rpc) {
@@ -234,7 +228,7 @@ func errorSource(err error) *sourceJSON {
 	for _, d := range rpc.Details() {
 		if value, decodeErr := d.Value(); decodeErr == nil {
 			if detail, ok := value.(*v1.ErrorDetail); ok && detail.Source != nil {
-				return &sourceJSON{Path: detail.Source.Path, Line: jsonInt(int(detail.Source.Line))}
+				return &config.Source{Path: detail.Source.Path, Line: int(detail.Source.Line)}
 			}
 		}
 	}
@@ -243,6 +237,11 @@ func errorSource(err error) *sourceJSON {
 
 // printError writes err as a JSON error document; configuration errors name their location.
 func printError(code string, err error) {
+	type errorJSON struct {
+		Code    string         `json:"code"`
+		Message string         `json:"message"`
+		Source  *config.Source `json:"source,omitempty"`
+	}
 	b := errorJSON{Code: code, Message: errorMessage(err)}
 	if code == codeConfigInvalid {
 		b.Source = errorSource(err)

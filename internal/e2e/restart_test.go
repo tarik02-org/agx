@@ -265,7 +265,7 @@ func TestDaemonRestart(t *testing.T) {
 		// launch.
 		e.ok("secret", "status")
 		awaitServing(t, h.endpoint(), h.grant())
-		if got := e.launches()[id]; got != "running" {
+		if got := e.launches()[id]; got != "STATE_RUNNING" {
 			t.Fatalf("attached launch is %q", got)
 		}
 		tools, reinitialized := h.call()
@@ -275,7 +275,7 @@ func TestDaemonRestart(t *testing.T) {
 		}
 
 		h.exit()
-		if got := e.launches()[id]; got != "finished" {
+		if got := e.launches()[id]; got != "STATE_FINISHED" {
 			t.Errorf("launch after its harness exited is %q\n%s", got, h.stderr.String())
 		}
 	})
@@ -336,7 +336,7 @@ func TestDaemonRestart(t *testing.T) {
 		if tools["agx-echo"] != want {
 			t.Fatalf("echo after the daemon was killed = %q\n%s", tools["agx-echo"], h.stderr.String())
 		}
-		if got := e.launches()[id]; got != "running" {
+		if got := e.launches()[id]; got != "STATE_RUNNING" {
 			t.Fatalf("re-attached launch is %q", got)
 		}
 		if !strings.Contains(h.stderr.String(), "starting a new one") {
@@ -398,7 +398,7 @@ func TestDaemonRestart(t *testing.T) {
 		// The launch keeps its lease and grant; only its harness's endpoint URL is wrong now.
 		moved := "http://" + next.Host + old.Path
 		awaitServing(t, moved, h.grant())
-		if got := e.launches()[id]; got != "running" {
+		if got := e.launches()[id]; got != "STATE_RUNNING" {
 			t.Fatalf("launch is %q", got)
 		}
 	})
