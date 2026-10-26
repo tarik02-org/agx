@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -581,6 +582,28 @@ harnesses:
 		root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), content)
 		_, err := config.Load(root, config.Options{Builtins: builtins})
 		wantError(t, err, "~user paths are not supported")
+	}
+}
+
+func TestUnreadableScopeDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs directory permissions that bind the current user")
+	}
+	dir := t.TempDir()
+	locked := mkdir(t, filepath.Join(dir, "locked"))
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	// TempDir cleanup must list the directory to remove it.
+	t.Cleanup(func() {
+		if err := os.Chmod(locked, 0o755); err != nil {
+			t.Error(err)
+		}
+	})
+	root := write(t, filepath.Join(dir, "agx.yaml"), "scopes:\n  - directory: locked/work\n")
+	c := read(t, root)
+	if got, want := c.Scopes[0].Directory, filepath.Join(canonical(t, dir), "locked", "work"); got != want {
+		t.Errorf("scope directory = %q, want %q", got, want)
 	}
 }
 
