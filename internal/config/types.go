@@ -411,7 +411,8 @@ func Canonical(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Resolve the existing prefix as scopes may name directories not created yet.
+	// Resolve the existing prefix as scopes may name directories not created yet, or
+	// ones this process may not read, such as a home directory seen from a build sandbox.
 	suffix := []string{}
 	for {
 		real, err := filepath.EvalSymlinks(abs)
@@ -422,7 +423,7 @@ func Canonical(path string) (string, error) {
 			}
 			return filepath.Clean(real), nil
 		}
-		if !os.IsNotExist(err) {
+		if !os.IsNotExist(err) && !os.IsPermission(err) {
 			return "", err
 		}
 		parent := filepath.Dir(abs)
