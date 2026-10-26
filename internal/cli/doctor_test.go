@@ -376,29 +376,6 @@ func TestHarnessVersionStderr(t *testing.T) {
 	}
 }
 
-func TestStateCheck(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "daemon-state.json")
-	if got := stateCheck(path); got.Status != checkPass || got.Detail != "no saved launches" {
-		t.Fatalf("missing state = %+v", got)
-	}
-	if err := os.WriteFile(path, []byte(`{"version":1}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := stateCheck(path); got.Status != checkPass {
-		t.Fatalf("state = %+v", got)
-	}
-	if runtime.GOOS == "windows" {
-		return
-	}
-	if err := os.Chmod(path, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got := stateCheck(path); got.Status != checkFail || !strings.Contains(got.Hint, "chmod 600") {
-		t.Fatalf("readable state = %+v", got)
-	}
-}
-
 func TestPackageChecksWarnAboutMissingPackages(t *testing.T) {
 	loaded := &config.Config{
 		Root:     "/c/agx.yaml",

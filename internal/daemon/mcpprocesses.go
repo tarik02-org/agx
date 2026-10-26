@@ -28,38 +28,24 @@ func (s *Server) ListMcpProcesses(
 		launches []string
 	}
 	entries := []*entry{}
-	// Shared processes are listed once; launches using them are found through their endpoints.
-	shared := map[int]*entry{}
+	// Every process is listed once; launches using them are found through their endpoints.
+	byPID := map[int]*entry{}
 	for _, p := range s.shared.Processes() {
 		e := &entry{process: p}
-		shared[p.PID] = e
+		byPID[p.PID] = e
 		entries = append(entries, e)
-	}
-	add := func(launchID string, endpoint *mcpruntime.Endpoint) {
-		own, joined := endpoint.Processes()
-		for _, p := range own {
-			e := &entry{process: p}
-			if launchID != "" {
-				e.launches = []string{launchID}
-			}
-			entries = append(entries, e)
-		}
-		for _, pid := range joined {
-			if e := shared[pid]; e != nil && launchID != "" && !slices.Contains(e.launches, launchID) {
-				e.launches = append(e.launches, launchID)
-			}
-		}
 	}
 	s.mu.Lock()
 	for _, l := range s.launches {
 		for _, endpoint := range l.endpoints {
-			add(l.view.Id, endpoint)
+			for _, pid := range endpoint.Processes() {
+				if e := byPID[pid]; e != nil && !slices.Contains(e.launches, l.view.Id) {
+					e.launches = append(e.launches, l.view.Id)
+				}
+			}
 		}
 	}
 	s.mu.Unlock()
-	for _, endpoint := range s.clients.ownedEndpoints() {
-		add("", endpoint)
-	}
 	processes := []*v1.McpProcess{}
 	for _, e := range entries {
 		p := e.process
@@ -100,19 +86,6 @@ func (s *Server) StopMcpProcess(
 	pid := int(req.Msg.Pid)
 	if s.shared.StopProcess(pid) {
 		return connect.NewResponse(&v1.StopMcpProcessResponse{}), nil
-	}
-	endpoints := s.clients.ownedEndpoints()
-	s.mu.Lock()
-	for _, l := range s.launches {
-		for _, endpoint := range l.endpoints {
-			endpoints = append(endpoints, endpoint)
-		}
-	}
-	s.mu.Unlock()
-	for _, endpoint := range endpoints {
-		if endpoint.StopProcess(pid) {
-			return connect.NewResponse(&v1.StopMcpProcessResponse{}), nil
-		}
 	}
 	return nil, rpcError(connect.CodeNotFound, fmt.Sprintf("no MCP server process %d", pid))
 }

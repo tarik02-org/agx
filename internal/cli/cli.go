@@ -650,12 +650,9 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			message := "Daemon stopping."
 			switch {
 			case kept == 1:
-				message = "Daemon stopping; the next daemon restores its active launch while its lease lasts."
+				message = "Daemon stopping; its active launch attaches to the next daemon."
 			case kept > 1:
-				message = fmt.Sprintf(
-					"Daemon stopping; the next daemon restores its %d active launches while their leases last.",
-					kept,
-				)
+				message = fmt.Sprintf("Daemon stopping; its %d active launches attach to the next daemon.", kept)
 			}
 			_, err = fmt.Fprintln(ui.Stdout, ui.Stdout.Status(ui.OK, message))
 			return err
@@ -679,10 +676,10 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 				message = "Daemon restarted"
 			}
 			switch {
-			case result.Restored == 1:
-				message += "; it restored 1 active launch."
-			case result.Restored > 1:
-				message += fmt.Sprintf("; it restored %d active launches.", result.Restored)
+			case result.KeptLaunches == 1:
+				message += "; 1 active launch attaches to it."
+			case result.KeptLaunches > 1:
+				message += fmt.Sprintf("; %d active launches attach to it.", result.KeptLaunches)
 			default:
 				message += "."
 			}

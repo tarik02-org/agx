@@ -239,8 +239,8 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 	}
 }
 
-// stopDaemon asks the daemon to stop and returns how many active launches it keeps for the next
-// one to restore; force revokes their MCP access instead. A positive grace replaces how long the
+// stopDaemon asks the daemon to stop and returns how many active launches attach to the next
+// one; force revokes their MCP access instead. A positive grace replaces how long the
 // daemon lets requests in flight finish.
 func stopDaemon(ctx context.Context, c *client, force bool, grace time.Duration) (int, error) {
 	req := &v1.StopRequest{Force: force}

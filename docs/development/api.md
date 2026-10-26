@@ -14,8 +14,8 @@ The Go module path is `github.com/tarik02-org/agx`.
 - `PackageService`: install packages, streaming progress and then the result.
   The CLI installs in-process instead; both paths share the installer lock.
 - `LaunchService`: prepare, renew, finish, and administratively revoke a launch;
-  resolve and prepare thread launches of a process serving many threads; restore
-  a launch a restarted daemon brought back.
+  resolve and prepare thread launches of a process serving many threads; attach
+  a launch, with its thread launches, to a daemon that does not hold it.
 - `RuntimeService`: inspect/watch redacted daemon, launch, and MCP server state;
   `TestMcpServer`, which connects to one MCP server outside any launch and
   lists its tools with their descriptions (`agx mcp test`), accepting only the
@@ -93,15 +93,16 @@ parent's lease and lifecycle token. Renewing it with `session_id` reports its
 thread and marks it running; it finishes with outcome `thread_closed`, and ends
 with its parent however the parent ends.
 
-A daemon stopped without force keeps its active launches for the next one
+Launches outlive the daemon that prepared them
 ([ADR 0016](../adr/0016-launches-survive-daemon-restarts.md)). When renewal fails,
 the wrapper rereads discovery and renews with the daemon it names, whatever its
-build, until its lease runs out. `RenewLaunchResponse.restore_launch_ids` lists
-the launch and its thread launches that the new daemon restored and that wait for
-`RestoreLaunch`: management authorization, the lifecycle token in the message, and
-the environment inputs (plus, for the launch itself, the native arguments and
-executable) it was prepared with, which the state file never holds. Until then a restored process
-serving threads answers `Unavailable` to thread preparation.
+build. When that daemon does not hold the launch, or let it expire, the wrapper
+sends `AttachLaunch` with management authorization: the launch, its grant and
+lifecycle token, the environment inputs, native arguments, and executable it was
+prepared with, and its active thread launches with their grants
+(`PrepareThreadLaunchResponse.grant`) and inputs. Attaching is idempotent; a
+revoked launch is refused. Until a launch is attached, its MCP endpoints answer
+503 with `Retry-After`.
 
 Use management authorization for other RPCs. Preparation is not idempotent: a
 retried preparation prepares another launch. Renew and finish are idempotent; a

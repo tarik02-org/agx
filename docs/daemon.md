@@ -108,9 +108,9 @@ foreground daemon, or SIGTERM), it:
    it retry with the next daemon;
 2. lets MCP requests and tool calls in progress finish, for up to
    10 seconds, or `--timeout`;
-3. saves its running launches for the next daemon (unless `--force`);
-4. closes local MCP servers: their input first, then SIGTERM, then a kill;
-5. exits.
+3. closes local MCP servers: their input first, then SIGTERM, then a kill;
+4. exits. Unless `--force` revoked them, wrappers attach their launches to the
+   next daemon, which starts on the same port.
 
 A second Ctrl-C or SIGTERM skips the wait.
 
@@ -119,11 +119,6 @@ A second Ctrl-C or SIGTERM skips the wait.
 | File | Location |
 | --- | --- |
 | Log | `daemon.log` in `runtime/` in the [cache directory](configuration.md#where-files-live) |
-| Saved launches | `daemon-state.json` in the state directory |
+| Port and revoked launches | `daemon-state.json` in the state directory |
 
 Both are readable only by you.
-
-If `daemon-state.json` is damaged, for example by an edit by hand, the daemon
-moves it aside to `daemon-state.json.bad-<UTC time>`, says so in its log, and
-starts without the saved launches; harnesses that were running lose their MCP
-access and need a relaunch.

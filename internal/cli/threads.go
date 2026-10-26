@@ -25,8 +25,8 @@ type threadHost struct {
 
 func (h *threadHost) Prepare(ctx context.Context, directory string) (adapters.ThreadLaunch, error) {
 	// A configuration change between resolving and preparing invalidates the snapshot once; a
-	// restarted daemon needs the process's launch restored first. A restarting daemon refuses
-	// new thread launches until the next one serves them.
+	// daemon that does not hold the process's launch needs it attached first. A restarting
+	// daemon refuses new thread launches until the next one serves them.
 	deadline := time.Now().Add(restartWait)
 	recovered := false
 	for attempt := 0; ; attempt++ {
@@ -36,11 +36,11 @@ func (h *threadHost) Prepare(ctx context.Context, directory string) (adapters.Th
 			if err := pause(ctx, backoff(attempt)); err != nil {
 				return launch, err
 			}
-			// Syncing switches to the next daemon once it runs, and has the launch restored.
+			// Syncing switches to the next daemon once it runs, and attaches the launch.
 			_ = h.lease.sync(ctx)
 			continue
 		}
-		if err != nil && !recovered && h.recover(ctx, c, err) {
+		if err != nil && !recovered && h.recover(ctx, err) {
 			recovered = true
 			continue
 		}
@@ -49,17 +49,13 @@ func (h *threadHost) Prepare(ctx context.Context, directory string) (adapters.Th
 }
 
 // recover reports whether a request that failed with err is worth retrying: the snapshot changed,
-// or another daemon serves the process's launch now and has it restored.
-func (h *threadHost) recover(ctx context.Context, used *client, err error) bool {
+// or the daemon, possibly another one now, did not hold the process's launch and has it attached.
+func (h *threadHost) recover(ctx context.Context, err error) bool {
 	switch connect.CodeOf(err) {
 	case connect.CodeAborted:
 		return true
 	case connect.CodeUnavailable, connect.CodeUnauthenticated, connect.CodeNotFound:
-		if h.lease.sync(ctx) != nil {
-			return false
-		}
-		// A restored launch answers Unavailable until synced; another daemon answers anything.
-		return connect.CodeOf(err) == connect.CodeUnavailable || h.lease.current() != used
+		return h.lease.sync(ctx) == nil
 	default:
 		return false
 	}
@@ -96,7 +92,7 @@ func (h *threadHost) prepare(ctx context.Context, c *client, directory string) (
 		return adapters.ThreadLaunch{}, err
 	}
 	p := prepared.Msg
-	h.lease.remember(p.Launch.Id, inputs, nil, "")
+	h.lease.addThread(p.Launch, p.Grant, inputs)
 	for _, warning := range p.Warnings {
 		h.Warn(warning)
 	}
@@ -118,7 +114,7 @@ func (h *threadHost) DisabledPlugins(ctx context.Context, directory string) ([]s
 			ctx,
 			connect.NewRequest(&v1.ResolveThreadRequest{ParentLaunchId: h.parent, Directory: directory}),
 		)
-		if err != nil && attempt == 0 && connect.CodeOf(err) != connect.CodeAborted && h.recover(ctx, c, err) {
+		if err != nil && attempt == 0 && connect.CodeOf(err) != connect.CodeAborted && h.recover(ctx, err) {
 			continue
 		}
 		if err != nil {
@@ -132,6 +128,7 @@ func (h *threadHost) Bind(ctx context.Context, launch adapters.ThreadLaunch, thr
 	if _, err := h.lease.renew(ctx, &v1.RenewLaunchRequest{LaunchId: launch.ID, SessionId: thread}); err != nil {
 		return err
 	}
+	h.lease.bindThread(launch.ID, thread)
 	return h.records.Start(sessions.Record{
 		Launch:    launch.ID,
 		Harness:   h.harness,

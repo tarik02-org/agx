@@ -56,7 +56,7 @@ func (s *Server) callScope(ctx context.Context, authorization string, msg *v1.Mc
 		if msg.All {
 			return nil, rpcError(connect.CodeInvalidArgument, "all and launch_id exclude each other")
 		}
-		return s.launchScope(ctx, authorization, management, msg.LaunchId)
+		return s.launchScope(authorization, management, msg.LaunchId)
 	}
 	if !management {
 		return nil, rpcError(connect.CodeUnauthenticated, "management credential or launch grant required")
@@ -108,12 +108,7 @@ func scopeSnapshot(c *config.Config, ids []config.ID) *config.Snapshot {
 	return snapshot
 }
 
-func (s *Server) launchScope(
-	ctx context.Context,
-	authorization string,
-	management bool,
-	id string,
-) (*callScope, error) {
+func (s *Server) launchScope(authorization string, management bool, id string) (*callScope, error) {
 	s.mu.Lock()
 	l := s.launches[id]
 	token, bearer := strings.CutPrefix(authorization, "Bearer ")
@@ -122,17 +117,6 @@ func (s *Server) launchScope(
 		s.mu.Unlock()
 		return nil, rpcError(connect.CodeUnauthenticated, "invalid or expired launch grant")
 	}
-	pending := l.restored && l.endpoints == nil && l.unavailable == "" && !l.threadServer
-	s.mu.Unlock()
-	if pending {
-		if err := s.revive(ctx, l, nil, false); err != nil {
-			return nil, rpcError(
-				connect.CodeUnavailable,
-				"the launch is restored after a daemon restart; retry shortly",
-			)
-		}
-	}
-	s.mu.Lock()
 	endpoints, snapshot, unavailable := l.endpoints, l.snapshot, l.unavailable
 	s.mu.Unlock()
 	if unavailable != "" {
