@@ -9,10 +9,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -220,8 +220,6 @@ func runHelper(ctx context.Context, id config.ID, command []string) (string, err
 	switch {
 	case errors.Is(err, errOutputLimit):
 		return "", fmt.Errorf("credential helper output failed or exceeded 1 MiB")
-	case errors.Is(err, errSupervise):
-		return "", fmt.Errorf("cannot supervise credential helper for %s", id)
 	case err != nil:
 		return "", fmt.Errorf("credential helper for %s failed", id)
 	}
@@ -232,10 +230,7 @@ func runHelper(ctx context.Context, id config.ID, command []string) (string, err
 	return value, nil
 }
 
-var (
-	errOutputLimit = errors.New("output failed or exceeded 1 MiB")
-	errSupervise   = errors.New("cannot supervise process")
-)
+var errOutputLimit = errors.New("output failed or exceeded 1 MiB")
 
 // runBounded runs a credential process for at most 20 seconds, keeping up to 1 MiB of stdout
 // and the start of stderr; it kills the process and its descendants when either bound is hit.
@@ -250,53 +245,24 @@ func runBounded(ctx context.Context, command, env []string, dir string) ([]byte,
 	cmd.Stderr = stderr
 	// A descendant holding stderr open must not keep Wait from returning.
 	cmd.WaitDelay = time.Second
-	platform.IsolateOwned(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := cmd.Start(); err != nil {
+	group, err := platform.Start(cmd)
+	if err != nil {
 		_ = stdout.Close()
 		return nil, nil, err
 	}
-	kill, err := platform.Own(cmd)
-	if err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		return nil, nil, errSupervise
-	}
-	kill = sync.OnceFunc(kill)
-	// On Unix the group ID may be recycled once the leader is reaped, so the
-	// group is only killed while the helper is still unreaped.
-	var reapMu sync.Mutex
-	reaped := false
-	killGroup := func() {
-		reapMu.Lock()
-		defer reapMu.Unlock()
-		if !reaped {
-			kill()
-		}
-	}
-	wait := func() error {
-		err := cmd.Wait()
-		reapMu.Lock()
-		reaped = true
-		reapMu.Unlock()
-		if runtime.GOOS == "windows" {
-			// Closes the job handle, terminating any remaining descendants.
-			kill()
-		}
-		return err
-	}
-	stop := context.AfterFunc(ctx, killGroup)
+	stop := context.AfterFunc(ctx, group.Kill)
 	defer stop()
 	out, readErr := io.ReadAll(io.LimitReader(stdout, 1024*1024+1))
 	if readErr != nil || len(out) > 1024*1024 {
-		killGroup()
-		_ = wait()
+		group.Kill()
+		_ = group.Wait()
 		return nil, stderr.Bytes(), errOutputLimit
 	}
-	if err := wait(); err != nil {
+	if err := group.Wait(); err != nil {
 		if ctx.Err() != nil {
 			return nil, stderr.Bytes(), fmt.Errorf("timed out: %w", ctx.Err())
 		}
@@ -749,10 +715,18 @@ func secureURL(value string) error {
 	if err != nil || u.Host == "" || u.User != nil {
 		return fmt.Errorf("invalid OAuth URL")
 	}
-	if u.Scheme != "https" && u.Scheme != "http" {
-		return fmt.Errorf("OAuth endpoints must use http or https")
+	if u.Scheme == "https" || u.Scheme == "http" && loopback(u.Hostname()) {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("OAuth endpoints must use https, or http on a loopback address")
+}
+
+func loopback(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip, err := netip.ParseAddr(host)
+	return err == nil && ip.IsLoopback()
 }
 
 func SystemEnvironment() []string {

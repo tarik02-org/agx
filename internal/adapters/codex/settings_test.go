@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pelletier/go-toml/v2"
+
 	"github.com/tarik02-org/agx/internal/adapters/codex"
 )
 
@@ -39,5 +41,20 @@ func TestSettingsArguments(t *testing.T) {
 	}
 	if _, err := (codex.Adapter{}).SettingsArguments(map[string]any{"a.b": "x"}, ""); err == nil {
 		t.Fatal("a dotted top-level key was accepted")
+	}
+}
+
+// Inline tables, which also carry the launch's MCP servers, must escape control characters the
+// TOML way: Go escapes such as \a and \x01 are not TOML.
+func TestSettingsArgumentsEscapeInlineTables(t *testing.T) {
+	value := "bell\a, \x01 and \"quote\""
+	args, err := codex.Adapter{}.SettingsArguments(map[string]any{"t": map[string]any{"a.b": value}}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]map[string]string
+	if len(args) != 2 || toml.Unmarshal([]byte(strings.Replace(args[1], "=", " = ", 1)), &decoded) != nil ||
+		decoded["t"]["a.b"] != value {
+		t.Fatalf("args = %q", args)
 	}
 }

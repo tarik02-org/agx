@@ -21,16 +21,7 @@ func StartDetached(build func() *exec.Cmd) (*exec.Cmd, error) {
 	return cmd, cmd.Start()
 }
 
-func Own(cmd *exec.Cmd) (func(), error) {
-	return func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }, nil
-}
-
 func Interrupts() []os.Signal { return []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP} }
-
-func Signal(cmd *exec.Cmd, s os.Signal) { _ = syscall.Kill(-cmd.Process.Pid, s.(syscall.Signal)) }
-
-// Terminate asks the process group of a command started with Isolate to exit.
-func Terminate(cmd *exec.Cmd) { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
 
 // StopSignals are the signals that stop the daemon gracefully. A daemon attached to a terminal
 // also stops when it hangs up; a detached one ignores SIGHUP, which it gets only by accident.
@@ -42,7 +33,23 @@ func StopSignals(attached bool) []os.Signal {
 	return []os.Signal{os.Interrupt, syscall.SIGTERM}
 }
 
-func IsolateOwned(cmd *exec.Cmd) { Isolate(cmd) }
+// group holds the process group ID, which is the command's PID.
+type group struct{ id int }
+
+func (g *Group) start() error {
+	Isolate(g.cmd)
+	if err := g.cmd.Start(); err != nil {
+		return err
+	}
+	g.id = g.cmd.Process.Pid
+	return nil
+}
+
+func (g *Group) kill() { _ = syscall.Kill(-g.id, syscall.SIGKILL) }
+
+func (g *Group) terminate() { _ = syscall.Kill(-g.id, syscall.SIGTERM) }
+
+func (g *Group) release() {}
 
 // SurviveBrokenPipes makes writes to a closed standard output or error fail with EPIPE for the
 // rest of the process's life instead of killing it with SIGPIPE. Catching the signal, unlike

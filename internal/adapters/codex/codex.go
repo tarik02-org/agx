@@ -143,24 +143,21 @@ func (a Adapter) Arguments(l adapters.Launch) ([]string, error) {
 	// Codex has no file-based developer instructions (model_instructions_file replaces the
 	// base prompt instead), so they travel in argv and replace a configured value.
 	if o.instructions != "" {
-		assignment, err := adapters.TOMLAssignment("developer_instructions", o.instructions)
+		value, err := tomlValue(o.instructions)
 		if err != nil {
 			return nil, err
 		}
-		prefix = append(prefix, "-c", assignment)
+		prefix = append(prefix, "-c", "developer_instructions="+value)
 	}
 	for _, p := range o.plugins {
 		prefix = append(prefix, "-c", "plugins."+p.id+".enabled="+strconv.FormatBool(p.enabled))
 	}
 	for _, s := range o.servers {
-		assignment, err := adapters.TOMLAssignment(
-			"mcp_servers."+s.name,
-			map[string]any{"url": s.url, "bearer_token_env_var": adapters.GrantEnvironment},
-		)
+		value, err := tomlValue(map[string]any{"url": s.url, "bearer_token_env_var": adapters.GrantEnvironment})
 		if err != nil {
 			return nil, err
 		}
-		prefix = append(prefix, "-c", assignment)
+		prefix = append(prefix, "-c", "mcp_servers."+s.name+"="+value)
 	}
 	return prefix, nil
 }
