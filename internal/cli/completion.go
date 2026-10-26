@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
@@ -306,7 +307,7 @@ func (k *completer) launches() []candidate {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), completionDaemonTimeout)
 	defer cancel()
-	response, err := c.runtime.GetRuntime(ctx, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
+	response, err := c.runtime.GetRuntime(ctx, connect.NewRequest(&v1.GetRuntimeRequest{}))
 	if err != nil {
 		return nil
 	}

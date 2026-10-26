@@ -70,7 +70,7 @@ func (h *threadHost) prepare(ctx context.Context, c *client, directory string) (
 	defer cancel()
 	resolved, err := c.launches.ResolveThread(
 		resolveCtx,
-		request(&v1.ResolveThreadRequest{ParentLaunchId: h.parent, Directory: directory}, c.discovery.Token),
+		connect.NewRequest(&v1.ResolveThreadRequest{ParentLaunchId: h.parent, Directory: directory}),
 	)
 	if err != nil {
 		return adapters.ThreadLaunch{}, err
@@ -83,14 +83,13 @@ func (h *threadHost) prepare(ctx context.Context, c *client, directory string) (
 	}
 	prepared, err := c.launches.PrepareThreadLaunch(
 		resolveCtx,
-		request(
+		connect.NewRequest(
 			&v1.PrepareThreadLaunchRequest{
 				ParentLaunchId:    h.parent,
 				SnapshotId:        resolved.Msg.Snapshot.Id,
 				Directory:         directory,
 				EnvironmentInputs: inputs,
 			},
-			c.discovery.Token,
 		),
 	)
 	if err != nil {
@@ -117,7 +116,7 @@ func (h *threadHost) DisabledPlugins(ctx context.Context, directory string) ([]s
 		c := h.lease.current()
 		resolved, err := c.launches.ResolveThread(
 			ctx,
-			request(&v1.ResolveThreadRequest{ParentLaunchId: h.parent, Directory: directory}, c.discovery.Token),
+			connect.NewRequest(&v1.ResolveThreadRequest{ParentLaunchId: h.parent, Directory: directory}),
 		)
 		if err != nil && attempt == 0 && connect.CodeOf(err) != connect.CodeAborted && h.recover(ctx, c, err) {
 			continue
@@ -130,8 +129,6 @@ func (h *threadHost) DisabledPlugins(ctx context.Context, directory string) ([]s
 }
 
 func (h *threadHost) Bind(ctx context.Context, launch adapters.ThreadLaunch, thread string) error {
-	ctx, cancel := context.WithTimeout(ctx, callTimeout)
-	defer cancel()
 	if _, err := h.lease.renew(ctx, &v1.RenewLaunchRequest{LaunchId: launch.ID, SessionId: thread}); err != nil {
 		return err
 	}
@@ -146,15 +143,13 @@ func (h *threadHost) Bind(ctx context.Context, launch adapters.ThreadLaunch, thr
 }
 
 func (h *threadHost) Finish(ctx context.Context, launch adapters.ThreadLaunch) error {
-	ctx, cancel := context.WithTimeout(ctx, callTimeout)
-	defer cancel()
 	// A thread that never bound has no record; finishing one is a no-op.
 	recordErr := h.records.Finish(launch.ID, time.Now())
 	h.lease.forget(launch.ID)
 	err := h.lease.call(func(c *client) error {
 		_, err := c.launches.FinishLaunch(
 			ctx,
-			request(
+			withToken(
 				&v1.FinishLaunchRequest{
 					LaunchId: launch.ID,
 					Outcome:  &v1.FinishLaunchRequest_ThreadClosed{ThreadClosed: true},

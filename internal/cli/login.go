@@ -45,7 +45,7 @@ func login(ctx context.Context, paths platform.Paths, id string, browser, autost
 		case <-ctx.Done():
 		}
 	}()
-	stream, err := c.secrets.Login(ctx, request(&v1.LoginRequest{SecretId: id}, c.discovery.Token))
+	stream, err := c.secrets.Login(ctx, connect.NewRequest(&v1.LoginRequest{SecretId: id}))
 	if err == nil {
 		defer func() { _ = stream.Close() }()
 		var wait *waiting

@@ -101,7 +101,9 @@ func tomlValue(value any) (string, error) {
 func CheckSettings(ctx context.Context, executable string, target adapters.Target, settings []string) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	args := append(append(slices.Clone(settings), target.Arguments...), "features", "list")
+	// features list rejects --profile, so only the configuration options of the arguments go.
+	kept, _ := configArgs(target.Arguments)
+	args := append(append(slices.Clone(settings), kept...), "features", "list")
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Env = target.Environ(homeVariable)
 	var stderr bytes.Buffer

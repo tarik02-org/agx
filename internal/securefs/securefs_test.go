@@ -119,6 +119,15 @@ func TestCopyTree(t *testing.T) {
 		!strings.Contains(err.Error(), "escapes") {
 		t.Fatalf("escaping symlink copied: %v", err)
 	}
+	if err := os.Remove(filepath.Join(src, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("..", filepath.Join(src, "scripts", "loop")); err != nil {
+		t.Fatal(err)
+	}
+	if err := CopyTree(src, filepath.Join(t.TempDir(), "copy")); err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("symlink cycle copied: %v", err)
+	}
 }
 
 func TestWithin(t *testing.T) {

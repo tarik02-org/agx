@@ -1,128 +1,44 @@
 package mcptools
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
-// Schema is the part of a JSON Schema that describes a tool's arguments and results well
-// enough to render types and coerce values. Unknown keywords are ignored.
-type Schema struct {
-	Type        Types              `json:"type"`
-	Enum        []any              `json:"enum"`
-	Const       *json.RawMessage   `json:"const"`
-	Properties  Properties         `json:"properties"`
-	Required    []string           `json:"required"`
-	Items       *Schema            `json:"items"`
-	AnyOf       []*Schema          `json:"anyOf"`
-	OneOf       []*Schema          `json:"oneOf"`
-	AllOf       []*Schema          `json:"allOf"`
-	Ref         string             `json:"$ref"`
-	Defs        map[string]*Schema `json:"$defs"`
-	Definitions map[string]*Schema `json:"definitions"`
-	Description string             `json:"description"`
-	// Additional is additionalProperties: nil when absent, AllowAll for true, or a schema.
-	Additional *Additional `json:"additionalProperties"`
-}
+// Schema is a JSON Schema describing a tool's arguments or result.
+type Schema = jsonschema.Schema
 
-// Additional is an additionalProperties keyword.
-type Additional struct {
-	Allowed bool
-	Schema  *Schema
-}
-
-func (a *Additional) UnmarshalJSON(b []byte) error {
-	var allowed bool
-	if json.Unmarshal(b, &allowed) == nil {
-		a.Allowed = allowed
-		return nil
+// typeKeyword lists the types s's type keyword names, given as one name or a list.
+func typeKeyword(s *Schema) []string {
+	if s.Type != "" {
+		return []string{s.Type}
 	}
-	a.Allowed = true
-	a.Schema = &Schema{}
-	return json.Unmarshal(b, a.Schema)
+	return s.Types
 }
 
-// Types is a type keyword, given as one name or a list.
-type Types []string
-
-func (t *Types) UnmarshalJSON(b []byte) error {
-	var one string
-	if json.Unmarshal(b, &one) == nil {
-		*t = Types{one}
-		return nil
-	}
-	var many []string
-	if err := json.Unmarshal(b, &many); err != nil {
-		return err
-	}
-	*t = many
-	return nil
+// rejectsAll reports whether s is the false schema, which jsonschema-go decodes as {"not": {}}.
+func rejectsAll(s *Schema) bool {
+	return s.Not != nil
 }
 
-// Property is one property of an object schema.
-type Property struct {
-	Name   string
-	Schema *Schema
-}
-
-// Properties keeps an object schema's properties in their order, which signatures follow.
-type Properties []Property
-
-func (p *Properties) UnmarshalJSON(b []byte) error {
-	d := json.NewDecoder(bytes.NewReader(b))
-	if t, err := d.Token(); err != nil || t != json.Delim('{') {
-		return fmt.Errorf("properties must be an object")
-	}
-	for d.More() {
-		t, err := d.Token()
-		if err != nil {
-			return err
-		}
-		name, _ := t.(string)
-		s := &Schema{}
-		if err := d.Decode(s); err != nil {
-			return err
-		}
-		*p = append(*p, Property{Name: name, Schema: s})
-	}
-	_, err := d.Token()
-	return err
-}
-
-// ordered lists the properties, required ones first.
-func (s *Schema) ordered() Properties {
-	out := Properties{}
+// ordered lists s's property names, required ones first. Schemas usually reach agx re-encoded
+// with sorted keys, so sorting each group keeps the order they arrive in.
+func ordered(s *Schema) []string {
+	out := []string{}
 	for _, required := range []bool{true, false} {
-		for _, p := range s.Properties {
-			if slices.Contains(s.Required, p.Name) == required {
-				out = append(out, p)
+		for _, name := range slices.Sorted(maps.Keys(s.Properties)) {
+			if slices.Contains(s.Required, name) == required {
+				out = append(out, name)
 			}
 		}
 	}
 	return out
-}
-
-// Get returns the property named name.
-func (p Properties) Get(name string) (*Schema, bool) {
-	for _, property := range p {
-		if property.Name == name {
-			return property.Schema, true
-		}
-	}
-	return nil, false
-}
-
-// Names lists the properties in order.
-func (p Properties) Names() []string {
-	names := []string{}
-	for _, property := range p {
-		names = append(names, property.Name)
-	}
-	return names
 }
 
 // ParseSchema decodes a JSON Schema; an empty text is a schema that accepts anything.
@@ -184,8 +100,7 @@ func (r renderer) typeOf(s *Schema, depth int) string {
 	case len(s.Enum) > 0:
 		parts := []string{}
 		for _, v := range s.Enum {
-			b, _ := json.Marshal(v)
-			parts = append(parts, literal(b))
+			parts = append(parts, literal(v))
 		}
 		return union(parts)
 	case len(s.AnyOf) > 0 || len(s.OneOf) > 0:
@@ -201,13 +116,13 @@ func (r renderer) typeOf(s *Schema, depth int) string {
 		}
 		return strings.Join(dedupe(parts), " & ")
 	}
-	types := s.Type
+	types := typeKeyword(s)
 	if len(types) == 0 {
 		switch {
-		case len(s.Properties) > 0 || s.Additional != nil:
-			types = Types{"object"}
+		case len(s.Properties) > 0 || s.AdditionalProperties != nil:
+			types = []string{"object"}
 		case s.Items != nil:
-			types = Types{"array"}
+			types = []string{"array"}
 		default:
 			return "unknown"
 		}
@@ -236,8 +151,8 @@ func (r renderer) typeOf(s *Schema, depth int) string {
 
 func (r renderer) object(s *Schema, depth int) string {
 	if len(s.Properties) == 0 {
-		if s.Additional != nil && s.Additional.Schema != nil {
-			return "Record<string, " + r.typeOf(s.Additional.Schema, depth+1) + ">"
+		if s.AdditionalProperties != nil {
+			return "Record<string, " + r.typeOf(s.AdditionalProperties, depth+1) + ">"
 		}
 		return "Record<string, unknown>"
 	}
@@ -249,12 +164,12 @@ func (r renderer) object(s *Schema, depth int) string {
 		return "{ " + strings.Join(fields, "; ") + " }"
 	}
 	inner := strings.Repeat(r.indent, depth+1)
-	properties := s.ordered()
+	names := ordered(s)
 	var b strings.Builder
 	b.WriteString("{\n")
 	for i, f := range fields {
-		if doc := docComment(r.resolve(properties[i].Schema).Description, inner); doc != "" {
-			b.WriteString(doc)
+		if property := r.resolve(s.Properties[names[i]]); property != nil {
+			b.WriteString(docComment(property.Description, inner))
 		}
 		b.WriteString(inner + f + ";\n")
 	}
@@ -263,16 +178,15 @@ func (r renderer) object(s *Schema, depth int) string {
 }
 
 // fields renders an object's properties as name: type, required ones first and optional ones
-// marked with ?. Schemas usually reach agx re-encoded with sorted keys, so their own order is
-// lost anyway.
+// marked with ?.
 func (r renderer) fields(s *Schema, depth int) []string {
 	fields := []string{}
-	for _, p := range s.ordered() {
+	for _, name := range ordered(s) {
 		optional := "?"
-		if slices.Contains(s.Required, p.Name) {
+		if slices.Contains(s.Required, name) {
 			optional = ""
 		}
-		fields = append(fields, propertyName(p.Name)+optional+": "+r.typeOf(p.Schema, depth+1))
+		fields = append(fields, propertyName(name)+optional+": "+r.typeOf(s.Properties[name], depth+1))
 	}
 	return fields
 }
@@ -285,12 +199,12 @@ func Signature(name string, input, output *Schema) string {
 	if s := r.resolve(input); s != nil {
 		if len(s.Properties) > 0 {
 			params = strings.Join(r.fields(s, 0), ", ")
-		} else if s.Additional != nil && s.Additional.Allowed {
+		} else if s.AdditionalProperties != nil && !rejectsAll(s.AdditionalProperties) {
 			params = "...args: " + r.object(s, 0)
 		}
 	}
 	signature := name + "(" + params + ")"
-	if output != nil && (len(output.Type) > 0 || len(output.Properties) > 0 || output.Ref != "") {
+	if output != nil && (len(typeKeyword(output)) > 0 || len(output.Properties) > 0 || output.Ref != "") {
 		o := renderer{root: output, compact: true}
 		signature += ": " + o.typeOf(output, 0)
 	}
@@ -310,11 +224,7 @@ func FirstLine(text string, limit int) string {
 	return text
 }
 
-func literal(raw []byte) string {
-	var v any
-	if json.Unmarshal(raw, &v) != nil {
-		return "unknown"
-	}
+func literal(v any) string {
 	switch v := v.(type) {
 	case string:
 		return strconv.Quote(v)

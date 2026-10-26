@@ -70,14 +70,16 @@ secrets:
 | `daemon_environment` | `variable` in the daemon's environment (from the shell that started it) |
 | `command` | the trimmed output of a command, run with a minimal environment and a time limit |
 | `file` | a file's contents without trailing newlines, up to 1 MiB, read at each use |
-| `keychain` | the OS keychain; store it with `agx secret set <id>`, which reads stdin |
+| `keychain` | the OS keychain; store it with `agx secret set <id>`, which prompts or reads stdin |
 | `sops` | a value in a [sops](https://getsops.io)-encrypted file; see [below](#sops-encrypted-files) |
 | `oauth` | an OAuth login; only for an MCP server's `auth`, see [MCP servers](mcp.md#logging-in) |
 
-Store a keychain secret by piping it in, so it never appears in your shell
-history or process list:
+Store a keychain secret by typing it at the prompt, which does not echo it, or
+by piping it in; either way it never appears in your shell history or process
+list:
 
 ```sh
+agx secret set docs-key
 pbpaste | agx secret set docs-key
 agx secret set docs-key < ~/Downloads/token.txt
 ```

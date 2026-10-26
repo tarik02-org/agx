@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/charmbracelet/x/term"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
@@ -110,9 +111,7 @@ func restartDaemon(
 	if err != nil {
 		return result, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, callTimeout)
-	defer cancel()
-	view, err := next.runtime.GetRuntime(ctx, request(&v1.GetRuntimeRequest{}, next.discovery.Token))
+	view, err := next.runtime.GetRuntime(ctx, connect.NewRequest(&v1.GetRuntimeRequest{}))
 	if err != nil {
 		return result, err
 	}

@@ -38,9 +38,9 @@ func schema(t *testing.T, text string) *mcptools.Schema {
 func TestSignature(t *testing.T) {
 	output := schema(t, `{"type":"object","properties":{"total":{"type":"integer"}},"required":["total"]}`)
 	got := mcptools.Signature("search_issues", schema(t, issues), output)
-	want := `search_issues(query: string, status?: "open" | "closed", limit?: number, ratio?: number, ` +
-		`exact?: boolean, note?: string | null, tags?: string[], ids?: number[], ` +
-		`filter?: { owner: string; deep?: {…} }, kind?: "bug" | "task", mode?: "fast" | "slow", ` +
+	want := `search_issues(query: string, exact?: boolean, filter?: { owner: string; deep?: {…} }, ` +
+		`ids?: number[], kind?: "bug" | "task", limit?: number, mode?: "fast" | "slow", ` +
+		`note?: string | null, ratio?: number, status?: "open" | "closed", tags?: string[], ` +
 		`"weird-name"?: string): { total: number }`
 	if got != want {
 		t.Fatalf("signature\n got %s\nwant %s", got, want)
@@ -54,6 +54,7 @@ func TestSignature(t *testing.T) {
 			"ping(a?: (string | number)[])",
 		},
 		{`{"type":"object","properties":{"self":{"$ref":"#"}}}`, "ping(self?: { self?: {…} })"},
+		{`{"type":"object","properties":{"a":true,"b":false},"additionalProperties":false}`, "ping(a?: unknown, b?: unknown)"},
 	} {
 		if got := mcptools.Signature("ping", schema(t, test.input), nil); got != test.want {
 			t.Errorf("Signature(%s) = %s, want %s", test.input, got, test.want)

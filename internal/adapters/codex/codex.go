@@ -230,19 +230,18 @@ func resources(l adapters.Launch) (overrides, error) {
 	if err != nil {
 		return o, err
 	}
-	disabled, err := pluginsDisabled(home, l.Target.Arguments)
-	if err != nil {
-		return o, err
+	disabled := ""
+	if executable, err := codexExecutable(l.Target); err == nil {
+		disabled = pluginsDisabled(context.Background(), executable, home, l.Target)
 	}
 	switch {
 	case l.Uninstalled:
 		// The skipped installation said why; MCP servers and instructions go on without skills.
-	case disabled != "" && l.Target.Executable == "":
+	case disabled != "":
 		if len(selected) > 0 {
 			l.Warn(disabled + "; launching without skills")
 		}
 	default:
-		// A configured executable may enable plugins itself, so its installation lets Codex decide.
 		installed, err := installedPlugins(home)
 		if err != nil {
 			return o, err

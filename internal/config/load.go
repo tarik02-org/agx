@@ -12,7 +12,6 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -883,15 +882,7 @@ func (m *merger) placePackage(name ID, p *Package, at Source) error {
 		if err != nil {
 			return fmt.Errorf("%s: package %s: %w", locate(at), name, err)
 		}
-		if m.manifest {
-			packageRoot, err := filepath.EvalSymlinks(m.base)
-			if err != nil {
-				return err
-			}
-			p.LockPath = slashRel(packageRoot, p.Path)
-		} else {
-			p.LockPath = slashRel(filepath.Dir(p.Lockfile), p.Path)
-		}
+		p.LockPath = slashRel(filepath.Dir(p.Lockfile), p.Path)
 	}
 	if filepath.IsAbs(p.Subdir) || strings.HasPrefix(filepath.Clean(p.Subdir), "..") {
 		return fmt.Errorf("%s: invalid subdir for %s", locate(at), name)
@@ -1514,67 +1505,22 @@ func ReadLock(path string, overlay Overlay) (Lock, error) {
 	return lock, nil
 }
 
-// TreeHash follows the rules of securefs.CopyTree, so a source tree and its materialized
-// copy hash identically: internal symlinks are followed, escaping or cyclic ones rejected.
-// Executable bits are excluded because Windows checkouts and umasks cannot reproduce them.
+// TreeHash walks as securefs.CopyTree copies, so a source tree and its materialized copy hash
+// identically. Executable bits are excluded because Windows checkouts and umasks cannot
+// reproduce them.
 func TreeHash(src string) (string, error) {
-	root, err := filepath.EvalSymlinks(src)
-	if err != nil {
-		return "", err
-	}
 	h := sha256.New()
-	active := map[string]bool{}
-	var walk func(from, rel string) error
-	walk = func(from, rel string) error {
-		real, err := filepath.EvalSymlinks(from)
-		if err != nil {
-			return err
-		}
-		if !securefs.Within(root, real) {
-			return fmt.Errorf("symlink escapes package: %s", from)
-		}
-		info, err := os.Stat(real)
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			if active[real] {
-				return fmt.Errorf("symlink cycle at %s", from)
-			}
-			active[real] = true
-			defer delete(active, real)
+	err := securefs.Walk(src, func(rel string, info fs.FileInfo, content io.Reader) error {
+		if content == nil {
 			// Directory sizes vary across filesystems; only file bytes matter.
 			_, _ = fmt.Fprintf(h, "%s\x00dir\x000\x00", rel)
-			entries, err := os.ReadDir(real)
-			if err != nil {
-				return err
-			}
-			for _, e := range entries {
-				if e.Name() == ".git" {
-					continue
-				}
-				if err := walk(filepath.Join(real, e.Name()), path.Join(rel, e.Name())); err != nil {
-					return err
-				}
-			}
 			return nil
 		}
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("unsupported file %s", from)
-		}
 		_, _ = fmt.Fprintf(h, "%s\x00file\x00%d\x00", rel, info.Size())
-		f, err := os.Open(real)
-		if err != nil {
-			return err
-		}
-		_, err = io.Copy(h, f)
-		closeErr := f.Close()
-		if err != nil {
-			return err
-		}
-		return closeErr
-	}
-	if err := walk(root, "."); err != nil {
+		_, err := io.Copy(h, content)
+		return err
+	})
+	if err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
