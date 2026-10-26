@@ -353,8 +353,8 @@ type fileChangeJSON struct {
 
 // definitionJSON names a definition by its configuration section, such as mcp or harnesses.
 type definitionJSON struct {
-	Kind string `json:"kind"`
-	ID   string `json:"id"`
+	Kind config.Kind `json:"kind"`
+	ID   string      `json:"id"`
 }
 
 type scopeJSON struct {

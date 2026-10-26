@@ -8,8 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"net"
-	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -19,6 +17,7 @@ import (
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/cli/ui"
+	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/configedit"
 	"github.com/tarik02-org/agx/internal/daemon"
 	"github.com/tarik02-org/agx/internal/packages"
@@ -221,37 +220,32 @@ func connectCode(err *connect.Error) string {
 	}
 }
 
-// sourcePattern finds the configuration location an error message leads with, as configuration
-// errors do: "<path>:<line>: …" or "<path>: …", possibly after a prefix ending in ": ".
-var (
-	sourcePattern = regexp.MustCompile(`(?:^|: )((?:[A-Za-z]:)?[\\/][^:\n]*?)(?::(\d+))?: `)
-	// YAML errors place the line later: "yaml: … line 4: …" or "… at L5.C1: …".
-	yamlLine = regexp.MustCompile(`yaml: .*?\bline (\d+):|\bat L(\d+)\.C\d+`)
-)
-
-func errorSource(message string) *sourceJSON {
-	m := sourcePattern.FindStringSubmatch(message)
-	if m == nil || !filepath.IsAbs(m[1]) {
+// errorSource is where a configuration error locates its problem, as loading here or in the
+// daemon found it.
+func errorSource(err error) *sourceJSON {
+	var located *config.SourceError
+	if errors.As(err, &located) {
+		return &sourceJSON{Path: located.Path, Line: jsonInt(located.Line)}
+	}
+	var rpc *connect.Error
+	if !errors.As(err, &rpc) {
 		return nil
 	}
-	source := &sourceJSON{Path: m[1]}
-	line := m[2]
-	if line == "" {
-		if y := yamlLine.FindStringSubmatch(message); y != nil {
-			line = y[1] + y[2]
+	for _, d := range rpc.Details() {
+		if value, decodeErr := d.Value(); decodeErr == nil {
+			if detail, ok := value.(*v1.ErrorDetail); ok && detail.Source != nil {
+				return &sourceJSON{Path: detail.Source.Path, Line: jsonInt(int(detail.Source.Line))}
+			}
 		}
 	}
-	if n, err := strconv.Atoi(line); err == nil {
-		source.Line = jsonInt(n)
-	}
-	return source
+	return nil
 }
 
 // printError writes err as a JSON error document; configuration errors name their location.
 func printError(code string, err error) {
 	b := errorJSON{Code: code, Message: errorMessage(err)}
 	if code == codeConfigInvalid {
-		b.Source = errorSource(b.Message)
+		b.Source = errorSource(err)
 	}
 	// A failed write leaves only the exit status to report the error.
 	_ = json.NewEncoder(scripting.stdout).Encode(struct {

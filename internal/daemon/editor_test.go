@@ -208,8 +208,8 @@ func define(kind, id, yaml string) *v1.ConfigChange {
 	return &v1.ConfigChange{Change: &v1.ConfigChange_Define{Define: &v1.DefineChange{Kind: kind, Id: id, Yaml: yaml}}}
 }
 
-func enable(kind, id string) *v1.ConfigChange {
-	return &v1.ConfigChange{Change: &v1.ConfigChange_Enable{Enable: &v1.SelectionChange{Kind: kind, Id: id}}}
+func enable(kind config.Kind, id string) *v1.ConfigChange {
+	return &v1.ConfigChange{Change: &v1.ConfigChange_Enable{Enable: &v1.SelectionChange{Kind: string(kind), Id: id}}}
 }
 
 func TestPlanAndApplyChanges(t *testing.T) {

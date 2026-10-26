@@ -19,6 +19,53 @@ import (
 
 type ID string
 
+// Kind is a kind of definition, named by its top-level section; the selection kinds are also
+// the keys of selection lists.
+type Kind string
+
+const (
+	KindSkills       Kind = "skills"
+	KindInstructions Kind = "instructions"
+	KindMCPServers   Kind = "mcp"
+	KindBundles      Kind = "bundles"
+	KindSecrets      Kind = "secrets"
+	KindPackages     Kind = "packages"
+	KindHarnesses    Kind = "harnesses"
+)
+
+var (
+	// Kinds lists every kind of definition.
+	Kinds = []Kind{KindSkills, KindInstructions, KindMCPServers, KindSecrets, KindBundles, KindPackages, KindHarnesses}
+	// SelectionKinds are the kinds selection lists hold, in the order documents write them.
+	SelectionKinds = []Kind{KindSkills, KindInstructions, KindMCPServers, KindBundles}
+)
+
+// kindNames holds each kind's name in messages and the agx command managing it.
+var kindNames = map[Kind]struct{ label, command string }{
+	KindSkills:       {"skill", "skill"},
+	KindInstructions: {"instructions", "instructions"},
+	KindMCPServers:   {"MCP server", "mcp"},
+	KindBundles:      {"bundle", "bundles"},
+	KindSecrets:      {"secret", "secret"},
+	KindPackages:     {"package", "package"},
+	KindHarnesses:    {"harness", "harness"},
+}
+
+// Label names the kind in messages.
+func (k Kind) Label() string { return kindNames[k].label }
+
+// Command is the agx command managing the kind.
+func (k Kind) Command() string { return kindNames[k].command }
+
+// JoinKinds lists kinds for messages, such as "skills, mcp".
+func JoinKinds(kinds []Kind) string {
+	names := []string{}
+	for _, k := range kinds {
+		names = append(names, string(k))
+	}
+	return strings.Join(names, ", ")
+}
+
 type Source struct {
 	Path   string `json:"path"`
 	Line   int    `json:"line"`
@@ -447,7 +494,7 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 			}
 		})
 		if err != nil {
-			return fmt.Errorf("%s: %w", locate(step.Source), err)
+			return errorAt(step.Source, "%w", err)
 		}
 		return nil
 	}

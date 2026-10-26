@@ -87,8 +87,8 @@ reason.
   so one checkout and one lock entry serve every chosen skill. A package root
   without `agx.package.yaml` declares the skills found in it. The repository is
   installed with its lock staged in memory before the picker opens, so the
-  picker lists what loading will define. Branch refs resolve against the
-  clone's remote branches.
+  picker lists what loading will define. Only the requested ref is fetched,
+  without history.
 - **Prompts.** `huh` fields: text input, a yes/no confirmation, and a
   filterable multi-select for packages with dozens of skills, drawn inline on
   stderr with the launcher's styling and `--color`. They began as hand-written

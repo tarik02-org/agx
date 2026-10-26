@@ -211,11 +211,11 @@ func TestHarnessErrors(t *testing.T) {
 			files: map[string]string{"agx.yaml": "harnesses:\n  c2: {base: claude}\n  c3:\n    base: c2\n    args: [{values: [-x], modes: [exec]}]\n"},
 			want:  []string{`claude has no mode "exec"`},
 		},
-		{"empty modes", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    args: [{values: [-x], modes: []}]\n"}, []string{"modes must not be empty"}},
-		{"mixed args", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    args: [--a, {values: [--b]}]\n"}, []string{"args mixes strings with argument groups"}},
+		{"empty modes", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    args: [{values: [-x], modes: []}]\n"}, []string{"modes: must not be empty"}},
+		{"mixed args", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    args: [--a, {values: [--b]}]\n"}, []string{"args[0]: expected a mapping, not a string"}},
 		{"relative executable", map[string]string{"agx.yaml": "harnesses:\n  codex: {executable: bin/codex}\n"}, []string{"executable must be absolute"}},
-		{"reserved environment", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    environment: {AGX_MCP_GRANT: x}\n"}, []string{`invalid environment name "AGX_MCP_GRANT"`}},
-		{"non-string environment value", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    environment: {X: 1}\n"}, []string{"value must be a string"}},
+		{"reserved environment", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    environment: {AGX_MCP_GRANT: x}\n"}, []string{`environment: key "AGX_MCP_GRANT" is not allowed`}},
+		{"non-string environment value", map[string]string{"agx.yaml": "harnesses:\n  codex:\n    environment: {X: 1}\n"}, []string{"environment.X: expected a string, not a number"}},
 		{"unknown scope filter", map[string]string{"agx.yaml": "scopes:\n  - harnesses: [nope]\n"}, []string{`scope: unknown harness "nope"`}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

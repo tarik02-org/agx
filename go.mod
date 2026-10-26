@@ -22,6 +22,7 @@ require (
 	github.com/muesli/roff v0.1.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/sahilm/fuzzy v0.1.3
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
 	github.com/zalando/go-keyring v0.2.8
@@ -29,6 +30,7 @@ require (
 	golang.org/x/mod v0.26.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sys v0.49.0
+	golang.org/x/text v0.14.0
 	google.golang.org/protobuf v1.36.12
 )
 

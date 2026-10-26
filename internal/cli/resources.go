@@ -78,10 +78,10 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 				}
 				edit.Set(definition, "path", edit.Scalar(writtenPath(file, abs)))
 			}
-			if err := s.define(edit.Instructions, id, file, definition); err != nil {
+			if err := s.define(config.KindInstructions, id, file, definition); err != nil {
 				return err
 			}
-			if err := s.enableAfterDefine(edit.Instructions, id, file, flags); err != nil {
+			if err := s.enableAfterDefine(config.KindInstructions, id, file, flags); err != nil {
 				return err
 			}
 			if _, err := s.commit(); err != nil {
@@ -96,8 +96,8 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 	add.Flags().StringVar(&text, "text", "", "instructions text instead of a file")
 	command.AddCommand(
 		add,
-		listCommand(paths, builtins, edit.Instructions),
-		removeCommand(paths, builtins, edit.Instructions),
+		listCommand(paths, builtins, config.KindInstructions),
+		removeCommand(paths, builtins, config.KindInstructions),
 	)
 	return command
 }
@@ -213,8 +213,8 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 			if err != nil {
 				return err
 			}
-			f.Define("harnesses", name, definition)
-			s.result.Defined = append(s.result.Defined, definitionJSON{Kind: "harnesses", ID: name})
+			f.Define(config.KindHarnesses, name, definition)
+			s.result.Defined = append(s.result.Defined, definitionJSON{Kind: config.KindHarnesses, ID: name})
 			ok, err := s.commit()
 			if err != nil {
 				return err
@@ -233,7 +233,11 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 	add.Flags().StringVar(&executable, "executable", "", "absolute path of the native executable")
 	add.Flags().
 		StringArrayVar(&env, "env", nil, "environment KEY=VALUE; VALUE may be '!secret id', '!env NAME', or '!file path'")
-	command.AddCommand(add, listCommand(paths, builtins, "harnesses"), removeCommand(paths, builtins, "harnesses"))
+	command.AddCommand(
+		add,
+		listCommand(paths, builtins, config.KindHarnesses),
+		removeCommand(paths, builtins, config.KindHarnesses),
+	)
 	return command
 }
 
@@ -279,7 +283,7 @@ func (s *session) removeHarness(name string, force bool) error {
 	if err := s.RemoveHarness(name, force); err != nil {
 		return err
 	}
-	s.result.Removed = append(s.result.Removed, definitionJSON{Kind: "harnesses", ID: name})
+	s.result.Removed = append(s.result.Removed, definitionJSON{Kind: config.KindHarnesses, ID: name})
 	return nil
 }
 
@@ -340,7 +344,7 @@ func useCommands(paths *platform.Paths, builtins *config.Builtins) []*cobra.Comm
 					if !use {
 						state = "disabled"
 					}
-					hint(fmt.Sprintf("%s %s is already %s %s.", kindLabel(kind), id, state, inScope(target)))
+					hint(fmt.Sprintf("%s %s is already %s %s.", kind.Label(), id, state, inScope(target)))
 					return s.report()
 				}
 				if _, err := s.commit(); err != nil {
@@ -371,16 +375,16 @@ func inScope(target scope) string {
 	return "in " + target.String()
 }
 
-// resourceKind finds which kind of definition id names.
-func resourceKind(c *config.Config, id, kind string) (string, error) {
-	kinds := []string{}
-	for _, k := range []string{edit.Skills, edit.Instructions, edit.MCP, edit.Bundles} {
-		if _, exists := configedit.Lookup(c, k, id); exists && (kind == "" || kind == k) {
+// resourceKind finds which kind of definition id names, of the kind named, if any.
+func resourceKind(c *config.Config, id, only string) (config.Kind, error) {
+	kinds := []config.Kind{}
+	for _, k := range config.SelectionKinds {
+		if _, exists := configedit.Lookup(c, k, id); exists && (only == "" || only == string(k)) {
 			kinds = append(kinds, k)
 		}
 	}
 	switch {
-	case kind != "" && !slices.Contains([]string{edit.Skills, edit.Instructions, edit.MCP, edit.Bundles}, kind):
+	case only != "" && !slices.Contains(config.SelectionKinds, config.Kind(only)):
 		return "", &usageError{fmt.Errorf("--kind must be skills, instructions, mcp, or bundles")}
 	case len(kinds) == 0:
 		return "", codedf(
@@ -389,13 +393,19 @@ func resourceKind(c *config.Config, id, kind string) (string, error) {
 			id,
 		)
 	case len(kinds) > 1:
-		return "", &usageError{fmt.Errorf("%s names %s; choose with --kind", id, strings.Join(kinds, " and "))}
+		return "", &usageError{
+			fmt.Errorf(
+				"%s names %s; choose with --kind",
+				id,
+				strings.ReplaceAll(config.JoinKinds(kinds), ", ", " and "),
+			),
+		}
 	}
 	return kinds[0], nil
 }
 
 // ruleFile is where a new rule for id goes: --file, else the fragment defining it, else the root.
-func (s *session) ruleFile(kind, id, flag string) (string, error) {
+func (s *session) ruleFile(kind config.Kind, id, flag string) (string, error) {
 	if flag != "" {
 		return s.definitionFile(flag)
 	}

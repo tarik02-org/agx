@@ -163,7 +163,7 @@ func TestTagPlacement(t *testing.T) {
 		{"tagged mapping", "harnesses:\n  codex:\n    environment:\n      A: !secret {x: y}\n", "!secret needs a scalar argument"},
 		{"reserved variable", "harnesses:\n  codex:\n    environment:\n      A: !env AGX_X\n", "AGX_ variables are reserved"},
 		{"invalid variable", "harnesses:\n  codex:\n    environment:\n      A: !env 1X\n", "!env needs a variable name"},
-		{"non-secret tag in auth", "mcp:\n  c:\n    url: 'https://example.com/mcp'\n    auth: !env TOKEN\n", "auth must be a secret kind"},
+		{"non-secret tag in auth", "mcp:\n  c:\n    url: 'https://example.com/mcp'\n    auth: !env TOKEN\n", "!env is allowed only in harness environment and args"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), tt.content)

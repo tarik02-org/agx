@@ -153,6 +153,8 @@ message ErrorDetail {
     REASON_NETWORK = 12;
   }
   Reason reason = 1;
+  // Where a configuration that does not load has the problem, when known.
+  SourceLocation source = 2;
 }
 
 message Snapshot {

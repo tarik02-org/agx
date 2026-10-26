@@ -45,7 +45,7 @@ func (s *Server) ListDefinitions(
 	}
 	d := newDescriber(c, s.icons)
 	out := &v1.ListDefinitionsResponse{Definitions: []*v1.Definition{}}
-	for _, kind := range configedit.Kinds {
+	for _, kind := range config.Kinds {
 		for _, id := range definitionIDs(c, kind) {
 			out.Definitions = append(out.Definitions, d.definition(kind, id))
 		}
@@ -54,22 +54,22 @@ func (s *Server) ListDefinitions(
 }
 
 // definitionIDs lists the IDs of a kind's definitions, sorted.
-func definitionIDs(c *config.Config, kind string) []string {
+func definitionIDs(c *config.Config, kind config.Kind) []string {
 	var ids []string
 	switch kind {
-	case edit.Skills:
+	case config.KindSkills:
 		ids = names(c.Skills)
-	case edit.Instructions:
+	case config.KindInstructions:
 		ids = names(c.Instructions)
-	case edit.MCP:
+	case config.KindMCPServers:
 		ids = names(c.MCP)
-	case configedit.Secrets:
+	case config.KindSecrets:
 		ids = names(c.Secrets)
-	case edit.Bundles:
+	case config.KindBundles:
 		ids = names(c.Bundles)
-	case configedit.Packages:
+	case config.KindPackages:
 		ids = names(c.Packages)
-	case configedit.Harnesses:
+	case config.KindHarnesses:
 		ids = slices.Sorted(maps.Keys(c.Harnesses))
 	}
 	return slices.DeleteFunc(ids, func(id string) bool {
@@ -104,10 +104,10 @@ func newDescriber(c *config.Config, icons *mcpIcons) *describer {
 	}
 }
 
-func (d *describer) definition(kind, id string) *v1.Definition {
+func (d *describer) definition(kind config.Kind, id string) *v1.Definition {
 	at, _ := configedit.Lookup(d.c, kind, id)
 	out := &v1.Definition{
-		Kind: kind,
+		Kind: string(kind),
 		Id:   id,
 		Source: &v1.SourceLocation{
 			Path:   at.Source.Path,
@@ -122,7 +122,7 @@ func (d *describer) definition(kind, id string) *v1.Definition {
 		out.Yaml = d.yaml(at.Source.Path, kind, id)
 	}
 	switch kind {
-	case edit.Skills:
+	case config.KindSkills:
 		skill := d.c.Skills[config.ID(id)]
 		if skill.Generated() {
 			out.Description = skill.Description
@@ -133,11 +133,12 @@ func (d *describer) definition(kind, id string) *v1.Definition {
 			_, out.Description = config.FrontMatter(document)
 		}
 		out.Color, out.Icon = skillInterface(skill.Path)
-	case edit.Instructions:
+	case config.KindInstructions:
 		out.Path = d.c.Instructions[config.ID(id)].Path
-	case edit.MCP:
+	case config.KindMCPServers:
 		out.Description = d.c.MCP[config.ID(id)].Description
 		out.Icon = d.icons.get(id)
+	default:
 	}
 	return out
 }
@@ -152,7 +153,7 @@ func (d *describer) mode(path string) *v1.ConfigurationFile {
 }
 
 // yaml renders a definition's value as its fragment holds it; empty when it cannot be found.
-func (d *describer) yaml(path, kind, id string) string {
+func (d *describer) yaml(path string, kind config.Kind, id string) string {
 	f, ok := d.files[path]
 	if !ok {
 		var err error
@@ -187,7 +188,7 @@ func (s *Server) GetSkill(
 	if !ok {
 		return nil, rpcError(connect.CodeNotFound, "unknown skill "+req.Msg.SkillId)
 	}
-	out := &v1.GetSkillResponse{Definition: newDescriber(c, s.icons).definition(edit.Skills, req.Msg.SkillId)}
+	out := &v1.GetSkillResponse{Definition: newDescriber(c, s.icons).definition(config.KindSkills, req.Msg.SkillId)}
 	if skill.Generated() {
 		out.SkillMd = skill.Content
 		return connect.NewResponse(out), nil
@@ -391,16 +392,17 @@ func (s *Server) change(
 				return err
 			}
 		}
-		if at, exists := configedit.Lookup(session.Config, d.Kind, d.Id); exists {
+		kind := config.Kind(d.Kind)
+		if at, exists := configedit.Lookup(session.Config, kind, d.Id); exists {
 			file = at.Source.Path
 		}
-		if err := session.Define(d.Kind, d.Id, value, file); err != nil {
+		if err := session.Define(kind, d.Id, value, file); err != nil {
 			return err
 		}
 		defined[d.Kind+"\x00"+d.Id] = file
 		return nil
 	case *v1.ConfigChange_Undefine:
-		return session.Undefine(change.Undefine.Kind, change.Undefine.Id)
+		return session.Undefine(config.Kind(change.Undefine.Kind), change.Undefine.Id)
 	case *v1.ConfigChange_Enable:
 		return selectionChange(session, change.Enable, true, defined)
 	case *v1.ConfigChange_Disable:
@@ -431,8 +433,9 @@ func invalidf(format string, args ...any) error {
 
 // selectionChange enables or disables a resource as agx use and unuse do.
 func selectionChange(session *configedit.Session, c *v1.SelectionChange, enable bool, defined map[string]string) error {
-	if !slices.Contains(configedit.SelectionKinds, c.Kind) {
-		return invalidf("kind must be one of %s", strings.Join(configedit.SelectionKinds, ", "))
+	kind := config.Kind(c.Kind)
+	if !slices.Contains(config.SelectionKinds, kind) {
+		return invalidf("kind must be one of %s", config.JoinKinds(config.SelectionKinds))
 	}
 	if c.Id == "" {
 		return invalidf("a selection change needs an ID")
@@ -465,13 +468,13 @@ func selectionChange(session *configedit.Session, c *v1.SelectionChange, enable 
 	target := configedit.NewScope(directory, c.Harnesses)
 	fallback, ok := defined[c.Kind+"\x00"+c.Id]
 	if !ok {
-		fallback = session.RuleFile(c.Kind, c.Id)
+		fallback = session.RuleFile(kind, c.Id)
 	}
 	var err error
 	if enable {
-		_, err = session.Enable(c.Kind, c.Id, target, fallback)
+		_, err = session.Enable(kind, c.Id, target, fallback)
 	} else {
-		_, err = session.Disable(c.Kind, c.Id, target, fallback)
+		_, err = session.Disable(kind, c.Id, target, fallback)
 	}
 	return err
 }
@@ -531,7 +534,7 @@ func editError(err error) error {
 	if code, ok := configedit.CodeOf(err); ok {
 		switch code {
 		case configedit.ConfigInvalid:
-			return reasonError(connect.CodeFailedPrecondition, v1.ErrorDetail_REASON_CONFIG_INVALID, err.Error())
+			return configInvalid(err.Error(), err)
 		case configedit.ReadOnly:
 			return rpcError(connect.CodeFailedPrecondition, err.Error())
 		case configedit.Conflict:
@@ -686,11 +689,7 @@ func (s *Server) PreviewSource(
 	}
 	loaded, err := session.Load(session.Root)
 	if err != nil {
-		return nil, reasonError(
-			connect.CodeFailedPrecondition,
-			v1.ErrorDetail_REASON_CONFIG_INVALID,
-			fmt.Sprintf("package %s: %v", id, err),
-		)
+		return nil, configInvalid(fmt.Sprintf("package %s: %v", id, err), err)
 	}
 	item := &preview{
 		source:  &v1.PackageSource{Id: string(id), Git: source.Git, Ref: source.Ref, Subdir: source.Subdir},

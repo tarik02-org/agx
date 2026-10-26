@@ -192,7 +192,7 @@ func (s *Session) matchingRules(target Scope, visit func(*edit.File, edit.Rule) 
 
 // Enable selects id in the first rule matching target, or in a new rule in fallback, and drops it
 // from that rule's remove list. It returns whether anything changed.
-func (s *Session) Enable(kind, id string, target Scope, fallback string) (bool, error) {
+func (s *Session) Enable(kind config.Kind, id string, target Scope, fallback string) (bool, error) {
 	changed := false
 	found := false
 	err := s.matchingRules(target, func(f *edit.File, r edit.Rule) (bool, error) {
@@ -213,7 +213,7 @@ func (s *Session) Enable(kind, id string, target Scope, fallback string) (bool, 
 // include drops id from the rule's remove list and appends it to its add list. When the remove
 // entry was all that deselected id, as after unuse, the add entry would change nothing and is
 // left out, so use undoes unuse to the original text.
-func (s *Session) include(f *edit.File, rule *yaml.Node, kind, id string, target Scope) bool {
+func (s *Session) include(f *edit.File, rule *yaml.Node, kind config.Kind, id string, target Scope) bool {
 	unremoved := false
 	if remove := f.List(edit.Get(rule, "remove"), kind, false); remove != nil {
 		if i := edit.Find(kind, remove, id); i >= 0 {
@@ -279,7 +279,7 @@ func (s *Session) selection(target Scope) [][]config.Resource {
 // Disable takes id out of the target scope: from the add list of a matching rule that selects it,
 // otherwise by appending it to the remove list of the first matching rule or a new rule in
 // fallback, since another rule selects it.
-func (s *Session) Disable(kind, id string, target Scope, fallback string) (bool, error) {
+func (s *Session) Disable(kind config.Kind, id string, target Scope, fallback string) (bool, error) {
 	changed := false
 	err := s.matchingRules(target, func(f *edit.File, r edit.Rule) (bool, error) {
 		add := f.List(edit.Get(r.Node, "add"), kind, false)
@@ -291,7 +291,7 @@ func (s *Session) Disable(kind, id string, target Scope, fallback string) (bool,
 			return true, errorf(
 				Conflict,
 				"%s %s is defined inline in a rule of %s; remove it with agx %s remove %s",
-				KindLabel(kind), id, f.Path, KindCommand(kind), id,
+				kind.Label(), id, f.Path, kind.Command(), id,
 			)
 		}
 		edit.RemoveAt(add, i)
@@ -326,7 +326,7 @@ func (s *Session) Disable(kind, id string, target Scope, fallback string) (bool,
 }
 
 // References lists the entries naming id in every fragment, as "file: where".
-func (s *Session) References(kind, id string) ([]string, error) {
+func (s *Session) References(kind config.Kind, id string) ([]string, error) {
 	out := []string{}
 	for _, path := range s.Fragments() {
 		f, err := s.File(path)
@@ -341,7 +341,7 @@ func (s *Session) References(kind, id string) ([]string, error) {
 }
 
 // RemoveReferences drops every entry naming id, refusing when a file holding one cannot be written.
-func (s *Session) RemoveReferences(kind, id string) error {
+func (s *Session) RemoveReferences(kind config.Kind, id string) error {
 	for _, path := range s.Fragments() {
 		f, err := s.File(path)
 		if err != nil {
@@ -359,40 +359,4 @@ func (s *Session) RemoveReferences(kind, id string) error {
 		}
 	}
 	return nil
-}
-
-// KindLabel names a kind in messages.
-func KindLabel(kind string) string {
-	switch kind {
-	case edit.Skills:
-		return "skill"
-	case edit.MCP:
-		return "MCP server"
-	case edit.Bundles:
-		return "bundle"
-	case Harnesses:
-		return "harness"
-	case Secrets:
-		return "secret"
-	case Packages:
-		return "package"
-	}
-	return "instructions"
-}
-
-// KindCommand is the agx command managing a kind.
-func KindCommand(kind string) string {
-	switch kind {
-	case edit.Skills:
-		return "skill"
-	case edit.MCP:
-		return "mcp"
-	case Harnesses:
-		return "harness"
-	case Secrets:
-		return "secret"
-	case Packages:
-		return "package"
-	}
-	return kind
 }

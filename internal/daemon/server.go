@@ -980,11 +980,7 @@ var Build = sync.OnceValue(func() string {
 // configError reports why the daemon's configuration failed to load. Validation messages name
 // files, lines, and IDs, never resolved values.
 func configError(err error) error {
-	return reasonError(
-		connect.CodeFailedPrecondition,
-		v1.ErrorDetail_REASON_CONFIG_INVALID,
-		"daemon configuration invalid: "+err.Error(),
-	)
+	return configInvalid("daemon configuration invalid: "+err.Error(), err)
 }
 
 // savedEnd names how a launch ended, for the log.

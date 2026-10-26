@@ -6,6 +6,7 @@ import (
 	"connectrpc.com/connect"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/internal/config"
 )
 
 // codeReasons is the reason an error carries unless its site names one: the meaning docs/development/api.md
@@ -35,12 +36,26 @@ func rpcError(code connect.Code, message string) error {
 // reasonError is a Connect error whose reason is narrower than its code's, such as a failed
 // precondition that a login resolves.
 func reasonError(code connect.Code, reason v1.ErrorDetail_Reason, message string) *connect.Error {
+	return detailError(code, &v1.ErrorDetail{Reason: reason}, message)
+}
+
+// configInvalid reports a configuration that does not load, with where err locates the problem.
+func configInvalid(message string, err error) *connect.Error {
+	detail := &v1.ErrorDetail{Reason: v1.ErrorDetail_REASON_CONFIG_INVALID}
+	var located *config.SourceError
+	if errors.As(err, &located) {
+		detail.Source = &v1.SourceLocation{Path: located.Path, Line: uint32(located.Line)} //nolint:gosec // lines fit
+	}
+	return detailError(connect.CodeFailedPrecondition, detail, message)
+}
+
+func detailError(code connect.Code, detail *v1.ErrorDetail, message string) *connect.Error {
 	err := connect.NewError(code, errors.New(message))
-	detail, detailErr := connect.NewErrorDetail(&v1.ErrorDetail{Reason: reason})
+	d, detailErr := connect.NewErrorDetail(detail)
 	if detailErr != nil {
-		// Marshaling a message of one enum field cannot fail.
+		// Marshaling a reason and a location cannot fail.
 		panic(detailErr)
 	}
-	err.AddDetail(detail)
+	err.AddDetail(d)
 	return err
 }

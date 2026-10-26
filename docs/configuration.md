@@ -293,8 +293,9 @@ stop the editor complaining about agx's tags, declare them:
 "yaml.customTags": ["!env scalar", "!file scalar", "!secret scalar"]
 ```
 
-The schema checks structure only; `agx config validate` also checks references
-and paths.
+agx checks every fragment and package manifest against the same schema when it
+loads them, so an error names the key path, such as `mcp.github.command: not
+allowed here`. `agx config validate` also checks references and paths.
 
 ## Daemon settings
 

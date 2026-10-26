@@ -2,12 +2,9 @@ package config
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"math"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -20,11 +17,23 @@ import (
 type Settings struct{ node *yaml.Node }
 
 func (s *Settings) UnmarshalYAML(node *yaml.Node) error {
-	if node.Kind != yaml.MappingNode {
-		return errors.New("settings must be a mapping in the harness's own configuration schema")
-	}
 	s.node = node
-	return nil
+	var err error
+	walk(node, func(n *yaml.Node) {
+		switch {
+		case n.Tag == "!file":
+			consume(n)
+		case custom(n.Tag) && err == nil:
+			// Codex receives settings as process arguments, which other users can read.
+			err = nodeError(
+				n,
+				"%s is not allowed in harness settings, which can reach process arguments; set the "+
+					"value in the harness environment and name the variable in settings",
+				n.Tag,
+			)
+		}
+	})
+	return err
 }
 
 // SettingSource locates where a definition sets one setting.
@@ -47,9 +56,8 @@ func (m *merger) settings(s Settings, name string) (map[string]any, map[string]S
 	convert = func(node *yaml.Node, path []string) (any, error) {
 		at := Source{Path: m.path, Line: node.Line, Column: node.Column}
 		fail := func(format string, args ...any) error {
-			return fmt.Errorf(
-				"%s: harness %s: settings %s: %s",
-				locate(at),
+			return errorAt(
+				at, "harness %s: settings %s: %s",
 				name,
 				strings.Join(path, "."),
 				fmt.Sprintf(format, args...),
@@ -142,22 +150,6 @@ func (m *merger) settings(s Settings, name string) (map[string]any, map[string]S
 		return nil, nil, err
 	}
 	return value.(map[string]any), sources, nil
-}
-
-func readLimited(path string) ([]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = f.Close() }()
-	b, err := io.ReadAll(io.LimitReader(f, maxValueSize+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(b) > maxValueSize {
-		return nil, fmt.Errorf("larger than %d bytes", maxValueSize)
-	}
-	return b, nil
 }
 
 // mergeFragmentSettings adds one fragment's settings to a definition's; a leaf set by two
