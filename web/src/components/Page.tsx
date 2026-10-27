@@ -19,6 +19,9 @@ import {
   BreadcrumbSeparator,
 } from "~/components/ui/breadcrumb.tsx";
 import { SidebarTrigger } from "~/components/ui/sidebar.tsx";
+import { NewItemMenu } from "~/features/config/NewItemMenu.tsx";
+import { StagedButton } from "~/features/config/ReviewChanges.tsx";
+import { ScopeControl } from "~/features/scope/ScopeControl.tsx";
 import { pageTitle } from "~/lib/title.ts";
 
 interface Slots {
@@ -69,7 +72,8 @@ export function Page({ title, crumbs, actions, fill = false, className, children
         <div className="flex w-10 shrink-0 justify-center self-start pt-2.5">
           <SidebarTrigger />
         </div>
-        <div className="flex min-h-11 min-w-0 flex-1 flex-wrap items-center gap-2 py-1.5 pr-3">
+        <div className="flex min-h-11 min-w-0 flex-1 flex-wrap items-center gap-3 py-1.5 pr-3">
+          <ScopeControl />
           <Breadcrumb className="min-w-0">
             <BreadcrumbList className="flex-nowrap">
               {crumbs.map((crumb, index) => (
@@ -104,6 +108,8 @@ export function Page({ title, crumbs, actions, fill = false, className, children
           <div ref={setViews} className="flex shrink-0 items-center gap-2 empty:hidden" />
           <div ref={setActionsSlot} className="ml-auto flex shrink-0 items-center gap-2">
             {actions}
+            <NewItemMenu />
+            <StagedButton />
           </div>
         </div>
       </header>

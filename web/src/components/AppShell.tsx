@@ -1,15 +1,13 @@
 import { Link, useBlocker, useLocation } from "@tanstack/react-router";
-import { ActivityIcon, GitCompareArrowsIcon, type LucideIcon } from "lucide-react";
+import { ActivityIcon, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
@@ -20,7 +18,6 @@ import { TooltipProvider } from "~/components/ui/tooltip.tsx";
 import { ConfigTree } from "~/features/config/ConfigTree.tsx";
 import { ReviewChanges } from "~/features/config/ReviewChanges.tsx";
 import { useStaging } from "~/features/config/staging.ts";
-import { ScopeSelector } from "~/features/scope/ScopeSelector.tsx";
 
 interface Section {
   readonly label: string;
@@ -32,13 +29,10 @@ interface Section {
 const sections: ReadonlyArray<Section> = [{ label: "Runtime", to: "/", icon: ActivityIcon }];
 
 /**
- * Everything global lives in the sidebar, at fixed places: the name and scope at its top, the
- * pages, the configuration as a tree, and the staged changes at its foot. Each page has the one
- * header, with its place and its actions.
+ * The sidebar holds the pages and the configuration as a tree. Each page has the one header, with
+ * the scope, its place, its actions, and the staged changes.
  */
 export function AppShell({ children }: { readonly children: ReactNode }) {
-  const staged = useStaging((state) => state.changes.length);
-  const review = useStaging((state) => state.review);
   const pathname = useLocation({ select: (location) => location.pathname });
   // Staged changes live only in this tab, so closing or reloading it asks first; they survive
   // moving between pages, so navigation is never blocked.
@@ -61,7 +55,6 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
               <Link to="/" className="self-start px-1 font-mono font-semibold">
                 agx
               </Link>
-              <ScopeSelector />
             </SidebarHeader>
             <SidebarMenu className="px-2 py-1">
               {sections.map((section) => (
@@ -80,17 +73,6 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
             <SidebarContent className="min-h-0 py-1">
               <ConfigTree />
             </SidebarContent>
-            <SidebarFooter className="border-t px-2 py-2">
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton onClick={() => review(true)}>
-                    <GitCompareArrowsIcon />
-                    <span>Staged changes</span>
-                  </SidebarMenuButton>
-                  {staged > 0 && <SidebarMenuBadge>{staged}</SidebarMenuBadge>}
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarFooter>
           </Sidebar>
           <SidebarInset className="h-svh overflow-hidden">
             <div

@@ -38,6 +38,8 @@ interface NavTreeProps {
   readonly icons?: ReadonlyMap<string, TreeIcon>;
   /** Top-level folders in the order to show them, such as the configuration's sections. */
   readonly order?: ReadonlyArray<string>;
+  /** How many levels of folders start open. */
+  readonly expansion?: number;
 }
 
 const placeholder = "loading…";
@@ -141,6 +143,7 @@ export function NavTree({
   query = "",
   icons = noIcons,
   order = noOrder,
+  expansion = 1,
 }: NavTreeProps) {
   // Lazy folders are listed themselves, so one that loads empty stays.
   const rows = [
@@ -156,8 +159,8 @@ export function NavTree({
   });
   const { model } = useFileTree({
     paths: rows,
-    // Kinds open; what they hold, such as a skill's files, closed.
-    initialExpansion: 1,
+    // Groups open; what they hold, such as a skill's files, closed.
+    initialExpansion: expansion,
     initialSelectedPaths: selected === undefined ? [] : [selected],
     flattenEmptyDirectories: false,
     // The caller draws the search field, in its own header.

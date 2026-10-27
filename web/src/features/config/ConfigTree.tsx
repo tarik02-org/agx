@@ -1,29 +1,11 @@
 import { useQueries } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { GitBranchPlusIcon, PlusIcon, SearchIcon } from "lucide-react";
-import { useState } from "react";
+import { SearchIcon } from "lucide-react";
+import { type ReactNode, useState } from "react";
 
 import { NavTree, type TreeIcon } from "~/components/NavTree.tsx";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group.tsx";
-import { Button } from "~/components/ui/button.tsx";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu.tsx";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "~/components/ui/select.tsx";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group.tsx";
-import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { DaemonError } from "~/daemon/error.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
@@ -37,10 +19,11 @@ import {
   sectionIcon,
   toolIcon,
 } from "~/features/config/treeIcons.ts";
+import { readList } from "~/features/config/yamlDocument.ts";
 import { useInspectorDirectory } from "~/features/mcp/tools.ts";
 import { mcpStates } from "~/features/runtime/states.ts";
-import { useEnabledHere, useScopeDirectory, useScopeHarness } from "~/features/scope/scope.ts";
-import type { GetSkillResponse, McpTools } from "~/gen/agx/v1/agx_pb.ts";
+import { useEnabledHere, useScopeDirectory } from "~/features/scope/scope.ts";
+import type { Definition, GetSkillResponse, McpTools } from "~/gen/agx/v1/agx_pb.ts";
 import { McpRuntime_State } from "~/gen/agx/v1/agx_pb.ts";
 import { shortPath } from "~/lib/path.ts";
 
@@ -59,13 +42,40 @@ type Target =
   | { readonly page: "skill"; readonly skill: string; readonly file?: string }
   | { readonly page: "server"; readonly server: string; readonly tool?: string }
   | { readonly page: "definition"; readonly kind: string; readonly id: string }
-  | { readonly page: "file"; readonly file: string };
+  | { readonly page: "file"; readonly file: string }
+  | { readonly page: "new"; readonly kind: string };
 
 /**
- * The configuration as one tree: a folder per kind with its definitions, IDs nesting at their
- * slashes (a package's skills sit under the package's name), and the configuration files. Skills
- * hold their files and MCP servers their tools, loaded when first expanded; a server starts only
- * then.
+ * What the top of the tree is: the configuration's kinds, its bundles with what each selects, or
+ * its files with what each defines. Below bundles and files, definitions sit under their kind.
+ */
+type Grouping = "type" | "bundle" | "file";
+
+const groupings: ReadonlyArray<{ readonly value: Grouping; readonly label: string }> = [
+  { value: "type", label: "Type" },
+  { value: "bundle", label: "Bundle" },
+  { value: "file", label: "File" },
+];
+
+const groupingKey = "agx.tree.grouping";
+const savedGrouping = (): Grouping => {
+  const saved = globalThis.localStorage?.getItem(groupingKey);
+  return saved === "bundle" || saved === "file" ? saved : "type";
+};
+
+const outsideBundles = "Not in a bundle";
+const filesFolder = "Files";
+
+/** The definitions a bundle selects, as kind/id keys; inline definitions name no ID. */
+const bundleMembers = (bundle: Definition): ReadonlyArray<string> =>
+  ["skills", "instructions", "mcp", "bundles"].flatMap((kind) =>
+    readList(bundle.yaml, [kind]).map((id) => `${kind}/${id}`),
+  );
+
+/**
+ * The configuration as one tree, grouped by type, bundle, or file, with IDs nesting at their
+ * slashes (a package's skills sit under the package's name). Skills hold their files and MCP
+ * servers their tools, loaded when first expanded; a server starts only then.
  */
 export function ConfigTree() {
   const definitions = useDaemonQuery(
@@ -79,25 +89,63 @@ export function ConfigTree() {
   const directory = useScopeDirectory();
   const toolsDirectory = useInspectorDirectory() ?? "";
   const enabledHere = useEnabledHere();
-  const [onlyHere, setOnlyHere] = useState(true);
+  const [onlyHere, setOnlyHere] = useState(false);
+  const [grouping, setGrouping] = useState<Grouping>(savedGrouping);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const navigate = useNavigate();
   const search = useSearch({ strict: false });
   const run = useRunEffect();
   const home = configuration.data?.home ?? "";
+  const filtering = directory !== "" && onlyHere && enabledHere !== undefined;
 
-  const shown = (definitions.data ?? []).filter(
+  const all = definitions.data ?? [];
+  const shown = all.filter(
     (definition) =>
-      enabledHere === undefined ||
-      !onlyHere ||
+      !filtering ||
       !scoped.has(definition.kind) ||
       enabledHere.has(`${definition.kind}/${definition.id}`),
   );
-  // Every skill and server has its query, run once its folder is expanded; one a page already
-  // read, under the same key, shows at once, with the icon its server declares.
+
+  // Files sit under the root's directory, most of them; any other keeps its full path.
+  const rootDirectory = (configuration.data?.root ?? "").replace(/[^/]*$/, "");
+  const relative = (path: string) =>
+    rootDirectory !== "" && path.startsWith(rootDirectory)
+      ? path.slice(rootDirectory.length)
+      : shortPath(path, home).replace(/^\//, "");
+
+  // Where each definition shows: one place, or one per bundle selecting it.
+  const placesOf = (definition: Definition): ReadonlyArray<string> => {
+    const kindPath = `${label(definition.kind)}/${definition.id}`;
+    switch (grouping) {
+      case "type":
+        return [kindPath];
+      case "file":
+        return [
+          definition.package === ""
+            ? `${relative(definition.source?.path ?? "")}/${kindPath}`
+            : `package ${definition.package}/${kindPath}`,
+        ];
+      case "bundle": {
+        const key = `${definition.kind}/${definition.id}`;
+        const holders = all.filter((b) => b.kind === "bundles" && bundleMembers(b).includes(key));
+        // A bundle no other selects is a group of its own.
+        if (definition.kind === "bundles" && holders.length === 0) {
+          return [];
+        }
+        return holders.length === 0
+          ? [`${outsideBundles}/${kindPath}`]
+          : holders.map((b) => `${b.id}/${kindPath}`);
+      }
+    }
+  };
+
+  // Every skill and server has its query, run once one of its folders is expanded; one a page
+  // already read, under the same key, shows at once, with the icon its server declares.
   const allSkills = shown.filter((d) => d.kind === "skills");
   const allServers = shown.filter((d) => d.kind === "mcp");
+  const isExpanded = (definition: Definition) =>
+    placesOf(definition).some((path) => expanded.has(path));
   const skills = useQueries({
     queries: allSkills.map((d) => ({
       queryKey: queryKeys.skill(d.id),
@@ -106,7 +154,7 @@ export function ConfigTree() {
           Daemon.use((daemon) => daemon.skill(d.id)),
           { signal },
         ),
-      enabled: expanded.has(`${label("skills")}/${d.id}`),
+      enabled: isExpanded(d),
     })),
   });
   const servers = useQueries({
@@ -117,7 +165,7 @@ export function ConfigTree() {
           Daemon.use((daemon) => daemon.tools(toolsDirectory, d.id)),
           { signal },
         ),
-      enabled: toolsDirectory !== "" && expanded.has(`${label("mcp")}/${d.id}`),
+      enabled: toolsDirectory !== "" && isExpanded(d),
       retry: false,
     })),
   });
@@ -137,16 +185,28 @@ export function ConfigTree() {
   const targets = new Map<string, Target>();
   const lazy = new Map<string, boolean>();
   const decorations = new Map<string, string>();
-  const icons = new Map<string, TreeIcon>([["Files", filesIcon]]);
-  for (const { kind } of kinds) {
+  const icons = new Map<string, TreeIcon>([[filesFolder, filesIcon]]);
+  const bundleIcon = sectionIcon("bundles");
+  // Folders that stand for a kind, at the top or inside a bundle or file.
+  const kindFolder = (folder: string, kind: string) => {
     const icon = sectionIcon(kind);
     if (icon !== undefined) {
-      icons.set(label(kind), icon);
+      icons.set(folder, icon);
+    }
+  };
+  if (grouping === "type") {
+    for (const { kind, one } of kinds) {
+      kindFolder(label(kind), kind);
+      // An empty kind offers to add one, so the tree is also where things start.
+      if (definitions.isSuccess && !filtering && !shown.some((d) => d.kind === kind)) {
+        // Lowercase, unless it is an acronym such as MCP.
+        const name = /^.[a-z]/.test(one) ? one.toLowerCase() : one;
+        targets.set(`${label(kind)}/Add ${name}…`, { page: "new", kind });
+      }
     }
   }
   for (const definition of shown) {
     const here = enabledHere?.has(`${definition.kind}/${definition.id}`) === true;
-    const path = `${label(definition.kind)}/${definition.id}`;
     const builtin = configuration.data?.harnesses.find((h) => h.name === definition.id)?.builtin;
     const icon =
       (definition.kind === "harnesses" && builtin !== undefined
@@ -159,84 +219,102 @@ export function ConfigTree() {
         definition.color,
         definition.icon,
       );
-    if (icon !== undefined) {
-      icons.set(path, icon);
-    }
-    // Folders an ID's slashes make: a package's name, or a plain group.
-    const segments = definition.id.split("/");
-    for (let depth = 1; depth < segments.length; depth++) {
-      const prefix = segments.slice(0, depth).join("/");
-      icons.set(
-        `${label(definition.kind)}/${prefix}`,
-        namespaceIcon(prefix === definition.package),
-      );
-    }
-    if (definition.readOnly && definition.package === "") {
-      decorations.set(path, "read-only");
-    } else if (here && !onlyHere) {
-      decorations.set(path, "here");
-    }
-    switch (definition.kind) {
-      case "skills": {
-        targets.set(path, { page: "skill", skill: definition.id });
-        const loaded = skillFiles.get(definition.id);
-        lazy.set(path, loaded?.data !== undefined || (loaded?.error ?? null) !== null);
-        if ((loaded?.error ?? null) !== null) {
-          decorations.set(path, "failed to load");
-        }
-        if (loaded?.data !== undefined) {
-          const files = new Set(["SKILL.md", ...loaded.data.files]);
-          for (const file of files) {
-            targets.set(`${path}/${file}`, { page: "skill", skill: definition.id, file });
+    for (const path of placesOf(definition)) {
+      const folder = path.slice(0, -definition.id.length - 1);
+      kindFolder(folder, definition.kind);
+      if (grouping === "bundle" && !folder.startsWith(outsideBundles) && bundleIcon !== undefined) {
+        icons.set(folder.slice(0, -label(definition.kind).length - 1), bundleIcon);
+      }
+      if (icon !== undefined) {
+        icons.set(path, icon);
+      }
+      // Folders an ID's slashes make: a package's name, or a plain group.
+      const segments = definition.id.split("/");
+      for (let depth = 1; depth < segments.length; depth++) {
+        const prefix = segments.slice(0, depth).join("/");
+        icons.set(`${folder}/${prefix}`, namespaceIcon(prefix === definition.package));
+      }
+      if (definition.readOnly && definition.package === "") {
+        decorations.set(path, "read-only");
+      } else if (here && !filtering && directory !== "") {
+        decorations.set(path, "here");
+      }
+      switch (definition.kind) {
+        case "skills": {
+          targets.set(path, { page: "skill", skill: definition.id });
+          const loaded = skillFiles.get(definition.id);
+          lazy.set(path, loaded?.data !== undefined || (loaded?.error ?? null) !== null);
+          if ((loaded?.error ?? null) !== null) {
+            decorations.set(path, "failed to load");
           }
+          if (loaded?.data !== undefined) {
+            const files = new Set(["SKILL.md", ...loaded.data.files]);
+            for (const file of files) {
+              targets.set(`${path}/${file}`, { page: "skill", skill: definition.id, file });
+            }
+          }
+          break;
         }
-        break;
+        case "mcp": {
+          targets.set(path, { page: "server", server: definition.id });
+          const loaded = serverTools.get(definition.id);
+          lazy.set(path, loaded?.data !== undefined || (loaded?.error ?? null) !== null);
+          if ((loaded?.error ?? null) !== null) {
+            const needsLogin =
+              loaded?.error instanceof DaemonError && loaded.error.reason === "needs_login";
+            decorations.set(
+              path,
+              mcpStates[needsLogin ? McpRuntime_State.NEEDS_AUTH : McpRuntime_State.FAILED].label,
+            );
+          }
+          // A running server's icon is the latest; the definition carries the one remembered.
+          if (loaded?.data !== undefined && loaded.data.icon !== "") {
+            icons.set(path, { image: loaded.data.icon });
+          }
+          for (const tool of loaded?.data?.tools ?? []) {
+            icons.set(`${path}/${tool.name}`, toolIcon(tool.name));
+            targets.set(`${path}/${tool.name}`, {
+              page: "server",
+              server: definition.id,
+              tool: tool.name,
+            });
+          }
+          break;
+        }
+        default:
+          targets.set(path, { page: "definition", kind: definition.kind, id: definition.id });
       }
-      case "mcp": {
-        targets.set(path, { page: "server", server: definition.id });
-        const loaded = serverTools.get(definition.id);
-        lazy.set(path, loaded?.data !== undefined || (loaded?.error ?? null) !== null);
-        if ((loaded?.error ?? null) !== null) {
-          const needsLogin =
-            loaded?.error instanceof DaemonError && loaded.error.reason === "needs_login";
-          decorations.set(
-            path,
-            mcpStates[needsLogin ? McpRuntime_State.NEEDS_AUTH : McpRuntime_State.FAILED].label,
-          );
-        }
-        // A running server's icon is the latest; the definition carries the one remembered.
-        if (loaded?.data !== undefined && loaded.data.icon !== "") {
-          icons.set(path, { image: loaded.data.icon });
-        }
-        for (const tool of loaded?.data?.tools ?? []) {
-          icons.set(`${path}/${tool.name}`, toolIcon(tool.name));
-          targets.set(`${path}/${tool.name}`, {
-            page: "server",
-            server: definition.id,
-            tool: tool.name,
-          });
-        }
-        break;
-      }
-      default:
-        targets.set(path, { page: "definition", kind: definition.kind, id: definition.id });
     }
   }
-  // Files sit under the root's directory, most of them; any other keeps its full path.
-  const rootDirectory = (configuration.data?.root ?? "").replace(/[^/]*$/, "");
+  // Grouped by bundle, a bundle's group opens the bundle.
+  if (grouping === "bundle") {
+    for (const bundle of shown.filter((d) => d.kind === "bundles")) {
+      targets.set(bundle.id, { page: "definition", kind: "bundles", id: bundle.id });
+      if (bundleIcon !== undefined) {
+        icons.set(bundle.id, bundleIcon);
+      }
+    }
+  }
+  // Grouped by file, each file is its own folder and opens itself; otherwise files have theirs.
   for (const file of configuration.data?.files ?? []) {
-    const relative =
-      rootDirectory !== "" && file.path.startsWith(rootDirectory)
-        ? file.path.slice(rootDirectory.length)
-        : shortPath(file.path, home).replace(/^\//, "");
-    const path = `Files/${relative}`;
+    const path =
+      grouping === "file" ? relative(file.path) : `${filesFolder}/${relative(file.path)}`;
     targets.set(path, { page: "file", file: file.path });
+    if (grouping === "file") {
+      icons.set(path, filesIcon);
+    }
     if (file.readOnly) {
       decorations.set(path, "read-only");
     }
   }
-  // A skill's file or a server's tool is selected before it loads, so its folder opens for it.
+
+  // The page's item, at its first place in the tree. A skill's file or a server's tool is
+  // selected before it loads, so its folder opens for it.
   const itemLabel = search.kind === undefined ? undefined : label(search.kind);
+  const definition =
+    search.kind === undefined || search.id === undefined
+      ? undefined
+      : shown.find((d) => d.kind === search.kind && d.id === search.id);
   const selected =
     search.file !== undefined
       ? [...targets].find(
@@ -244,7 +322,7 @@ export function ConfigTree() {
         )?.[0]
       : itemLabel === undefined || search.id === undefined
         ? undefined
-        : `${itemLabel}/${search.id}${
+        : `${definition === undefined ? `${itemLabel}/${search.id}` : (placesOf(definition)[0] ?? definition.id)}${
             search.kind === "skills" && search.path !== undefined
               ? `/${search.path}`
               : search.kind === "mcp" && search.tool !== undefined
@@ -252,13 +330,28 @@ export function ConfigTree() {
                 : ""
           }`;
 
+  const order =
+    grouping === "type"
+      ? [...kinds.map((k) => k.label), filesFolder]
+      : grouping === "bundle"
+        ? [...all.filter((d) => d.kind === "bundles").map((d) => d.id), outsideBundles, filesFolder]
+        : // The root first; it lists the others.
+          [relative(configuration.data?.root ?? "")];
+
   return (
     <NavTree
+      // A remount starts the new grouping with its top level open.
+      key={grouping}
+      expansion={grouping === "type" ? 1 : 2}
       // Lazy folders hold what is loaded; everything else is a leaf.
-      paths={[...targets.keys()].filter((path) => !lazy.has(path))}
+      // A target that holds others, such as a file grouped by, is their folder rather than a row.
+      paths={[...targets.keys()].filter(
+        (path) =>
+          !lazy.has(path) && ![...targets.keys()].some((other) => other.startsWith(`${path}/`)),
+      )}
       lazy={lazy}
       onExpand={(folder) => setExpanded((current) => new Set([...current, folder]))}
-      order={[...kinds.map((k) => k.label), "Files"]}
+      order={order}
       icons={icons}
       selected={selected}
       decorations={decorations}
@@ -293,43 +386,14 @@ export function ConfigTree() {
             return;
           case "file":
             void navigate({ to: "/config", search: { file: target.file } });
+            return;
+          case "new":
+            void navigate({ to: "/config", search: { kind: target.kind, create: true } });
         }
       }}
       query={query}
       header={
-        <div className="flex flex-col gap-1.5 px-2 pt-1 pb-2">
-          <div className="flex items-center gap-1">
-            {directory !== "" && (
-              <ToggleGroup
-                variant="outline"
-                size="sm"
-                className="flex-1 *:flex-1"
-                value={[onlyHere ? "effective" : "all"]}
-                onValueChange={(next) => {
-                  if (next.length > 0) {
-                    setOnlyHere(next.includes("effective"));
-                  }
-                }}
-              >
-                <Tooltip>
-                  <TooltipTrigger render={<ToggleGroupItem value="all">All</ToggleGroupItem>} />
-                  <TooltipContent side="bottom">Everything configured</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={<ToggleGroupItem value="effective">Effective</ToggleGroupItem>}
-                  />
-                  <TooltipContent side="bottom">
-                    What a launch in {shortPath(directory, home)} gets
-                  </TooltipContent>
-                </Tooltip>
-              </ToggleGroup>
-            )}
-            <div className="ml-auto">
-              <NewItemMenu />
-            </div>
-          </div>
-          {directory !== "" && onlyHere && <HarnessPicker />}
+        <div className="flex flex-col gap-2 px-2 pt-1 pb-2">
           <InputGroup>
             <InputGroupAddon>
               <SearchIcon />
@@ -337,101 +401,61 @@ export function ConfigTree() {
             <InputGroupInput
               type="search"
               aria-label="Search the configuration"
-              placeholder="Search…"
+              placeholder="Search configuration…"
               autoComplete="off"
               spellCheck={false}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
           </InputGroup>
+          <TreeOption label="Group by">
+            <ToggleGroup
+              variant="outline"
+              size="sm"
+              value={[grouping]}
+              onValueChange={(next) => {
+                const value = groupings.find((g) => next.includes(g.value))?.value;
+                if (value !== undefined) {
+                  globalThis.localStorage?.setItem(groupingKey, value);
+                  setGrouping(value);
+                }
+              }}
+            >
+              {groupings.map((g) => (
+                <ToggleGroupItem key={g.value} value={g.value}>
+                  {g.label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </TreeOption>
+          {directory !== "" && (
+            <TreeOption label="Show">
+              <ToggleGroup
+                variant="outline"
+                size="sm"
+                value={[onlyHere ? "here" : "all"]}
+                onValueChange={(next) => {
+                  if (next.length > 0) {
+                    setOnlyHere(next.includes("here"));
+                  }
+                }}
+              >
+                <ToggleGroupItem value="all">All</ToggleGroupItem>
+                <ToggleGroupItem value="here">In scope</ToggleGroupItem>
+              </ToggleGroup>
+            </TreeOption>
+          )}
         </div>
       }
     />
   );
 }
 
-/** Which harness the Effective view is for: every harness, or one, which removes what it removes. */
-function HarnessPicker() {
-  const configuration = useDaemonQuery(
-    queryKeys.configuration,
-    Daemon.use((daemon) => daemon.configuration),
-  );
-  const harness = useScopeHarness();
-  const navigate = useNavigate();
-  const options = [
-    { value: "", label: "Any harness" },
-    ...(configuration.data?.harnesses ?? [])
-      .filter((h) => !h.hidden)
-      .map((h) => ({ value: h.name, label: h.name })),
-  ];
+function TreeOption({ label, children }: { readonly label: string; readonly children: ReactNode }) {
   return (
-    <Select
-      items={options}
-      value={harness}
-      onValueChange={(next) =>
-        void navigate({
-          to: ".",
-          search: (current) => ({
-            ...current,
-            harness: next === null || next === "" ? undefined : next,
-          }),
-        })
-      }
-    >
-      <SelectTrigger size="sm" className="w-full" aria-label="Harness">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent alignItemWithTrigger={false}>
-        <SelectGroup>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectGroup>
-      </SelectContent>
-    </Select>
-  );
-}
-
-/** Starts something new: a definition of any kind, or skills from a Git repository. */
-function NewItemMenu() {
-  const navigate = useNavigate();
-  return (
-    <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <DropdownMenuTrigger
-              render={
-                <Button variant="ghost" size="icon-sm" aria-label="New">
-                  <PlusIcon />
-                </Button>
-              }
-            />
-          }
-        />
-        <TooltipContent side="bottom">New</TooltipContent>
-      </Tooltip>
-      <DropdownMenuContent align="end" className="w-auto">
-        <DropdownMenuGroup>
-          {kinds.map(({ kind, one }) => (
-            <DropdownMenuItem
-              key={kind}
-              onClick={() => void navigate({ to: "/config", search: { kind, create: true } })}
-            >
-              {one}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuItem onClick={() => void navigate({ to: "/skills/add" })}>
-            <GitBranchPlusIcon />
-            Skills from Git…
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-muted-foreground text-xs">{label}</span>
+      {children}
+    </div>
   );
 }

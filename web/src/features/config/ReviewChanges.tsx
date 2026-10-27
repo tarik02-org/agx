@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ConfirmAction } from "~/components/ConfirmAction.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Pending } from "~/components/Pending.tsx";
+import { Badge } from "~/components/ui/badge.tsx";
 import { Button } from "~/components/ui/button.tsx";
 import {
   Empty,
@@ -167,5 +168,21 @@ export function ReviewChanges() {
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  );
+}
+
+/** Opens the staged changes; shown while there are any. */
+export function StagedButton() {
+  const count = useStaging((state) => state.changes.length);
+  const review = useStaging((state) => state.review);
+  if (count === 0) {
+    return null;
+  }
+  return (
+    <Button variant="outline" size="sm" onClick={() => review(true)}>
+      <GitCompareArrowsIcon data-icon="inline-start" />
+      Staged
+      <Badge className="h-4 min-w-4 px-1">{count}</Badge>
+    </Button>
   );
 }
