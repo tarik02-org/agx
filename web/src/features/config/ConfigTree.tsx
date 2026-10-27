@@ -423,7 +423,7 @@ export function ConfigTree() {
       }}
       query={query}
       header={
-        <div className="flex flex-col gap-2 px-2 pt-1 pb-2">
+        <div className="flex flex-col gap-2 p-2">
           <InputGroup>
             <InputGroupAddon>
               <SearchIcon />

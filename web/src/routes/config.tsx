@@ -14,7 +14,7 @@ import { useState } from "react";
 
 import { ConfirmAction } from "~/components/ConfirmAction.tsx";
 import { UnsavedChanges } from "~/components/UnsavedChanges.tsx";
-import { type Crumb, Page, PageActions, PageViews } from "~/components/Page.tsx";
+import { type Crumb, Page, PageActions, PageDetails, PageViews } from "~/components/Page.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
@@ -424,25 +424,7 @@ function DefinitionEditor({ kind, definition, initialId, home, schema }: Definit
       className="flex min-h-0 flex-1 flex-col gap-3"
     >
       <UnsavedChanges dirty={!readOnly && text !== saved} ignore={["view"]} />
-      <PageActions>
-        <span className="flex items-center gap-2">
-          {definition?.package !== undefined && definition.package !== "" && (
-            <Badge variant="secondary">
-              <PackageIcon data-icon="inline-start" />
-              {definition.package}
-            </Badge>
-          )}
-          {readOnly && <Badge variant="outline">read-only</Badge>}
-          {staged !== undefined && <Badge>{removing ? "removal staged" : "staged"}</Badge>}
-          {location !== undefined && (
-            <span
-              className="max-w-64 truncate font-mono text-muted-foreground text-xs"
-              title={location.path}
-            >
-              {`${definedAt(location.path, home)}${location.line > 0 ? `:${location.line}` : ""}`}
-            </span>
-          )}
-        </span>
+      <PageDetails>
         {editable && (
           <TabsList>
             <TabsTrigger value="form" disabled={!formAvailable}>
@@ -451,6 +433,24 @@ function DefinitionEditor({ kind, definition, initialId, home, schema }: Definit
             <TabsTrigger value="yaml">YAML</TabsTrigger>
           </TabsList>
         )}
+        {definition?.package !== undefined && definition.package !== "" && (
+          <Badge variant="secondary">
+            <PackageIcon data-icon="inline-start" />
+            {definition.package}
+          </Badge>
+        )}
+        {readOnly && <Badge variant="outline">read-only</Badge>}
+        {staged !== undefined && <Badge>{removing ? "removal staged" : "staged"}</Badge>}
+        {location !== undefined && (
+          <span
+            className="min-w-0 truncate font-mono text-muted-foreground text-xs"
+            title={location.path}
+          >
+            {`${definedAt(location.path, home)}${location.line > 0 ? `:${location.line}` : ""}`}
+          </span>
+        )}
+      </PageDetails>
+      <PageActions>
         {!readOnly && (
           <>
             {definition !== undefined && (
@@ -582,12 +582,12 @@ function FileEditor({
   return (
     <>
       {linkTarget !== "" && (
-        <PageActions>
-          <span className="flex items-center gap-1 font-mono text-muted-foreground text-xs">
-            <LinkIcon className="size-3" />
-            {linkTarget}
+        <PageDetails>
+          <span className="flex min-w-0 items-center gap-1 font-mono text-muted-foreground text-xs">
+            <LinkIcon className="size-3 shrink-0" />
+            <span className="truncate">{linkTarget}</span>
           </span>
-        </PageActions>
+        </PageDetails>
       )}
       {content.isPending && <Pending className="h-64" />}
       {content.isError && <DaemonProblem error={content.error} />}

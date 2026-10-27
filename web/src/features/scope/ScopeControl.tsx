@@ -63,7 +63,7 @@ export function ScopeControl() {
             <Button
               variant="ghost"
               size="sm"
-              className="min-w-0 max-w-72 justify-start rounded-r-none font-mono"
+              className="min-w-0 max-w-72 shrink justify-start rounded-r-none font-mono"
             >
               {directory === "" ? (
                 <GlobeIcon data-icon="inline-start" />
@@ -108,7 +108,7 @@ export function ScopeControl() {
           <SelectTrigger
             size="sm"
             aria-label="Harness"
-            className="rounded-l-none border-0 border-l bg-transparent dark:bg-transparent"
+            className="shrink-0 rounded-l-none border-0 border-l bg-transparent dark:bg-transparent"
           >
             <SelectValue />
           </SelectTrigger>

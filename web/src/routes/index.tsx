@@ -20,16 +20,14 @@ function RuntimePage() {
     <Page
       title={["Runtime"]}
       crumbs={[{ label: "Runtime" }]}
-      actions={
-        <>
-          {state._tag === "Live" && (
-            <span className="font-mono text-muted-foreground text-xs">
-              daemon {state.view.version} · {state.view.daemonInstanceId.slice(0, 12)}
-            </span>
-          )}
-          <InstallButton />
-        </>
+      details={
+        state._tag === "Live" && (
+          <span className="truncate font-mono text-muted-foreground text-xs">
+            daemon {state.view.version} · {state.view.daemonInstanceId.slice(0, 12)}
+          </span>
+        )
       }
+      actions={<InstallButton />}
     >
       {state._tag === "Connecting" && <Pending className="h-40" />}
       {state._tag === "Failed" && <DaemonProblem error={state.error} />}

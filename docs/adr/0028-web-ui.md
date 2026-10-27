@@ -131,13 +131,17 @@ tool whose author already writes Effect, and Aperture uses the same model.
 
 ## Layout and scope
 
-- Each page has one header, with the sidebar's toggle, the scope (directory and
-  harness), its breadcrumbs, and every action, an editor's Stage and Revert
-  included, then New and the staged changes, so actions are always at the top.
-  The sidebar holds the runtime page and the configuration tree.
+- Each page has one header. Its first row, as tall as the sidebar's, holds the
+  sidebar's toggle, the scope (directory and harness), the breadcrumbs, the
+  page's views, then New and the staged changes. A toolbar below holds what the
+  page shows (where it is defined, how it is viewed) and every action, an
+  editor's Stage and Revert included, so actions are always at the top; a page
+  without any has no toolbar. A single wrapping row put actions wherever the
+  width left them.
 - The sidebar, the same on every page, is the configuration as a tree, not a
-  list of pages: definitions by kind, by the bundles selecting them, or by the
-  file defining them, package skills under their package, and the files. Skills hold their files and MCP servers their tools, loaded when
+  list of pages: definitions ungrouped, by the bundles selecting them, or by the
+  file defining them, each split by kind or not, package skills under their
+  package, and the files. Skills hold their files and MCP servers their tools, loaded when
   first expanded, so a server starts only when someone looks inside it.
   Selecting an entry opens its page, with an overview of what it is and does
   and its definition on a second tab; there are no pages per kind, since each

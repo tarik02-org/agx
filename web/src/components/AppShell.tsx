@@ -11,7 +11,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
-  SidebarSeparator,
 } from "~/components/ui/sidebar.tsx";
 import { Toaster } from "~/components/ui/toast.tsx";
 import { TooltipProvider } from "~/components/ui/tooltip.tsx";
@@ -51,12 +50,14 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
         </a>
         <SidebarProvider>
           <Sidebar collapsible="offcanvas">
-            <SidebarHeader className="gap-2 px-3 pt-3">
-              <Link to="/" className="self-start px-1 font-mono font-semibold">
+            {/* As tall as the page header's first row, so their borders meet. */}
+            <SidebarHeader className="h-12 shrink-0 flex-row items-center border-b px-4 py-0">
+              <Link to="/" className="font-mono font-semibold">
                 agx
               </Link>
             </SidebarHeader>
-            <SidebarMenu className="px-2 py-1">
+            {/* As tall as the page toolbar, for the same reason. */}
+            <SidebarMenu className="h-10 shrink-0 justify-center border-b px-2">
               {sections.map((section) => (
                 <SidebarMenuItem key={section.to}>
                   <SidebarMenuButton
@@ -69,8 +70,7 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
-            <SidebarSeparator className="mx-0" />
-            <SidebarContent className="min-h-0 py-1">
+            <SidebarContent className="min-h-0">
               <ConfigTree />
             </SidebarContent>
           </Sidebar>
