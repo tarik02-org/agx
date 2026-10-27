@@ -222,8 +222,14 @@ export function ConfigTree() {
         targets.set(path, { page: "definition", kind: definition.kind, id: definition.id });
     }
   }
+  // Files sit under the root's directory, most of them; any other keeps its full path.
+  const rootDirectory = (configuration.data?.root ?? "").replace(/[^/]*$/, "");
   for (const file of configuration.data?.files ?? []) {
-    const path = `Files/${shortPath(file.path, home).replace(/^~\//, "")}`;
+    const relative =
+      rootDirectory !== "" && file.path.startsWith(rootDirectory)
+        ? file.path.slice(rootDirectory.length)
+        : shortPath(file.path, home).replace(/^\//, "");
+    const path = `Files/${relative}`;
     targets.set(path, { page: "file", file: file.path });
     if (file.readOnly) {
       decorations.set(path, "read-only");
