@@ -19,9 +19,8 @@ export function NewItemMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button variant="ghost" size="sm">
-            <PlusIcon data-icon="inline-start" />
-            New
+          <Button variant="outline" size="icon" aria-label="New…" title="New…">
+            <PlusIcon />
           </Button>
         }
       />

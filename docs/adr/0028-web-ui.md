@@ -131,13 +131,14 @@ tool whose author already writes Effect, and Aperture uses the same model.
 
 ## Layout and scope
 
-- Each page has one header. Its first row, as tall as the sidebar's, holds the
-  sidebar's toggle, the scope (directory and harness), the breadcrumbs, the
-  page's views, then New and the staged changes. A toolbar below holds what the
-  page shows (where it is defined, how it is viewed) and every action, an
-  editor's Stage and Revert included, so actions are always at the top; a page
-  without any has no toolbar. A single wrapping row put actions wherever the
-  width left them.
+- Each page has one header, one row as tall as the sidebar's, with the
+  sidebar's toggle, the breadcrumbs, the page's views, and every action, an
+  editor's Stage and Revert included, then the staged changes, so actions are
+  always at the top. What does not act (where a definition is, Form or YAML)
+  sits with the content. The scope (directory and harness) heads the sidebar,
+  above the tree it marks, and New sits beside the tree's search; in the header
+  they crowded the actions until the row wrapped, and a second row read as a
+  second header.
 - The sidebar, the same on every page, is the configuration as a tree, not a
   list of pages: definitions ungrouped, by the bundles selecting them, or by the
   file defining them, each split by kind or not, package skills under their

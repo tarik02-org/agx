@@ -11,12 +11,14 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
+  SidebarSeparator,
 } from "~/components/ui/sidebar.tsx";
 import { Toaster } from "~/components/ui/toast.tsx";
 import { TooltipProvider } from "~/components/ui/tooltip.tsx";
 import { ConfigTree } from "~/features/config/ConfigTree.tsx";
 import { ReviewChanges } from "~/features/config/ReviewChanges.tsx";
 import { useStaging } from "~/features/config/staging.ts";
+import { ScopeControl } from "~/features/scope/ScopeControl.tsx";
 
 interface Section {
   readonly label: string;
@@ -28,8 +30,8 @@ interface Section {
 const sections: ReadonlyArray<Section> = [{ label: "Runtime", to: "/", icon: ActivityIcon }];
 
 /**
- * The sidebar holds the pages and the configuration as a tree. Each page has the one header, with
- * the scope, its place, its actions, and the staged changes.
+ * The sidebar holds the scope, the pages, and the configuration as a tree, which the scope marks.
+ * Each page has the one header, with its place, its actions, and the staged changes.
  */
 export function AppShell({ children }: { readonly children: ReactNode }) {
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -50,14 +52,16 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
         </a>
         <SidebarProvider>
           <Sidebar collapsible="offcanvas">
-            {/* As tall as the page header's first row, so their borders meet. */}
+            {/* As tall as the page header, so their borders meet. */}
             <SidebarHeader className="h-12 shrink-0 flex-row items-center border-b px-4 py-0">
               <Link to="/" className="font-mono font-semibold">
                 agx
               </Link>
             </SidebarHeader>
-            {/* As tall as the page toolbar, for the same reason. */}
-            <SidebarMenu className="h-10 shrink-0 justify-center border-b px-2">
+            <div className="px-2 pt-2">
+              <ScopeControl />
+            </div>
+            <SidebarMenu className="p-2">
               {sections.map((section) => (
                 <SidebarMenuItem key={section.to}>
                   <SidebarMenuButton
@@ -70,6 +74,7 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
+            <SidebarSeparator className="mx-0" />
             <SidebarContent className="min-h-0">
               <ConfigTree />
             </SidebarContent>

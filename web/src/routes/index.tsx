@@ -22,9 +22,9 @@ function RuntimePage() {
       crumbs={[{ label: "Runtime" }]}
       details={
         state._tag === "Live" && (
-          <span className="truncate font-mono text-muted-foreground text-xs">
+          <>
             daemon {state.view.version} · {state.view.daemonInstanceId.slice(0, 12)}
-          </span>
+          </>
         )
       }
       actions={<InstallButton />}

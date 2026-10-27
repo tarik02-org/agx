@@ -56,14 +56,14 @@ export function ScopeControl() {
     });
   };
   return (
-    <div className="flex min-w-0 items-center rounded-md border">
+    <div className="flex w-full min-w-0 items-center rounded-md border">
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger
           render={
             <Button
               variant="ghost"
               size="sm"
-              className="min-w-0 max-w-72 shrink justify-start rounded-r-none font-mono"
+              className="min-w-0 flex-1 justify-start rounded-r-none font-mono"
             >
               {directory === "" ? (
                 <GlobeIcon data-icon="inline-start" />

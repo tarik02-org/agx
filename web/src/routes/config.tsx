@@ -14,7 +14,7 @@ import { useState } from "react";
 
 import { ConfirmAction } from "~/components/ConfirmAction.tsx";
 import { UnsavedChanges } from "~/components/UnsavedChanges.tsx";
-import { type Crumb, Page, PageActions, PageDetails, PageViews } from "~/components/Page.tsx";
+import { type Crumb, Page, PageActions, PageViews } from "~/components/Page.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
@@ -137,9 +137,13 @@ function ConfigPage() {
             kind={definition.kind}
             id={definition.id}
             trigger={
-              <Button variant="outline" size="sm">
-                <ListChecksIcon data-icon="inline-start" />
-                Enable or disable…
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Enable or disable…"
+                title="Enable or disable…"
+              >
+                <ListChecksIcon />
               </Button>
             }
           />
@@ -424,32 +428,6 @@ function DefinitionEditor({ kind, definition, initialId, home, schema }: Definit
       className="flex min-h-0 flex-1 flex-col gap-3"
     >
       <UnsavedChanges dirty={!readOnly && text !== saved} ignore={["view"]} />
-      <PageDetails>
-        {editable && (
-          <TabsList>
-            <TabsTrigger value="form" disabled={!formAvailable}>
-              Form
-            </TabsTrigger>
-            <TabsTrigger value="yaml">YAML</TabsTrigger>
-          </TabsList>
-        )}
-        {definition?.package !== undefined && definition.package !== "" && (
-          <Badge variant="secondary">
-            <PackageIcon data-icon="inline-start" />
-            {definition.package}
-          </Badge>
-        )}
-        {readOnly && <Badge variant="outline">read-only</Badge>}
-        {staged !== undefined && <Badge>{removing ? "removal staged" : "staged"}</Badge>}
-        {location !== undefined && (
-          <span
-            className="min-w-0 truncate font-mono text-muted-foreground text-xs"
-            title={location.path}
-          >
-            {`${definedAt(location.path, home)}${location.line > 0 ? `:${location.line}` : ""}`}
-          </span>
-        )}
-      </PageDetails>
       <PageActions>
         {!readOnly && (
           <>
@@ -496,6 +474,32 @@ function DefinitionEditor({ kind, definition, initialId, home, schema }: Definit
       </PageActions>
       {/* A form reads best narrow and centered; YAML takes the page. */}
       <div className={cn("flex w-full flex-col gap-3", tab === "form" && "mx-auto max-w-xl")}>
+        <div className="flex min-w-0 items-center gap-2">
+          {editable && (
+            <TabsList>
+              <TabsTrigger value="form" disabled={!formAvailable}>
+                Form
+              </TabsTrigger>
+              <TabsTrigger value="yaml">YAML</TabsTrigger>
+            </TabsList>
+          )}
+          {definition?.package !== undefined && definition.package !== "" && (
+            <Badge variant="secondary">
+              <PackageIcon data-icon="inline-start" />
+              {definition.package}
+            </Badge>
+          )}
+          {readOnly && <Badge variant="outline">read-only</Badge>}
+          {staged !== undefined && <Badge>{removing ? "removal staged" : "staged"}</Badge>}
+          {location !== undefined && (
+            <span
+              className="min-w-0 truncate font-mono text-muted-foreground text-xs"
+              title={location.path}
+            >
+              {`${definedAt(location.path, home)}${location.line > 0 ? `:${location.line}` : ""}`}
+            </span>
+          )}
+        </div>
         {readOnly && (
           <Alert>
             <LockIcon />
@@ -582,12 +586,10 @@ function FileEditor({
   return (
     <>
       {linkTarget !== "" && (
-        <PageDetails>
-          <span className="flex min-w-0 items-center gap-1 font-mono text-muted-foreground text-xs">
-            <LinkIcon className="size-3 shrink-0" />
-            <span className="truncate">{linkTarget}</span>
-          </span>
-        </PageDetails>
+        <span className="flex min-w-0 items-center gap-1 font-mono text-muted-foreground text-xs">
+          <LinkIcon className="size-3 shrink-0" />
+          <span className="truncate">{linkTarget}</span>
+        </span>
       )}
       {content.isPending && <Pending className="h-64" />}
       {content.isError && <DaemonProblem error={content.error} />}

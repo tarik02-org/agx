@@ -12,6 +12,7 @@ import { DaemonError } from "~/daemon/error.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
 import { useRunEffect } from "~/effect/react.tsx";
 import { kinds } from "~/features/config/kinds.ts";
+import { NewItemMenu } from "~/features/config/NewItemMenu.tsx";
 import {
   definitionIcon,
   filesIcon,
@@ -424,20 +425,23 @@ export function ConfigTree() {
       query={query}
       header={
         <div className="flex flex-col gap-2 p-2">
-          <InputGroup>
-            <InputGroupAddon>
-              <SearchIcon />
-            </InputGroupAddon>
-            <InputGroupInput
-              type="search"
-              aria-label="Search the configuration"
-              placeholder="Search configuration…"
-              autoComplete="off"
-              spellCheck={false}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </InputGroup>
+          <div className="flex items-center gap-1">
+            <InputGroup>
+              <InputGroupAddon>
+                <SearchIcon />
+              </InputGroupAddon>
+              <InputGroupInput
+                type="search"
+                aria-label="Search the configuration"
+                placeholder="Search configuration…"
+                autoComplete="off"
+                spellCheck={false}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </InputGroup>
+            <NewItemMenu />
+          </div>
           <TreeOption label="Group by">
             <ToggleGroup
               variant="outline"
