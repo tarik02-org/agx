@@ -135,8 +135,9 @@ tool whose author already writes Effect, and Aperture uses the same model.
   sidebar's toggle, the breadcrumbs, the page's views, and every action, an
   editor's Stage and Revert included, then the staged changes, so actions are
   always at the top. What does not act (where a definition is, Form or YAML)
-  sits with the content. The scope (directory and harness) heads the sidebar,
-  above the tree it marks, and New sits beside the tree's search; in the header
+  sits with the content. The sidebar's top row holds the runtime page and New, and
+  the scope (directory and harness) sits below it, above the tree it marks; in
+  the header
   they crowded the actions until the row wrapped, and a second row read as a
   second header.
 - The sidebar, the same on every page, is the configuration as a tree, not a

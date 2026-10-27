@@ -1,13 +1,14 @@
 # Web UI
 
 The daemon serves a web UI for what is easier to see than to read in a
-terminal. The sidebar starts with the **scope**: a directory or everywhere,
+terminal. The sidebar's top row links the runtime page and starts something
+**New**; below it is the **scope**: a directory or everywhere,
 picked from the directories scope rules name or by browsing folders, and the
 harness launching there. `agx ui` scopes the UI to the directory it runs in,
 and the scope stays in the address, so a scoped page can be shared and
 reloaded. Every page's header shows where the page is, every action it offers,
 and **Staged** while changes wait. Below the scope, the sidebar holds the
-runtime page, **New** beside the search, and the configuration as a tree: ungrouped, grouped by bundle (each bundle with
+configuration as a tree: ungrouped, grouped by bundle (each bundle with
 what it selects, then what no bundle selects), or grouped by file (each fragment
 with what it defines), and split by type or not. An empty kind offers to add
 one, and package skills sit under their package. Expanding a
