@@ -20,7 +20,7 @@ func TestCodexPlugins(t *testing.T) {
 	e.write("disabled-codex/config.toml", "[features]\nplugins = false\n")
 	e.write("override-codex/config.toml", "[features]\nplugins = false\n")
 	quoted := func(path string) string { return "'" + filepath.ToSlash(path) + "'" }
-	e.write("config/agx.yaml", `skills:
+	e.write("config/main.yaml", `skills:
   review: {path: ./skills/review}
 scopes:
   - directory: ../work

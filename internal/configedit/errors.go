@@ -4,7 +4,6 @@
 package configedit
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -22,12 +21,17 @@ const (
 	NotFound Code = "not_found"
 	// InvalidRequest: the edit is malformed or names something it may not.
 	InvalidRequest Code = "invalid_request"
+	// ChooseFile: new definitions or rules could go to several fragments, listed in Files, and
+	// the edit names none.
+	ChooseFile Code = "choose_file"
 )
 
 // Error is an edit error with its classification.
 type Error struct {
 	Code Code
 	Err  error
+	// Files lists the fragments to choose from, with ChooseFile.
+	Files []string
 }
 
 func (e *Error) Error() string { return e.Err.Error() }
@@ -43,13 +47,4 @@ func coded(code Code, err error) error {
 		return nil
 	}
 	return &Error{Code: code, Err: err}
-}
-
-// CodeOf returns the classification of err, if it carries one.
-func CodeOf(err error) (Code, bool) {
-	var e *Error
-	if errors.As(err, &e) {
-		return e.Code, true
-	}
-	return "", false
 }

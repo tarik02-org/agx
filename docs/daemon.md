@@ -56,8 +56,8 @@ in the foreground:
 agx daemon start --foreground
 ```
 
-and turn off automatic starting, so commands fail instead of starting a second
-copy outside the service manager:
+and turn off automatic starting in the root `agx.yaml`, so commands fail instead
+of starting a second copy outside the service manager:
 
 ```yaml
 daemon:

@@ -276,15 +276,20 @@ type ScopeSpec struct {
 	Remove    SelectionSpec `yaml:"remove"    jsonschema_description:"Resources to deselect."`
 }
 
-// Daemon settings each come from at most one fragment.
 type Daemon struct {
 	LeaseSeconds int   `yaml:"lease_seconds" json:"lease_seconds"       jsonschema:"minimum=3" jsonschema_description:"Launch lease length; defaults to 60."`
 	RenewSeconds int   `yaml:"renew_seconds" json:"renew_seconds"       jsonschema:"minimum=1" jsonschema_description:"Lease renewal interval, shorter than the lease; defaults to 20."`
 	Autostart    *bool `yaml:"autostart"     json:"autostart,omitempty"                        jsonschema_description:"Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."`
 }
 
+// RootFile is the root configuration file: the fragments it lists and machine-level settings.
+type RootFile struct {
+	Fragments []string `yaml:"fragments" jsonschema_description:"Fragments to load, relative to this file: paths, which must exist, or glob patterns, which may match nothing, loaded in lexical order."`
+	Daemon    Daemon   `yaml:"daemon"    jsonschema_description:"Launch lease timing and automatic daemon startup."`
+}
+
+// Document is a configuration fragment, or a package manifest.
 type Document struct {
-	Imports      []string            `yaml:"imports"      jsonschema_description:"Fragments loaded before this file, relative to it: paths, which must exist, or glob patterns, which may match nothing, loaded in lexical order."`
 	Packages     map[ID]Package      `yaml:"packages"     jsonschema_description:"Package sources by ID."`
 	Skills       map[ID]Skill        `yaml:"skills"       jsonschema_description:"Skills: directories containing SKILL.md, Git sources, or generated from content."`
 	Instructions map[ID]Instructions `yaml:"instructions" jsonschema_description:"Instructions applied to launches: files, Git sources, or text."`
@@ -293,7 +298,6 @@ type Document struct {
 	Bundles      map[ID]BundleSpec   `yaml:"bundles"      jsonschema_description:"Named selections of resources."`
 	Scopes       []ScopeSpec         `yaml:"scopes"       jsonschema_description:"Directory rules that add or remove resources."`
 	Harnesses    map[string]Harness  `yaml:"harnesses"    jsonschema_description:"Built-in harness customizations and new definitions."`
-	Daemon       Daemon              `yaml:"daemon"       jsonschema_description:"Launch lease timing and automatic daemon startup."`
 }
 
 type Config struct {
@@ -316,8 +320,8 @@ type Config struct {
 	// rootDefinitions maps definitions from configuration fragments to their override flag,
 	// so package manifests merged later cannot replace them.
 	rootDefinitions map[string]bool
-	// daemonSet records the fragment that set each daemon setting.
-	daemonSet map[string]string
+	// fragments holds the root's fragment entries, resolved: absolute paths and glob patterns.
+	fragments []string
 	builtins  Builtins
 }
 

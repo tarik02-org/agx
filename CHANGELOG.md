@@ -6,7 +6,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 agx has not been released yet. What it does today:
 
-- Directory-scoped configuration: YAML fragments with imports, scope rules that add and
+- Directory-scoped configuration: a root `agx.yaml` listing fragments and holding daemon settings, YAML
+  fragments with the definitions, scope rules that add and
   remove skills, instructions, MCP servers, and bundles per directory or harness, and
   `agx explain` with provenance.
 - Skills and instructions from directories, Git, or inline text; packages from local paths
@@ -26,12 +27,17 @@ agx has not been released yet. What it does today:
   `agx unuse`) that keep comments and layout, and a Connect API to plan and apply the same
   edits.
 - `agx doctor`, `--json` on every command, shell completions, `agx man`, JSON Schemas for
-  configuration and package manifests, a Home Manager module, and a nightly prerelease per
-  `master` build.
+  the root file, fragments, and package manifests, a Home Manager module, and a nightly
+  prerelease per `master` build.
 
 ### Changed
 
-- `imports` is a list of strings: a path that must exist, or a glob that may match nothing.
+- The root `agx.yaml` holds only `fragments` and `daemon`; `imports` is gone. `fragments` is a
+  list of strings, a path that must exist or a glob that may match nothing, and fragments hold
+  the definitions and cannot list others.
+- Editing commands write new definitions and rules to `--file`, the only writable fragment, or
+  one picked on a terminal, creating `agx.d/main.yaml` when there is none; `PlanChangesRequest.file`
+  replaces `DefineChange.file`.
 - Removed `rev`; a full commit hash in `ref` pins a Git source.
 - Removed the `lockfile` key; unpinned packages lock in `agx.lock.json` beside their fragment.
 - Removed the MCP `transport` key; `url` means HTTP and `command` means stdio.

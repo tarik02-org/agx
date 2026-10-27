@@ -186,7 +186,7 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			if err := s.define(config.KindMCPServers, id, file, definition); err != nil {
 				return err
 			}
-			if err := s.enableAfterDefine(config.KindMCPServers, id, file, flags); err != nil {
+			if err := s.enableAfterDefine(config.KindMCPServers, id, flags); err != nil {
 				return err
 			}
 			needsLogin := false

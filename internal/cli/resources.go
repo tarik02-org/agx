@@ -81,7 +81,7 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 			if err := s.define(config.KindInstructions, id, file, definition); err != nil {
 				return err
 			}
-			if err := s.enableAfterDefine(config.KindInstructions, id, file, flags); err != nil {
+			if err := s.enableAfterDefine(config.KindInstructions, id, flags); err != nil {
 				return err
 			}
 			if _, err := s.commit(); err != nil {
@@ -199,7 +199,7 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 			if err != nil {
 				return err
 			}
-			f, err := s.File(file)
+			f, err := s.Open(file)
 			if err != nil {
 				return err
 			}
@@ -216,8 +216,7 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 		},
 	}
 	flags.registerYes(add)
-	add.Flags().
-		StringVar(&flags.file, "file", "", "fragment to write the definition to (default: the root configuration)")
+	flags.registerFile(add)
 	add.Flags().StringVar(&base, "base", "", "harness this definition extends")
 	add.Flags().StringVar(&executable, "executable", "", "absolute path of the native executable")
 	add.Flags().
@@ -305,15 +304,14 @@ func useCommands(paths *platform.Paths, builtins *config.Builtins) []*cobra.Comm
 				if err != nil {
 					return err
 				}
-				fallback, err := s.ruleFile(kind, id, flags.file)
-				if err != nil {
+				if err := s.useFile(flags.file); err != nil {
 					return err
 				}
 				var changed bool
 				if use {
-					changed, err = s.enable(kind, id, target, fallback)
+					changed, err = s.enable(kind, id, target)
 				} else {
-					changed, err = s.disable(kind, id, target, fallback)
+					changed, err = s.disable(kind, id, target)
 				}
 				if err != nil {
 					return err
@@ -335,7 +333,7 @@ func useCommands(paths *platform.Paths, builtins *config.Builtins) []*cobra.Comm
 		cmd.Flags().StringVar(&flags.scope, "scope", "user",
 			"user (everywhere), here (this directory), or a directory")
 		cmd.Flags().StringSliceVar(&flags.harnesses, "harness", nil, "only for these harnesses (repeatable)")
-		cmd.Flags().StringVar(&flags.file, "file", "", "fragment for a new rule (default: beside the definition)")
+		flags.registerFile(cmd)
 		cmd.Flags().StringVar(&kind, "kind", "", "skills, instructions, mcp, or bundles, when the ID names several")
 		flags.registerYes(cmd)
 		out = append(out, cmd)
@@ -380,12 +378,4 @@ func resourceKind(c *config.Config, id, only string) (config.Kind, error) {
 		}
 	}
 	return kinds[0], nil
-}
-
-// ruleFile is where a new rule for id goes: --file, else the fragment defining it, else the root.
-func (s *session) ruleFile(kind config.Kind, id, flag string) (string, error) {
-	if flag != "" {
-		return s.definitionFile(flag)
-	}
-	return s.RuleFile(kind, id), nil
 }

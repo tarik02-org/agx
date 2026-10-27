@@ -18,7 +18,7 @@ import (
 func TestHarnessSettings(t *testing.T) {
 	e := newEnv(t)
 	harness := "'" + filepath.ToSlash(binaries.harness) + "'"
-	e.write("config/agx.yaml", `harnesses:
+	e.write("config/main.yaml", `harnesses:
   codex:
     executable: `+harness+`
     settings:

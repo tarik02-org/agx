@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -20,11 +21,33 @@ var (
 	skillFileKey = `^/|(^|/)\.{1,2}(/|$)|//|\\|(^|/)\.git(/|$)|^[Ss][Kk][Ii][Ll][Ll]\.[Mm][Dd]$`
 )
 
-// manifestExcluded lists the top-level fields package manifests cannot declare.
-var manifestExcluded = []string{"imports", "scopes", "harnesses", "daemon"}
+// SchemaKind names a kind of configuration file, each with its own schema.
+type SchemaKind string
 
-// Schema renders the JSON Schema of configuration fragments, or of package manifests.
-func Schema(manifest bool, builtins Builtins) ([]byte, error) {
+const (
+	// RootSchema is the root configuration file, which holds fragments and daemon settings.
+	RootSchema SchemaKind = "root"
+	// FragmentSchema is an imported fragment, which holds definitions.
+	FragmentSchema SchemaKind = "fragment"
+	// ManifestSchema is a package manifest.
+	ManifestSchema SchemaKind = "manifest"
+)
+
+// SchemaFiles names the published schema of each kind.
+var SchemaFiles = map[SchemaKind]string{
+	RootSchema:     "agx.root.schema.json",
+	FragmentSchema: "agx.schema.json",
+	ManifestSchema: "agx.package.schema.json",
+}
+
+// sections lists the top-level fields of fragments.
+var sections = []string{"packages", "skills", "instructions", "mcp", "secrets", "bundles", "scopes", "harnesses"}
+
+// manifestExcluded lists the fragment fields package manifests cannot declare.
+var manifestExcluded = []string{"scopes", "harnesses"}
+
+// Schema renders the JSON Schema of a kind of configuration file.
+func Schema(kind SchemaKind, builtins Builtins) ([]byte, error) {
 	r := &jsonschema.Reflector{
 		FieldNameTag:               "yaml",
 		RequiredFromJSONSchemaTags: true,
@@ -38,18 +61,28 @@ func Schema(manifest bool, builtins Builtins) ([]byte, error) {
 			return nil
 		},
 	}
-	s := r.Reflect(Document{})
-	s.Definitions["Args"] = argsSchema(builtins)
-	s.ID = schemaBase + "agx.schema.json"
-	s.Title = "agx configuration fragment"
-	if manifest {
-		s.ID = schemaBase + "agx.package.schema.json"
+	var s *jsonschema.Schema
+	switch kind {
+	case RootSchema:
+		s = r.Reflect(RootFile{})
+		s.Title = "agx root configuration"
+	case FragmentSchema:
+		s = r.Reflect(Document{})
+		s.Title = "agx configuration fragment"
+	case ManifestSchema:
+		s = r.Reflect(Document{})
 		s.Title = "agx package manifest"
 		for _, name := range manifestExcluded {
 			s.Properties.Delete(name)
 		}
-		pruneDefinitions(s)
+	default:
+		return nil, fmt.Errorf("unknown schema kind %q", kind)
 	}
+	s.ID = jsonschema.ID(schemaBase + SchemaFiles[kind])
+	if kind != RootSchema {
+		s.Definitions["Args"] = argsSchema(builtins)
+	}
+	pruneDefinitions(s)
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return nil, err
@@ -57,7 +90,7 @@ func Schema(manifest bool, builtins Builtins) ([]byte, error) {
 	return append(b, '\n'), nil
 }
 
-// pruneDefinitions drops definitions only the removed manifest fields referenced.
+// pruneDefinitions drops definitions nothing references, such as those of removed fields.
 func pruneDefinitions(root *jsonschema.Schema) {
 	used := map[string]bool{}
 	var visit func(*jsonschema.Schema)

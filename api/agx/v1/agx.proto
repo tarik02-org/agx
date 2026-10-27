@@ -151,10 +151,14 @@ message ErrorDetail {
     // A service the daemon depends on, such as an OAuth authorization server, could not be
     // reached or failed; retrying later may succeed.
     REASON_NETWORK = 12;
+    // Configuration changes could go to several fragments; the request must name one.
+    REASON_CHOOSE_FILE = 13;
   }
   Reason reason = 1;
   // Where a configuration that does not load has the problem, when known.
   SourceLocation source = 2;
+  // With REASON_CHOOSE_FILE, the writable fragments to choose from.
+  repeated string files = 3;
 }
 
 message Snapshot {
@@ -725,12 +729,13 @@ message ConfigChange {
   }
 }
 // Creates or replaces a definition with the given YAML value, in the file that defines it now,
-// or in file (default: the root configuration) for a new one.
+// or in the request's target fragment for a new one.
 message DefineChange {
+  reserved 4;
+  reserved "file";
   string kind = 1;
   string id = 2;
   string yaml = 3;
-  string file = 4;
 }
 // Removes a definition and every reference to it.
 message UndefineChange {
@@ -760,6 +765,11 @@ message PackageSource {
 
 message PlanChangesRequest {
   repeated ConfigChange changes = 1;
+  // The fragment new definitions, rules, and packages go to: a writable fragment the root
+  // lists, or a new file its globs match. Empty chooses the only writable fragment, or
+  // agx.d/main.yaml when there is none; with several, the plan fails with
+  // REASON_CHOOSE_FILE listing them in ErrorDetail.files.
+  string file = 2;
 }
 message PlannedFile {
   string path = 1;
@@ -775,6 +785,8 @@ message ApplyChangesRequest {
   repeated ConfigChange changes = 1;
   // The files of the plan with the hashes it saw; a file that changed since fails the apply.
   repeated PlannedFile expected = 2;
+  // The target fragment the plan was made with.
+  string file = 3;
 }
 message ApplyChangesResponse {
   repeated string written = 1;

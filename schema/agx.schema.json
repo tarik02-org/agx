@@ -88,26 +88,6 @@
       "additionalProperties": false,
       "type": "object"
     },
-    "Daemon": {
-      "properties": {
-        "lease_seconds": {
-          "type": "integer",
-          "minimum": 3,
-          "description": "Launch lease length; defaults to 60."
-        },
-        "renew_seconds": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "Lease renewal interval, shorter than the lease; defaults to 20."
-        },
-        "autostart": {
-          "type": "boolean",
-          "description": "Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
-    },
     "Harness": {
       "properties": {
         "base": {
@@ -1085,13 +1065,6 @@
     }
   },
   "properties": {
-    "imports": {
-      "items": {
-        "type": "string"
-      },
-      "type": "array",
-      "description": "Fragments loaded before this file, relative to it: paths, which must exist, or glob patterns, which may match nothing, loaded in lexical order."
-    },
     "packages": {
       "additionalProperties": {
         "$ref": "#/$defs/Package"
@@ -1168,10 +1141,6 @@
       },
       "type": "object",
       "description": "Built-in harness customizations and new definitions."
-    },
-    "daemon": {
-      "$ref": "#/$defs/Daemon",
-      "description": "Launch lease timing and automatic daemon startup."
     }
   },
   "additionalProperties": false,

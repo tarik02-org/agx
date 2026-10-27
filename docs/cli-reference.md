@@ -49,7 +49,7 @@ go before it.
 | Command | Description |
 | --- | --- |
 | `agx config validate` | load and check the whole configuration |
-| `agx config schema [--package]` | print the JSON Schema for configuration files or package manifests |
+| `agx config schema [--root\|--package]` | print the JSON Schema for fragments, the root file, or package manifests |
 | `agx explain [dir] [--harness <name>] [--verbose]` | show why each resource is selected or removed |
 | `agx install [--frozen]` | install packages and write lockfiles; register Codex skill plugins |
 | `agx update [package-id...]` | move packages to their newest commit (all when none given) |
@@ -82,7 +82,7 @@ Commands that write take:
 | --- | --- |
 | `--scope user\|here\|<dir>` | where to enable: everywhere (default), here and below, or a directory |
 | `--harness <name>` | only for these harnesses; repeatable |
-| `--file <path>` | fragment to write new definitions to (default: the root configuration) |
+| `--file <path>` | fragment for new definitions and rules, relative to the root file's directory (default: the only writable fragment, `agx.d/main.yaml` when there is none, or asked on a terminal) |
 | `--define-only` | define without enabling (`add` only) |
 | `-y`, `--yes` | write without confirming; implied without a terminal |
 | `--force` | `remove`: also remove the entries that refer to the definition (a package's enabling rule entries go without it) |
@@ -220,6 +220,7 @@ What `data` holds:
   | `read_only` | the target can't be edited |
   | `invalid_request` | the request was rejected as invalid |
   | `failed_precondition` | the command can't run in the current state |
+  | `choose_file` | new definitions could go to several fragments; pass `--file` |
   | `needs_login` | a secret needs `agx secret login` first |
   | `mcp_failed` | an MCP server failed the request, or could not be reached or started |
   | `daemon_unavailable` | the daemon isn't running and couldn't start |

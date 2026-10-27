@@ -17,7 +17,7 @@ Codex · Claude Code · Pi
 ## What it looks like
 
 ```yaml
-# ~/.config/agx/agx.yaml
+# ~/.config/agx/agx.d/main.yaml, listed in agx.yaml
 packages:
   mattpocock:
     git: https://github.com/mattpocock/skills.git
@@ -133,7 +133,8 @@ nix profile install github:tarik02-org/agx
 <summary><b>Home Manager</b></summary>
 
 The flake's `homeManagerModules.default` installs agx and writes `programs.agx.settings`
-to the drop-in `agx.d/10-home-manager.yaml`, validated at build time:
+to the drop-in `agx.d/10-home-manager.yaml`, validated at build time; `settings.daemon`
+goes to the root `agx.yaml` instead:
 
 ```nix
 { config, pkgs, ... }: {

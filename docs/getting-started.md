@@ -20,7 +20,8 @@ agx --version
 ## 2. Try the bundled example (optional)
 
 Release archives and the source tree contain `examples/agx.yaml`, a small
-configuration that adds one set of instructions for the directory it sits in.
+configuration whose fragment, `examples/main.yaml`, adds one set of instructions
+for the directory it sits in.
 From the unpacked archive or a checkout:
 
 ```sh
@@ -118,10 +119,11 @@ daemon, MCP servers, and secrets, and prints a fix for each problem.
 
 ## Where things went
 
-- Your configuration is one YAML file, `agx/agx.yaml` in your configuration
-  directory (`~/.config` on Linux, `~/Library/Application Support` on macOS).
-  The commands above edit it for you, keeping comments and layout; you can also
-  edit it by hand. See [Configuration](configuration.md).
+- Your configuration is `agx/agx.yaml` in your configuration directory
+  (`~/.config` on Linux, `~/Library/Application Support` on macOS), which
+  lists `agx.d/main.yaml`, where the commands above wrote your definitions.
+  They keep comments and layout; you can also edit the files by hand. See
+  [Configuration](configuration.md).
 - The first command that needed it started the agx [daemon](daemon.md) in the
   background. It runs your MCP servers and holds their credentials.
 
