@@ -6,7 +6,7 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 agx has not been released yet. What it does today:
 
-- Directory-scoped configuration: a root `agx.yaml` with imports and daemon settings, YAML
+- Directory-scoped configuration: a root `agx.yaml` listing fragments and holding daemon settings, YAML
   fragments with the definitions, scope rules that add and
   remove skills, instructions, MCP servers, and bundles per directory or harness, and
   `agx explain` with provenance.
@@ -32,9 +32,9 @@ agx has not been released yet. What it does today:
 
 ### Changed
 
-- `imports` is a list of strings: a path that must exist, or a glob that may match nothing.
-- The root `agx.yaml` holds only `imports` and `daemon`; definitions live in the fragments it
-  imports, which cannot import others.
+- The root `agx.yaml` holds only `fragments` and `daemon`; `imports` is gone. `fragments` is a
+  list of strings, a path that must exist or a glob that may match nothing, and fragments hold
+  the definitions and cannot list others.
 - Editing commands write new definitions and rules to `--file`, the only writable fragment, or
   one picked on a terminal, creating `agx.d/main.yaml` when there is none; `PlanChangesRequest.file`
   replaces `DefineChange.file`.

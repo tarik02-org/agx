@@ -38,7 +38,7 @@ let
   configRoot = "${config.home.homeDirectory}/${rootPath}";
   definitions = removeAttrs cfg.settings [ "daemon" ];
   root = yamlFormat.generate "agx.yaml" {
-    imports = [ "agx.d/*.yaml" ];
+    fragments = [ "agx.d/*.yaml" ];
     inherit (cfg.settings) daemon;
   };
   # agx shims install writes here, given this XDG_DATA_HOME.
@@ -130,7 +130,7 @@ in
       description = ''
         agx configuration written to `agx.d/<dropInName>.yaml` in agx's
         configuration directory; see agx's docs/configuration.md. `daemon`
-        goes to the root `agx.yaml` instead, which then imports
+        goes to the root `agx.yaml` instead, which then lists
         `agx.d/*.yaml` and nothing else. Express YAML
         tags such as `!secret github` with `config.lib.agx.secret "github"`,
         `config.lib.agx.env`, `config.lib.agx.file`, or
@@ -211,13 +211,13 @@ in
 
       home.file.${rootPath} = lib.mkIf (cfg.settings ? daemon) { source = root; };
 
-      # agx imports `agx.d/*.yaml` only when no root file exists or the root
-      # file imports them itself.
-      home.activation.agxCheckImports = lib.mkIf (definitions != { }) (
+      # agx loads `agx.d/*.yaml` only when no root file exists or the root
+      # file lists them itself.
+      home.activation.agxCheckFragments = lib.mkIf (definitions != { }) (
         lib.hm.dag.entryAfter [ "writeBoundary" ] ''
           agx_root=${lib.escapeShellArg configRoot}
           if [[ -e "$agx_root" ]] && ! ${lib.getExe pkgs.gnugrep} -q 'agx\.d/' "$agx_root"; then
-            warnEcho "$agx_root does not import agx.d/*.yaml; add 'imports: [agx.d/*.yaml]' to load ${dropInPath}"
+            warnEcho "$agx_root does not list agx.d/*.yaml; add 'fragments: [agx.d/*.yaml]' to load ${dropInPath}"
           fi
         ''
       );

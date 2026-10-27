@@ -1,4 +1,4 @@
-# Definitions and rules; agx.yaml imports this fragment. Relative paths and scope
+# Definitions and rules; agx.yaml lists this fragment. Relative paths and scope
 # directories are relative to this file.
 instructions:
   repository:

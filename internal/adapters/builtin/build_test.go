@@ -48,7 +48,7 @@ func newFixture(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	executable := "'" + filepath.ToSlash(fake) + "'"
-	write(t, filepath.Join(dir, "agx.yaml"), "imports: [main.yaml]\n")
+	write(t, filepath.Join(dir, "agx.yaml"), "fragments: [main.yaml]\n")
 	write(t, filepath.Join(dir, "main.yaml"), `skills:
   review: {path: ./skills/review}
 instructions:

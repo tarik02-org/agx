@@ -13,9 +13,9 @@ import (
 	"github.com/tarik02-org/agx/internal/securefs"
 )
 
-func TestImportsLoadInOrder(t *testing.T) {
+func TestFragmentsLoadInOrder(t *testing.T) {
 	dir := t.TempDir()
-	root := write(t, filepath.Join(dir, "agx.yaml"), `imports:
+	root := write(t, filepath.Join(dir, "agx.yaml"), `fragments:
   - first.yaml
   - agx.d/*.yaml
   - none.d/*.yaml
@@ -28,25 +28,25 @@ func TestImportsLoadInOrder(t *testing.T) {
 	write(t, filepath.Join(dir, "agx.d", "notes.txt"), "not a fragment")
 	mkdir(t, filepath.Join(dir, "agx.d", "30-dir.yaml"))
 
-	// A fragment two imports match loads once, and a glob matching the root skips it.
+	// A fragment two entries match loads once, and a glob matching the root skips it.
 	c := read(t, root)
 	want := []string{canonical(t, first), canonical(t, a), canonical(t, b), canonical(t, root)}
 	if !slices.Equal(c.Files, want) {
 		t.Fatalf("files = %q, want %q", c.Files, want)
 	}
-	for path, imported := range map[string]bool{
+	for path, listed := range map[string]bool{
 		first:                                   true,
 		filepath.Join(dir, "agx.d", "new.yaml"): true,
 		filepath.Join(dir, "none.d", "x.yaml"):  true,
 		filepath.Join(dir, "other", "x.yaml"):   false,
 	} {
-		if got := c.Imports(canonical(t, path)); got != imported {
-			t.Errorf("Imports(%s) = %v, want %v", path, got, imported)
+		if got := c.Lists(canonical(t, path)); got != listed {
+			t.Errorf("Lists(%s) = %v, want %v", path, got, listed)
 		}
 	}
 }
 
-func TestMissingRootImportsDropIns(t *testing.T) {
+func TestMissingRootListsDropIns(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "agx.d", "10.yaml"), "instructions:\n  dropin: {text: hi}\n")
 	c := read(t, filepath.Join(dir, "agx.yaml"))
@@ -55,28 +55,28 @@ func TestMissingRootImportsDropIns(t *testing.T) {
 	}
 }
 
-func TestImportErrors(t *testing.T) {
+func TestLoadErrors(t *testing.T) {
 	tests := []struct {
 		name  string
 		files map[string]string
 		want  []string
 	}{
 		{
-			name:  "missing import",
-			files: map[string]string{"agx.yaml": "imports: [nope.yaml]\n"},
+			name:  "missing fragment",
+			files: map[string]string{"agx.yaml": "fragments: [nope.yaml]\n"},
 			want:  []string{"nope.yaml"},
 		},
 		{
-			name: "error inside an imported glob match",
+			name: "error inside an listed glob match",
 			files: map[string]string{
-				"agx.yaml":           "imports: [local.d/*.yaml]\n",
+				"agx.yaml":           "fragments: [local.d/*.yaml]\n",
 				"local.d/local.yaml": "bogus: true\n",
 			},
 			want: []string{"local.yaml", "local.yaml:1: unknown key bogus"},
 		},
 		{
-			name:  "import object",
-			files: map[string]string{"agx.yaml": "imports: [{path: a.yaml}]\n"},
+			name:  "fragment object",
+			files: map[string]string{"agx.yaml": "fragments: [{path: a.yaml}]\n"},
 			want:  []string{"agx.yaml:1"},
 		},
 		{
@@ -91,25 +91,25 @@ func TestImportErrors(t *testing.T) {
 		},
 		{
 			name:  "definitions in the root",
-			files: map[string]string{"agx.yaml": "imports: []\nskills: {}\n"},
+			files: map[string]string{"agx.yaml": "fragments: []\nskills: {}\n"},
 			want: []string{
-				"agx.yaml:2: the root configuration holds imports and daemon settings only; " +
+				"agx.yaml:2: the root configuration holds fragments and daemon settings only; " +
 					"move skills into a fragment such as agx.d/main.yaml",
 			},
 		},
 		{
-			name:  "imports in a fragment",
-			files: map[string]string{"agx.yaml": "imports: [a.yaml]\n", "a.yaml": "imports: [b.yaml]\n"},
-			want:  []string{"a.yaml:1: imports belongs in the root configuration"},
+			name:  "fragments in a fragment",
+			files: map[string]string{"agx.yaml": "fragments: [a.yaml]\n", "a.yaml": "fragments: [b.yaml]\n"},
+			want:  []string{"a.yaml:1: fragments belongs in the root configuration"},
 		},
 		{
 			name:  "daemon settings in a fragment",
-			files: map[string]string{"agx.yaml": "imports: [a.yaml]\n", "a.yaml": "daemon: {autostart: false}\n"},
+			files: map[string]string{"agx.yaml": "fragments: [a.yaml]\n", "a.yaml": "daemon: {autostart: false}\n"},
 			want:  []string{"a.yaml:1: daemon belongs in the root configuration"},
 		},
 		{
 			name:  "duplicate key",
-			files: map[string]string{"agx.yaml": "imports: [a.yaml]\n", "a.yaml": "skills: {}\nskills: {}\n"},
+			files: map[string]string{"agx.yaml": "fragments: [a.yaml]\n", "a.yaml": "skills: {}\nskills: {}\n"},
 			want:  []string{"skills"},
 		},
 	}
@@ -577,7 +577,7 @@ harnesses:
 		}
 	}
 	if _, ok := c.Instructions["frag"]; !ok {
-		t.Error("~ import not loaded")
+		t.Error("~ fragment not loaded")
 	}
 	if got := c.MCP["up"].Command[1]; got != "--stdio" {
 		t.Errorf("arguments after the executable changed: %q", got)
@@ -591,7 +591,7 @@ harnesses:
 		_, err := config.Load(root, config.Options{Builtins: builtins})
 		wantError(t, err, "~user paths are not supported")
 	}
-	root = write(t, filepath.Join(t.TempDir(), "agx.yaml"), "imports: [~other/x.yaml]\n")
+	root = write(t, filepath.Join(t.TempDir(), "agx.yaml"), "fragments: [~other/x.yaml]\n")
 	_, err := config.Load(root, config.Options{Builtins: builtins})
 	wantError(t, err, "~user paths are not supported")
 }

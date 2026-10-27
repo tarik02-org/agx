@@ -29,8 +29,8 @@ func write(t *testing.T, path, content string) string {
 func fragment(t *testing.T, dir, content string, before ...string) string {
 	t.Helper()
 	write(t, filepath.Join(dir, "main.yaml"), content)
-	imports := strings.Join(append(before, "main.yaml"), ", ")
-	return write(t, filepath.Join(dir, "agx.yaml"), "imports: ["+imports+"]\n")
+	fragments := strings.Join(append(before, "main.yaml"), ", ")
+	return write(t, filepath.Join(dir, "agx.yaml"), "fragments: ["+fragments+"]\n")
 }
 
 // absolute replaces ABS in YAML with dir, written so that it is absolute on every platform.

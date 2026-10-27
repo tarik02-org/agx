@@ -278,10 +278,10 @@ func misplaced(file SchemaKind, key string) string {
 	switch {
 	case file == RootSchema && slices.Contains(sections, key):
 		return fmt.Sprintf(
-			"the root configuration holds imports and daemon settings only; move %s into a fragment such as agx.d/main.yaml",
+			"the root configuration holds fragments and daemon settings only; move %s into a fragment such as agx.d/main.yaml",
 			key,
 		)
-	case file == FragmentSchema && (key == "imports" || key == "daemon"):
+	case file == FragmentSchema && (key == "fragments" || key == "daemon"):
 		return key + " belongs in the root configuration; fragments hold definitions only"
 	}
 	return ""

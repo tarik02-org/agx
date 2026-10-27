@@ -1,3 +1,3 @@
-# The root file holds only imports and daemon settings. Machine-specific
+# The root file lists the fragments to load and holds daemon settings. Machine-specific
 # mappings can live in drop-ins; a glob may match nothing.
-imports: [main.yaml, local.d/*.yaml]
+fragments: [main.yaml, local.d/*.yaml]

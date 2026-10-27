@@ -63,7 +63,7 @@ func writeConfig(t *testing.T, dir, definitions string) (string, string) {
 	if err := os.MkdirAll(filepath.Dir(fragment), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(root, []byte("imports: [agx.d/*.yaml]\n"), 0o600); err != nil {
+	if err := os.WriteFile(root, []byte("fragments: [agx.d/*.yaml]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if definitions != "" {

@@ -106,7 +106,7 @@ pkgs.runCommand "agx-home-manager-module" { } ''
   grep -q 'lease_seconds: 90' ${root}
   grep -q 'agx.d/\*.yaml' ${root}
   grep -q "XDG_DATA_HOME='\?/home/test/.local/share'\? .*" ${activation}
-  grep -q 'does not import agx.d' ${activation}
+  grep -q 'does not list agx.d' ${activation}
   [ -L ${links}/bin/codex ] && [ -L ${links}/bin/claude ]
   [ ${lib.escapeShellArg (toString cfg.home.sessionPath)} = /home/test/.local/share/agx/shims ]
   touch $out

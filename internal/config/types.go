@@ -282,10 +282,10 @@ type Daemon struct {
 	Autostart    *bool `yaml:"autostart"     json:"autostart,omitempty"                        jsonschema_description:"Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."`
 }
 
-// RootFile is the root configuration file: the fragments it imports and machine-level settings.
+// RootFile is the root configuration file: the fragments it lists and machine-level settings.
 type RootFile struct {
-	Imports []string `yaml:"imports" jsonschema_description:"Fragments to load, relative to this file: paths, which must exist, or glob patterns, which may match nothing, loaded in lexical order."`
-	Daemon  Daemon   `yaml:"daemon"  jsonschema_description:"Launch lease timing and automatic daemon startup."`
+	Fragments []string `yaml:"fragments" jsonschema_description:"Fragments to load, relative to this file: paths, which must exist, or glob patterns, which may match nothing, loaded in lexical order."`
+	Daemon    Daemon   `yaml:"daemon"    jsonschema_description:"Launch lease timing and automatic daemon startup."`
 }
 
 // Document is a configuration fragment, or a package manifest.
@@ -320,9 +320,9 @@ type Config struct {
 	// rootDefinitions maps definitions from configuration fragments to their override flag,
 	// so package manifests merged later cannot replace them.
 	rootDefinitions map[string]bool
-	// imports holds the root's imports, resolved: absolute paths and glob patterns.
-	imports  []string
-	builtins Builtins
+	// fragments holds the root's fragment entries, resolved: absolute paths and glob patterns.
+	fragments []string
+	builtins  Builtins
 }
 
 // MissingPackage is a package that is not installed. Root is the declared package the warning

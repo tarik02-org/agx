@@ -123,8 +123,8 @@ func newEnv(t *testing.T) *env {
 	)
 	// The fake sops reads "encrypted" files as plain JSON.
 	e.write("config/sealed.json", `{"echo": {"extra": "`+sealed+`"}}`)
-	// The root imports the fragment tests write their definitions to.
-	e.write("config/agx.yaml", "imports: [main.yaml]\n")
+	// The root lists the fragment tests write their definitions to.
+	e.write("config/agx.yaml", "fragments: [main.yaml]\n")
 	e.write("config/main.yaml", `skills:
   review: {path: ./skills/review}
 instructions:
@@ -827,7 +827,7 @@ func TestDoctor(t *testing.T) {
 		"config/broken.yaml",
 		"mcp:\n  broken:\n    command: ['"+filepath.ToSlash(filepath.Join(e.dir, "missing"))+"']\n",
 	)
-	e.write("config/agx.yaml", "imports: [broken.yaml, main.yaml]\n")
+	e.write("config/agx.yaml", "fragments: [broken.yaml, main.yaml]\n")
 	rep, r = doctor()
 	if r.code != 0 || status(rep, "mcp", "broken") != "missing" {
 		t.Fatalf("doctor without --all exited %d: %+v", r.code, rep)

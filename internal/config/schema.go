@@ -25,7 +25,7 @@ var (
 type SchemaKind string
 
 const (
-	// RootSchema is the root configuration file, which holds imports and daemon settings.
+	// RootSchema is the root configuration file, which holds fragments and daemon settings.
 	RootSchema SchemaKind = "root"
 	// FragmentSchema is an imported fragment, which holds definitions.
 	FragmentSchema SchemaKind = "fragment"

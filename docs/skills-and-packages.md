@@ -157,7 +157,7 @@ packages:
 ```
 
 A manifest can define skills, instructions, MCP servers, secrets, bundles, and
-dependencies. It cannot add directory rules, imports, or harnesses: the user
+dependencies. It cannot add directory rules, fragments, or harnesses: the user
 decides where a package's resources apply. Inside a manifest, references are
 relative to the package (`shared/review` there is `team/shared/review` from
 outside).

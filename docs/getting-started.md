@@ -121,7 +121,7 @@ daemon, MCP servers, and secrets, and prints a fix for each problem.
 
 - Your configuration is `agx/agx.yaml` in your configuration directory
   (`~/.config` on Linux, `~/Library/Application Support` on macOS), which
-  imports `agx.d/main.yaml`, where the commands above wrote your definitions.
+  lists `agx.d/main.yaml`, where the commands above wrote your definitions.
   They keep comments and layout; you can also edit the files by hand. See
   [Configuration](configuration.md).
 - The first command that needed it started the agx [daemon](daemon.md) in the

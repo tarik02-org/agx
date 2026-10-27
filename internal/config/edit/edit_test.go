@@ -13,7 +13,7 @@ import (
 
 const original = `# yaml-language-server: $schema=https://example/agx.schema.json
 # Personal agx configuration.
-imports:
+fragments:
   - agx.d/*.yaml   # machine drop-ins
 
 secrets:
@@ -152,7 +152,7 @@ func TestEditsKeepUntouchedText(t *testing.T) {
 	}
 	head, _, _ := strings.Cut(original, "# config.KindMCPServers servers")
 	if !strings.HasPrefix(got, head) {
-		t.Fatalf("leading comments and imports changed:\n%s", got)
+		t.Fatalf("leading comments and fragments changed:\n%s", got)
 	}
 }
 

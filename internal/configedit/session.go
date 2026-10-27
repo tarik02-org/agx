@@ -25,7 +25,7 @@ type Session struct {
 	Config *config.Config
 	// Root is the canonical root configuration.
 	Root string
-	// Dir is the directory the root's imports are relative to.
+	// Dir is the directory the root's fragments are relative to.
 	Dir string
 	// Locks holds lockfiles staged by package installation, by path.
 	Locks map[string][]byte
@@ -91,7 +91,7 @@ func (s *Session) Open(path string) (*edit.File, error) {
 
 // Target is the fragment new definitions and rules go to: File when set, else the only writable
 // fragment, else agx.d/main.yaml in Dir when there is none, else what Choose picks. It
-// must be a writable fragment the root imports, or a new file its imports match. A missing root
+// must be a writable fragment the root lists, or a new file its globs match. A missing root
 // is created with the default configuration.
 func (s *Session) Target() (string, error) {
 	if s.target != "" {
@@ -133,13 +133,13 @@ func (s *Session) Target() (string, error) {
 	case file == s.Root:
 		return "", errorf(
 			InvalidRequest,
-			"%s holds imports and daemon settings only; choose a fragment",
+			"%s holds fragments and daemon settings only; choose a fragment",
 			shortPath(file),
 		)
-	case !s.Config.Imports(file):
+	case !s.Config.Lists(file):
 		return "", errorf(
 			InvalidRequest,
-			"%s is not imported by %s; choose a fragment it imports",
+			"%s is not listed in %s; choose a fragment it lists",
 			shortPath(file),
 			shortPath(s.Root),
 		)

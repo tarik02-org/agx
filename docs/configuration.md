@@ -1,7 +1,7 @@
 # Configuration
 
 agx reads one YAML configuration that says which instructions, skills, and MCP
-servers each directory gets: a root file, `agx.yaml`, that imports fragments
+servers each directory gets: a root file, `agx.yaml`, that lists fragments
 holding the definitions. You can build it entirely with commands such as `agx
 mcp add`, write it by hand, or mix both: the commands keep your comments and
 layout.
@@ -35,7 +35,7 @@ export AGX_CONFIG=/tmp/agx-test/agx.yaml AGX_CACHE=/tmp/agx-test/cache
 A `--config` file that does not exist is an error, so a typo cannot silently
 give you an empty configuration; only the `add` commands create it. The default
 location and `AGX_CONFIG` may point at a file that does not exist yet: agx then
-reads it as `imports: [agx.d/*.yaml]`, and the first `add` writes that file with
+reads it as `fragments: [agx.d/*.yaml]`, and the first `add` writes that file with
 `agx.d/main.yaml` beside it.
 Use the same configuration and cache for every agx command in a session; the
 daemon serves one configuration at a time (see [The daemon](daemon.md)).
@@ -173,28 +173,28 @@ added.
 
 ## The root file and fragments
 
-The root file holds only imports and [daemon settings](#daemon-settings);
-everything else lives in the fragments it imports. Relative imports are
+The root file holds only `fragments` and [daemon settings](#daemon-settings);
+everything else lives in the fragments it lists. Relative entries are
 relative to the root file's directory, beside the link when the root is a
 symlink:
 
 ```yaml
-imports:
+fragments:
   - personal.yaml           # must exist
   - agx.d/*.yaml            # every match, in name order; may match nothing
 ```
 
-An import containing `*`, `?`, or `[` is a glob; any other import is a path.
-Fragments load in import order and cannot import others. Name drop-ins
+An entry containing `*`, `?`, or `[` is a glob; any other entry is a path.
+Fragments load in list order and cannot list others. Name drop-ins
 `10-team.yaml`, `50-local.yaml` to control their order.
 
 When there is no root file at all, agx behaves as if it contained just
-`imports: [agx.d/*.yaml]`, so a directory of fragments works without one.
+`fragments: [agx.d/*.yaml]`, so a directory of fragments works without one.
 
 Generated configuration belongs in a fragment too. The Home Manager module
 (`programs.agx.settings`, see the README) writes `agx.d/10-home-manager.yaml`,
 writes the root file only when its settings include `daemon`, and warns at
-activation when an existing root file does not import `agx.d/*.yaml`.
+activation when an existing root file does not list `agx.d/*.yaml`.
 
 Defining the same ID twice is an error, unless the later definition says
 `override: true`. Harness definitions are the exception: they merge field by
@@ -203,7 +203,7 @@ field across files.
 ### Paths
 
 - Relative paths in a file are relative to that file.
-- `~/` expands to your home directory in directories, imports, resource paths,
+- `~/` expands to your home directory in directories, fragment entries, resource paths,
   harness executables, MCP server commands, and `!file` values. `~user` and
   `$VAR` are not expanded.
 - Keep machine-specific paths in a separate file, such as an ignored
@@ -261,7 +261,7 @@ and a missing argument is an error.
 
 A changed definition stays in the file that defines it, and `use` or `unuse`
 edits a matching rule wherever it is. Anything new goes to the fragment `--file`
-names, which the root must import, or else to the only writable fragment, or to
+names, which the root must list, or else to the only writable fragment, or to
 a new `agx.d/main.yaml` when there is none. With several, a terminal asks which,
 offering a new file in `agx.d/` too; without one, or with `--json`, the command
 fails with `choose_file` and lists them.

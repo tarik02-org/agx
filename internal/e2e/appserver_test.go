@@ -95,7 +95,7 @@ harnesses:
   codex:
     executable: '`+filepath.ToSlash(binaries.harness)+`'
 `)
-	e.write("config/agx.yaml", "imports: [main.yaml]\ndaemon: {renew_seconds: 1}\n")
+	e.write("config/agx.yaml", "fragments: [main.yaml]\ndaemon: {renew_seconds: 1}\n")
 	e.ok("install")
 	e.ok("daemon", "start")
 	t.Cleanup(func() { e.stopDaemon(true) })

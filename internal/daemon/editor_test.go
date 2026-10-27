@@ -38,7 +38,7 @@ bundles:
 `
 
 // editorServer serves an isolated configuration holding a local skill and instructions, defined
-// in main.yaml beside the root, which also imports agx.d/*.yaml.
+// in main.yaml beside the root, which also lists agx.d/*.yaml.
 func editorServer(t *testing.T, configuration string) (*Server, string) {
 	t.Helper()
 	dir, err := config.Canonical(t.TempDir())
@@ -54,7 +54,7 @@ func editorServer(t *testing.T, configuration string) (*Server, string) {
 	writeFile(t, filepath.Join(dir, "skills", "alpha", "scripts", "run.sh"), "echo\n")
 	writeFile(t, filepath.Join(dir, "skills", "alpha", ".git", "HEAD"), "ref\n")
 	writeFile(t, filepath.Join(dir, "AGENTS.md"), "Be brief.\n")
-	writeFile(t, filepath.Join(dir, "agx.yaml"), "imports: [main.yaml, agx.d/*.yaml]\n")
+	writeFile(t, filepath.Join(dir, "agx.yaml"), "fragments: [main.yaml, agx.d/*.yaml]\n")
 	writeFile(t, filepath.Join(dir, "main.yaml"), configuration)
 	paths := platform.Paths{
 		Config: filepath.Join(dir, "agx.yaml"),

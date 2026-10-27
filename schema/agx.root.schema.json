@@ -24,7 +24,7 @@
     }
   },
   "properties": {
-    "imports": {
+    "fragments": {
       "items": {
         "type": "string"
       },

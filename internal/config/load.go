@@ -39,7 +39,7 @@ type Lock struct {
 }
 
 // DefaultConfig is used when the root configuration file does not exist.
-const DefaultConfig = "imports: [agx.d/*.yaml]\n"
+const DefaultConfig = "fragments: [agx.d/*.yaml]\n"
 
 // Options configures Load.
 type Options struct {
@@ -129,24 +129,24 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 		RenewSeconds: cmp.Or(r.Daemon.RenewSeconds, 20),
 		Autostart:    r.Daemon.Autostart,
 	}
-	// A glob matching the root, or two imports matching one fragment, load it once.
+	// A glob matching the root, or two entries matching one fragment, load it once.
 	seen := map[string]bool{root: true}
-	for i, imp := range r.Imports {
-		at := positions.at("imports", strconv.Itoa(i))
-		p, err := ExpandHome(imp)
+	for i, entry := range r.Fragments {
+		at := positions.at("fragments", strconv.Itoa(i))
+		p, err := ExpandHome(entry)
 		if err != nil {
-			return nil, errorAt(at, "import %w", err)
+			return nil, errorAt(at, "fragment %w", err)
 		}
 		p = relative(dir, p)
-		c.imports = append(c.imports, p)
+		c.fragments = append(c.fragments, p)
 		files := []string{p}
-		if isGlob(imp) {
+		if isGlob(entry) {
 			if files, err = overlay.glob(p); err != nil {
-				return nil, errorAt(at, "import %s: %w", imp, err)
+				return nil, errorAt(at, "fragment %s: %w", entry, err)
 			}
 			inputs.glob(p, files)
 		} else if found, err := overlay.exists(p); err == nil && !found {
-			return nil, errorAt(at, "import %s: %s does not exist", imp, p)
+			return nil, errorAt(at, "fragment %s: %s does not exist", entry, p)
 		}
 		for _, path := range files {
 			if path, err = Canonical(path); err != nil {
@@ -178,8 +178,8 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 	return c, nil
 }
 
-// RootDir is the directory the root's imports are relative to: the root's own, before resolving
-// a link to the root, so a root linked from elsewhere, such as the Nix store, imports the
+// RootDir is the directory the root's fragments are relative to: the root's own, before resolving
+// a link to the root, so a root linked from elsewhere, such as the Nix store, loads the
 // fragments beside the link.
 func RootDir(root string) (string, error) {
 	abs, err := filepath.Abs(root)
@@ -189,16 +189,16 @@ func RootDir(root string) (string, error) {
 	return Canonical(filepath.Dir(abs))
 }
 
-// Imports reports whether the root imports path: one of its import paths, or a match of one of
+// Lists reports whether the root lists path: one of its fragment paths, or a match of one of
 // its globs.
-func (c *Config) Imports(path string) bool {
-	return slices.ContainsFunc(c.imports, func(pattern string) bool {
+func (c *Config) Lists(path string) bool {
+	return slices.ContainsFunc(c.fragments, func(pattern string) bool {
 		matched, _ := filepath.Match(pattern, path)
 		return pattern == path || matched
 	})
 }
 
-// isGlob reports whether an import is a pattern rather than a literal path.
+// isGlob reports whether a fragment entry is a pattern rather than a literal path.
 func isGlob(path string) bool { return strings.ContainsAny(path, "*?[") }
 
 // Load reads the configuration fragments from root and, given a cache, the installed packages

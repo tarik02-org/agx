@@ -17,7 +17,7 @@ Codex · Claude Code · Pi
 ## What it looks like
 
 ```yaml
-# ~/.config/agx/agx.d/main.yaml, imported by agx.yaml
+# ~/.config/agx/agx.d/main.yaml, listed in agx.yaml
 packages:
   mattpocock:
     git: https://github.com/mattpocock/skills.git

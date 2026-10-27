@@ -5977,7 +5977,7 @@ type PlanChangesRequest struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Changes []*ConfigChange        `protobuf:"bytes,1,rep,name=changes,proto3" json:"changes,omitempty"`
 	// The fragment new definitions, rules, and packages go to: a writable fragment the root
-	// imports, or a new file its imports match. Empty chooses the only writable fragment, or
+	// lists, or a new file its globs match. Empty chooses the only writable fragment, or
 	// agx.d/main.yaml when there is none; with several, the plan fails with
 	// REASON_CHOOSE_FILE listing them in ErrorDetail.files.
 	File          string `protobuf:"bytes,2,opt,name=file,proto3" json:"file,omitempty"`

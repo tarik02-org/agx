@@ -19,11 +19,11 @@ import (
 
 var builtins = builtin.Registry().Builtins([]string{"agx", "help", "install", "run"})
 
-// root imports main.yaml and drop-ins in agx.d.
-const root = "imports: [main.yaml, agx.d/*.yaml]\n"
+// root lists main.yaml and drop-ins in agx.d.
+const root = "fragments: [main.yaml, agx.d/*.yaml]\n"
 
 // workspace is an isolated configuration directory with a skill and instructions on disk, whose
-// root imports main.yaml.
+// root lists main.yaml.
 type workspace struct {
 	dir   string
 	main  string
