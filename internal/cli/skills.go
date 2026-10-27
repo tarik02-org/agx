@@ -12,7 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/tarik02-org/agx/internal/yaml"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/tarik02-org/agx/internal/cli/prompt"
 	"github.com/tarik02-org/agx/internal/cli/ui"
@@ -24,14 +24,14 @@ import (
 
 func skillCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
 	command := &cobra.Command{Use: "skill", Short: "Add, list, and remove skills", GroupID: "config"}
-	remove := removeCommand(paths, builtins, edit.Skills)
+	remove := removeCommand(paths, builtins, config.KindSkills)
 	remove.Use = "remove <id | package-id>"
 	remove.Short = "Remove a skill definition, or a package that skill add declared with its skills"
 	remove.Example = "  agx skill remove deploy\n" +
 		"  agx skill remove anthropics      # the package agx skill add anthropics/skills declared"
 	command.AddCommand(
 		skillAddCommand(paths, builtins),
-		listCommand(paths, builtins, edit.Skills),
+		listCommand(paths, builtins, config.KindSkills),
 		remove,
 	)
 	return command
@@ -45,9 +45,9 @@ func (s *session) removePackage(id config.ID, force bool) error {
 	if err != nil {
 		return err
 	}
-	s.result.Removed = append(s.result.Removed, definitionJSON{Kind: "packages", ID: string(id)})
+	s.result.Removed = append(s.result.Removed, definitionID{Kind: config.KindPackages, ID: string(id)})
 	for _, r := range disabled {
-		s.result.Disabled = append(s.result.Disabled, definitionJSON{Kind: r.Kind, ID: string(r.ID)})
+		s.result.Disabled = append(s.result.Disabled, definitionID{Kind: r.Kind, ID: string(r.ID)})
 	}
 	return nil
 }
@@ -188,11 +188,10 @@ func skillAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 			}
 			source.Ref = cmp.Or(ref, source.Ref)
 			source.Subdir = cmp.Or(subdir, source.Subdir)
-			return s.addPackageSkills(source, packageID, file, choice, flags)
+			return s.addPackageSkills(source, packageID, choice, flags)
 		},
 	}
 	flags.register(cmd, true)
-	jsonFlag(cmd)
 	cmd.Flags().StringArrayVar(&choice.names, "skill", nil, "skill to add by name (repeatable)")
 	cmd.Flags().BoolVar(&choice.all, "all", false, "add every skill found")
 	cmd.Flags().StringVar(&ref, "ref", "", "Git branch, tag, or commit to lock")
@@ -217,10 +216,10 @@ func (s *session) addLocalSkills(dir, file string, choice skillChoice, flags edi
 	for _, skill := range chosen {
 		id := string(skill.ID)
 		path := filepath.Join(dir, filepath.FromSlash(skill.Path))
-		if err := s.define(edit.Skills, id, file, edit.Mapping("path", writtenPath(file, path))); err != nil {
+		if err := s.define(config.KindSkills, id, file, edit.Mapping("path", writtenPath(file, path))); err != nil {
 			return err
 		}
-		if err := s.enableAfterDefine(edit.Skills, id, file, flags); err != nil {
+		if err := s.enableAfterDefine(config.KindSkills, id, flags); err != nil {
 			return err
 		}
 	}
@@ -234,7 +233,7 @@ func (s *session) addLocalSkills(dir, file string, choice skillChoice, flags edi
 // its skills, and enables the chosen ones by their package-qualified IDs.
 func (s *session) addPackageSkills(
 	source configedit.Source,
-	packageID, file string,
+	packageID string,
 	choice skillChoice,
 	flags editFlags,
 ) error {
@@ -245,18 +244,18 @@ func (s *session) addPackageSkills(
 	} else if err != nil {
 		return err
 	}
-	declared, err := s.DeclarePackage(id, source, file)
+	declared, err := s.DeclarePackage(id, source)
 	if err != nil {
 		return err
 	}
 	if declared {
-		s.result.Defined = append(s.result.Defined, definitionJSON{Kind: "packages", ID: string(id)})
+		s.result.Defined = append(s.result.Defined, definitionID{Kind: config.KindPackages, ID: string(id)})
 	}
 	progress("Fetching " + source.Git)
-	if err := s.Install(s.ctx, file); err != nil {
+	if err := s.Install(s.ctx); err != nil {
 		return err
 	}
-	c, err := s.Load(file)
+	c, err := s.Load()
 	if err != nil {
 		return codedf(codeConfigInvalid, "package %s: %w", id, err)
 	}
@@ -286,7 +285,7 @@ func (s *session) addPackageSkills(
 		return err
 	}
 	for _, skill := range chosen {
-		if err := s.enableAfterDefine(edit.Skills, prefix+string(skill.ID), file, flags); err != nil {
+		if err := s.enableAfterDefine(config.KindSkills, prefix+string(skill.ID), flags); err != nil {
 			return err
 		}
 	}
@@ -299,32 +298,21 @@ func (s *session) addPackageSkills(
 func skillRows(c *config.Config) ([]string, [][]string, any) {
 	out := ui.Stdout
 	rows := [][]string{}
-	items := []skillJSON{}
 	for _, id := range slices.Sorted(maps.Keys(c.Skills)) {
 		skill := c.Skills[id]
-		// JSON keeps the full path that the table shortens.
-		kind, from, fromJSON := "path", ui.ShortPath(skill.Path, ""), skill.Path
+		kind, from := "path", ui.ShortPath(skill.Path, "")
 		switch {
 		case skill.Generated():
-			kind, from, fromJSON = "generated", "", ""
+			kind, from = "generated", ""
 		case skill.Package != "":
 			kind, from = "git", c.Packages[skill.Package].Git
-			fromJSON = from
 		case !slices.Contains(c.Files, skill.Source.Path):
 			kind = "package"
 			from = string(id)[:strings.LastIndex(string(id), "/")]
-			fromJSON = from
 		}
 		rows = append(rows, []string{out.ID(string(id)), kind, from, out.Path(location(c, skill.Source))})
-		items = append(items, skillJSON{
-			ID:     string(id),
-			Kind:   kind,
-			From:   jsonString(fromJSON),
-			Inline: skill.Inline,
-			Source: configSource(skill.Source),
-		})
 	}
-	return []string{"ID", "KIND", "FROM", "SOURCE"}, rows, skillListJSON{Skills: items}
+	return []string{"ID", "KIND", "FROM", "SOURCE"}, rows, c.Skills
 }
 
 // textNode keeps multi-line text readable as a literal block.

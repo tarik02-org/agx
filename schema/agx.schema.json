@@ -3,61 +3,52 @@
   "$id": "https://raw.githubusercontent.com/tarik02-org/agx/master/schema/agx.schema.json",
   "$defs": {
     "Args": {
-      "anyOf": [
-        {
-          "items": {
-            "$ref": "#/$defs/Value"
-          },
-          "type": "array"
-        },
-        {
-          "items": {
-            "oneOf": [
-              {
-                "items": {
-                  "$ref": "#/$defs/Value"
-                },
-                "type": "array",
-                "minItems": 1
-              },
-              {
-                "properties": {
-                  "values": {
-                    "items": {
-                      "$ref": "#/$defs/Value"
-                    },
-                    "type": "array",
-                    "minItems": 1
-                  },
-                  "modes": {
-                    "items": {
-                      "enum": [
-                        "app-server",
-                        "exec",
-                        "interactive",
-                        "passthrough",
-                        "print",
-                        "resume",
-                        "rpc"
-                      ]
-                    },
-                    "type": "array",
-                    "minItems": 1,
-                    "description": "Session modes the group applies to; omit for every mode except passthrough."
-                  }
-                },
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                  "values"
-                ]
-              }
-            ],
-            "description": "Native arguments: a list, or {values, modes} to limit them to session modes."
-          },
-          "type": "array"
+      "if": {
+        "items": {
+          "type": "string"
         }
-      ]
+      },
+      "then": {
+        "items": {
+          "$ref": "#/$defs/Value"
+        }
+      },
+      "else": {
+        "items": {
+          "properties": {
+            "values": {
+              "items": {
+                "$ref": "#/$defs/Value"
+              },
+              "type": "array",
+              "minItems": 1
+            },
+            "modes": {
+              "items": {
+                "enum": [
+                  "app-server",
+                  "exec",
+                  "interactive",
+                  "passthrough",
+                  "print",
+                  "resume",
+                  "rpc"
+                ]
+              },
+              "type": "array",
+              "minItems": 1,
+              "description": "Session modes the group applies to; omit for every mode except passthrough."
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "values"
+          ],
+          "description": "Native arguments limited to session modes."
+        }
+      },
+      "type": "array"
     },
     "BundleSpec": {
       "properties": {
@@ -97,35 +88,6 @@
       "additionalProperties": false,
       "type": "object"
     },
-    "Daemon": {
-      "properties": {
-        "lease_seconds": {
-          "type": "integer",
-          "minimum": 3,
-          "description": "Launch lease length; defaults to 60."
-        },
-        "renew_seconds": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "Lease renewal interval, shorter than the lease; defaults to 20."
-        },
-        "shutdown_grace_seconds": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "How long a stopping daemon lets MCP requests and tool calls in flight finish; defaults to 10. daemon stop and daemon restart take --timeout instead."
-        },
-        "autostart": {
-          "type": "boolean",
-          "description": "Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."
-        },
-        "override": {
-          "type": "boolean",
-          "description": "Replace settings made by earlier fragments."
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
-    },
     "Harness": {
       "properties": {
         "base": {
@@ -139,14 +101,17 @@
         },
         "args": {
           "$ref": "#/$defs/Args",
-          "description": "Native arguments inserted before the caller's: a list of strings for every session mode, or a list of groups."
+          "description": "Native arguments inserted before the caller's: a list of strings for every session mode, or a list of {values, modes} groups."
         },
         "environment": {
           "additionalProperties": {
             "$ref": "#/$defs/Value"
           },
           "propertyNames": {
-            "pattern": "^(?![Aa][Gg][Xx]_)[a-zA-Z_][a-zA-Z0-9_]*$"
+            "not": {
+              "pattern": "^[Aa][Gg][Xx]_"
+            },
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
           },
           "type": "object",
           "description": "Environment variables for the harness."
@@ -179,94 +144,39 @@
       "type": "string",
       "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
     },
-    "Import": {
-      "oneOf": [
-        {
-          "required": [
-            "path"
-          ]
-        },
-        {
-          "required": [
-            "glob"
-          ]
-        }
-      ],
+    "Instructions": {
       "if": {
         "required": [
-          "glob"
+          "text"
         ]
       },
       "then": {
         "properties": {
-          "optional": {
-            "const": false
-          }
+          "path": false,
+          "git": false,
+          "ref": false,
+          "hash": false
         }
       },
-      "properties": {
-        "path": {
-          "type": "string",
-          "description": "Fragment to load, relative to this file."
-        },
-        "glob": {
-          "type": "string",
-          "description": "Pattern of fragments to load in lexical order; may match nothing."
-        },
-        "optional": {
-          "type": "boolean",
-          "description": "Skip a path import whose file is missing."
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
-    },
-    "Instructions": {
-      "allOf": [
-        {
-          "not": {
-            "required": [
-              "ref",
-              "rev"
-            ]
-          }
-        }
-      ],
-      "oneOf": [
-        {
-          "properties": {
-            "path": false,
-            "git": false,
-            "ref": false,
-            "rev": false,
-            "hash": false
-          },
+      "else": {
+        "if": {
           "required": [
-            "text"
+            "git"
           ]
         },
-        {
+        "else": {
           "properties": {
-            "text": false
-          },
-          "required": [
-            "git",
-            "path"
-          ]
-        },
-        {
-          "properties": {
-            "text": false,
-            "git": false,
             "ref": false,
-            "rev": false,
             "hash": false
           },
           "required": [
             "path"
           ]
-        }
-      ],
+        },
+        "required": [
+          "path"
+        ]
+      },
       "properties": {
         "path": {
           "type": "string",
@@ -278,12 +188,7 @@
         },
         "ref": {
           "type": "string",
-          "description": "git: branch, tag, or commit, locked at install."
-        },
-        "rev": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{40}$",
-          "description": "git: full 40-character commit; pins the source without a lock entry."
+          "description": "git: branch, tag, or commit, locked at install; a full 40-character commit pins the source without a lock entry."
         },
         "hash": {
           "type": "string",
@@ -307,325 +212,252 @@
       "type": "object"
     },
     "InstructionsItem": {
-      "oneOf": [
-        {
-          "anyOf": [
-            {
-              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
-            },
-            {
-              "pattern": "^([./~]|[A-Za-z]:[\\\\/]|\\\\\\\\)"
-            }
-          ],
-          "type": "string"
-        },
-        {
-          "allOf": [
-            {
-              "not": {
-                "required": [
-                  "ref",
-                  "rev"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
-                  "text"
-                ]
-              },
-              "then": {
-                "required": [
-                  "id"
-                ]
-              }
-            }
-          ],
-          "oneOf": [
-            {
-              "properties": {
-                "path": false,
-                "git": false,
-                "ref": false,
-                "rev": false,
-                "hash": false
-              },
+      "if": {
+        "type": "string"
+      },
+      "then": {
+        "anyOf": [
+          {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+          },
+          {
+            "pattern": "^([./~]|[A-Za-z]:[\\\\/]|\\\\\\\\)"
+          }
+        ],
+        "type": "string"
+      },
+      "else": {
+        "allOf": [
+          {
+            "if": {
               "required": [
                 "text"
               ]
             },
-            {
-              "properties": {
-                "text": false
-              },
+            "then": {
               "required": [
-                "git",
-                "path"
-              ]
-            },
-            {
-              "properties": {
-                "text": false,
-                "git": false,
-                "ref": false,
-                "rev": false,
-                "hash": false
-              },
-              "required": [
-                "path"
+                "id"
               ]
             }
-          ],
+          }
+        ],
+        "if": {
+          "required": [
+            "text"
+          ]
+        },
+        "then": {
           "properties": {
-            "id": {
-              "$ref": "#/$defs/ID",
-              "description": "Instructions ID; defaults to the file stem of path."
-            },
-            "path": {
-              "type": "string",
-              "description": "Instructions file, relative to this file; with git, relative to the checkout."
-            },
-            "git": {
-              "type": "string",
-              "description": "Git repository holding the resource, fetched like a package; path is then relative to the checkout."
-            },
-            "ref": {
-              "type": "string",
-              "description": "git: branch, tag, or commit, locked at install."
-            },
-            "rev": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{40}$",
-              "description": "git: full 40-character commit; pins the source without a lock entry."
-            },
-            "hash": {
-              "type": "string",
-              "pattern": "^[a-f0-9]{64}$",
-              "description": "git: content hash of the checkout, verified at install; pins the source without a lock entry."
-            },
-            "text": {
-              "type": "string",
-              "description": "Instructions written in configuration."
-            },
-            "order": {
-              "type": "integer",
-              "description": "Sorts selected instructions, lower first, before resolution order; defaults to 0."
-            }
+            "path": false,
+            "git": false,
+            "ref": false,
+            "hash": false
+          }
+        },
+        "else": {
+          "if": {
+            "required": [
+              "git"
+            ]
           },
-          "additionalProperties": false,
-          "type": "object"
-        }
-      ],
+          "else": {
+            "properties": {
+              "ref": false,
+              "hash": false
+            },
+            "required": [
+              "path"
+            ]
+          },
+          "required": [
+            "path"
+          ]
+        },
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/ID",
+            "description": "Instructions ID; defaults to the file stem of path."
+          },
+          "path": {
+            "type": "string",
+            "description": "Instructions file, relative to this file; with git, relative to the checkout."
+          },
+          "git": {
+            "type": "string",
+            "description": "Git repository holding the resource, fetched like a package; path is then relative to the checkout."
+          },
+          "ref": {
+            "type": "string",
+            "description": "git: branch, tag, or commit, locked at install; a full 40-character commit pins the source without a lock entry."
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "git: content hash of the checkout, verified at install; pins the source without a lock entry."
+          },
+          "text": {
+            "type": "string",
+            "description": "Instructions written in configuration."
+          },
+          "order": {
+            "type": "integer",
+            "description": "Sorts selected instructions, lower first, before resolution order; defaults to 0."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object"
+      },
       "description": "An instructions ID, a file path, or an inline instructions definition."
     },
     "MCPAuth": {
-      "oneOf": [
-        {
-          "type": "string",
-          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
-        },
-        {
-          "$ref": "#/$defs/Secret",
-          "not": {
-            "required": [
-              "override"
-            ]
-          }
-        }
-      ],
-      "description": "http: bearer credential: oauth or keychain, none, an inline secret, or !secret ID; omitted means OAuth when the server asks for it."
-    },
-    "MCPItem": {
-      "oneOf": [
-        {
-          "$ref": "#/$defs/ID"
-        },
-        {
-          "allOf": [
-            {
-              "if": {
-                "required": [
-                  "command"
-                ]
-              },
-              "then": {
-                "properties": {
-                  "url": false,
-                  "headers": false,
-                  "auth": false,
-                  "transport": {
-                    "const": "stdio"
-                  }
-                }
-              }
-            },
-            {
-              "if": {
-                "required": [
-                  "url"
-                ]
-              },
-              "then": {
-                "properties": {
-                  "command": false,
-                  "environment": false,
-                  "cwd": false,
-                  "transport": {
-                    "const": "http"
-                  }
-                }
-              }
-            }
-          ],
-          "oneOf": [
-            {
-              "required": [
-                "url"
-              ]
-            },
-            {
-              "required": [
-                "command"
-              ]
-            }
-          ],
-          "properties": {
-            "id": {
-              "$ref": "#/$defs/ID",
-              "description": "MCP server ID, used for logins and native server names."
-            },
-            "transport": {
-              "type": "string",
-              "enum": [
-                "stdio",
-                "http"
-              ],
-              "description": "How to reach the server; inferred from url (http) or command (stdio)."
-            },
-            "command": {
-              "items": {
-                "type": "string"
-              },
-              "type": "array",
-              "description": "stdio: server command and arguments."
-            },
-            "url": {
-              "type": "string",
-              "description": "http: server URL; http or https."
-            },
-            "cwd": {
-              "type": "string",
-              "description": "stdio: working directory; defaults to the launch directory."
-            },
-            "environment": {
-              "additionalProperties": {
-                "$ref": "#/$defs/Value"
-              },
-              "propertyNames": {
-                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
-              },
-              "type": "object",
-              "description": "stdio: environment variables for the server."
-            },
-            "headers": {
-              "additionalProperties": {
-                "$ref": "#/$defs/Value"
-              },
-              "type": "object",
-              "description": "http: extra request headers."
-            },
-            "auth": {
-              "$ref": "#/$defs/MCPAuth"
-            },
-            "description": {
-              "type": "string",
-              "description": "What the server offers, shown by agx mcp tools."
-            },
-            "load": {
-              "type": "string",
-              "enum": [
-                "native",
-                "on_demand"
-              ],
-              "description": "native: in the harness's tool list (default); on_demand: reached with agx mcp call."
-            },
-            "share": {
-              "$ref": "#/$defs/MCPShare"
-            }
-          },
-          "additionalProperties": false,
-          "type": "object",
+      "if": {
+        "type": "string"
+      },
+      "else": {
+        "$ref": "#/$defs/Secret",
+        "not": {
           "required": [
-            "id"
+            "override"
           ]
         }
-      ],
-      "description": "An MCP server ID, or an inline MCP server definition with an id."
+      },
+      "description": "http: bearer credential: oauth or keychain, none, an inline secret, or !secret ID, !env NAME, or !file PATH; omitted means OAuth when the server asks for it."
     },
-    "MCPServer": {
-      "allOf": [
-        {
-          "if": {
-            "required": [
-              "command"
-            ]
-          },
-          "then": {
-            "properties": {
-              "url": false,
-              "headers": false,
-              "auth": false,
-              "transport": {
-                "const": "stdio"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "required": [
-              "url"
-            ]
-          },
-          "then": {
-            "properties": {
-              "command": false,
-              "environment": false,
-              "cwd": false,
-              "transport": {
-                "const": "http"
-              }
-            }
-          }
-        }
-      ],
-      "oneOf": [
-        {
+    "MCPItem": {
+      "if": {
+        "type": "string"
+      },
+      "then": {
+        "$ref": "#/$defs/ID"
+      },
+      "else": {
+        "if": {
           "required": [
             "url"
           ]
         },
-        {
+        "then": {
+          "properties": {
+            "command": false,
+            "environment": false,
+            "cwd": false,
+            "share": false
+          }
+        },
+        "else": {
+          "properties": {
+            "headers": false,
+            "auth": false
+          },
           "required": [
             "command"
           ]
-        }
-      ],
-      "properties": {
-        "transport": {
-          "type": "string",
-          "enum": [
-            "stdio",
-            "http"
-          ],
-          "description": "How to reach the server; inferred from url (http) or command (stdio)."
         },
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/ID",
+            "description": "MCP server ID, used for logins and native server names."
+          },
+          "command": {
+            "prefixItems": [
+              {
+                "minLength": 1
+              }
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "description": "stdio: server command and arguments."
+          },
+          "url": {
+            "type": "string",
+            "description": "http: server URL; http or https."
+          },
+          "cwd": {
+            "type": "string",
+            "description": "stdio: working directory; defaults to the launch directory."
+          },
+          "environment": {
+            "additionalProperties": {
+              "$ref": "#/$defs/Value"
+            },
+            "propertyNames": {
+              "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+            },
+            "type": "object",
+            "description": "stdio: environment variables for the server."
+          },
+          "headers": {
+            "additionalProperties": {
+              "$ref": "#/$defs/Value"
+            },
+            "type": "object",
+            "description": "http: extra request headers."
+          },
+          "auth": {
+            "$ref": "#/$defs/MCPAuth"
+          },
+          "description": {
+            "type": "string",
+            "description": "What the server offers, shown by agx mcp tools."
+          },
+          "load": {
+            "type": "string",
+            "enum": [
+              "native",
+              "on_demand"
+            ],
+            "description": "native: in the harness's tool list (default); on_demand: reached with agx mcp call."
+          },
+          "share": {
+            "$ref": "#/$defs/MCPShare"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id"
+        ]
+      },
+      "description": "An MCP server ID, or an inline MCP server definition with an id."
+    },
+    "MCPServer": {
+      "if": {
+        "required": [
+          "url"
+        ]
+      },
+      "then": {
+        "properties": {
+          "command": false,
+          "environment": false,
+          "cwd": false,
+          "share": false
+        }
+      },
+      "else": {
+        "properties": {
+          "headers": false,
+          "auth": false
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "properties": {
         "command": {
+          "prefixItems": [
+            {
+              "minLength": 1
+            }
+          ],
           "items": {
             "type": "string"
           },
           "type": "array",
+          "minItems": 1,
           "description": "stdio: server command and arguments."
         },
         "url": {
@@ -680,74 +512,59 @@
       "type": "object"
     },
     "MCPShare": {
-      "oneOf": [
-        {
-          "enum": [
-            "none",
-            "directory",
-            "repo",
-            "global"
-          ]
-        },
-        {
-          "properties": {
-            "type": {
-              "enum": [
-                "none",
-                "directory",
-                "repo",
-                "global"
-              ]
-            },
-            "idle": {
-              "type": "string",
-              "description": "How long the process stays after its last session, such as 30m; default 5m."
-            }
+      "if": {
+        "type": "string"
+      },
+      "then": {
+        "enum": [
+          "none",
+          "directory",
+          "repo",
+          "global"
+        ]
+      },
+      "else": {
+        "properties": {
+          "type": {
+            "enum": [
+              "none",
+              "directory",
+              "repo",
+              "global"
+            ]
           },
-          "additionalProperties": false,
-          "type": "object",
-          "required": [
-            "type"
-          ]
-        }
-      ],
+          "idle": {
+            "type": "string",
+            "description": "How long the process stays after its last session, such as 30m; default 5m."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type"
+        ]
+      },
       "description": "stdio: none gives each harness session its own process (default); directory, repo, or global share one process per launch directory, repository root, or everywhere. {type, idle} also sets how long it stays after its last session."
     },
     "Package": {
-      "allOf": [
-        {
-          "not": {
-            "required": [
-              "ref",
-              "rev"
-            ]
-          }
-        },
-        {
-          "if": {
-            "required": [
-              "rev"
-            ]
-          },
-          "then": {
-            "required": [
-              "git"
-            ]
-          }
+      "if": {
+        "required": [
+          "git"
+        ]
+      },
+      "then": {
+        "properties": {
+          "path": false
         }
-      ],
-      "oneOf": [
-        {
-          "required": [
-            "path"
-          ]
+      },
+      "else": {
+        "properties": {
+          "ref": false
         },
-        {
-          "required": [
-            "git"
-          ]
-        }
-      ],
+        "required": [
+          "path"
+        ]
+      },
       "properties": {
         "path": {
           "type": "string",
@@ -759,12 +576,7 @@
         },
         "ref": {
           "type": "string",
-          "description": "Git branch, tag, or commit, locked at install."
-        },
-        "rev": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{40}$",
-          "description": "Full 40-character Git commit; pins the source without a lock entry."
+          "description": "Git branch, tag, or commit, locked at install; a full 40-character commit pins the source without a lock entry."
         },
         "hash": {
           "type": "string",
@@ -814,10 +626,7 @@
           "if": {
             "properties": {
               "kind": {
-                "enum": [
-                  "environment",
-                  "daemon_environment"
-                ]
+                "const": "sops"
               }
             },
             "required": [
@@ -826,8 +635,15 @@
           },
           "then": {
             "required": [
-              "variable"
+              "file"
             ]
+          },
+          "else": {
+            "properties": {
+              "file": false,
+              "key": false,
+              "age_key": false
+            }
           }
         },
         {
@@ -846,56 +662,35 @@
               "command"
             ]
           }
-        },
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "enum": [
-                  "file",
-                  "sops"
-                ]
-              }
-            },
-            "required": [
-              "kind"
-            ]
-          },
-          "then": {
-            "required": [
-              "file"
-            ]
-          }
         }
       ],
       "properties": {
         "kind": {
           "type": "string",
           "enum": [
-            "environment",
-            "daemon_environment",
             "command",
-            "file",
             "keychain",
             "oauth",
             "sops"
           ],
           "description": "How the secret is obtained."
         },
-        "variable": {
-          "type": "string",
-          "description": "Environment variable holding the secret."
-        },
         "command": {
+          "prefixItems": [
+            {
+              "minLength": 1
+            }
+          ],
           "items": {
             "type": "string"
           },
           "type": "array",
+          "minItems": 1,
           "description": "Command whose trimmed stdout is the secret."
         },
         "file": {
           "type": "string",
-          "description": "sops: encrypted file; file: file holding the secret. Relative to the declaring fragment."
+          "description": "sops: encrypted file, relative to the declaring fragment."
         },
         "key": {
           "$ref": "#/$defs/SecretKey",
@@ -903,7 +698,7 @@
         },
         "age_key": {
           "$ref": "#/$defs/Value",
-          "description": "sops: age identity passed to sops as SOPS_AGE_KEY: !secret ID, !env NAME, or !file PATH."
+          "description": "sops: age identity passed to sops as SOPS_AGE_KEY."
         },
         "issuer": {
           "type": "string",
@@ -936,20 +731,20 @@
       ]
     },
     "SecretKey": {
-      "oneOf": [
-        {
+      "if": {
+        "type": "string"
+      },
+      "then": {
+        "pattern": "^[^.]+(\\.[^.]+)*$"
+      },
+      "else": {
+        "items": {
           "type": "string",
-          "pattern": "^[^.]+(\\.[^.]+)*$"
+          "minLength": 1
         },
-        {
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "type": "array",
-          "minItems": 1
-        }
-      ]
+        "type": "array",
+        "minItems": 1
+      }
     },
     "SelectionSpec": {
       "properties": {
@@ -990,59 +785,44 @@
       "description": "Native settings, in the harness's own configuration schema: Codex config.toml keys, Claude Code settings.json keys. null removes an inherited key. !file reads a file; !secret and !env are not allowed."
     },
     "Skill": {
-      "allOf": [
-        {
-          "not": {
-            "required": [
-              "ref",
-              "rev"
-            ]
-          }
-        }
-      ],
-      "oneOf": [
-        {
-          "properties": {
-            "path": false,
-            "git": false,
-            "ref": false,
-            "rev": false,
-            "hash": false
-          },
-          "required": [
-            "content",
-            "description"
-          ]
+      "if": {
+        "required": [
+          "content"
+        ]
+      },
+      "then": {
+        "properties": {
+          "path": false,
+          "git": false,
+          "ref": false,
+          "hash": false
         },
-        {
-          "properties": {
-            "content": false,
-            "name": false,
-            "description": false,
-            "frontmatter": false,
-            "files": false
-          },
+        "required": [
+          "description"
+        ]
+      },
+      "else": {
+        "if": {
           "required": [
             "git"
           ]
         },
-        {
+        "else": {
           "properties": {
-            "content": false,
-            "name": false,
-            "description": false,
-            "frontmatter": false,
-            "files": false,
-            "git": false,
             "ref": false,
-            "rev": false,
             "hash": false
           },
           "required": [
             "path"
           ]
+        },
+        "properties": {
+          "name": false,
+          "description": false,
+          "frontmatter": false,
+          "files": false
         }
-      ],
+      },
       "properties": {
         "path": {
           "type": "string",
@@ -1054,12 +834,7 @@
         },
         "ref": {
           "type": "string",
-          "description": "git: branch, tag, or commit, locked at install."
-        },
-        "rev": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{40}$",
-          "description": "git: full 40-character commit; pins the source without a lock entry."
+          "description": "git: branch, tag, or commit, locked at install; a full 40-character commit pins the source without a lock entry."
         },
         "hash": {
           "type": "string",
@@ -1099,7 +874,8 @@
           "propertyNames": {
             "not": {
               "pattern": "^/|(^|/)\\.{1,2}(/|$)|//|\\\\|(^|/)\\.git(/|$)|^[Ss][Kk][Ii][Ll][Ll]\\.[Mm][Dd]$"
-            }
+            },
+            "minLength": 1
           },
           "type": "object",
           "description": "content: other files by path relative to the skill root; a trailing slash copies a directory."
@@ -1113,177 +889,174 @@
       "type": "object"
     },
     "SkillFile": {
-      "oneOf": [
-        {
+      "if": {
+        "required": [
+          "content"
+        ]
+      },
+      "then": {
+        "properties": {
+          "path": false
+        }
+      },
+      "else": {
+        "properties": {
+          "executable": false
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "properties": {
+        "content": {
           "type": "string"
         },
-        {
-          "properties": {
-            "content": {
-              "type": "string"
-            },
-            "executable": {
-              "type": "boolean"
-            }
+        "executable": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "File to copy, relative to this file; ending in / copies a directory."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "{content, executable} for file text, or {path} to copy a file or directory."
+    },
+    "SkillItem": {
+      "if": {
+        "type": "string"
+      },
+      "then": {
+        "anyOf": [
+          {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
           },
-          "additionalProperties": false,
-          "type": "object",
+          {
+            "pattern": "^([./~]|[A-Za-z]:[\\\\/]|\\\\\\\\)"
+          }
+        ],
+        "type": "string"
+      },
+      "else": {
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "content"
+              ]
+            },
+            "then": {
+              "required": [
+                "id"
+              ]
+            }
+          }
+        ],
+        "if": {
           "required": [
             "content"
           ]
-        }
-      ],
-      "description": "File text, a path to copy (ending in / for a directory), or {content, executable}."
-    },
-    "SkillItem": {
-      "oneOf": [
-        {
-          "anyOf": [
-            {
-              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
-            },
-            {
-              "pattern": "^([./~]|[A-Za-z]:[\\\\/]|\\\\\\\\)"
-            }
-          ],
-          "type": "string"
         },
-        {
-          "allOf": [
-            {
-              "not": {
-                "required": [
-                  "ref",
-                  "rev"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
-                  "content"
-                ]
-              },
-              "then": {
-                "required": [
-                  "id"
-                ]
-              }
-            }
-          ],
-          "oneOf": [
-            {
-              "properties": {
-                "path": false,
-                "git": false,
-                "ref": false,
-                "rev": false,
-                "hash": false
-              },
-              "required": [
-                "content",
-                "description"
-              ]
-            },
-            {
-              "properties": {
-                "content": false,
-                "name": false,
-                "description": false,
-                "frontmatter": false,
-                "files": false
-              },
-              "required": [
-                "git"
-              ]
-            },
-            {
-              "properties": {
-                "content": false,
-                "name": false,
-                "description": false,
-                "frontmatter": false,
-                "files": false,
-                "git": false,
-                "ref": false,
-                "rev": false,
-                "hash": false
-              },
-              "required": [
-                "path"
-              ]
-            }
-          ],
+        "then": {
           "properties": {
-            "id": {
-              "$ref": "#/$defs/ID",
-              "description": "Skill ID; defaults to the folder name of path."
-            },
-            "path": {
-              "type": "string",
-              "description": "Skill directory containing SKILL.md, relative to this file; with git, relative to the checkout."
-            },
-            "git": {
-              "type": "string",
-              "description": "Git repository holding the resource, fetched like a package; path is then relative to the checkout."
-            },
-            "ref": {
-              "type": "string",
-              "description": "git: branch, tag, or commit, locked at install."
-            },
-            "rev": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{40}$",
-              "description": "git: full 40-character commit; pins the source without a lock entry."
-            },
-            "hash": {
-              "type": "string",
-              "pattern": "^[a-f0-9]{64}$",
-              "description": "git: content hash of the checkout, verified at install; pins the source without a lock entry."
-            },
-            "name": {
-              "type": "string",
-              "maxLength": 64,
-              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
-              "description": "content: native skill name, lowercase letters, digits, and hyphens; defaults to the ID's last segment."
-            },
-            "description": {
-              "type": "string",
-              "description": "content: what the skill does and when to use it."
-            },
-            "frontmatter": {
-              "propertyNames": {
-                "not": {
-                  "enum": [
-                    "name",
-                    "description"
-                  ]
-                }
-              },
-              "type": "object",
-              "description": "content: extra SKILL.md front matter, passed through."
-            },
-            "content": {
-              "type": "string",
-              "description": "SKILL.md body of a skill generated from configuration."
-            },
-            "files": {
-              "additionalProperties": {
-                "$ref": "#/$defs/SkillFile"
-              },
-              "propertyNames": {
-                "not": {
-                  "pattern": "^/|(^|/)\\.{1,2}(/|$)|//|\\\\|(^|/)\\.git(/|$)|^[Ss][Kk][Ii][Ll][Ll]\\.[Mm][Dd]$"
-                }
-              },
-              "type": "object",
-              "description": "content: other files by path relative to the skill root; a trailing slash copies a directory."
-            }
+            "path": false,
+            "git": false,
+            "ref": false,
+            "hash": false
           },
-          "additionalProperties": false,
-          "type": "object"
-        }
-      ],
+          "required": [
+            "description"
+          ]
+        },
+        "else": {
+          "if": {
+            "required": [
+              "git"
+            ]
+          },
+          "else": {
+            "properties": {
+              "ref": false,
+              "hash": false
+            },
+            "required": [
+              "path"
+            ]
+          },
+          "properties": {
+            "name": false,
+            "description": false,
+            "frontmatter": false,
+            "files": false
+          }
+        },
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/ID",
+            "description": "Skill ID; defaults to the folder name of path."
+          },
+          "path": {
+            "type": "string",
+            "description": "Skill directory containing SKILL.md, relative to this file; with git, relative to the checkout."
+          },
+          "git": {
+            "type": "string",
+            "description": "Git repository holding the resource, fetched like a package; path is then relative to the checkout."
+          },
+          "ref": {
+            "type": "string",
+            "description": "git: branch, tag, or commit, locked at install; a full 40-character commit pins the source without a lock entry."
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "git: content hash of the checkout, verified at install; pins the source without a lock entry."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "description": "content: native skill name, lowercase letters, digits, and hyphens; defaults to the ID's last segment."
+          },
+          "description": {
+            "type": "string",
+            "description": "content: what the skill does and when to use it."
+          },
+          "frontmatter": {
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "name",
+                  "description"
+                ]
+              }
+            },
+            "type": "object",
+            "description": "content: extra SKILL.md front matter, passed through."
+          },
+          "content": {
+            "type": "string",
+            "description": "SKILL.md body of a skill generated from configuration."
+          },
+          "files": {
+            "additionalProperties": {
+              "$ref": "#/$defs/SkillFile"
+            },
+            "propertyNames": {
+              "not": {
+                "pattern": "^/|(^|/)\\.{1,2}(/|$)|//|\\\\|(^|/)\\.git(/|$)|^[Ss][Kk][Ii][Ll][Ll]\\.[Mm][Dd]$"
+              },
+              "minLength": 1
+            },
+            "type": "object",
+            "description": "content: other files by path relative to the skill root; a trailing slash copies a directory."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object"
+      },
       "description": "A skill ID, a skill directory path, or an inline skill definition."
     },
     "Value": {
@@ -1292,17 +1065,6 @@
     }
   },
   "properties": {
-    "imports": {
-      "items": {
-        "$ref": "#/$defs/Import"
-      },
-      "type": "array",
-      "description": "Fragments loaded before this file."
-    },
-    "lockfile": {
-      "type": "string",
-      "description": "Lockfile for unpinned packages declared here; defaults to agx.lock.json."
-    },
     "packages": {
       "additionalProperties": {
         "$ref": "#/$defs/Package"
@@ -1379,10 +1141,6 @@
       },
       "type": "object",
       "description": "Built-in harness customizations and new definitions."
-    },
-    "daemon": {
-      "$ref": "#/$defs/Daemon",
-      "description": "Launch lease timing and automatic daemon startup."
     }
   },
   "additionalProperties": false,

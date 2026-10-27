@@ -29,14 +29,6 @@ import {
 } from "~/components/ui/empty.tsx";
 import { Field, FieldGroup, FieldLabel } from "~/components/ui/field.tsx";
 import { Input } from "~/components/ui/input.tsx";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "~/components/ui/select.tsx";
 import { Pending } from "~/components/Pending.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs.tsx";
 import { toast } from "~/components/ui/toast.tsx";
@@ -214,7 +206,6 @@ function ConfigPage() {
                 kind={search.kind}
                 definition={definition}
                 initialId={search.id ?? ""}
-                files={configuration.data.files}
                 home={configuration.data.home}
                 schema={schema.data}
               />
@@ -397,22 +388,12 @@ interface DefinitionEditorProps {
   /** Undefined while writing a new definition. */
   readonly definition: Definition | undefined;
   readonly initialId: string;
-  readonly files: ReadonlyArray<ConfigurationFile>;
   readonly home: string;
   readonly schema: ConfigSchema | undefined;
 }
 
-function DefinitionEditor({
-  kind,
-  definition,
-  initialId,
-  files,
-  home,
-  schema,
-}: DefinitionEditorProps) {
-  const writable = files.filter((file) => !file.readOnly);
+function DefinitionEditor({ kind, definition, initialId, home, schema }: DefinitionEditorProps) {
   const [id, setId] = useState(initialId);
-  const [file, setFile] = useState(writable[0]?.path ?? "");
   const staged = useStagedDefinition(kind, id);
   const stagedChange = staged?.change.change;
   const original = definition?.yaml ?? newDefinitions[kind] ?? "";
@@ -504,7 +485,7 @@ function DefinitionEditor({
                 id === "" || errors.length > 0 || (text === original && staged === undefined)
               }
               onClick={() => {
-                stage(define(kind, id, text, definition === undefined ? file : ""));
+                stage(define(kind, id, text));
                 toast.add({ type: "success", title: `Staged ${id}` });
               }}
             >
@@ -544,27 +525,6 @@ function DefinitionEditor({
                 value={id}
                 onChange={(event) => setId(event.target.value)}
               />
-            </Field>
-            <Field>
-              <FieldLabel>Write to</FieldLabel>
-              <Select
-                items={writable.map((f) => ({ value: f.path, label: shortPath(f.path, home) }))}
-                value={file}
-                onValueChange={(next) => setFile(next ?? "")}
-              >
-                <SelectTrigger className="font-mono">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  <SelectGroup>
-                    {writable.map((f) => (
-                      <SelectItem key={f.path} value={f.path} className="font-mono">
-                        {shortPath(f.path, home)}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
             </Field>
           </FieldGroup>
         )}

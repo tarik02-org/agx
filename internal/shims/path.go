@@ -51,26 +51,12 @@ func sameFile(a, b string) bool {
 	return errA == nil && errB == nil && os.SameFile(infoA, infoB)
 }
 
-// IsShim reports whether path is a shim: a file in agx's default shim directory, or one the
-// manifest of its directory lists. Native executable lookup skips shims, which run agx again.
+// IsShim reports whether path is in agx's shim directory. Native executable lookup skips shims,
+// which run agx again.
 func IsShim(path string) bool {
+	dir, err := Dir()
 	// The shim itself may be a link to agx, so only its directory is resolved.
-	dir, base := canonical(filepath.Dir(path)), filepath.Base(path)
-	if defaultDir, err := DefaultDir(); err == nil && samePath(canonical(defaultDir), dir) {
-		return true
-	}
-	m, err := readManifest(dir)
-	if err != nil {
-		// A manifest agx cannot read still marks the directory as agx's.
-		_, statErr := os.Stat(filepath.Join(dir, manifestName))
-		return statErr == nil
-	}
-	for _, s := range m.Shims {
-		if samePath(s.File, base) {
-			return true
-		}
-	}
-	return false
+	return err == nil && samePath(canonical(dir), canonical(filepath.Dir(path)))
 }
 
 // InNixStore reports a path that garbage collection may remove once nothing roots it.

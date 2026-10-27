@@ -13,19 +13,17 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
+	"golang.org/x/mod/semver"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
-	"github.com/tarik02-org/agx/internal/adapters/codex"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/daemon"
@@ -101,12 +99,7 @@ func doctorCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 				return err
 			}
 			report := runDoctor(cmd.Context(), *paths, registry, *builtins, directory, all)
-			if scripting.enabled {
-				err = printJSON(doctorDocument(report))
-			} else {
-				err = printDoctor(report)
-			}
-			if err != nil {
+			if err := emit(report, func() error { return printDoctor(report) }); err != nil {
 				return err
 			}
 			if report.Summary.Fail > 0 {
@@ -116,7 +109,6 @@ func doctorCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 		},
 	}
 	command.Flags().BoolVar(&all, "all", false, "test every MCP server, not only those selected for the directory")
-	jsonFlag(command)
 	return command
 }
 
@@ -176,16 +168,16 @@ func runDoctor(
 	add(harnessRows...)
 
 	if loaded && len(c.Skills) > 0 {
-		add(codexDefinitionChecks(ctx, c, registry, paths.Cache)...)
+		add(definitionChecks(ctx, c, registry, paths.Cache)...)
 	}
 
 	client, daemonRow := connectDaemon(ctx, paths, c)
-	add(daemonRow, stateCheck(shownPath(daemon.StatePath(paths))))
+	add(daemonRow)
 	if client != nil && loaded {
 		add(mcpChecks(ctx, client, c, directory, all)...)
 	}
 	if client != nil {
-		add(secretChecks(ctx, client, c)...)
+		add(secretChecks(ctx, client)...)
 	}
 	add(sopsChecks(c, exec.LookPath)...)
 	add(shimChecks(c, registry)...)
@@ -206,7 +198,7 @@ func runDoctor(
 // configChecks loads the configuration. When it does not load, the fragments alone, or else
 // only the built-ins, still let the other checks run; loaded reports a complete load.
 func configChecks(paths platform.Paths, builtins config.Builtins) (*config.Config, bool, []check) {
-	read, readErr := config.Read(paths.Config, builtins)
+	read, readErr := config.Load(paths.Config, config.Options{Builtins: builtins})
 	if readErr != nil {
 		return config.Bare(builtins), false, []check{{
 			Group:  "config",
@@ -216,7 +208,7 @@ func configChecks(paths platform.Paths, builtins config.Builtins) (*config.Confi
 			Hint:   "fix the reported fragment; agx config validate shows the error",
 		}}
 	}
-	c, loadErr := config.Load(paths.Config, paths.Cache, builtins)
+	c, loadErr := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
 	return packageChecks(read, c, loadErr, filesDetail(read))
 }
 
@@ -328,7 +320,7 @@ func harnessCheck(
 		return row
 	}
 	row.Detail = fmt.Sprintf("%s %s (%s)", name, version, executable)
-	if minimum != "" && compareVersions(version, minimum) < 0 {
+	if minimum != "" && semver.Compare("v"+version, "v"+minimum) < 0 {
 		row.Status = checkWarn
 		if defined {
 			row.Status = checkFail
@@ -345,30 +337,9 @@ func harnessCheck(
 	return row
 }
 
-// compareVersions compares dotted numeric versions.
-func compareVersions(a, b string) int {
-	as, bs := strings.Split(a, "."), strings.Split(b, ".")
-	for i := range max(len(as), len(bs)) {
-		var x, y int
-		if i < len(as) {
-			x, _ = strconv.Atoi(as[i])
-		}
-		if i < len(bs) {
-			y, _ = strconv.Atoi(bs[i])
-		}
-		if x != y {
-			if x < y {
-				return -1
-			}
-			return 1
-		}
-	}
-	return 0
-}
-
-// codexDefinitionChecks checks the skill plugins of every Codex-based harness definition, each
-// with the CODEX_HOME and arguments its launches from this environment use.
-func codexDefinitionChecks(ctx context.Context, c *config.Config, registry adapters.Registry, cache string) []check {
+// definitionChecks runs the checks of the adapters that have their own, for every harness
+// definition based on them.
+func definitionChecks(ctx context.Context, c *config.Config, registry adapters.Registry, cache string) []check {
 	names := registry.Names()
 	for name := range c.Harnesses {
 		if !slices.Contains(names, name) {
@@ -376,11 +347,15 @@ func codexDefinitionChecks(ctx context.Context, c *config.Config, registry adapt
 		}
 	}
 	slices.Sort(names)
-	adapter, _ := registry.Adapter("codex")
 	rows := []check{}
 	for _, name := range names {
 		h, err := c.Harness(name)
-		if err != nil || h.Builtin != "codex" {
+		if err != nil {
+			continue
+		}
+		adapter, _ := registry.Adapter(h.Builtin)
+		doctor, ok := adapter.(adapters.Doctor)
+		if !ok {
 			continue
 		}
 		// The harness checks report an executable that is missing.
@@ -388,69 +363,15 @@ func codexDefinitionChecks(ctx context.Context, c *config.Config, registry adapt
 		if err != nil {
 			continue
 		}
-		target := adapters.InstallTarget(h, os.LookupEnv)
-		checks := []check{}
-		if len(h.Settings) > 0 {
-			settings, err := codex.Adapter{}.SettingsArguments(h.Settings, "")
-			if err == nil {
-				err = codex.CheckSettings(ctx, executable, target, settings)
-			}
-			row := check{Group: "codex", Name: "settings", Status: checkPass, Detail: "Codex loads them"}
-			if err != nil {
-				row.Status, row.Detail = checkFail, err.Error()
-				row.Hint = "fix the definition's settings; agx explain --harness " + name + " shows them"
-			}
-			checks = append(checks, row)
-			target.Arguments = append(settings, target.Arguments...)
-		}
-		state, err := codex.Plugins(ctx, executable, c, cache, target)
-		for _, row := range append(checks, codexChecks(state, err)...) {
-			if name != "codex" {
+		for _, r := range doctor.Doctor(ctx, c, cache, h, executable, adapters.InstallTarget(h, os.LookupEnv)) {
+			row := check{Group: h.Builtin, Name: r.Name, Status: checkStatus(r.Status), Detail: r.Detail, Hint: r.Hint}
+			if name != h.Builtin {
 				row.Name = name + " " + row.Name
 			}
 			rows = append(rows, row)
 		}
 	}
 	return rows
-}
-
-func codexChecks(state codex.PluginState, err error) []check {
-	if err != nil {
-		return []check{{Group: "codex", Name: "plugins", Status: checkFail, Detail: err.Error()}}
-	}
-	if state.Disabled != "" {
-		return []check{{
-			Group:  "codex",
-			Name:   "plugins feature",
-			Status: checkWarn,
-			Detail: state.Disabled,
-			Hint:   "Codex launches run without skills until plugins are enabled",
-		}}
-	}
-	rows := []check{{Group: "codex", Name: "plugins feature", Status: checkPass, Detail: "enabled in " + state.Home}}
-	marketplace := check{
-		Group:  "codex",
-		Name:   "marketplace",
-		Status: checkPass,
-		Detail: "registered: " + state.Marketplace,
-	}
-	if !state.Registered {
-		marketplace.Status, marketplace.Detail = checkWarn, "agx marketplace not registered with Codex"
-		marketplace.Hint = "run agx install; a Codex launch also registers it"
-	}
-	rows = append(rows, marketplace)
-	plugins := check{
-		Group:  "codex",
-		Name:   "skill plugins",
-		Status: checkPass,
-		Detail: plural(len(state.Installed), "skill") + " installed",
-	}
-	if len(state.Missing) > 0 {
-		plugins.Status = checkWarn
-		plugins.Detail = "not installed: " + strings.Join(state.Missing, ", ")
-		plugins.Hint = "run agx install; a Codex launch also installs them"
-	}
-	return append(rows, plugins)
 }
 
 // connectDaemon reaches a daemon of this build, starting it as other commands do, and reports
@@ -492,9 +413,7 @@ func daemonClientCheck(
 	started bool,
 ) (*client, check) {
 	row := check{Group: "daemon", Name: "daemon"}
-	probe, cancel := context.WithTimeout(ctx, callTimeout)
-	view, err := c.runtime.GetRuntime(probe, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
-	cancel()
+	view, err := c.runtime.GetRuntime(ctx, connect.NewRequest(&v1.GetRuntimeRequest{}))
 	if err != nil {
 		row.Status, row.Detail = checkFail, "not answering: "+errorMessage(err)
 		row.Hint = "inspect " + shownPath(filepath.Join(paths.Runtime, "daemon.log"))
@@ -510,38 +429,6 @@ func daemonClientCheck(
 		mayHaveStarted: started,
 		launches:       len(view.Msg.GetRuntime().GetLaunches()),
 	})
-}
-
-// stateCheck checks the file in which the daemon keeps active launches across restarts. It holds
-// only token verifiers and metadata, but no one else may read or replace it.
-func stateCheck(path string) check {
-	row := check{Group: "daemon", Name: "state", Status: checkPass, Detail: path}
-	info, err := os.Stat(path)
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		row.Detail = "no saved launches"
-	case err != nil:
-		row.Status, row.Detail = checkFail, err.Error()
-	case !info.Mode().IsRegular():
-		row.Status, row.Detail = checkFail, path+" is not a regular file"
-		row.Hint = "remove it; the daemon writes it again"
-	// Windows protects the file with an ACL the daemon sets; mode bits say nothing there.
-	case runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0:
-		row.Status = checkFail
-		row.Detail = fmt.Sprintf("%s is accessible to other users (mode %04o)", path, info.Mode().Perm())
-		row.Hint = "run chmod 600 " + path
-	default:
-		switch err := daemon.CheckState(path); {
-		case errors.Is(err, daemon.ErrNewerState):
-			row.Status, row.Detail = checkFail, err.Error()
-			row.Hint = "upgrade agx; a daemon of this agx cannot start while the file holds a newer format"
-		case err != nil:
-			// The daemon moves a file it cannot read aside and starts without its launches.
-			row.Status, row.Detail = checkWarn, err.Error()
-			row.Hint = "the next daemon moves it aside and forgets its saved launches"
-		}
-	}
-	return row
 }
 
 type daemonFacts struct {
@@ -610,11 +497,11 @@ func mcpChecks(ctx context.Context, c *client, cfg *config.Config, directory str
 		wg.Go(func() {
 			call, cancel := context.WithTimeout(ctx, doctorMCPTimeout)
 			defer cancel()
-			response, err := c.runtime.TestMcpServer(call, request(&v1.TestMcpServerRequest{
+			response, err := c.runtime.TestMcpServer(call, connect.NewRequest(&v1.TestMcpServerRequest{
 				McpId:             string(id),
 				Directory:         directory,
 				EnvironmentInputs: inputs,
-			}, c.discovery.Token))
+			}))
 			var msg *v1.TestMcpServerResponse
 			if err == nil {
 				msg = response.Msg
@@ -644,8 +531,10 @@ func mcpCheck(id config.ID, server config.MCPServer, response *v1.TestMcpServerR
 	switch errorCode(err) {
 	case codeNeedsLogin:
 		row.Status, row.Detail = checkWarn, "needs authorization: "+message
-		secret := cmp.Or(server.Auth.Secret, id)
-		row.Hint = "run agx secret login " + string(secret)
+		row.Hint = "run agx secret login " + string(cmp.Or(server.Auth.Secret, id))
+		if server.Auth.Env != "" || server.Auth.File != "" {
+			row.Hint = "check " + server.Auth.String()
+		}
 	case codeTimeout:
 		row.Status, row.Detail = checkFail, fmt.Sprintf("no answer within %s", doctorMCPTimeout)
 		row.Hint = "run agx mcp test " + string(id) + " for details"
@@ -656,10 +545,8 @@ func mcpCheck(id config.ID, server config.MCPServer, response *v1.TestMcpServerR
 	return row
 }
 
-func secretChecks(ctx context.Context, c *client, cfg *config.Config) []check {
-	call, cancel := context.WithTimeout(ctx, callTimeout)
-	defer cancel()
-	response, err := c.secrets.GetSecretStatus(call, request(&v1.GetSecretStatusRequest{}, c.discovery.Token))
+func secretChecks(ctx context.Context, c *client) []check {
+	response, err := c.secrets.GetSecretStatus(ctx, connect.NewRequest(&v1.GetSecretStatusRequest{}))
 	if err != nil {
 		return []check{{
 			Group:  "secret",
@@ -672,14 +559,13 @@ func secretChecks(ctx context.Context, c *client, cfg *config.Config) []check {
 	slices.SortFunc(statuses, func(a, b *v1.SecretStatus) int { return strings.Compare(a.SecretId, b.SecretId) })
 	rows := []check{}
 	for _, s := range statuses {
-		rows = append(rows, secretCheck(s, cfg.Secrets[config.ID(s.SecretId)], os.LookupEnv))
+		rows = append(rows, secretCheck(s))
 	}
 	return rows
 }
 
-// secretCheck judges a secret by the daemon's view. Secrets read from the caller's environment
-// exist for the daemon only at launch, so their variable is checked here instead.
-func secretCheck(s *v1.SecretStatus, secret config.Secret, lookup func(string) (string, bool)) check {
+// secretCheck judges a secret by the daemon's view.
+func secretCheck(s *v1.SecretStatus) check {
 	row := check{Group: "secret", Name: s.SecretId, Detail: s.Kind}
 	problems := []string{}
 	for _, d := range s.Diagnostics {
@@ -697,7 +583,7 @@ func secretCheck(s *v1.SecretStatus, secret config.Secret, lookup func(string) (
 		row.Status = checkWarn
 		row.Detail += ": not stored"
 		if s.Kind == "keychain" {
-			row.Hint = "run agx secret set " + s.SecretId + " --stdin"
+			row.Hint = "run agx secret set " + s.SecretId
 		} else {
 			row.Hint = "run agx secret login " + s.SecretId
 		}
@@ -708,20 +594,10 @@ func secretCheck(s *v1.SecretStatus, secret config.Secret, lookup func(string) (
 			row.Detail += ": " + strings.Join(problems, "; ")
 		}
 	default:
-		switch {
-		case s.Kind == "environment" && secret.Variable != "":
-			if value, ok := lookup(secret.Variable); ok && value != "" {
-				row.Status = checkPass
-				row.Detail += ": $" + secret.Variable + " is set"
-			} else {
-				row.Status = checkWarn
-				row.Detail += ": $" + secret.Variable + " is not set here"
-				row.Hint = "set " + secret.Variable + " in the shell that launches harnesses"
-			}
-		case s.Kind == "sops":
+		if s.Kind == "sops" {
 			row.Status = checkPass
 			row.Detail += ": age key resolves at launch"
-		default:
+		} else {
 			row.Status = checkWarn
 			row.Detail += ": not configured"
 		}
@@ -765,7 +641,7 @@ func shimChecks(c *config.Config, registry adapters.Registry) []check {
 	if len(names) == 0 {
 		return nil
 	}
-	dir, err := shims.DefaultDir()
+	dir, err := shims.Dir()
 	if err != nil {
 		return []check{{Group: "shims", Name: "shims", Status: checkWarn, Detail: err.Error()}}
 	}
@@ -836,10 +712,6 @@ func shimRows(dir string, entries []shims.Entry, onPath bool, collisions []shims
 			", ",
 		)
 		row.Hint = "run agx shims install"
-	case len(counts[shims.Modified])+len(counts[shims.Conflict]) > 0:
-		row.Status = checkWarn
-		row.Detail = "not agx's: " + strings.Join(slices.Concat(counts[shims.Modified], counts[shims.Conflict]), ", ")
-		row.Hint = "remove or rename those files, then run agx shims install"
 	}
 	rows := []check{row}
 	path := check{Group: "shims", Name: "PATH", Status: checkPass, Detail: dir + " is on PATH"}

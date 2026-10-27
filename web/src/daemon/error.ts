@@ -17,6 +17,8 @@ export const DaemonFailure = Schema.Literals([
   "timeout",
   "internal",
   "mcp_failed",
+  "network",
+  "choose_file",
   "unreachable",
   "canceled",
 ]);
@@ -26,6 +28,8 @@ export class DaemonError extends Schema.TaggedError<DaemonError>()("DaemonError"
   operation: Schema.String,
   reason: DaemonFailure,
   message: Schema.String,
+  /** With choose_file, the fragments the changes could go to. */
+  files: Schema.Array(Schema.String),
 }) {}
 
 const fromReason = (reason: ErrorDetail_Reason): DaemonFailure | undefined => {
@@ -54,6 +58,10 @@ const fromReason = (reason: ErrorDetail_Reason): DaemonFailure | undefined => {
       return "internal";
     case ErrorDetail_Reason.MCP_FAILED:
       return "mcp_failed";
+    case ErrorDetail_Reason.NETWORK:
+      return "network";
+    case ErrorDetail_Reason.CHOOSE_FILE:
+      return "choose_file";
   }
 };
 
@@ -95,10 +103,20 @@ export const daemonError = (operation: string, cause: unknown): DaemonError => {
   // A request that never reached the daemon fails in fetch, which throws a TypeError; the
   // Connect client wraps it as Unknown, the code a daemon's plain error also has.
   if (error.cause instanceof TypeError) {
-    return new DaemonError({ operation, reason: "unreachable", message: error.rawMessage });
+    return new DaemonError({
+      operation,
+      reason: "unreachable",
+      message: error.rawMessage,
+      files: [],
+    });
   }
   const detail = error.findDetails(ErrorDetailSchema)[0];
   const reason =
     (detail === undefined ? undefined : fromReason(detail.reason)) ?? fromCode(error.code);
-  return new DaemonError({ operation, reason, message: error.rawMessage });
+  return new DaemonError({
+    operation,
+    reason,
+    message: error.rawMessage,
+    files: detail?.files ?? [],
+  });
 };

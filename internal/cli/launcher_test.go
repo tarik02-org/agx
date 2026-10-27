@@ -2,7 +2,6 @@ package cli
 
 import (
 	"os"
-	"path/filepath"
 	"slices"
 	"testing"
 
@@ -11,9 +10,8 @@ import (
 )
 
 func TestLauncherHarnessesSkipHidden(t *testing.T) {
-	dir := t.TempDir()
-	root := filepath.Join(dir, "agx.yaml")
-	if err := os.WriteFile(root, []byte(`harnesses:
+	root, fragment := writeConfig(t, t.TempDir(), "")
+	if err := os.WriteFile(fragment, []byte(`harnesses:
   claude: {hidden: true}
   codex: {hidden: true}
   codex-cpa: {base: codex}
@@ -22,7 +20,7 @@ func TestLauncherHarnessesSkipHidden(t *testing.T) {
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	c, err := config.Read(root, builtin.Registry().Builtins(nil))
+	c, err := config.Load(root, config.Options{Builtins: builtin.Registry().Builtins(nil)})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -35,11 +35,10 @@ secrets:
 bundles:
   dev:
     skills: [alpha]
-imports:
-  - glob: agx.d/*.yaml
 `
 
-// editorServer serves an isolated configuration holding a local skill and instructions.
+// editorServer serves an isolated configuration holding a local skill and instructions, defined
+// in main.yaml beside the root, which also lists agx.d/*.yaml.
 func editorServer(t *testing.T, configuration string) (*Server, string) {
 	t.Helper()
 	dir, err := config.Canonical(t.TempDir())
@@ -55,7 +54,8 @@ func editorServer(t *testing.T, configuration string) (*Server, string) {
 	writeFile(t, filepath.Join(dir, "skills", "alpha", "scripts", "run.sh"), "echo\n")
 	writeFile(t, filepath.Join(dir, "skills", "alpha", ".git", "HEAD"), "ref\n")
 	writeFile(t, filepath.Join(dir, "AGENTS.md"), "Be brief.\n")
-	writeFile(t, filepath.Join(dir, "agx.yaml"), configuration)
+	writeFile(t, filepath.Join(dir, "agx.yaml"), "fragments: [main.yaml, agx.d/*.yaml]\n")
+	writeFile(t, filepath.Join(dir, "main.yaml"), configuration)
 	paths := platform.Paths{
 		Config: filepath.Join(dir, "agx.yaml"),
 		Cache:  filepath.Join(dir, "cache"),
@@ -127,7 +127,7 @@ func TestListDefinitions(t *testing.T) {
 	alpha := byKey["skills/alpha"]
 	if alpha.Yaml != "path: ./skills/alpha # local\n" || alpha.Description != "Alpha skill." ||
 		alpha.Path != filepath.Join(dir, "skills", "alpha") || alpha.ReadOnly || alpha.Package != "" ||
-		alpha.Source.Path != s.paths.Config || alpha.Source.Line != 2 {
+		alpha.Source.Path != filepath.Join(dir, "main.yaml") || alpha.Source.Line != 2 {
 		t.Fatalf("alpha = %+v", alpha)
 	}
 	if docs := byKey["mcp/docs"]; docs.Description != "Library docs." ||
@@ -169,7 +169,7 @@ func TestReadFileRestrictions(t *testing.T) {
 		return response.Msg, nil
 	}
 	if got, err := read(
-		s.paths.Config,
+		filepath.Join(dir, "main.yaml"),
 	); err != nil || got.Content != strings.Replace(editorConfig, "skills:\n", "skills:\n  cached:\n    path: ./cache/kit/skill\n", 1) ||
 		got.ReadOnly {
 		t.Fatalf("fragment = %+v, %v", got, err)
@@ -208,8 +208,8 @@ func define(kind, id, yaml string) *v1.ConfigChange {
 	return &v1.ConfigChange{Change: &v1.ConfigChange_Define{Define: &v1.DefineChange{Kind: kind, Id: id, Yaml: yaml}}}
 }
 
-func enable(kind, id string) *v1.ConfigChange {
-	return &v1.ConfigChange{Change: &v1.ConfigChange_Enable{Enable: &v1.SelectionChange{Kind: kind, Id: id}}}
+func enable(kind config.Kind, id string) *v1.ConfigChange {
+	return &v1.ConfigChange{Change: &v1.ConfigChange_Enable{Enable: &v1.SelectionChange{Kind: string(kind), Id: id}}}
 }
 
 func TestPlanAndApplyChanges(t *testing.T) {
@@ -227,13 +227,14 @@ func TestPlanAndApplyChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	files := planned.Msg.Files
+	main := filepath.Join(dir, "main.yaml")
 	sum := sha256.Sum256([]byte(editorConfig))
-	if len(files) != 2 || files[0].Path != s.paths.Config || files[0].BeforeSha256 != hex.EncodeToString(sum[:]) ||
+	if len(files) != 2 || files[0].Path != main || files[0].BeforeSha256 != hex.EncodeToString(sum[:]) ||
 		!strings.Contains(files[0].Diff, "+  search:") || !strings.Contains(files[0].Diff, "+      mcp: [search]") ||
 		!strings.Contains(files[1].Diff, "+description: Edited.") {
 		t.Fatalf("plan = %+v", files)
 	}
-	if b, _ := os.ReadFile(s.paths.Config); string(b) != editorConfig {
+	if b, _ := os.ReadFile(main); string(b) != editorConfig {
 		t.Fatal("planning wrote the configuration")
 	}
 
@@ -304,6 +305,33 @@ func TestPlanAndApplyChanges(t *testing.T) {
 	}
 }
 
+func TestPlanChangesChoosesFile(t *testing.T) {
+	s, dir := editorServer(t, editorConfig)
+	other := filepath.Join(dir, "agx.d", "10-other.yaml")
+	writeFile(t, other, "{}\n")
+	changes := []*v1.ConfigChange{define("mcp", "search", "url: https://example.com/search\n")}
+	_, err := s.PlanChanges(t.Context(), connect.NewRequest(&v1.PlanChangesRequest{Changes: changes}))
+	var rpc *connect.Error
+	if !errors.As(err, &rpc) || rpc.Code() != connect.CodeFailedPrecondition {
+		t.Fatalf("error = %v", err)
+	}
+	wantReason(t, err, v1.ErrorDetail_REASON_CHOOSE_FILE)
+	value, _ := rpc.Details()[0].Value()
+	if files := value.(*v1.ErrorDetail).Files; !slices.Equal(files, []string{filepath.Join(dir, "main.yaml"), other}) {
+		t.Fatalf("files = %q", files)
+	}
+	planned, err := s.PlanChanges(
+		t.Context(),
+		connect.NewRequest(&v1.PlanChangesRequest{Changes: changes, File: other}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files := planned.Msg.Files; len(files) != 1 || files[0].Path != other {
+		t.Fatalf("plan = %+v", files)
+	}
+}
+
 // skillRepository commits a repository holding the skills alpha and beta.
 func skillRepository(t *testing.T) string {
 	t.Helper()
@@ -334,7 +362,8 @@ func skillRepository(t *testing.T) string {
 
 func TestPreviewSource(t *testing.T) {
 	repo := skillRepository(t)
-	s, _ := editorServer(t, editorConfig)
+	s, dir := editorServer(t, editorConfig)
+	main := filepath.Join(dir, "main.yaml")
 	url := "file://" + filepath.ToSlash(repo)
 	preview, err := s.PreviewSource(t.Context(), connect.NewRequest(&v1.PreviewSourceRequest{Source: url}))
 	if err != nil {
@@ -346,10 +375,10 @@ func TestPreviewSource(t *testing.T) {
 		!slices.Equal(msg.Skills[0].Files, []string{"SKILL.md", "reference.md"}) {
 		t.Fatalf("preview = %+v", msg)
 	}
-	if b, _ := os.ReadFile(s.paths.Config); string(b) != editorConfig {
+	if b, _ := os.ReadFile(main); string(b) != editorConfig {
 		t.Fatal("previewing changed the configuration")
 	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(s.paths.Config), "agx.lock.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, "agx.lock.json")); !os.IsNotExist(err) {
 		t.Fatalf("previewing wrote a lockfile: %v", err)
 	}
 

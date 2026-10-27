@@ -1,22 +1,12 @@
 package edit
 
 import (
-	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 
-	"github.com/tarik02-org/agx/internal/yaml"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/tarik02-org/agx/internal/config"
-)
-
-// Kinds are the selection list keys, which are also the names of their top-level sections.
-const (
-	Skills       = "skills"
-	Instructions = "instructions"
-	MCP          = "mcp"
-	Bundles      = "bundles"
 )
 
 // Scalar is a plain string node.
@@ -134,21 +124,23 @@ func child(m *yaml.Node, key string, create bool) *yaml.Node {
 func null(n *yaml.Node) bool { return n.Kind == yaml.ScalarNode && n.ShortTag() == "!!null" }
 
 // Definition returns the definition of id under a top-level section, or nil.
-func (f *File) Definition(section, id string) *yaml.Node { return Get(f.Section(section, false), id) }
+func (f *File) Definition(kind config.Kind, id string) *yaml.Node {
+	return Get(f.Section(string(kind), false), id)
+}
 
 // Define adds a definition under a top-level section; it must not exist yet.
-func (f *File) Define(section, id string, value *yaml.Node) {
-	Set(f.Section(section, true), id, value)
+func (f *File) Define(kind config.Kind, id string, value *yaml.Node) {
+	Set(f.Section(string(kind), true), id, value)
 }
 
 // Undefine removes a top-level definition, and its section when it becomes empty.
-func (f *File) Undefine(section, id string) bool {
-	m := f.Section(section, false)
+func (f *File) Undefine(kind config.Kind, id string) bool {
+	m := f.Section(string(kind), false)
 	if !Delete(m, id) {
 		return false
 	}
 	if len(m.Content) == 0 {
-		Delete(f.root(), section)
+		Delete(f.root(), string(kind))
 	}
 	return true
 }
@@ -223,11 +215,11 @@ func (f *File) AddRule(directory string, harnesses []string) *yaml.Node {
 // List returns the kind list of a selection mapping (a rule's add or remove, a bundle, or a
 // harness's add or remove), creating it when create is set. A new list is written in flow style
 // unless its siblings use block style.
-func (f *File) List(selection *yaml.Node, kind string, create bool) *yaml.Node {
+func (f *File) List(selection *yaml.Node, kind config.Kind, create bool) *yaml.Node {
 	if selection == nil {
 		return nil
 	}
-	if v := Get(selection, kind); v != nil && v.Kind == yaml.SequenceNode {
+	if v := Get(selection, string(kind)); v != nil && v.Kind == yaml.SequenceNode {
 		return v
 	} else if !create || v != nil && !null(v) {
 		return nil
@@ -240,12 +232,19 @@ func (f *File) List(selection *yaml.Node, kind string, create bool) *yaml.Node {
 		}
 	}
 	list := Sequence(flow)
-	setOrdered(selection, kind, list, selectionKinds)
+	setOrdered(selection, string(kind), list, selectionKinds)
 	return list
 }
 
 // selectionKinds is the order of a selection's lists as configuration documents write them.
-var selectionKinds = []string{"skills", "instructions", "mcp", "bundles"}
+var selectionKinds = []string{
+	string(
+		config.KindSkills,
+	),
+	string(config.KindInstructions),
+	string(config.KindMCPServers),
+	string(config.KindBundles),
+}
 
 // setOrdered sets key like Set, but places a new key before the first sibling that order puts
 // after it, so a list recreated after its last entry was removed returns to its usual place.
@@ -281,7 +280,7 @@ func (f *File) Selection(owner *yaml.Node, change string, create bool) *yaml.Nod
 }
 
 // Find returns the position of the entry for id in list, or -1.
-func Find(kind string, list *yaml.Node, id string) int {
+func Find(kind config.Kind, list *yaml.Node, id string) int {
 	if list == nil {
 		return -1
 	}
@@ -305,36 +304,28 @@ func RemoveAt(list *yaml.Node, i int) {
 
 // EntryID is the ID a selection entry refers to, or defines when defines is set: a path or an
 // inline definition. It follows the derivation rules of configuration loading.
-func EntryID(kind string, entry *yaml.Node) (id string, defines bool) {
+func EntryID(kind config.Kind, entry *yaml.Node) (id string, defines bool) {
 	switch entry.Kind {
 	case yaml.ScalarNode:
-		if kind == Bundles || !config.IsPath(entry.Value) {
+		if kind == config.KindBundles || !config.IsPath(entry.Value) {
 			return entry.Value, false
 		}
-		return derived(kind, entry.Value), true
+		return config.DerivedID(kind, entry.Value, ""), true
 	case yaml.MappingNode:
 		if id := Get(entry, "id"); id != nil {
 			return id.Value, true
 		}
-		p := ""
+		file, git := "", ""
 		if v := Get(entry, "path"); v != nil {
-			p = v.Value
+			file = v.Value
 		}
-		if git := Get(entry, "git"); kind == Skills && git != nil && p == "" {
-			return config.RepositoryName(git.Value), true
+		if v := Get(entry, "git"); v != nil {
+			git = v.Value
 		}
-		return derived(kind, p), true
+		return config.DerivedID(kind, file, git), true
 	default:
 		return "", false
 	}
-}
-
-func derived(kind, value string) string {
-	base := path.Base(filepath.ToSlash(filepath.Clean(value)))
-	if kind == Instructions {
-		return strings.TrimSuffix(base, path.Ext(base))
-	}
-	return base
 }
 
 // Reference is one selection entry naming an ID.
@@ -351,7 +342,7 @@ type Reference struct {
 
 // References lists the selection entries for id of a kind: in scope rules, bundles, and harness
 // selections.
-func (f *File) References(kind, id string) []Reference {
+func (f *File) References(kind config.Kind, id string) []Reference {
 	out := []Reference{}
 	collect := func(where string, owner, selection *yaml.Node, enables bool) {
 		list := f.List(selection, kind, false)
@@ -383,7 +374,7 @@ func (f *File) References(kind, id string) []Reference {
 			collect(where+" "+change, r.Node, Get(r.Node, change), change == "add")
 		}
 	}
-	if bundles := f.Section(Bundles, false); bundles != nil {
+	if bundles := f.Section(string(config.KindBundles), false); bundles != nil {
 		for i := 0; i+1 < len(bundles.Content); i += 2 {
 			collect("bundle "+bundles.Content[i].Value, nil, bundles.Content[i+1], false)
 		}
@@ -418,7 +409,7 @@ func (f *File) Prune() {
 			if selection == nil || selection.Kind != yaml.MappingNode {
 				continue
 			}
-			for _, kind := range []string{Skills, Instructions, MCP, Bundles} {
+			for _, kind := range selectionKinds {
 				if list := Get(
 					selection,
 					kind,

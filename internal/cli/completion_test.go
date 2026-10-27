@@ -36,19 +36,13 @@ harnesses:
 `
 
 // isolate points every agx path and home directory into a temporary directory, with the
-// configuration given, and returns the configuration path.
+// configuration given in a fragment, and returns the fragment's path.
 func isolate(t *testing.T, configuration string) string {
 	t.Helper()
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config", "agx.yaml")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(configuration), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	root, fragment := writeConfig(t, filepath.Join(dir, "config"), configuration)
 	for name, value := range map[string]string{
-		"AGX_CONFIG":      path,
+		"AGX_CONFIG":      root,
 		"AGX_CACHE":       filepath.Join(dir, "cache"),
 		"AGX_STATE":       filepath.Join(dir, "state"),
 		"HOME":            filepath.Join(dir, "home"),
@@ -58,7 +52,26 @@ func isolate(t *testing.T, configuration string) string {
 	} {
 		t.Setenv(name, value)
 	}
-	return path
+	return fragment
+}
+
+// writeConfig writes a root configuration in dir importing agx.d/*.yaml, and the definitions
+// into agx.d/main.yaml unless they are empty. It returns both paths.
+func writeConfig(t *testing.T, dir, definitions string) (string, string) {
+	t.Helper()
+	root, fragment := filepath.Join(dir, "agx.yaml"), filepath.Join(dir, "agx.d", "main.yaml")
+	if err := os.MkdirAll(filepath.Dir(fragment), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(root, []byte("fragments: [agx.d/*.yaml]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if definitions != "" {
+		if err := os.WriteFile(fragment, []byte(definitions), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root, fragment
 }
 
 // complete runs agx __complete with args and returns the candidates and the directive.
@@ -91,11 +104,6 @@ func TestCompletion(t *testing.T) {
 		},
 		{[]string{"mcp", "remove", "fs", ""}, []string{}, cobra.ShellCompDirectiveNoFileComp},
 		{
-			[]string{"mcp", "login", ""},
-			[]string{"github\thttps://api.githubcopilot.com/mcp"},
-			cobra.ShellCompDirectiveNoFileComp,
-		},
-		{
 			[]string{"use", "--kind", "mcp", ""},
 			[]string{"docs\tMCP server", "fs\tMCP server", "github\tMCP server"},
 			cobra.ShellCompDirectiveNoFileComp,
@@ -121,7 +129,6 @@ func TestCompletion(t *testing.T) {
 		},
 		{[]string{"use", "fs", "--scope", "./"}, []string{}, cobra.ShellCompDirectiveFilterDirs},
 		{[]string{"use", "fs", "--file", ""}, []string{"yaml", "yml"}, cobra.ShellCompDirectiveFilterFileExt},
-		{[]string{"shims", "list", "--dir", ""}, []string{}, cobra.ShellCompDirectiveFilterDirs},
 		{[]string{"skill", "add", ""}, []string{}, cobra.ShellCompDirectiveDefault},
 		{[]string{"sessions", ""}, []string{}, cobra.ShellCompDirectiveNoFileComp},
 		{[]string{"daemon", "re"}, []string{"restart\tStop the daemon and start one of this build"}, cobra.ShellCompDirectiveNoFileComp},
@@ -143,16 +150,13 @@ func TestCompletion(t *testing.T) {
 
 func TestCompletionRootFlags(t *testing.T) {
 	isolate(t, "")
-	other := filepath.Join(t.TempDir(), "other.yaml")
-	if err := os.WriteFile(other, []byte(completionConfig), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	other, _ := writeConfig(t, t.TempDir(), completionConfig)
 	for _, args := range [][]string{
-		{"--config", other, "mcp", "login", ""},
-		{"--config=" + other, "mcp", "login", ""},
-		{"mcp", "login", "--config", other, ""},
+		{"--config", other, "secret", "login", ""},
+		{"--config=" + other, "secret", "login", ""},
+		{"secret", "login", "--config", other, ""},
 	} {
-		if got, _ := complete(t, args...); !slices.Equal(got, []string{"github\thttps://api.githubcopilot.com/mcp"}) {
+		if got, _ := complete(t, args...); !slices.Equal(got, []string{"github\toauth, on demand"}) {
 			t.Errorf("%q: candidates = %q", args, got)
 		}
 	}

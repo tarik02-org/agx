@@ -4,9 +4,8 @@ Status: accepted.
 
 Separately declaring a secret and pointing an MCP server at it is ceremony for
 the common case of one server, one account. An MCP entry's `auth` therefore takes
-one of three forms, and `transport` is inferred: `url` means HTTP, `command`
-means stdio. An explicit `transport` must agree, and an entry sets exactly one of
-the two.
+one of three forms, and the transport follows from the entry: `url` means HTTP,
+`command` means stdio, and an entry sets exactly one of the two.
 
 ```yaml
 mcp:

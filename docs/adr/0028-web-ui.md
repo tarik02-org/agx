@@ -96,7 +96,7 @@ The UI uses Effect for its data layer, not for rendering:
   (`needs_login`, `mcp_failed`, `config_invalid`, …), and an unknown reason is
   a defect. Components then handle each reason exhaustively instead of
   catching `ConnectError`.
-- Streams (`WatchRuntime`, `WatchOperation`, `Login`) are Effect streams whose
+- Streams (`WatchRuntime`, `Install`, `Login`) are Effect streams whose
   scope ends with the component that runs them, so leaving a page closes the
   stream, and a reconnect after `agx daemon restart` is one retry schedule.
 - Data the UI reads outside generated messages, such as tool input schemas and
@@ -164,7 +164,7 @@ Each feature is a page, listed in the order they ship.
    - Launches and thread launches.
    - MCP processes as `agx mcp ps` lists them, with restart and stop.
    - Secrets with their state, and OAuth login and logout.
-   - Package installation progress (`WatchOperation`).
+   - Package installation progress (`Install`).
 2. **Explain**
    - Pick a directory: recent launch directories, scope directories from the
      configuration, or a path typed with completion from the daemon.

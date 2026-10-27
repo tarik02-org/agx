@@ -14,6 +14,9 @@ export interface StagedChange {
 interface Staging {
   readonly changes: ReadonlyArray<StagedChange>;
   readonly reviewing: boolean;
+  /** The fragment new definitions, rules, and packages go to; empty lets the daemon choose. */
+  readonly file: string;
+  readonly target: (file: string) => void;
   readonly stage: (...changes: ReadonlyArray<StagedChange>) => void;
   readonly unstage: (key: string) => void;
   readonly clear: () => void;
@@ -33,9 +36,11 @@ const upsert = (
 export const useStaging = create<Staging>()((set) => ({
   changes: [],
   reviewing: false,
+  file: "",
+  target: (file) => set({ file }),
   stage: (...next) => set(({ changes }) => ({ changes: next.reduce(upsert, changes) })),
   unstage: (key) => set(({ changes }) => ({ changes: changes.filter((c) => c.key !== key) })),
-  clear: () => set({ changes: [], reviewing: false }),
+  clear: () => set({ changes: [], reviewing: false, file: "" }),
   review: (open) => set({ reviewing: open }),
 }));
 
@@ -52,10 +57,10 @@ export const useStagedFile = (path: string): string | undefined =>
     return staged?.case === "writeFile" ? staged.value.content : undefined;
   });
 
-export const define = (kind: string, id: string, yaml: string, file: string): StagedChange => ({
+export const define = (kind: string, id: string, yaml: string): StagedChange => ({
   key: definitionKey(kind, id),
   label: `Define ${kind} ${id}`,
-  change: { change: { case: "define", value: { kind, id, yaml, file } } },
+  change: { change: { case: "define", value: { kind, id, yaml } } },
 });
 
 export const undefine = (kind: string, id: string): StagedChange => ({

@@ -16,8 +16,8 @@ func main() {
 	if len(os.Args) != 2 {
 		log.Fatal("usage: schemagen <directory>")
 	}
-	for name, manifest := range map[string]bool{"agx.schema.json": false, "agx.package.schema.json": true} {
-		b, err := config.Schema(manifest, builtin.Registry().Builtins(nil))
+	for kind, name := range config.SchemaFiles {
+		b, err := config.Schema(kind, builtin.Registry().Builtins(nil))
 		if err != nil {
 			log.Fatal(err)
 		}

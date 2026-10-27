@@ -123,18 +123,19 @@ func newEnv(t *testing.T) *env {
 	)
 	// The fake sops reads "encrypted" files as plain JSON.
 	e.write("config/sealed.json", `{"echo": {"extra": "`+sealed+`"}}`)
-	e.write("config/agx.yaml", `skills:
+	// The root lists the fragment tests write their definitions to.
+	e.write("config/agx.yaml", "fragments: [main.yaml]\n")
+	e.write("config/main.yaml", `skills:
   review: {path: ./skills/review}
 instructions:
   rules: {text: E2E instructions.}
 secrets:
-  token: {kind: environment, variable: E2E_TOKEN}
   sealed: {kind: sops, file: ./sealed.json, key: echo.extra}
 mcp:
   echo:
     command: ['`+filepath.ToSlash(binaries.mcp)+`']
     environment:
-      ECHO_TOKEN: !secret token
+      ECHO_TOKEN: !env E2E_TOKEN
       ECHO_EXTRA: !secret sealed
 scopes:
   - directory: ../work
@@ -326,6 +327,8 @@ func (e *env) jsonOK(into any, args ...string) {
 	e.t.Helper()
 	if code, doc := e.jsonRun(args...); code != 0 {
 		e.t.Fatalf("agx %q --json exited %d: %+v", args, code, doc.Error)
+	} else if into == nil {
+		return
 	} else if err := json.Unmarshal(doc.Data, into); err != nil {
 		e.t.Fatal(err)
 	}
@@ -365,7 +368,7 @@ func TestEndToEnd(t *testing.T) {
 
 	t.Run("links named after harnesses", func(t *testing.T) {
 		if runtime.GOOS == "windows" {
-			t.Skip("shims are hard links or copies on Windows")
+			t.Skip("shims are copies on Windows")
 		}
 		links, native := filepath.Join(e.dir, "links"), filepath.Join(e.dir, "native")
 		for _, d := range []string{links, native} {
@@ -436,8 +439,26 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("exit %d: %s", r.code, r.stderr)
 		}
 		launched = d
-		if n := len(d.Args); n < 3 || !slices.Equal(d.Args[n-3:], []string{"--from-definition", "-p", "hello"}) {
-			t.Errorf("args = %q, want the definition's group before the native arguments", d.Args)
+		n := len(d.Args)
+		if n < 5 || !slices.Equal(d.Args[n-5:n-3], []string{"--from-definition", "--session-id"}) ||
+			!slices.Equal(d.Args[n-2:], []string{"-p", "hello"}) {
+			t.Fatalf("args = %q, want the definition's group, then the session ID, before the native arguments", d.Args)
+		}
+		// The launch records the session it started, so it never claims another by time.
+		var records struct {
+			Records []struct {
+				Sessions []string `json:"sessions"`
+				Exact    bool     `json:"exact"`
+			} `json:"records"`
+		}
+		b, err := os.ReadFile(filepath.Join(e.dir, "state", "launch-records.json"))
+		if err == nil {
+			err = json.Unmarshal(b, &records)
+		}
+		last := len(records.Records) - 1
+		if err != nil || last < 0 || !records.Records[last].Exact ||
+			!slices.Equal(records.Records[last].Sessions, []string{d.Args[n-3]}) {
+			t.Errorf("launch records = %s, %v", b, err)
 		}
 		work, err := filepath.EvalSymlinks(e.work)
 		if err != nil {
@@ -470,13 +491,13 @@ func TestEndToEnd(t *testing.T) {
 
 	t.Run("sops secret status", func(t *testing.T) {
 		r := e.ok("secret", "status", "sealed", "--json")
-		if !strings.Contains(r.stdout, `"kind":"sops"`) || !strings.Contains(r.stdout, `"state":"ready"`) {
+		if !strings.Contains(r.stdout, `"kind":"sops"`) || !strings.Contains(r.stdout, `"state":"STATE_READY"`) {
 			t.Fatalf("status = %s", r.stdout)
 		}
 		if strings.Contains(r.stdout, sealed) {
 			t.Fatal("secret status reveals the value")
 		}
-		if r := e.agx(nil, "secret", "set", "sealed", "--stdin"); r.code == 0 ||
+		if r := e.agx(nil, "secret", "set", "sealed"); r.code == 0 ||
 			!strings.Contains(r.stderr, "edit it with sops") {
 			t.Fatalf("secret set of a sops secret: exit %d, %s", r.code, r.stderr)
 		}
@@ -496,7 +517,7 @@ func TestEndToEnd(t *testing.T) {
 		if err := json.Unmarshal([]byte(r.stdout), &view); err != nil {
 			t.Fatal(err)
 		}
-		if len(view.Data.Launches) != 1 || view.Data.Launches[0].State != "finished" ||
+		if len(view.Data.Launches) != 1 || view.Data.Launches[0].State != "STATE_FINISHED" ||
 			view.Data.Launches[0].Harness != "claude-e2e" || view.Data.Launches[0].Mode != "print" {
 			t.Fatalf("launches = %+v", view.Data.Launches)
 		}
@@ -529,30 +550,19 @@ func TestEndToEnd(t *testing.T) {
 		if len(view.Launches) != 1 {
 			t.Fatalf("launches = %+v", view.Launches)
 		}
-		var revoked struct {
-			LaunchID string `json:"launch_id"`
-			Revoked  bool   `json:"revoked"`
-		}
-		e.jsonOK(&revoked, "launch", "revoke", view.Launches[0].ID)
-		if revoked.LaunchID != view.Launches[0].ID || !revoked.Revoked {
-			t.Fatalf("revoke = %+v", revoked)
-		}
+		e.jsonOK(nil, "launch", "revoke", view.Launches[0].ID)
 		e.jsonFail("not_found", "launch", "revoke", "missing")
 		e.jsonFail("not_found", "launch", "show", "missing")
 
 		var tested struct {
-			Transport string `json:"transport"`
-			Server    struct {
-				Name string `json:"name"`
-			} `json:"server"`
-			Tools []struct {
+			ServerName string `json:"server_name"`
+			Tools      []struct {
 				Name        string `json:"name"`
 				Description string `json:"description"`
-			} `json:"tools"`
-			State string `json:"state"`
+			} `json:"tool_details"`
 		}
 		e.jsonOK(&tested, "mcp", "test", "echo")
-		if tested.Transport != "stdio" || tested.Server.Name != "fakemcp" || tested.State != "ready" ||
+		if tested.ServerName != "fakemcp" ||
 			len(tested.Tools) != 5 || tested.Tools[0].Name != "echo" || tested.Tools[0].Description != "Echo text." {
 			t.Fatalf("mcp test = %+v", tested)
 		}
@@ -560,15 +570,15 @@ func TestEndToEnd(t *testing.T) {
 
 		var secrets struct {
 			Secrets []struct {
-				ID    string `json:"id"`
+				ID    string `json:"secret_id"`
 				State string `json:"state"`
-			} `json:"secrets"`
+			} `json:"statuses"`
 		}
 		e.jsonOK(&secrets, "secret", "status")
-		if len(secrets.Secrets) != 2 || secrets.Secrets[0].ID == "" || secrets.Secrets[0].State == "" {
+		if len(secrets.Secrets) != 1 || secrets.Secrets[0].ID == "" || secrets.Secrets[0].State == "" {
 			t.Fatalf("secret status = %+v", secrets)
 		}
-		e.jsonFail("failed_precondition", "secret", "set", "sealed", "--stdin")
+		e.jsonFail("failed_precondition", "secret", "set", "sealed")
 	})
 
 	t.Run("agent sdk initialize", func(t *testing.T) {
@@ -624,21 +634,17 @@ func TestEndToEnd(t *testing.T) {
 
 func TestDaemonJSON(t *testing.T) {
 	e := newEnv(t)
-	var status struct {
-		Running *bool   `json:"running"`
-		Version *string `json:"version"`
-	}
+	var status any = "unset"
 	e.jsonOK(&status, "daemon", "status")
-	if status.Running == nil || *status.Running || status.Version != nil {
+	if status != nil {
 		t.Fatalf("daemon status without a daemon = %+v", status)
 	}
 	for _, args := range [][]string{{"daemon", "stop"}, {"daemon", "stop", "--force"}} {
 		var absent struct {
-			Running  *bool `json:"running"`
-			Stopping *bool `json:"stopping"`
+			Running *bool `json:"running"`
 		}
 		e.jsonOK(&absent, args...)
-		if absent.Running == nil || *absent.Running || absent.Stopping == nil || *absent.Stopping {
+		if absent.Running == nil || *absent.Running {
 			t.Fatalf("%q without a daemon = %+v", args, absent)
 		}
 		if r := e.ok(args...); !strings.Contains(r.stdout, "Daemon is not running.") {
@@ -660,11 +666,10 @@ func TestDaemonJSON(t *testing.T) {
 		t.Fatalf("daemon start with one running = %+v", started)
 	}
 	var stopped struct {
-		Stopping bool `json:"stopping"`
-		Forced   bool `json:"forced"`
+		Running bool `json:"running"`
 	}
 	e.jsonOK(&stopped, "daemon", "stop", "--force")
-	if !stopped.Stopping || !stopped.Forced {
+	if !stopped.Running {
 		t.Fatalf("daemon stop = %+v", stopped)
 	}
 }
@@ -808,7 +813,6 @@ func TestDoctor(t *testing.T) {
 		{"harness", "claude", "warn"},
 		{"daemon", "daemon", "pass"},
 		{"mcp", "echo", "pass"},
-		{"secret", "token", "pass"},
 		{"secret", "sealed", "pass"},
 		{"secret", "sops", "pass"},
 		{"shims", "shims", "warn"},
@@ -823,11 +827,7 @@ func TestDoctor(t *testing.T) {
 		"config/broken.yaml",
 		"mcp:\n  broken:\n    command: ['"+filepath.ToSlash(filepath.Join(e.dir, "missing"))+"']\n",
 	)
-	config, err := os.ReadFile(filepath.Join(e.dir, "config", "agx.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.write("config/agx.yaml", "imports:\n  - path: broken.yaml\n"+string(config))
+	e.write("config/agx.yaml", "fragments: [broken.yaml, main.yaml]\n")
 	rep, r = doctor()
 	if r.code != 0 || status(rep, "mcp", "broken") != "missing" {
 		t.Fatalf("doctor without --all exited %d: %+v", r.code, rep)

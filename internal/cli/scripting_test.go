@@ -4,21 +4,20 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
-	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/daemon"
 )
 
@@ -41,19 +40,15 @@ harnesses:
 type document struct {
 	Version int             `json:"version"`
 	Data    json.RawMessage `json:"data"`
-	Event   string          `json:"event"`
 	Error   *struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-		Source  *struct {
-			Path string `json:"path"`
-			Line int    `json:"line"`
-		} `json:"source"`
+		Code    string         `json:"code"`
+		Message string         `json:"message"`
+		Source  *config.Source `json:"source"`
 	} `json:"error"`
 }
 
 // runJSON runs agx with args and checks that stdout holds JSON documents only, each versioned
-// and carrying exactly one of data, event, or error.
+// and carrying either data or an error.
 func runJSON(t *testing.T, args ...string) (int, []document) {
 	t.Helper()
 	var out bytes.Buffer
@@ -69,13 +64,7 @@ func runJSON(t *testing.T, args ...string) (int, []document) {
 		if err := decoder.Decode(&d); err != nil {
 			t.Fatalf("agx %q wrote a line that is not a document: %v\n%s", args, err, line)
 		}
-		parts := 0
-		for _, present := range []bool{d.Data != nil, d.Event != "", d.Error != nil} {
-			if present {
-				parts++
-			}
-		}
-		if d.Version != 1 || parts != 1 {
+		if d.Version != 1 || (d.Data != nil) == (d.Error != nil) {
 			t.Fatalf("agx %q wrote a malformed document: %s", args, line)
 		}
 		docs = append(docs, d)
@@ -86,12 +75,7 @@ func runJSON(t *testing.T, args ...string) (int, []document) {
 // okJSON runs agx in JSON mode and decodes its single data document into into.
 func okJSON(t *testing.T, into any, args ...string) {
 	t.Helper()
-	// --json goes before any "--", after which arguments are not agx's.
-	at := slices.Index(args, "--")
-	if at < 0 {
-		at = len(args)
-	}
-	code, docs := runJSON(t, slices.Insert(slices.Clone(args), at, "--json")...)
+	code, docs := runJSON(t, append([]string{"--json"}, args...)...)
 	if code != 0 || len(docs) != 1 || docs[0].Data == nil {
 		t.Fatalf("agx %q exited %d: %+v", args, code, docs)
 	}
@@ -116,22 +100,7 @@ func failJSON(t *testing.T, status int, code string, args ...string) document {
 	return docs[0]
 }
 
-type editDocument struct {
-	Files []struct {
-		Path    string `json:"path"`
-		Diff    string `json:"diff"`
-		Written bool   `json:"written"`
-	} `json:"files"`
-	Defined  []definitionJSON `json:"defined"`
-	Enabled  []definitionJSON `json:"enabled"`
-	Disabled []definitionJSON `json:"disabled"`
-	Removed  []definitionJSON `json:"removed"`
-	Scope    *struct {
-		Directory *string  `json:"directory"`
-		Harnesses []string `json:"harnesses"`
-	} `json:"scope"`
-	NeedsLogin *bool `json:"needs_login"`
-}
+type editDocument = edits
 
 func TestJSONEdits(t *testing.T) {
 	path := isolate(t, scriptingConfig)
@@ -140,12 +109,12 @@ func TestJSONEdits(t *testing.T) {
 
 	var added editDocument
 	okJSON(t, &added, "mcp", "add", "docs", "https://docs.example/mcp", "--auth", "none")
-	if len(added.Files) != 1 || added.Files[0].Path == "" || !added.Files[0].Written ||
+	if len(added.Files) != 1 || added.Files[0].Path == "" ||
 		!strings.Contains(added.Files[0].Diff, "+  docs:") {
 		t.Fatalf("files = %+v", added.Files)
 	}
-	if len(added.Defined) != 1 || added.Defined[0] != (definitionJSON{"mcp", "docs"}) ||
-		len(added.Enabled) != 1 || added.Scope == nil || added.Scope.Directory != nil ||
+	if len(added.Defined) != 1 || added.Defined[0] != (definitionID{"mcp", "docs"}) ||
+		len(added.Enabled) != 1 || added.Scope == nil || added.Scope.Directory != "" ||
 		added.NeedsLogin == nil || *added.NeedsLogin {
 		t.Fatalf("mcp add = %+v", added)
 	}
@@ -166,7 +135,7 @@ func TestJSONEdits(t *testing.T) {
 
 	var used editDocument
 	okJSON(t, &used, "use", "local", "--scope", "here", "--harness", "codex")
-	if used.Scope == nil || used.Scope.Directory == nil || len(used.Scope.Harnesses) != 1 || len(used.Files) != 1 {
+	if used.Scope == nil || used.Scope.Directory == "" || len(used.Scope.Harnesses) != 1 || len(used.Files) != 1 {
 		t.Fatalf("use = %+v", used)
 	}
 	var again editDocument
@@ -193,7 +162,7 @@ func TestJSONEdits(t *testing.T) {
 	}
 	var skill editDocument
 	okJSON(t, &skill, "skill", "add", "./skills/deploy")
-	if len(skill.Defined) != 1 || skill.Defined[0] != (definitionJSON{"skills", "deploy"}) {
+	if len(skill.Defined) != 1 || skill.Defined[0] != (definitionID{"skills", "deploy"}) {
 		t.Fatalf("skill add = %+v", skill)
 	}
 	var instructions editDocument
@@ -203,7 +172,7 @@ func TestJSONEdits(t *testing.T) {
 	}
 	var harness editDocument
 	okJSON(t, &harness, "harness", "add", "claude-work", "--base", "claude", "--", "--verbose")
-	if len(harness.Defined) != 1 || harness.Defined[0] != (definitionJSON{"harnesses", "claude-work"}) {
+	if len(harness.Defined) != 1 || harness.Defined[0] != (definitionID{"harnesses", "claude-work"}) {
 		t.Fatalf("harness add = %+v", harness)
 	}
 
@@ -240,20 +209,16 @@ func TestJSONEdits(t *testing.T) {
 
 func TestJSONValidate(t *testing.T) {
 	path := isolate(t, scriptingConfig)
+	root := filepath.Join(filepath.Dir(filepath.Dir(path)), "agx.yaml")
 	var valid struct {
-		Valid       bool              `json:"valid"`
-		Root        string            `json:"root"`
-		Files       []string          `json:"files"`
-		Counts      *definitionCounts `json:"counts"`
-		Diagnostics []json.RawMessage `json:"diagnostics"`
+		Root  string   `json:"root"`
+		Files []string `json:"files"`
 	}
 	okJSON(t, &valid, "config", "validate")
-	if code, docs := runJSON(t, "--json", "--config", path, "config", "validate"); code != 0 || len(docs) != 1 {
-		t.Fatalf("leading --json validate exited %d: %+v", code, docs)
+	if code, docs := runJSON(t, "--config", root, "config", "validate", "--json"); code != 0 || len(docs) != 1 {
+		t.Fatalf("trailing --json validate exited %d: %+v", code, docs)
 	}
-	if !valid.Valid || valid.Root == "" || len(valid.Files) != 1 || valid.Counts == nil ||
-		valid.Counts.MCP != 1 || valid.Counts.Secrets != 1 || valid.Counts.Harnesses != 1 ||
-		len(valid.Diagnostics) != 0 {
+	if valid.Root == "" || len(valid.Files) != 2 {
 		t.Fatalf("validate = %+v", valid)
 	}
 
@@ -264,34 +229,15 @@ func TestJSONValidate(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	code, docs := runJSON(t, "config", "validate", "--json")
-	var invalid struct {
-		Valid       bool `json:"valid"`
-		Diagnostics []struct {
-			Severity string     `json:"severity"`
-			Message  string     `json:"message"`
-			Source   sourceJSON `json:"source"`
-		} `json:"diagnostics"`
+	d := failJSON(t, 1, codeConfigInvalid, "config", "validate", "--json")
+	if d.Error.Source == nil || d.Error.Source.Line != 4 || !strings.HasSuffix(d.Error.Source.Path, "main.yaml") {
+		t.Fatalf("invalid validate = %+v", d.Error)
 	}
-	if code != 1 || len(docs) != 1 || docs[0].Data == nil {
-		t.Fatalf("invalid validate exited %d: %+v", code, docs)
-	}
-	if err := json.Unmarshal(docs[0].Data, &invalid); err != nil {
-		t.Fatal(err)
-	}
-	if invalid.Valid || len(invalid.Diagnostics) != 1 || invalid.Diagnostics[0].Severity != "error" ||
-		invalid.Diagnostics[0].Source.Line == nil || *invalid.Diagnostics[0].Source.Line != 2 || !strings.HasSuffix(invalid.Diagnostics[0].Source.Path, "agx.yaml") {
-		t.Fatalf("invalid validate = %+v", invalid)
-	}
-
 	// --json before the command works as after it.
-	failJSON(t, 1, codeConfigInvalid, "--json", "resolve")
-	if code, docs := runJSON(t, "--json", "config", "validate"); code != 1 || len(docs) != 1 || docs[0].Data == nil {
-		t.Fatalf("leading --json validate exited %d: %+v", code, docs)
-	}
+	failJSON(t, 1, codeConfigInvalid, "--json", "explain")
 
-	d := failJSON(t, 1, codeConfigInvalid, "resolve", "--json")
-	if d.Error.Source == nil || d.Error.Source.Line != 2 {
+	d = failJSON(t, 1, codeConfigInvalid, "explain", "--json")
+	if d.Error.Source == nil || d.Error.Source.Line != 4 {
 		t.Fatalf("config error without its source: %+v", d.Error)
 	}
 	failJSON(t, 1, codeConfigInvalid, "mcp", "add", "x", "--json", "--", "y")
@@ -305,16 +251,76 @@ func TestMissingPaths(t *testing.T) {
 	if !strings.Contains(d.Error.Message, missing+" does not exist") {
 		t.Fatalf("missing --config: %s", d.Error.Message)
 	}
-	// Adding a definition creates the named file.
+	// Adding a definition creates the named root, importing the fragment it writes.
 	created := filepath.Join(dir, "created.yaml")
 	okJSON(t, nil, "--config", created, "instructions", "add", "--id", "x", "--text", "hi")
-	if _, err := os.Stat(created); err != nil {
-		t.Fatal(err)
+	if b, err := os.ReadFile(created); err != nil || string(b) != config.DefaultConfig {
+		t.Fatalf("created root: %v\n%s", err, b)
 	}
-	d = failJSON(t, 1, codeNotFound, "resolve", filepath.Join(dir, "nope"), "--json")
+	if b, err := os.ReadFile(
+		filepath.Join(dir, "agx.d", "main.yaml"),
+	); err != nil ||
+		!strings.Contains(string(b), "x:") {
+		t.Fatalf("created fragment: %v\n%s", err, b)
+	}
+	d = failJSON(t, 1, codeNotFound, "explain", filepath.Join(dir, "nope"), "--json")
 	if !strings.Contains(d.Error.Message, "does not exist") {
 		t.Fatalf("missing directory: %s", d.Error.Message)
 	}
+}
+
+// With several writable fragments, an adding command needs --file, relative to the root.
+func TestChooseFile(t *testing.T) {
+	first := isolate(t, "{}\n")
+	second := filepath.Join(filepath.Dir(first), "other.yaml")
+	if err := os.WriteFile(second, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := failJSON(t, 1, "choose_file", "instructions", "add", "--id", "x", "--text", "hi", "--json")
+	if !strings.Contains(d.Error.Message, "main.yaml") || !strings.Contains(d.Error.Message, "other.yaml") {
+		t.Fatalf("choose_file error: %s", d.Error.Message)
+	}
+	t.Chdir(t.TempDir())
+	var added editDocument
+	okJSON(t, &added, "instructions", "add", "--id", "x", "--text", "hi", "--file", "agx.d/other.yaml")
+	if len(added.Files) != 1 || !strings.HasSuffix(added.Files[0].Path, "other.yaml") {
+		t.Fatalf("instructions add --file = %+v", added.Files)
+	}
+	failJSON(
+		t,
+		1,
+		codeInvalidRequest,
+		"instructions",
+		"add",
+		"--id",
+		"y",
+		"--text",
+		"hi",
+		"--file",
+		"agx.yaml",
+		"--json",
+	)
+}
+
+func TestConfigSchema(t *testing.T) {
+	isolate(t, "")
+	// The schema goes to standard output as it is, not through the document writer.
+	stdout, err := os.Create(filepath.Join(t.TempDir(), "schema.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stdout
+	os.Stdout = stdout
+	code := run([]string{"agx", "config", "schema", "--root"}, io.Discard)
+	os.Stdout = saved
+	if err := stdout.Close(); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(stdout.Name())
+	if err != nil || code != 0 || !strings.Contains(string(b), `"title": "agx root configuration"`) {
+		t.Fatalf("config schema --root exited %d: %v\n%s", code, err, b)
+	}
+	failJSON(t, 2, codeUsage, "config", "schema", "--root", "--package", "--json")
 }
 
 func TestJSONCommands(t *testing.T) {
@@ -333,27 +339,13 @@ func TestJSONCommands(t *testing.T) {
 		_ = devNull.Close()
 	})
 
-	okJSON(t, nil, "resolve")
 	okJSON(t, nil, "explain", "--harness", "codex-work")
-	failJSON(t, 1, codeNotFound, "resolve", "--harness", "missing", "--json")
+	failJSON(t, 1, codeNotFound, "explain", "--harness", "missing", "--json")
 
-	var installed struct {
-		Packages  []string `json:"packages"`
-		Lockfiles []string `json:"lockfiles"`
-		Frozen    bool     `json:"frozen"`
-		Updated   bool     `json:"updated"`
-	}
-	okJSON(t, &installed, "install", "--frozen")
-	if installed.Packages == nil || installed.Lockfiles == nil || !installed.Frozen || installed.Updated {
-		t.Fatalf("install = %+v", installed)
-	}
-	okJSON(t, &installed, "update")
-	if !installed.Updated {
-		t.Fatalf("update = %+v", installed)
-	}
+	okJSON(t, nil, "install", "--frozen")
+	okJSON(t, nil, "update")
 	failJSON(t, 1, codeNotFound, "update", "missing", "--json")
 
-	dir := filepath.Join(t.TempDir(), "shims")
 	var shims struct {
 		Directory string `json:"directory"`
 		Changes   []struct {
@@ -361,12 +353,12 @@ func TestJSONCommands(t *testing.T) {
 			Action string `json:"action"`
 		} `json:"changes"`
 	}
-	okJSON(t, &shims, "shims", "install", "--dir", dir)
+	okJSON(t, &shims, "shims", "install")
 	if len(shims.Changes) != 1 || shims.Changes[0].Name != "codex-work" || shims.Changes[0].Action != "created" {
 		t.Fatalf("shims install = %+v", shims)
 	}
-	okJSON(t, nil, "shims", "list", "--dir", dir)
-	okJSON(t, &shims, "shims", "remove", "--dir", dir)
+	okJSON(t, nil, "shims", "list")
+	okJSON(t, &shims, "shims", "remove")
 	if len(shims.Changes) != 1 || shims.Changes[0].Action != "removed" {
 		t.Fatalf("shims remove = %+v", shims)
 	}
@@ -377,34 +369,28 @@ func TestJSONCommands(t *testing.T) {
 		{"launch", "show", "x"},
 		{"launch", "revoke", "x"},
 		{"secret", "status"},
-		{"secret", "set", "token", "--stdin"},
+		{"secret", "set", "token"},
 		{"secret", "logout", "token"},
 		{"secret", "login", "token"},
 		{"mcp", "test", "fs"},
 	} {
 		failJSON(t, 1, codeDaemonUnavailable, append(args, "--json")...)
 	}
-	var status struct {
-		Running *bool   `json:"running"`
-		Version *string `json:"version"`
-	}
-	okJSON(t, &status, "daemon", "status", "--json")
-	if status.Running == nil || *status.Running || status.Version != nil {
+	var status any = "unset"
+	okJSON(t, &status, "daemon", "status")
+	if status != nil {
 		t.Fatalf("daemon status without a daemon = %+v", status)
 	}
 	for _, args := range [][]string{{"daemon", "stop"}, {"daemon", "stop", "--force"}} {
 		var stopped struct {
-			Running  *bool `json:"running"`
-			Stopping *bool `json:"stopping"`
+			Running *bool `json:"running"`
 		}
-		okJSON(t, &stopped, append(args, "--json")...)
-		if stopped.Running == nil || *stopped.Running || stopped.Stopping == nil || *stopped.Stopping {
+		okJSON(t, &stopped, args...)
+		if stopped.Running == nil || *stopped.Running {
 			t.Fatalf("%q without a daemon = %+v", args, stopped)
 		}
 	}
-	failJSON(t, 1, codeFailedPrecondition, "mcp", "login", "fs", "--json")
 	failJSON(t, 1, codeNotFound, "mcp", "test", "missing", "--json")
-	failJSON(t, 1, codeInvalidRequest, "secret", "set", "token", "--json")
 }
 
 func TestJSONUsageErrors(t *testing.T) {
@@ -422,8 +408,7 @@ func TestJSONUsageErrors(t *testing.T) {
 		failJSON(t, 2, codeUsage, args...)
 	}
 	// A harness's native --json is not agx's.
-	if !wantsJSON(nil, []string{"mcp", "list", "--json"}) || wantsJSON(nil, []string{"x", "--", "--json"}) ||
-		wantsJSON(nil, []string{"mcp", "list", "--json=false"}) {
+	if !wantsJSON([]string{"mcp", "list", "--json"}) || wantsJSON([]string{"x", "--", "--json"}) {
 		t.Fatal("wantsJSON misreads the command line")
 	}
 }
@@ -458,21 +443,16 @@ func TestErrorCodes(t *testing.T) {
 			t.Errorf("errorCode(%v) = %s, want %s", test.err, got, test.want)
 		}
 	}
-	// A drive-letter path on Windows exercises the colon after the drive.
-	path := "/etc/agx.yaml"
-	if runtime.GOOS == "windows" {
-		path = `C:\agx\agx.yaml`
-	}
-	for message, want := range map[string]*sourceJSON{
-		path + ":12: MCP server x: bad":                       {Path: path, Line: jsonInt(12)},
-		"configuration is invalid; fix it: " + path + ": bad": {Path: path},
-		path + ": yaml: construct errors: line 4: field x":    {Path: path, Line: jsonInt(4)},
-		path + ": load error in parser at L5.C1: no content":  {Path: path, Line: jsonInt(5)},
-		"package x is not installed; run agx install":         nil,
+	located := &config.SourceError{Path: "/etc/agx.yaml", Line: 12, Err: errors.New("bad")}
+	for err, want := range map[error]*config.Source{
+		located: {Path: "/etc/agx.yaml", Line: 12},
+		fmt.Errorf("configuration is invalid: %w", &config.SourceError{Path: "/etc/agx.yaml", Err: errors.New("bad")}): {
+			Path: "/etc/agx.yaml",
+		},
+		errors.New("package x is not installed; run agx install"): nil,
 	} {
-		got := errorSource(message)
-		if !reflect.DeepEqual(got, want) {
-			t.Errorf("errorSource(%q) = %+v, want %+v", message, got, want)
+		if got := errorSource(err); !reflect.DeepEqual(got, want) {
+			t.Errorf("errorSource(%v) = %+v, want %+v", err, got, want)
 		}
 	}
 }
@@ -487,38 +467,6 @@ func reasonError(t *testing.T, code connect.Code, reason v1.ErrorDetail_Reason) 
 	}
 	err.AddDetail(detail)
 	return err
-}
-
-func TestLoginEvents(t *testing.T) {
-	var out bytes.Buffer
-	scripting.enabled, scripting.stdout = true, &out
-	t.Cleanup(func() { scripting.enabled, scripting.stdout = false, os.Stdout })
-	expires := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	if err := printLoginStarted("github", &v1.LoginStarted{
-		AuthorizationUrl: "https://example.com/authorize",
-		ExpiresAt:        timestamppb.New(expires),
-		McpId:            "github",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := loginOutcome("github", &v1.LoginFinished{Outcome: v1.LoginFinished_OUTCOME_SUCCEEDED}); err != nil {
-		t.Fatal(err)
-	}
-	var exit *ExitError
-	err := loginOutcome("github", &v1.LoginFinished{Outcome: v1.LoginFinished_OUTCOME_EXPIRED})
-	if !errors.As(err, &exit) || exit.Code != 1 {
-		t.Fatalf("expired login returned %v", err)
-	}
-	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	want := []string{
-		`{"version":1,"event":"started","secret_id":"github","mcp_id":"github",` +
-			`"url":"https://example.com/authorize","expires_at":"2026-01-02T03:04:05Z"}`,
-		`{"version":1,"event":"finished","secret_id":"github","outcome":"success","message":null}`,
-		`{"version":1,"event":"finished","secret_id":"github","outcome":"expired","message":null}`,
-	}
-	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("events:\n%s\nwant:\n%s", out.String(), strings.Join(want, "\n"))
-	}
 }
 
 func TestDefinitionLinkWithBrokenConfiguration(t *testing.T) {

@@ -1,7 +1,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tarik02-org/agx/internal/yaml"
+	"go.yaml.in/yaml/v4"
 )
 
 // maxValueSize bounds values read from files, matching the limit on stored secrets.
@@ -30,71 +29,55 @@ type Value struct {
 }
 
 func (v *Value) UnmarshalYAML(node *yaml.Node) error {
-	if node.Kind != yaml.ScalarNode {
-		return errors.New("value must be a string, or a !env, !file, or !secret tag")
-	}
 	*v = Value{Source: Source{Line: node.Line, Column: node.Column}}
+	consume(node)
 	switch node.Tag {
 	case "!env":
 		if !validEnvironment.MatchString(node.Value) {
-			return fmt.Errorf("!env needs a variable name, not %q", node.Value)
+			return nodeError(node, "!env needs a variable name, not %q", node.Value)
 		}
 		// AGX_ variables carry launch grants and management credentials.
 		if strings.HasPrefix(strings.ToUpper(node.Value), "AGX_") {
-			return fmt.Errorf("!env %s: AGX_ variables are reserved", node.Value)
+			return nodeError(node, "!env %s: AGX_ variables are reserved", node.Value)
 		}
 		v.Env = node.Value
 	case "!file":
 		if node.Value == "" {
-			return errors.New("!file needs a path")
+			return nodeError(node, "!file needs a path")
 		}
 		v.File = node.Value
 	case "!secret":
 		if !validID(ID(node.Value)) {
-			return fmt.Errorf("!secret needs a secret ID, not %q", node.Value)
+			return nodeError(node, "!secret needs a secret ID, not %q", node.Value)
 		}
 		v.Secret = ID(node.Value)
 	default:
-		if node.ShortTag() != "!!str" {
-			return errors.New("value must be a string; quote numbers and booleans")
-		}
 		v.Literal = node.Value
 	}
 	return nil
 }
 
 func (s *MCPShare) UnmarshalYAML(node *yaml.Node) error {
-	*s = MCPShare{}
-	switch node.Kind {
-	case yaml.ScalarNode:
-		if node.ShortTag() != "!!str" {
-			return errors.New("share must be a share mode or {type, idle}")
-		}
-		s.Type = node.Value
+	*s = MCPShare{Type: node.Value}
+	if node.Kind != yaml.MappingNode {
 		return nil
-	case yaml.MappingNode:
-		var fields struct {
-			Type string `yaml:"type"`
-			Idle string `yaml:"idle"`
-		}
-		if err := node.Load(&fields, yaml.WithKnownFields()); err != nil {
-			return err
-		}
-		if fields.Type == "" {
-			return errors.New("share needs a type")
-		}
-		s.Type = fields.Type
-		if fields.Idle != "" {
-			idle, err := time.ParseDuration(fields.Idle)
-			if err != nil || idle < 0 {
-				return fmt.Errorf("share idle must be a duration such as 30m, not %q", fields.Idle)
-			}
-			s.Idle = &idle
-		}
-		return nil
-	default:
-		return errors.New("share must be a share mode or {type, idle}")
 	}
+	var fields struct {
+		Type string `yaml:"type"`
+		Idle string `yaml:"idle"`
+	}
+	if err := node.Load(&fields); err != nil {
+		return err
+	}
+	s.Type = fields.Type
+	if fields.Idle != "" {
+		idle, err := time.ParseDuration(fields.Idle)
+		if err != nil || idle < 0 {
+			return nodeError(node, "share idle must be a duration such as 30m, not %q", fields.Idle)
+		}
+		s.Idle = &idle
+	}
+	return nil
 }
 
 func (a *MCPAuth) UnmarshalYAML(node *yaml.Node) error {
@@ -105,23 +88,18 @@ func (a *MCPAuth) UnmarshalYAML(node *yaml.Node) error {
 		if err := node.Load(&secret, yaml.WithKnownFields()); err != nil {
 			return err
 		}
-		if secret.Override {
-			return errors.New("inline auth cannot set override; override the MCP server instead")
-		}
 		a.Inline = &secret
-	case node.Kind != yaml.ScalarNode:
-		return errors.New("auth must be a secret kind, none, a mapping, or !secret ID")
-	case node.Tag == "!secret":
-		if !validID(ID(node.Value)) {
-			return fmt.Errorf("!secret needs a secret ID, not %q", node.Value)
-		}
-		a.Secret = ID(node.Value)
-	case node.ShortTag() != "!!str" || node.Value == "":
-		return errors.New("auth must be a secret kind, none, a mapping, or !secret ID")
+	case custom(node.Tag):
+		return a.Value.UnmarshalYAML(node)
 	case node.Value == "none":
 		a.None = true
-	default:
+	case node.Value == "keychain" || node.Value == "oauth":
 		a.Inline = &Secret{Kind: node.Value}
+	default:
+		return nodeError(
+			node, "auth must be none, keychain, oauth, a secret mapping, or a !secret, !env, or !file value; "+
+				"to use secret %s, write auth: !secret %s", node.Value, node.Value,
+		)
 	}
 	return nil
 }
@@ -131,36 +109,18 @@ func (a *MCPAuth) UnmarshalYAML(node *yaml.Node) error {
 type SecretKey []string
 
 func (k *SecretKey) UnmarshalYAML(node *yaml.Node) error {
-	*k = nil
-	var segments []string
-	switch {
-	case node.Kind == yaml.ScalarNode && node.ShortTag() == "!!null":
-		return nil
-	case node.Kind == yaml.ScalarNode && node.ShortTag() == "!!str":
-		segments = strings.Split(node.Value, ".")
-	case node.Kind == yaml.SequenceNode:
-		for _, item := range node.Content {
-			if item.Kind != yaml.ScalarNode || item.ShortTag() != "!!str" {
-				return errors.New("key segments must be strings; quote numbers")
-			}
-			segments = append(segments, item.Value)
+	*k = strings.Split(node.Value, ".")
+	if node.Kind == yaml.SequenceNode {
+		if err := node.Load((*[]string)(k)); err != nil {
+			return err
 		}
-	default:
-		return errors.New("key must be a dotted string or a list of strings")
 	}
-	if len(segments) == 0 {
-		return errors.New("key must name at least one segment; omit it to read the whole file")
-	}
-	for _, segment := range segments {
-		if segment == "" {
-			return errors.New("key has an empty segment; write a list when a segment contains a dot")
-		}
+	for _, segment := range *k {
 		// sops splits its --extract path at "][", which no quoting escapes.
 		if strings.Contains(segment, "][") {
-			return fmt.Errorf("key segment %q cannot contain ][", segment)
+			return nodeError(node, "key segment %q cannot contain ][", segment)
 		}
 	}
-	*k = segments
 	return nil
 }
 
@@ -193,7 +153,7 @@ func (v Value) Resolve(
 	secret func(ID) (string, error),
 ) (string, error) {
 	fail := func(err error) (string, error) {
-		return "", fmt.Errorf("%s: %s: %w", locate(v.Source), target, err)
+		return "", errorAt(v.Source, "%s: %w", target, err)
 	}
 	value := v.Literal
 	switch {
@@ -225,26 +185,35 @@ func (v Value) Resolve(
 // readValueFile drops trailing newlines, as shell command substitution does, so a token saved
 // by an editor does not end in a line break.
 func readValueFile(path string) (string, error) {
-	f, err := os.Open(path)
+	data, err := readLimited(path)
 	if err != nil {
 		return "", fmt.Errorf("!file: %w", err)
+	}
+	return strings.TrimRight(string(data), "\r\n"), nil
+}
+
+// readLimited reads a regular file of at most maxValueSize bytes.
+func readLimited(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
 	}
 	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil {
-		return "", fmt.Errorf("!file: %w", err)
+		return nil, err
 	}
 	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("!file %s is not a regular file", path)
+		return nil, fmt.Errorf("%s is not a regular file", path)
 	}
 	data, err := io.ReadAll(io.LimitReader(f, maxValueSize+1))
 	if err != nil {
-		return "", fmt.Errorf("!file: %w", err)
+		return nil, err
 	}
 	if len(data) > maxValueSize {
-		return "", fmt.Errorf("!file %s exceeds 1 MiB", path)
+		return nil, fmt.Errorf("%s exceeds 1 MiB", path)
 	}
-	return strings.TrimRight(string(data), "\r\n"), nil
+	return data, nil
 }
 
 // Injection describes where a launch injects a tagged value, for explanations and checks.
@@ -346,8 +315,6 @@ func Variable(secrets map[ID]Secret, v Value) string {
 		switch {
 		case !ok || v.Secret == "":
 			return ""
-		case s.Kind == "environment":
-			return s.Variable
 		case s.Kind == "sops":
 			v = s.AgeKey
 		default:
@@ -355,135 +322,6 @@ func Variable(secrets map[ID]Secret, v Value) string {
 		}
 	}
 	return ""
-}
-
-// taggedFields are the paths where tags may appear; "*" matches a key and "#" a list item.
-var taggedFields = func() [][]string {
-	out := [][]string{
-		{"harnesses", "*", "environment", "*"},
-		{"harnesses", "*", "args", "#"},
-		{"harnesses", "*", "args", "#", "#"},
-		{"harnesses", "*", "args", "#", "values", "#"},
-	}
-	// MCP servers are defined at top level or inline in any selection list.
-	servers := [][]string{
-		{"mcp", "*"},
-		{"bundles", "*", "mcp", "#"},
-		{"scopes", "#", "add", "mcp", "#"},
-		{"scopes", "#", "remove", "mcp", "#"},
-		{"harnesses", "*", "add", "mcp", "#"},
-		{"harnesses", "*", "remove", "mcp", "#"},
-	}
-	out = append(out, []string{"secrets", "*", "age_key"})
-	for _, server := range servers {
-		for _, field := range [][]string{{"environment", "*"}, {"headers", "*"}, {"auth"}, {"auth", "age_key"}} {
-			out = append(out, slices.Concat(server, field))
-		}
-	}
-	return out
-}()
-
-// misplacedTagError is a known tag outside taggedFields. A decoding error of the same file takes
-// precedence, since a tag under a misspelled key is misplaced only because of the misspelling.
-type misplacedTagError struct{ error }
-
-// checkTags rejects unknown tags and tags outside taggedFields, which YAML decoding would
-// otherwise silently ignore.
-func checkTags(file string, node *yaml.Node, path []string) error {
-	if node == nil {
-		return nil
-	}
-	if node.Kind == yaml.AliasNode {
-		return checkTags(file, node.Alias, path)
-	}
-	tag := node.Tag
-	if tag != "" && tag != "!" && !strings.HasPrefix(tag, "!!") && !strings.HasPrefix(tag, "tag:yaml.org,2002:") {
-		switch tag {
-		case "!env", "!file", "!secret":
-		default:
-			return fmt.Errorf("%s:%d: unknown tag %s; use !env, !file, or !secret", file, node.Line, tag)
-		}
-		// Settings take !file at any depth, but no credentials: Codex gets them as arguments.
-		settings := len(path) >= 3 && path[0] == "harnesses" && path[2] == "settings"
-		if settings && tag != "!file" {
-			return fmt.Errorf(
-				"%s:%d: %s is not allowed in harness settings, which can reach process arguments; set the "+
-					"value in the harness environment and name the variable in settings",
-				file,
-				node.Line,
-				tag,
-			)
-		}
-		if !settings &&
-			!slices.ContainsFunc(taggedFields, func(pattern []string) bool { return matchPath(pattern, path) }) {
-			return misplacedTagError{
-				fmt.Errorf(
-					"%s:%d: %s is allowed only in harness environment and args, mcp environment, headers, and auth, and sops age_key",
-					file,
-					node.Line,
-					tag,
-				),
-			}
-		}
-		if node.Kind != yaml.ScalarNode {
-			return fmt.Errorf("%s:%d: %s needs a scalar argument", file, node.Line, tag)
-		}
-		// Process arguments are visible to every local user (ps, /proc), so credentials must not
-		// reach them; !file stays allowed for non-secret content such as prompts.
-		if tag != "!file" && len(path) >= 3 && path[0] == "harnesses" && path[2] == "args" {
-			return fmt.Errorf(
-				"%s:%d: %s cannot be used in harness args, which other processes can read (ps); "+
-					"set it in the harness environment instead, such as environment: {NAME: %s %s}",
-				file,
-				node.Line,
-				tag,
-				tag,
-				node.Value,
-			)
-		}
-	}
-	switch node.Kind {
-	case yaml.DocumentNode:
-		for _, child := range node.Content {
-			if err := checkTags(file, child, path); err != nil {
-				return err
-			}
-		}
-	case yaml.MappingNode:
-		for i := 0; i+1 < len(node.Content); i += 2 {
-			// Keys get a path no pattern matches, so tagged keys are rejected.
-			if err := checkTags(file, node.Content[i], append(slices.Clone(path), "", "")); err != nil {
-				return err
-			}
-			if err := checkTags(
-				file,
-				node.Content[i+1],
-				append(slices.Clone(path), node.Content[i].Value),
-			); err != nil {
-				return err
-			}
-		}
-	case yaml.SequenceNode:
-		for _, child := range node.Content {
-			if err := checkTags(file, child, append(slices.Clone(path), "#")); err != nil {
-				return err
-			}
-		}
-	default:
-	}
-	return nil
-}
-
-func matchPath(pattern, path []string) bool {
-	if len(pattern) != len(path) {
-		return false
-	}
-	for i, segment := range pattern {
-		if segment != "*" && segment != path[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func sortedKeys[K ~string, V any](m map[K]V) []K {

@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
@@ -45,9 +45,9 @@ func (k *completer) load() *config.Config {
 	if err != nil {
 		return nil
 	}
-	if c, err := config.Load(root, cache, *k.builtins); err == nil {
+	if c, err := config.Load(root, config.Options{Builtins: *k.builtins, Cache: cache}); err == nil {
 		k.config = c
-	} else if c, err := config.Read(root, *k.builtins); err == nil {
+	} else if c, err := config.Load(root, config.Options{Builtins: *k.builtins}); err == nil {
 		k.config = c
 	}
 	return k.config
@@ -154,7 +154,7 @@ func (k *completer) harnessList(
 
 // definitions lists the IDs of a kind; removable keeps those a configuration fragment defines,
 // as package definitions cannot be removed.
-func (k *completer) definitions(kind string, removable bool) []candidate {
+func (k *completer) definitions(kind config.Kind, removable bool) []candidate {
 	c := k.load()
 	if c == nil {
 		return nil
@@ -166,11 +166,11 @@ func (k *completer) definitions(kind string, removable bool) []candidate {
 		}
 	}
 	switch kind {
-	case edit.MCP:
+	case config.KindMCPServers:
 		for _, id := range slices.Sorted(maps.Keys(c.MCP)) {
 			add(id, c.MCP[id].Source, mcpTarget(c.MCP[id]))
 		}
-	case edit.Skills:
+	case config.KindSkills:
 		for _, id := range slices.Sorted(maps.Keys(c.Skills)) {
 			skill := c.Skills[id]
 			from := ui.ShortPath(skill.Path, "")
@@ -182,7 +182,7 @@ func (k *completer) definitions(kind string, removable bool) []candidate {
 			}
 			add(id, skill.Source, from)
 		}
-	case edit.Instructions:
+	case config.KindInstructions:
 		for _, id := range slices.Sorted(maps.Keys(c.Instructions)) {
 			i := c.Instructions[id]
 			from := ui.ShortPath(i.Path, "")
@@ -194,11 +194,11 @@ func (k *completer) definitions(kind string, removable bool) []candidate {
 			}
 			add(id, i.Source, from)
 		}
-	case edit.Bundles:
+	case config.KindBundles:
 		for _, id := range slices.Sorted(maps.Keys(c.Bundles)) {
 			add(id, c.Bundles[id].Source, "bundle")
 		}
-	case "harnesses":
+	case config.KindHarnesses:
 		for _, name := range slices.Sorted(maps.Keys(c.Harnesses)) {
 			description := "customized built-in"
 			if base := c.Harnesses[name].Base; base != "" {
@@ -206,6 +206,7 @@ func (k *completer) definitions(kind string, removable bool) []candidate {
 			}
 			add(config.ID(name), c.Harnesses[name].Source, description)
 		}
+	default:
 	}
 	return out
 }
@@ -215,21 +216,6 @@ func mcpTarget(server config.MCPServer) string {
 		return strings.Join(server.Command, " ")
 	}
 	return server.URL
-}
-
-// loginServers lists the MCP servers mcp login accepts.
-func (k *completer) loginServers() []candidate {
-	c := k.load()
-	if c == nil {
-		return nil
-	}
-	out := []candidate{}
-	for _, id := range slices.Sorted(maps.Keys(c.MCP)) {
-		if _, err := loginSecret(c, string(id)); err == nil {
-			out = append(out, candidate{string(id), c.MCP[id].URL})
-		}
-	}
-	return out
 }
 
 // resources completes use and unuse: every kind the ID may name, narrowed by --kind.
@@ -243,12 +229,12 @@ func (k *completer) resources(
 	}
 	only, _ := cmd.Flags().GetString("kind")
 	out := []candidate{}
-	for _, kind := range []string{edit.Skills, edit.Instructions, edit.MCP, edit.Bundles} {
-		if only != "" && only != kind {
+	for _, kind := range config.SelectionKinds {
+		if only != "" && only != string(kind) {
 			continue
 		}
 		for _, d := range k.definitions(kind, false) {
-			out = append(out, candidate{d.value, kindLabel(kind)})
+			out = append(out, candidate{d.value, kind.Label()})
 		}
 	}
 	return offer(out, toComplete)
@@ -321,7 +307,7 @@ func (k *completer) launches() []candidate {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), completionDaemonTimeout)
 	defer cancel()
-	response, err := c.runtime.GetRuntime(ctx, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
+	response, err := c.runtime.GetRuntime(ctx, connect.NewRequest(&v1.GetRuntimeRequest{}))
 	if err != nil {
 		return nil
 	}
@@ -344,10 +330,9 @@ func (k *completer) registerCompletions(root *cobra.Command) {
 		"file":       yamlFiles,
 		"config":     yamlFiles,
 		"cache":      directories,
-		"dir":        directories,
 		"executable": files,
 		"color":      fixed(string(ui.ColorAuto), string(ui.ColorAlways), string(ui.ColorNever)),
-		"kind":       fixed(edit.Skills, edit.Instructions, edit.MCP, edit.Bundles),
+		"kind":       fixed(strings.Split(config.JoinKinds(config.SelectionKinds), ", ")...),
 		"timeout":    fixed("5s", "10s", "30s", "1m"),
 	}
 	var walk func(*cobra.Command)
@@ -387,33 +372,32 @@ func (k *completer) registerCompletions(root *cobra.Command) {
 	set := func(complete cobra.CompletionFunc, path ...string) {
 		find(path...).ValidArgsFunction = complete
 	}
-	set(firstArg(func() []candidate { return k.definitions(edit.MCP, true) }), "mcp", "remove")
-	set(firstArg(func() []candidate { return k.definitions(edit.MCP, false) }), "mcp", "test")
-	set(firstArg(k.loginServers), "mcp", "login")
-	set(firstArg(func() []candidate { return k.definitions(edit.MCP, false) }), "mcp", "tools")
+	set(firstArg(func() []candidate { return k.definitions(config.KindMCPServers, true) }), "mcp", "remove")
+	set(firstArg(func() []candidate { return k.definitions(config.KindMCPServers, false) }), "mcp", "test")
+	set(firstArg(func() []candidate { return k.definitions(config.KindMCPServers, false) }), "mcp", "tools")
 	set(k.toolServers, "mcp", "call")
 	set(func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
 		candidates := []candidate{}
-		for _, c := range k.definitions(edit.MCP, false) {
+		for _, c := range k.definitions(config.KindMCPServers, false) {
 			if !slices.Contains(args, c.value) {
 				candidates = append(candidates, c)
 			}
 		}
 		return offer(candidates, toComplete)
 	}, "mcp", "types")
-	set(firstArg(func() []candidate { return k.definitions(edit.Skills, true) }), "skill", "remove")
-	set(firstArg(func() []candidate { return k.definitions(edit.Instructions, true) }), "instructions", "remove")
-	set(firstArg(func() []candidate { return k.definitions("harnesses", true) }), "harness", "remove")
+	set(firstArg(func() []candidate { return k.definitions(config.KindSkills, true) }), "skill", "remove")
+	set(firstArg(func() []candidate { return k.definitions(config.KindInstructions, true) }), "instructions", "remove")
+	set(firstArg(func() []candidate { return k.definitions(config.KindHarnesses, true) }), "harness", "remove")
 	set(k.resources, "use")
 	set(k.resources, "unuse")
 	set(firstArg(k.secrets("oauth")), "secret", "login")
 	set(firstArg(k.secrets("oauth", "keychain")), "secret", "logout")
+	set(firstArg(k.secrets("oauth")), "secret", "rotate")
 	set(firstArg(k.secrets("keychain")), "secret", "set")
 	set(firstArg(k.secrets()), "secret", "status")
 	set(k.packages, "update")
 	set(firstArg(k.launches), "launch", "show")
 	set(firstArg(k.launches), "launch", "revoke")
-	set(firstArgThen(directories), "resolve")
 	set(firstArgThen(directories), "explain")
 	set(firstArgThen(directories), "doctor")
 	set(firstArgThen(files), "skill", "add")
@@ -434,7 +418,7 @@ func (k *completer) toolServers(
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 	candidates := []candidate{}
-	for _, c := range k.definitions(edit.MCP, false) {
+	for _, c := range k.definitions(config.KindMCPServers, false) {
 		candidates = append(candidates, candidate{c.value + ".", c.description})
 	}
 	out, directive := offer(candidates, toComplete)

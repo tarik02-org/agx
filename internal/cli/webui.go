@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
@@ -33,7 +34,7 @@ func uiCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command 
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), callTimeout)
 			defer cancel()
-			response, err := c.ui.CreateLoginCode(ctx, request(&v1.CreateLoginCodeRequest{}, c.discovery.Token))
+			response, err := c.ui.CreateLoginCode(ctx, connect.NewRequest(&v1.CreateLoginCodeRequest{}))
 			if err != nil {
 				return err
 			}

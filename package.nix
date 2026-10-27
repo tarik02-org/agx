@@ -4,11 +4,14 @@
   lib,
   stdenv,
   web,
+  # The flake passes its commit.
+  rev ? null,
 }:
 
 buildGoModule (finalAttrs: {
   pname = "agx";
-  version = "0.1.0";
+  # Until the first tag.
+  version = "0.0.0-dev" + lib.optionalString (rev != null) "+${rev}";
 
   src = lib.fileset.toSource {
     root = ./.;
@@ -21,7 +24,7 @@ buildGoModule (finalAttrs: {
     ];
   };
 
-  vendorHash = "sha256-xv+hnHwNrafoZDxbLRjPL/DFyXVeIjOrzZyaaXzx/04=";
+  vendorHash = "sha256-LeILHQ9c57X8Db0D30LIWgsWnIN7Zl5s4TTTxkPpk6s=";
 
   subPackages = [ "cmd/agx" ];
 

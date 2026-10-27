@@ -14,7 +14,6 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
-	"github.com/tarik02-org/agx/internal/adapters/codex"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/shims"
 )
@@ -58,10 +57,6 @@ func TestHarnessCheck(t *testing.T) {
 			t.Errorf("%s %q: %s without a hint", test.name, test.output, got.Status)
 		}
 	}
-	if compareVersions("0.160.0", "0.99.0") != 1 || compareVersions("2.1.29", "2.1.290") != -1 ||
-		compareVersions("1.2.0", "1.2.0") != 0 {
-		t.Error("compareVersions misorders versions")
-	}
 }
 
 func TestPackageChecks(t *testing.T) {
@@ -83,29 +78,24 @@ func TestPackageChecks(t *testing.T) {
 	}
 }
 
-func TestCodexChecks(t *testing.T) {
-	rows := codexChecks(codex.PluginState{Disabled: "Codex plugins are disabled (features.plugins = false in x)"}, nil)
-	if len(rows) != 1 || rows[0].Status != checkWarn || !strings.Contains(rows[0].Detail, "features.plugins = false") {
-		t.Errorf("disabled = %+v", rows)
-	}
-	rows = codexChecks(codex.PluginState{Registered: true, Installed: []string{"review"}}, nil)
-	if len(rows) != 3 || rows[1].Status != checkPass || rows[2].Status != checkPass {
-		t.Errorf("installed = %+v", rows)
-	}
-	rows = codexChecks(codex.PluginState{Missing: []string{"review"}}, nil)
-	if rows[1].Status != checkWarn || rows[2].Status != checkWarn || rows[2].Detail != "not installed: review" {
-		t.Errorf("missing = %+v", rows)
-	}
-}
-
 // Each Codex-based definition is checked with its own CODEX_HOME and arguments.
 func TestCodexDefinitionChecks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake codex is a shell script")
+	}
 	dir := t.TempDir()
 	home := filepath.Join(dir, "work-codex")
 	for path, content := range map[string]string{
-		filepath.Join(home, "config.toml"):                 "[features]\nplugins = false\n",
 		filepath.Join(dir, "skills", "review", "SKILL.md"): "---\nname: review\ndescription: r\n---\nR.\n",
-		filepath.Join(dir, "codex"):                        "not run",
+		// Plugins are off in work-codex unless the arguments turn them on.
+		filepath.Join(dir, "codex"): `#!/bin/sh
+case "$*" in *"features list"*) ;; *) exit 1 ;; esac
+case "$CODEX_HOME $*" in
+*features.plugins=true*) echo "plugins  stable  true" ;;
+*work-codex*) echo "plugins  stable  false" ;;
+*) echo "plugins  stable  true" ;;
+esac
+`,
 	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
@@ -116,7 +106,10 @@ func TestCodexDefinitionChecks(t *testing.T) {
 	}
 	executable := "'" + filepath.ToSlash(filepath.Join(dir, "codex")) + "'"
 	workHome := "'" + filepath.ToSlash(home) + "'"
-	if err := os.WriteFile(filepath.Join(dir, "agx.yaml"), []byte(`skills:
+	if err := os.WriteFile(filepath.Join(dir, "agx.yaml"), []byte("fragments: [main.yaml]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.yaml"), []byte(`skills:
   review: {path: ./skills/review}
 scopes:
   - add: {skills: [review]}
@@ -132,14 +125,17 @@ harnesses:
 		t.Fatal(err)
 	}
 	registry := builtin.Registry()
-	c, err := config.Load(filepath.Join(dir, "agx.yaml"), filepath.Join(dir, "cache"), registry.Builtins(nil))
+	c, err := config.Load(
+		filepath.Join(dir, "agx.yaml"),
+		config.Options{Builtins: registry.Builtins(nil), Cache: filepath.Join(dir, "cache")},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("CODEX_HOME", filepath.Join(dir, "caller-codex"))
 	statuses := map[string]checkStatus{}
 	details := map[string]string{}
-	for _, row := range codexDefinitionChecks(t.Context(), c, registry, filepath.Join(dir, "cache")) {
+	for _, row := range definitionChecks(t.Context(), c, registry, filepath.Join(dir, "cache")) {
 		statuses[row.Name], details[row.Name] = row.Status, row.Detail
 	}
 	if statuses["plugins feature"] != checkPass || !strings.Contains(details["plugins feature"], "caller-codex") {
@@ -190,7 +186,7 @@ func TestDaemonCheck(t *testing.T) {
 }
 
 func TestMCPCheck(t *testing.T) {
-	server := config.MCPServer{Auth: config.MCPAuth{Secret: "github"}}
+	server := config.MCPServer{Auth: config.MCPAuth{Value: config.Value{Secret: "github"}}}
 	got := mcpCheck("docs", server, &v1.TestMcpServerResponse{Tools: []string{"a", "b"}, ServerName: "docs"}, nil)
 	if got.Status != checkPass || got.Detail != "2 tools from docs" {
 		t.Errorf("ready = %+v", got)
@@ -212,51 +208,30 @@ func TestMCPCheck(t *testing.T) {
 }
 
 func TestSecretCheck(t *testing.T) {
-	env := func(values map[string]string) func(string) (string, bool) {
-		return func(name string) (string, bool) {
-			value, ok := values[name]
-			return value, ok
-		}
-	}
-	none := env(nil)
 	for _, test := range []struct {
 		status *v1.SecretStatus
-		secret config.Secret
-		lookup func(string) (string, bool)
 		want   checkStatus
 		hint   string
 	}{
-		{&v1.SecretStatus{SecretId: "a", Kind: "keychain", State: v1.SecretStatus_STATE_READY}, config.Secret{}, none, checkPass, ""},
+		{&v1.SecretStatus{SecretId: "a", Kind: "keychain", State: v1.SecretStatus_STATE_READY}, checkPass, ""},
 		{
 			&v1.SecretStatus{SecretId: "gh", Kind: "oauth", State: v1.SecretStatus_STATE_NEEDS_LOGIN},
-			config.Secret{},
-			none, checkWarn, "run agx secret login gh",
+			checkWarn, "run agx secret login gh",
 		},
 		{
 			&v1.SecretStatus{SecretId: "key", Kind: "keychain", State: v1.SecretStatus_STATE_NEEDS_LOGIN},
-			config.Secret{},
-			none, checkWarn, "run agx secret set key --stdin",
+			checkWarn, "run agx secret set key",
 		},
 		{
 			&v1.SecretStatus{
 				SecretId: "s", Kind: "sops", State: v1.SecretStatus_STATE_UNAVAILABLE,
 				Diagnostics: []*v1.Diagnostic{{Summary: "sops cannot decrypt"}},
 			},
-			config.Secret{},
-			none, checkFail, "",
+			checkFail, "",
 		},
-		{
-			&v1.SecretStatus{SecretId: "t", Kind: "environment", State: v1.SecretStatus_STATE_UNCONFIGURED},
-			config.Secret{Kind: "environment", Variable: "TOKEN"},
-			env(map[string]string{"TOKEN": "x"}), checkPass, "",
-		},
-		{
-			&v1.SecretStatus{SecretId: "t", Kind: "environment", State: v1.SecretStatus_STATE_UNCONFIGURED},
-			config.Secret{Kind: "environment", Variable: "TOKEN"},
-			none, checkWarn, "set TOKEN in the shell that launches harnesses",
-		},
+		{&v1.SecretStatus{SecretId: "s", Kind: "sops", State: v1.SecretStatus_STATE_UNCONFIGURED}, checkPass, ""},
 	} {
-		got := secretCheck(test.status, test.secret, test.lookup)
+		got := secretCheck(test.status)
 		if got.Status != test.want || got.Hint != test.hint {
 			t.Errorf(
 				"%s (%s): got %+v, want %s with hint %q",
@@ -310,7 +285,7 @@ func TestLinkedOnPath(t *testing.T) {
 
 func TestShimRows(t *testing.T) {
 	entry := func(name string, state shims.State) shims.Entry {
-		return shims.Entry{Shim: shims.Shim{Name: name}, State: state}
+		return shims.Entry{Name: name, State: state}
 	}
 	rows := shimRows("/s", []shims.Entry{entry("work", shims.Missing)}, false, nil)
 	if len(rows) != 1 || rows[0].Status != checkWarn || !strings.Contains(rows[0].Hint, "agx shims install") {
@@ -364,38 +339,6 @@ func TestHarnessVersionStderr(t *testing.T) {
 	output, err := harnessVersion(t.Context(), path)
 	if err != nil || strings.TrimSpace(output) != "0.73.1" {
 		t.Errorf("harnessVersion = %q, %v", output, err)
-	}
-}
-
-func TestStateCheck(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "daemon-state.json")
-	if got := stateCheck(path); got.Status != checkPass || got.Detail != "no saved launches" {
-		t.Fatalf("missing state = %+v", got)
-	}
-	for _, test := range []struct {
-		data   string
-		status checkStatus
-	}{
-		{`{"version":1}`, checkPass},
-		{`{"version":99}`, checkFail},
-		{`{"version":`, checkWarn},
-	} {
-		if err := os.WriteFile(path, []byte(test.data), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if got := stateCheck(path); got.Status != test.status {
-			t.Fatalf("state %s = %+v", test.data, got)
-		}
-	}
-	if runtime.GOOS == "windows" {
-		return
-	}
-	if err := os.Chmod(path, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got := stateCheck(path); got.Status != checkFail || !strings.Contains(got.Hint, "chmod 600") {
-		t.Fatalf("readable state = %+v", got)
 	}
 }
 

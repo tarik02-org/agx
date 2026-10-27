@@ -38,7 +38,8 @@ secrets:
 
 Tags work in:
 
-- MCP server `headers` and `environment`, and `auth` (`!secret` only);
+- MCP server `headers`, `environment`, and `auth`;
+- a sops secret's `age_key`;
 - harness `environment`;
 - harness `args`, `!file` only: arguments are visible to other processes, so
   `!secret` and `!env` are rejected there. Pass secrets through `environment`.
@@ -55,10 +56,7 @@ whole shell environment to the daemon.
 
 ```yaml
 secrets:
-  work-token: {kind: environment, variable: WORK_TOKEN}
-  ci-token:   {kind: daemon_environment, variable: CI_TOKEN}
   cpa-key:    {kind: command, command: [pass, show, cpa]}
-  gw-key:     {kind: file, file: /run/secrets/gateway-key}
   docs-key:   {kind: keychain}
   github:     {kind: sops, file: ./secrets.yaml, key: github.token}
   team-login: {kind: oauth, scopes: [read]}
@@ -66,31 +64,34 @@ secrets:
 
 | Kind | Where the value comes from |
 | --- | --- |
-| `environment` | `variable` in the shell you launch from |
-| `daemon_environment` | `variable` in the daemon's environment (from the shell that started it) |
 | `command` | the trimmed output of a command, run with a minimal environment and a time limit |
-| `file` | a file's contents without trailing newlines, up to 1 MiB, read at each use |
-| `keychain` | the OS keychain; store it with `agx secret set <id> --stdin` |
+| `keychain` | the OS keychain; store it with `agx secret set <id>`, which prompts or reads stdin |
 | `sops` | a value in a [sops](https://getsops.io)-encrypted file; see [below](#sops-encrypted-files) |
 | `oauth` | an OAuth login; only for an MCP server's `auth`, see [MCP servers](mcp.md#logging-in) |
 
-Store a keychain secret by piping it in, so it never appears in your shell
-history or process list:
+Store a keychain secret by typing it at the prompt, which does not echo it, or
+by piping it in; either way it never appears in your shell history or process
+list:
 
 ```sh
-pbpaste | agx secret set docs-key --stdin
-agx secret set docs-key --stdin < ~/Downloads/token.txt
+agx secret set docs-key
+pbpaste | agx secret set docs-key
+agx secret set docs-key < ~/Downloads/token.txt
 ```
 
-A `file` secret suits files another tool keeps up to date, such as one decrypted
-by sops-nix or agenix under `/run`. Unlike `!file`, it is a secret: it works as
-an MCP server's `auth`, shows in `agx secret status`, and may be missing until
-it is used; a relative path is relative to the configuration file. Write the
-file itself to change it; `agx secret set` does not apply.
+For a value in an environment variable or a file, such as one decrypted by
+sops-nix or agenix under `/run`, use `!env` or `!file` directly; no secret is
+needed.
 
 An MCP server with `auth: keychain` stores its token the same way, under the
 server's ID. That is how the GitHub MCP server is set up, with a personal
 access token: see [MCP servers](mcp.md#github).
+
+agx keeps these values, and OAuth logins, encrypted in `secrets.json` in its
+state directory. The OS keychain holds only the key, so agx asks it once per
+process, whatever the number or size of the secrets. If the keychain loses the
+key, for example after a keychain reset, the file cannot be read: delete it and
+store the secrets again.
 
 There is no plaintext fallback: when the OS keychain is unavailable, keychain
 and OAuth secrets fail with an error.
@@ -100,10 +101,19 @@ and OAuth secrets fail with an error.
 ```sh
 agx secret status            # every secret's kind and state, never values
 agx secret status docs-key
-agx secret set docs-key --stdin
-agx secret login team-login  # OAuth; agx mcp login <id> does the same for a server
+agx secret set docs-key < token.txt
+agx secret login team-login  # OAuth: a top-level secret, or a server's own login by its ID
 agx secret logout docs-key   # delete the stored value or OAuth tokens
+agx secret rotate team-login # renew an OAuth access token now
 ```
+
+`agx secret rotate` renews an OAuth secret's access token with its refresh
+token, whether or not it expired, and prints when the new one expires. agx
+renews tokens on its own when they expire or a server rejects them; rotating is
+for replacing a token you suspect leaked, or for checking that the refresh
+token still works. When the authorization server refuses the refresh token, the
+command fails with `needs_login`; when the server cannot be reached, with
+`network`.
 
 Secret IDs are the IDs under `secrets`, and for an MCP server whose `auth` is
 written inline or omitted, the server's ID.
@@ -150,10 +160,10 @@ secrets:
 ```
 
 ```sh
-agx secret set age --stdin < ~/.config/sops/age/keys.txt
+agx secret set age < ~/.config/sops/age/keys.txt
 ```
 
-`age_key` takes `!secret`, `!env`, or `!file`; a literal key is rejected. To
+`age_key` takes any value: `!secret`, `!env`, `!file`, or the key itself. To
 have sops run a command for the key instead, leave `age_key` out and set
 `SOPS_AGE_KEY_CMD` in the daemon's environment.
 

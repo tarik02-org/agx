@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/spf13/cobra"
 
 	"github.com/tarik02-org/agx/gen/agx/v1/agxv1connect"
+	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/daemon"
 	"github.com/tarik02-org/agx/internal/platform"
 )
@@ -26,7 +28,6 @@ type client struct {
 	runtime   agxv1connect.RuntimeServiceClient
 	secrets   agxv1connect.SecretServiceClient
 	ui        agxv1connect.UIServiceClient
-	http      *http.Client
 }
 
 func newClient(paths platform.Paths) (*client, error) {
@@ -46,28 +47,65 @@ func newAnyVersionClient(paths platform.Paths) (*client, error) {
 	return dial(d), nil
 }
 
-// Timeouts are per call: a client-wide timeout would also cut off streams and slow operations such as login.
 func dial(d daemon.Discovery) *client {
 	httpClient := &http.Client{
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}
+	options := connect.WithInterceptors(daemonInterceptor{token: d.Token})
 	return &client{
 		discovery: d,
-		http:      httpClient,
-		config:    agxv1connect.NewConfigurationServiceClient(httpClient, d.URL),
-		launches:  agxv1connect.NewLaunchServiceClient(httpClient, d.URL),
-		runtime:   agxv1connect.NewRuntimeServiceClient(httpClient, d.URL),
-		secrets:   agxv1connect.NewSecretServiceClient(httpClient, d.URL),
-		ui:        agxv1connect.NewUIServiceClient(httpClient, d.URL),
+		config:    agxv1connect.NewConfigurationServiceClient(httpClient, d.URL, options),
+		launches:  agxv1connect.NewLaunchServiceClient(httpClient, d.URL, options),
+		runtime:   agxv1connect.NewRuntimeServiceClient(httpClient, d.URL, options),
+		secrets:   agxv1connect.NewSecretServiceClient(httpClient, d.URL, options),
+		ui:        agxv1connect.NewUIServiceClient(httpClient, d.URL, options),
 	}
 }
 
-func request[T any](msg *T, token string) *connect.Request[T] {
+// withToken authorizes a call with a token other than the daemon's, such as a launch's lifecycle token.
+func withToken[T any](msg *T, token string) *connect.Request[T] {
 	r := connect.NewRequest(msg)
 	r.Header().Set("Authorization", "Bearer "+token)
 	return r
 }
 
-func boundedContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), 10*time.Second)
+// daemonInterceptor authorizes calls that carry no token of their own with the daemon's, and
+// bounds unary calls without a deadline by callTimeout. Streams, such as a login waiting for the
+// browser, run as long as they need.
+type daemonInterceptor struct{ token string }
+
+func (i daemonInterceptor) authorize(header http.Header) {
+	if header.Get("Authorization") == "" {
+		header.Set("Authorization", "Bearer "+i.token)
+	}
+}
+
+func (i daemonInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
+	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		i.authorize(req.Header())
+		if _, ok := ctx.Deadline(); !ok {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, callTimeout)
+			defer cancel()
+		}
+		return next(ctx, req)
+	}
+}
+
+func (i daemonInterceptor) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
+	return func(ctx context.Context, spec connect.Spec) connect.StreamingClientConn {
+		conn := next(ctx, spec)
+		i.authorize(conn.RequestHeader())
+		return conn
+	}
+}
+
+func (daemonInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
+	return next
+}
+
+// commandClient connects a command to the daemon, starting one unless the configuration turns
+// autostart off.
+func commandClient(cmd *cobra.Command, paths *platform.Paths, builtins *config.Builtins) (*client, error) {
+	return daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
 }

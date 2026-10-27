@@ -85,7 +85,6 @@ const PackageSpec = Schema.Struct({
   git: Schema.optional(Schema.String),
   path: Schema.optional(Schema.String),
   ref: Schema.optional(Schema.String),
-  rev: Schema.optional(Schema.String),
   hash: Schema.optional(Schema.String),
   subdir: Schema.optional(Schema.String),
 });
@@ -104,7 +103,6 @@ export function PackageOverview({
     ["Git", spec?.git],
     ["Path", spec?.path],
     ["Ref", spec?.ref],
-    ["Revision", spec?.rev],
     ["Hash", spec?.hash],
     ["Subdirectory", spec?.subdir],
   ];

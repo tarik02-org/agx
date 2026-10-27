@@ -98,7 +98,7 @@ func TestInspect(t *testing.T) {
 	run("commit", "-q", "-m", "first")
 	head := run("rev-parse", "HEAD")
 
-	got, err := Inspect(t.Context(), t.TempDir(), "file://"+filepath.ToSlash(repo), "main", "", "skills")
+	got, err := Inspect(t.Context(), t.TempDir(), "file://"+filepath.ToSlash(repo), "main", "skills")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestInspect(t *testing.T) {
 		!slices.Equal(got.Directories, []string{"skills", "skills/alpha"}) {
 		t.Fatalf("Inspect = %+v, want revision %s, hash %s", got, head, want)
 	}
-	if _, err := Inspect(t.Context(), t.TempDir(), "file://"+filepath.ToSlash(repo), "missing", "", ""); err == nil {
+	if _, err := Inspect(t.Context(), t.TempDir(), "file://"+filepath.ToSlash(repo), "missing", ""); err == nil {
 		t.Fatal("inspected a ref the repository does not have")
 	}
 }

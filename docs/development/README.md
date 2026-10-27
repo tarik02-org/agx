@@ -4,14 +4,11 @@ These notes are for people working on agx itself. For using agx, start at the
 [documentation index](../README.md).
 
 - [Building and testing](#building-and-testing)
-- [Runtime and configuration contracts](contracts.md): the rules the
-  implementation follows for resolution, launches, credentials, and MCP.
 - [Management API](api.md): the Connect services the CLI talks to, and the
   [Protobuf contract](../../api/agx/v1/agx.proto).
-- [Verification](verification.md): what the test suite covers, what was checked
-  by hand, and known limits.
+- [Verification](verification.md): how behavior is tested, what was checked by
+  hand, and known limits.
 - [Library choices](libraries.md).
-- [Implementation plan](implementation-plan.md): the original milestones.
 - [Architecture decision records](../adr/) and the [glossary](../../GLOSSARY.md).
 
 ## Building and testing
@@ -33,7 +30,8 @@ network. CI also checks that generated code is current.
 
 Release builds set the version that `agx --version` reports and that wrappers
 and the daemon compare:
-`-ldflags "-X github.com/tarik02-org/agx/internal/daemon.Version=0.1.0"`.
+`-ldflags "-X github.com/tarik02-org/agx/internal/daemon.Version=1.2.3"`. Until
+the first tag, the Nix package reports `0.0.0-dev+<commit>`.
 
 Go messages and Connect handlers live in `gen/agx/v1`; TypeScript Protobuf
 messages and service descriptors live in `web/src/gen`, used by the web UI. Regenerate them with
@@ -73,8 +71,11 @@ server's origin. The Nix build fetches pnpm dependencies with a fixed hash
 
 ## Releasing
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`, which tests and
-publishes a GitHub release with GoReleaser (`.goreleaser.yaml`). Every `master`
-commit that passes CI replaces the rolling `nightly` prerelease. Run
-`goreleaser build --snapshot --clean` to build every target locally. Bump the
-version in `package.nix` and `CHANGELOG.md` together with the tag.
+Tag a commit that passed CI on `master`. Pushing a `v*` tag runs
+`.github/workflows/release.yml`, which publishes a GitHub release with GoReleaser
+(`.goreleaser.yaml`); archives include shell completions and the man page. Every
+`master` commit that passes CI publishes its own
+`nightly-<version>.<commits>-<commit>` prerelease. Run
+`goreleaser build --snapshot --clean` to build every target locally. With the tag,
+rename `## Unreleased` in `CHANGELOG.md` to the version and set `version` in
+`package.nix`.

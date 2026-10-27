@@ -1,10 +1,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
+	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -22,18 +23,9 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 		Short:   "Expose harness definitions as executables on PATH",
 		GroupID: "harness",
 	}
-	dir := ""
-	command.PersistentFlags().
-		StringVar(&dir, "dir", "", `shim directory (default ~/.local/share/agx/shims, under $XDG_DATA_HOME when set; %LOCALAPPDATA%\agx\shims on Windows)`)
-	shimDir := func() (string, error) {
-		if dir != "" {
-			return filepath.Abs(dir)
-		}
-		return shims.DefaultDir()
-	}
 	// Shims exist for definitions only: a built-in's shim would shadow its native executable.
 	definitions := func() ([]string, error) {
-		c, err := config.Read(paths.Config, *builtins)
+		c, err := config.Load(paths.Config, config.Options{Builtins: *builtins})
 		if err != nil {
 			return nil, coded(codeConfigInvalid, err)
 		}
@@ -46,7 +38,7 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 		return names, nil
 	}
 	prepare := func() (string, string, []string, error) {
-		dir, err := shimDir()
+		dir, err := shims.Dir()
 		if err != nil {
 			return "", "", nil, err
 		}
@@ -67,17 +59,9 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 				return err
 			}
 			changes, err := shims.Install(dir, target, names)
-			if scripting.enabled {
-				return printShimChangesJSON(dir, target, changes, err)
-			}
-			if printErr := printShimChanges(dir, changes); printErr != nil {
-				return printErr
-			}
-			warnShims(dir, target, names)
-			return err
+			return emitShimChanges(dir, changes, err, func() { warnShims(dir, target, names) })
 		},
 	}
-	jsonFlag(install)
 	command.AddCommand(install)
 	list := &cobra.Command{
 		Use:   "list",
@@ -92,74 +76,54 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 			if err != nil {
 				return err
 			}
-			if scripting.enabled {
-				items := []shimJSON{}
-				for _, e := range entries {
-					items = append(items, shimJSON{
-						Name:   e.Name,
-						File:   e.File,
-						Kind:   jsonString(string(e.Kind)),
-						Target: jsonString(e.Target),
-						State:  string(e.State),
-					})
+			document := struct {
+				Directory string        `json:"directory"`
+				OnPath    bool          `json:"on_path"`
+				Target    string        `json:"target"`
+				Shims     []shims.Entry `json:"shims"`
+			}{dir, shims.OnPath(dir), target, entries}
+			return emit(document, func() error {
+				if err := printShims(dir, entries); err != nil {
+					return err
 				}
-				return printJSON(shimListJSON{Directory: dir, OnPath: shims.OnPath(dir), Target: target, Shims: items})
-			}
-			if err := printShims(dir, entries); err != nil {
-				return err
-			}
-			warnShims(dir, target, names)
-			return nil
+				warnShims(dir, target, names)
+				return nil
+			})
 		},
 	}
-	jsonFlag(list)
 	remove := &cobra.Command{
 		Use:   "remove",
-		Short: "Delete the shims agx created",
+		Short: "Delete the shim directory",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dir, err := shimDir()
+			dir, err := shims.Dir()
 			if err != nil {
 				return err
 			}
 			changes, err := shims.Remove(dir)
-			if scripting.enabled {
-				return printShimChangesJSON(dir, "", changes, err)
-			}
-			if printErr := printShimChanges(dir, changes); printErr != nil {
-				return printErr
-			}
-			return err
+			return emitShimChanges(dir, changes, err, func() {})
 		},
 	}
-	jsonFlag(remove)
 	command.AddCommand(list, remove)
 	return command
 }
 
-// printShimChangesJSON writes the document of shims install and remove. A failure is reported
-// as an error document; the changes made before it remain recorded in the shim directory.
-func printShimChangesJSON(dir, target string, changes []shims.Change, err error) error {
-	if err != nil {
+// emitShimChanges reports what shims install or remove did. A person sees the changes made
+// before a failure; JSON mode reports the failure alone, as listing the directory shows them.
+func emitShimChanges(dir string, changes []shims.Change, err error, warn func()) error {
+	if err != nil && scripting.enabled {
 		return err
 	}
-	items := []shimChangeJSON{}
-	for _, c := range changes {
-		items = append(items, shimChangeJSON{
-			Name:   c.Name,
-			File:   c.File,
-			Kind:   jsonString(string(c.Kind)),
-			Target: jsonString(c.Target),
-			Action: string(c.Action),
-			State:  jsonString(string(c.State)),
-		})
+	document := struct {
+		Directory string         `json:"directory"`
+		OnPath    bool           `json:"on_path"`
+		Changes   []shims.Change `json:"changes"`
+	}{dir, shims.OnPath(dir), changes}
+	if printErr := emit(document, func() error { return printShimChanges(dir, changes) }); printErr != nil {
+		return printErr
 	}
-	return printJSON(shimChangesJSON{
-		Directory: dir,
-		OnPath:    shims.OnPath(dir),
-		Target:    jsonString(target),
-		Changes:   items,
-	})
+	warn()
+	return err
 }
 
 func printShimChanges(dir string, changes []shims.Change) error {
@@ -168,16 +132,8 @@ func printShimChanges(dir string, changes []shims.Change) error {
 	items := []string{}
 	for _, c := range changes {
 		counts[c.Action]++
-		switch c.Action {
-		case shims.Unchanged:
-		case shims.Kept:
-			reason := "not created by agx"
-			if c.State == shims.Modified {
-				reason = "changed since agx created it"
-			}
-			ui.Diagnose(ui.Warn, "left %s in place: %s", filepath.Join(dir, c.File), reason)
-		default:
-			items = append(items, fmt.Sprintf("%s %s %s", c.Action, out.ID(c.Name), out.Muted("("+string(c.Kind)+")")))
+		if c.Action != shims.Unchanged {
+			items = append(items, fmt.Sprintf("%s %s", c.Action, out.ID(c.Name)))
 		}
 	}
 	summary := []string{}
@@ -205,25 +161,14 @@ func printShims(dir string, entries []shims.Entry) error {
 	}
 	rows := [][]string{}
 	for _, e := range entries {
-		kind, target := string(e.Kind), e.Target
-		if kind == "" {
-			kind, target = "-", "-"
+		state := out.Badge(ui.Warn, string(e.State))
+		if e.State == shims.Current {
+			state = out.Badge(ui.OK, string(e.State))
 		}
-		rows = append(rows, []string{out.ID(e.Name), kind, shimState(out, e.State), out.Path(target)})
+		rows = append(rows, []string{out.ID(e.Name), state})
 	}
-	_, err := io.WriteString(out, header+out.Table([]string{"NAME", "KIND", "STATE", "TARGET"}, rows, 3))
+	_, err := io.WriteString(out, header+out.Table([]string{"NAME", "STATE"}, rows, 3))
 	return err
-}
-
-func shimState(out *ui.Printer, state shims.State) string {
-	switch state {
-	case shims.Current:
-		return out.Badge(ui.OK, string(state))
-	case shims.Stale, shims.Missing:
-		return out.Badge(ui.Warn, string(state))
-	default:
-		return out.Badge(ui.Error, string(state))
-	}
 }
 
 // warnShims reports what keeps shims from running as intended.
@@ -245,4 +190,12 @@ func warnShims(dir, target string, names []string) {
 			ui.Diagnose(ui.Warn, "the %s shim shadows %s", c.Name, c.Path)
 		}
 	}
+}
+
+// handOff runs a harness definition through the agx a Windows shim records rather than the
+// shim's own copy, and returns its exit status.
+func handOff(current, name string, args []string) int {
+	cmd := exec.CommandContext(context.Background(), current, append([]string{name}, args...)...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr, cmd.Env = os.Stdin, os.Stdout, os.Stderr, os.Environ()
+	return exitCode(passthrough(cmd))
 }

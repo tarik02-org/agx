@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -13,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/oauthex"
 	"golang.org/x/oauth2"
 
 	"github.com/tarik02-org/agx/internal/config"
@@ -53,11 +53,6 @@ type beginCall struct {
 	err     error
 	// waiters counts callers that joined while discovery ran; guarded by Manager.mu.
 	waiters int
-}
-
-type resourceMetadata struct {
-	AuthorizationServers []string `json:"authorization_servers"`
-	Resource             string   `json:"resource"`
 }
 
 // Begin starts an OAuth login, or joins the one already pending for the secret, including
@@ -206,7 +201,7 @@ func (m *Manager) RequireLogin(ctx context.Context, id config.ID, a config.Secre
 	known := m.required[k] && m.hints[resource] == hint
 	m.mu.Unlock()
 	if !known {
-		if _, err := m.protectedResource(ctx, serverURL, hint); err != nil {
+		if _, err := protectedResource(ctx, serverURL, hint); err != nil {
 			return err
 		}
 	}
@@ -224,10 +219,13 @@ func (m *Manager) RequireLogin(ctx context.Context, id config.ID, a config.Secre
 // protectedResource fetches RFC 9728 metadata for serverURL from hint, when the server sent
 // one in a 401 challenge, then from the well-known locations, path-specific before root.
 // Metadata describing another resource is never used (RFC 9728 section 3.3).
-func (m *Manager) protectedResource(ctx context.Context, serverURL, hint string) (resourceMetadata, error) {
+func protectedResource(
+	ctx context.Context,
+	serverURL, hint string,
+) (oauthex.ProtectedResourceMetadata, error) {
 	requested, err := normalizeResource(serverURL)
 	if err != nil {
-		return resourceMetadata{}, err
+		return oauthex.ProtectedResourceMetadata{}, err
 	}
 	u, _ := url.Parse(serverURL)
 	origin := u.Scheme + "://" + u.Host
@@ -254,8 +252,8 @@ func (m *Manager) protectedResource(ctx context.Context, serverURL, hint string)
 	}
 	failure := errors.New("OAuth resource discovery failed; configure issuer explicitly")
 	for _, c := range candidates {
-		var metadata resourceMetadata
-		if err := m.getJSON(ctx, c.endpoint, &metadata); err != nil {
+		var metadata oauthex.ProtectedResourceMetadata
+		if err := getJSON(ctx, c.endpoint, &metadata); err != nil {
 			continue
 		}
 		advertised, err := normalizeResource(metadata.Resource)
@@ -270,79 +268,51 @@ func (m *Manager) protectedResource(ctx context.Context, serverURL, hint string)
 			return metadata, nil
 		}
 	}
-	return resourceMetadata{}, failure
+	return oauthex.ProtectedResourceMetadata{}, failure
 }
 
-// challenge asks the server for the resource_metadata of its 401 challenge, as a client
-// without a credential would meet it, for logins before any request saw one. A GET opens no
-// MCP session; "" means the server sent none.
-func (m *Manager) challenge(ctx context.Context, serverURL string) string {
+// challenge requests serverURL without a credential, as on-demand OAuth meets it, and returns
+// whether it answered 401 and the resource_metadata of its challenge, "" when it sent none. A GET
+// opens no MCP session.
+func challenge(ctx context.Context, serverURL string) (unauthorized bool, hint string, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL, nil)
 	if err != nil {
-		return ""
+		return false, "", err
 	}
 	req.Header.Set("Accept", "text/event-stream")
-	resp, err := m.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
-		return ""
+		return false, "", fmt.Errorf("cannot reach %s", serverURL)
 	}
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
-		return ""
+		return false, "", nil
 	}
-	return resourceMetadataURL(strings.Join(resp.Header.Values("WWW-Authenticate"), ", "))
+	return true, resourceMetadataURL(resp.Header.Values("WWW-Authenticate")...), nil
 }
 
 // NeedsLogin reports whether serverURL asks for an OAuth login the way on-demand OAuth
 // recognizes one: it answers a request without a credential with 401 and advertises protected
 // resource metadata. Only reaching the server is an error; any other answer means no login.
 func NeedsLogin(ctx context.Context, serverURL string) (bool, error) {
-	m := New("")
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL, nil)
-	if err != nil {
+	unauthorized, hint, err := challenge(ctx, serverURL)
+	if err != nil || !unauthorized {
 		return false, err
 	}
-	req.Header.Set("Accept", "text/event-stream")
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return false, fmt.Errorf("cannot reach %s", serverURL)
-	}
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		return false, nil
-	}
-	hint := resourceMetadataURL(strings.Join(resp.Header.Values("WWW-Authenticate"), ", "))
-	_, err = m.protectedResource(ctx, serverURL, hint)
+	_, err = protectedResource(ctx, serverURL, hint)
 	return err == nil, nil
 }
 
-// resourceMetadataURL returns the resource_metadata parameter of a WWW-Authenticate Bearer
-// challenge (RFC 9728 section 5.1), or "".
-func resourceMetadataURL(challenge string) string {
-	lower := strings.ToLower(challenge)
-	for from := 0; ; {
-		i := strings.Index(lower[from:], "resource_metadata=")
-		if i < 0 {
-			return ""
+// resourceMetadataURL returns the resource_metadata parameter of a WWW-Authenticate challenge
+// (RFC 9728 section 5.1), or "".
+func resourceMetadataURL(headers ...string) string {
+	challenges, _ := oauthex.ParseWWWAuthenticate(headers)
+	for _, c := range challenges {
+		if hint := c.Params["resource_metadata"]; hint != "" {
+			return hint
 		}
-		i += from
-		from = i + len("resource_metadata=")
-		if i > 0 && !strings.ContainsRune(" ,\t", rune(lower[i-1])) {
-			continue
-		}
-		value := challenge[from:]
-		if quoted, ok := strings.CutPrefix(value, `"`); ok {
-			end := strings.IndexByte(quoted, '"')
-			if end < 0 {
-				return ""
-			}
-			return quoted[:end]
-		}
-		if end := strings.IndexAny(value, ", \t"); end >= 0 {
-			value = value[:end]
-		}
-		return value
 	}
+	return ""
 }
 
 func (m *Manager) begin(
@@ -362,9 +332,9 @@ func (m *Manager) begin(
 		hint := m.hints[normalized]
 		m.mu.Unlock()
 		if hint == "" {
-			hint = m.challenge(ctx, serverURL)
+			_, hint, _ = challenge(ctx, serverURL)
 		}
-		metadata, err := m.protectedResource(ctx, serverURL, hint)
+		metadata, err := protectedResource(ctx, serverURL, hint)
 		if err != nil {
 			return nil, err
 		}
@@ -376,66 +346,34 @@ func (m *Manager) begin(
 	if err := secureURL(issuer); err != nil {
 		return nil, err
 	}
-	var metadata struct {
-		Issuer        string `json:"issuer"`
-		Authorization string `json:"authorization_endpoint"`
-		Token         string `json:"token_endpoint"`
-		Registration  string `json:"registration_endpoint"`
-		IssParameter  bool   `json:"authorization_response_iss_parameter_supported"`
-	}
-	u, _ := url.Parse(issuer)
-	discovery := u.Scheme + "://" + u.Host + "/.well-known/oauth-authorization-server" + strings.TrimRight(u.Path, "/")
-	if err := m.getJSON(ctx, discovery, &metadata); err != nil {
-		if err := m.getJSON(
-			ctx,
-			strings.TrimRight(issuer, "/")+"/.well-known/openid-configuration",
-			&metadata,
-		); err != nil {
-			return nil, fmt.Errorf("OAuth authorization server discovery failed")
-		}
-	}
-	if metadata.Issuer != issuer {
-		return nil, fmt.Errorf("OAuth issuer mismatch")
-	}
-	if err := secureURL(metadata.Authorization); err != nil {
+	metadata, err := m.authorizationServer(ctx, issuer)
+	if err != nil {
 		return nil, err
 	}
-	if err := secureURL(metadata.Token); err != nil {
+	if err := secureURL(metadata.AuthorizationEndpoint); err != nil {
+		return nil, err
+	}
+	if err := secureURL(metadata.TokenEndpoint); err != nil {
 		return nil, err
 	}
 	clientID := a.ClientID
 	if clientID == "" {
-		if err := secureURL(metadata.Registration); err != nil {
+		if err := secureURL(metadata.RegistrationEndpoint); err != nil {
 			return nil, clientIDRequired(id, a, issuer, m.callback)
 		}
-		body := map[string]any{
-			"client_name":                "agx",
-			"redirect_uris":              []string{m.callback},
-			"token_endpoint_auth_method": "none",
-			"grant_types":                []string{"authorization_code", "refresh_token"},
-			"response_types":             []string{"code"},
-		}
-		data, _ := json.Marshal(body)
-		req, _ := http.NewRequestWithContext(
+		registration, err := oauthex.RegisterClient(
 			ctx,
-			http.MethodPost,
-			metadata.Registration,
-			strings.NewReader(string(data)),
+			metadata.RegistrationEndpoint,
+			&oauthex.ClientRegistrationMetadata{
+				ClientName:              "agx",
+				RedirectURIs:            []string{m.callback},
+				TokenEndpointAuthMethod: "none",
+				GrantTypes:              []string{"authorization_code", "refresh_token"},
+				ResponseTypes:           []string{"code"},
+			},
+			client,
 		)
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := m.client.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("OAuth registration failed")
-		}
-		defer func() { _ = resp.Body.Close() }()
-		var registration struct {
-			ClientID     string `json:"client_id"`
-			ClientSecret string `json:"client_secret"`
-		}
-		if resp.StatusCode >= http.StatusMultipleChoices ||
-			json.NewDecoder(io.LimitReader(resp.Body, 1024*1024)).Decode(&registration) != nil ||
-			registration.ClientID == "" ||
-			registration.ClientSecret != "" {
+		if err != nil || registration.ClientSecret != "" {
 			return nil, fmt.Errorf("OAuth public-client registration failed")
 		}
 		clientID = registration.ClientID
@@ -447,8 +385,8 @@ func (m *Manager) begin(
 		RedirectURL: m.callback,
 		Scopes:      a.Scopes,
 		Endpoint: oauth2.Endpoint{
-			AuthURL:   metadata.Authorization,
-			TokenURL:  metadata.Token,
+			AuthURL:   metadata.AuthorizationEndpoint,
+			TokenURL:  metadata.TokenEndpoint,
 			AuthStyle: oauth2.AuthStyleInParams,
 		},
 	}
@@ -465,10 +403,34 @@ func (m *Manager) begin(
 		origin:     origin,
 		resource:   resource,
 		issuer:     metadata.Issuer,
-		requireIss: metadata.IssParameter,
+		requireIss: metadata.AuthorizationResponseIssParameterSupported,
 	}
 	p.URL = cfg.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oauth2.SetAuthURLParam("resource", resource))
 	return p, nil
+}
+
+// authorizationServer fetches RFC 8414 metadata for issuer from the locations the MCP
+// authorization spec lists: OAuth with path insertion, then OpenID Connect with path insertion and
+// appending. oauthex.GetAuthServerMeta would refuse servers that omit
+// code_challenge_methods_supported and servers on private network addresses.
+func (m *Manager) authorizationServer(ctx context.Context, issuer string) (oauthex.AuthServerMeta, error) {
+	u, _ := url.Parse(issuer)
+	root, path := u.Scheme+"://"+u.Host, strings.TrimRight(u.Path, "/")
+	for _, endpoint := range slices.Compact([]string{
+		root + "/.well-known/oauth-authorization-server" + path,
+		root + "/.well-known/openid-configuration" + path,
+		root + path + "/.well-known/openid-configuration",
+	}) {
+		var metadata oauthex.AuthServerMeta
+		if getJSON(ctx, endpoint, &metadata) != nil {
+			continue
+		}
+		if metadata.Issuer != issuer {
+			return metadata, fmt.Errorf("OAuth issuer mismatch")
+		}
+		return metadata, nil
+	}
+	return oauthex.AuthServerMeta{}, fmt.Errorf("OAuth authorization server discovery failed")
 }
 
 // clientIDRequired explains how to configure a client ID for an authorization server that does
@@ -490,7 +452,7 @@ func clientIDRequired(id config.ID, a config.Secret, issuer, callback string) er
 		"OAuth server %s does not register clients automatically, so %s needs a client ID: "+
 			"create an OAuth app with the provider, allowing the redirect URI %s, and set its public client ID in %s. "+
 			"agx logs in as a public client without a client secret; for a provider that requires one, such as GitHub, "+
-			"use a personal access token instead: set %s and store it with agx secret set %s --stdin",
+			"use a personal access token instead: set %s and store it with agx secret set %s",
 		issuer, id, callback, where, keychain, id,
 	)
 }
@@ -556,7 +518,7 @@ func (m *Manager) Callback(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadRequest, errors.New("authorization was not completed"))
 		return
 	}
-	ctx := context.WithValue(r.Context(), oauth2.HTTPClient, m.client)
+	ctx := context.WithValue(r.Context(), oauth2.HTTPClient, client)
 	token, err := p.oauth.Exchange(
 		ctx,
 		query.Get("code"),
@@ -600,13 +562,14 @@ func (m *Manager) Callback(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusConflict, errors.New("logged out while authorizing; run the login again"))
 		return
 	}
-	if err := keychainSet(k, string(data)); err != nil {
+	if err := m.store.Set(k, string(data)); err != nil {
 		fail(http.StatusServiceUnavailable, fmt.Errorf("the credential was not stored: %w", err))
 		return
 	}
 	m.mu.Lock()
 	delete(m.unpersisted, k)
 	delete(m.required, k)
+	delete(m.refused, k)
 	m.finishLocked(p, nil)
 	m.mu.Unlock()
 	_, _ = fmt.Fprintf(w, "Logged in to %s. You can close this window.\n", p.SecretID)

@@ -244,21 +244,10 @@ const secretKinds = [
     description: "A sign-in, for an MCP server's auth only.",
   },
   {
-    value: "environment",
-    label: "Launch environment",
-    description: "A variable of the shell you launch from.",
-  },
-  {
-    value: "daemon_environment",
-    label: "Daemon environment",
-    description: "A variable of the shell that started the daemon.",
-  },
-  {
     value: "command",
     label: "Command output",
     description: "What a command, such as a password manager, prints.",
   },
-  { value: "file", label: "File", description: "The contents of a file." },
   { value: "sops", label: "SOPS file", description: "A key of a SOPS-encrypted file." },
 ];
 
@@ -267,9 +256,6 @@ function SecretForm({ form }: { readonly form: DefinitionText }) {
   return (
     <FieldGroup>
       <ChoiceField form={form} path={["kind"]} label="Kind" options={secretKinds} />
-      {(kind === "environment" || kind === "daemon_environment") && (
-        <TextField form={form} path={["variable"]} label="Variable" placeholder="API_TOKEN" />
-      )}
       {kind === "command" && (
         <ListField
           form={form}
@@ -278,11 +264,9 @@ function SecretForm({ form }: { readonly form: DefinitionText }) {
           placeholder={"op\nread\nop://vault/item/token"}
         />
       )}
-      {(kind === "file" || kind === "sops") && (
-        <TextField form={form} path={["file"]} label="File" />
-      )}
       {kind === "sops" && (
         <>
+          <TextField form={form} path={["file"]} label="File" />
           <TextField form={form} path={["key"]} label="Key" placeholder="tokens.github" />
           <ValueField form={form} path={["age_key"]} label="Age key" />
         </>
@@ -338,21 +322,6 @@ function PinFields({ form }: { readonly form: DefinitionText }) {
           ),
         }))}
       />
-      <SuggestField
-        form={form}
-        path={["rev"]}
-        label="Revision"
-        loading={refs.isFetching}
-        suggestions={[...new Map(listed.map((ref) => [ref.commit, ref])).values()].map((ref) => ({
-          value: ref.commit,
-          detail: (
-            <>
-              <Badge variant="outline">{refKind(ref)}</Badge>
-              {ref.name}
-            </>
-          ),
-        }))}
-      />
       <HashField form={form} />
     </>
   );
@@ -371,7 +340,7 @@ function AuthField({ form }: { readonly form: DefinitionText }) {
       path={["auth"]}
       label="Auth"
       placeholder="OAuth when the server asks"
-      description="oauth, keychain, none, or a secret ID; an inline secret is edited on the YAML tab."
+      description="oauth, keychain, none, or a secret ID; !env, !file, and inline secrets are edited on the YAML tab."
       suggestions={[
         { value: "oauth", detail: "sign in when asked" },
         { value: "keychain", detail: "a token kept in the keychain" },
@@ -419,7 +388,7 @@ function BrowseFolder({ form, path }: { readonly form: DefinitionText; readonly 
 /** The content hash, with a button computing it from the source at its pins. */
 function HashField({ form }: { readonly form: DefinitionText }) {
   const compute = useDaemonMutation(
-    (request: { git: string; ref: string; rev: string; subdir: string }) =>
+    (request: { git: string; ref: string; subdir: string }) =>
       Daemon.use((daemon) => daemon.inspectSource(request)),
     [],
   );
@@ -443,7 +412,6 @@ function HashField({ form }: { readonly form: DefinitionText }) {
                       {
                         git: read("git"),
                         ref: read("ref"),
-                        rev: read("rev"),
                         subdir: read("subdir"),
                       },
                       {
@@ -463,9 +431,7 @@ function HashField({ form }: { readonly form: DefinitionText }) {
                 </InputGroupButton>
               }
             />
-            <TooltipContent side="left">
-              Compute from the source at its ref or revision
-            </TooltipContent>
+            <TooltipContent side="left">Compute from the source at its ref</TooltipContent>
           </Tooltip>
         )
       }
@@ -478,12 +444,11 @@ function SubdirectoryField({ form }: { readonly form: DefinitionText }) {
   const [wanted, setWanted] = useState(false);
   const git = readString(form.text, ["git"]);
   const ref = readString(form.text, ["ref"]);
-  const rev = readString(form.text, ["rev"]);
   // Listing means checking the source out, so it waits until someone opens the list.
   const directories = useDaemonQuery(
-    queryKeys.sourceDirectories(git, ref, rev),
+    queryKeys.sourceDirectories(git, ref),
     Daemon.use((daemon) =>
-      daemon.inspectSource({ git, ref, rev, subdir: "" }).pipe(Effect.map((i) => i.directories)),
+      daemon.inspectSource({ git, ref, subdir: "" }).pipe(Effect.map((i) => i.directories)),
     ),
     { enabled: wanted && git !== "", staleTime: 300_000, retry: false },
   );
@@ -521,12 +486,7 @@ function PackageForm({ form }: { readonly form: DefinitionText }) {
           { value: "path", label: "Local directory", description: "A directory on this machine." },
         ]}
         onChange={(next) =>
-          switchSource(
-            source,
-            next,
-            next === "path" ? ["git", "ref", "rev", "hash"] : ["path"],
-            next,
-          )
+          switchSource(source, next, next === "path" ? ["git", "ref", "hash"] : ["path"], next)
         }
       />
       {source === "git" ? (
@@ -554,7 +514,7 @@ function PackageForm({ form }: { readonly form: DefinitionText }) {
   );
 }
 
-const gitFields = ["git", "ref", "rev", "hash"];
+const gitFields = ["git", "ref", "hash"];
 
 const gitDescription = "A repository, at a branch, tag, or commit.";
 

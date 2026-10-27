@@ -28,7 +28,7 @@ func tagFixture(t *testing.T) (*config.Config, string) {
   codex-t:
     base: codex
     args:
-      - [--prompt, !file prompt.txt]
+      - values: [--prompt, !file prompt.txt]
       - values: [--system, !file prompt.txt]
         modes: [exec]
     environment:
@@ -36,9 +36,8 @@ func tagFixture(t *testing.T) (*config.Config, string) {
       KEY: !secret key
       PLAIN: plain
 `)
-	root := write(t, filepath.Join(dir, "agx.yaml"), `imports: [{path: conf/harness.yaml}]
-secrets:
-  key: {kind: environment, variable: KEY_SOURCE}
+	root := fragment(t, dir, `secrets:
+  key: {kind: keychain}
 mcp:
   up:
     command: [up]
@@ -49,10 +48,12 @@ mcp:
     url: 'https://remote.example/mcp'
     headers:
       X-Key: !secret key
+  bearer:
+    url: 'https://bearer.example/mcp'
+    auth: !env BEARER_TOKEN
 scopes:
-  - add: {mcp: [up, remote]}
-`)
-	t.Setenv("KEY_SOURCE", secretValue)
+  - add: {mcp: [up, remote, bearer]}
+`, "conf/harness.yaml")
 	t.Setenv("WORK_TOKEN", envValue)
 	t.Setenv("MCP_ONLY", envValue)
 	return load(t, root), work
@@ -64,10 +65,10 @@ func TestTagsResolveAtLaunchOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"KEY_SOURCE", "MCP_ONLY", "WORK_TOKEN"}; !slices.Equal(s.RequiredEnvironment, want) {
+	if want := []string{"BEARER_TOKEN", "MCP_ONLY", "WORK_TOKEN"}; !slices.Equal(s.RequiredEnvironment, want) {
 		t.Errorf("required environment = %v, want %v", s.RequiredEnvironment, want)
 	}
-	if want := []string{"KEY_SOURCE", "MCP_ONLY"}; !slices.Equal(s.MCPEnvironment(), want) {
+	if want := []string{"BEARER_TOKEN", "MCP_ONLY"}; !slices.Equal(s.MCPEnvironment(), want) {
 		t.Errorf("MCP-only environment = %v, want %v", s.MCPEnvironment(), want)
 	}
 	injections := map[string]string{}
@@ -81,6 +82,7 @@ func TestTagsResolveAtLaunchOnly(t *testing.T) {
 		"mcp remote header X-Key":           "!secret key",
 		"mcp remote auth":                   "oauth (on demand)",
 		"mcp up environment UP_ENV":         "!env MCP_ONLY",
+		"mcp bearer auth":                   "!env BEARER_TOKEN",
 	} {
 		if injections[target] != text {
 			t.Errorf("injection %q = %q, want %q", target, injections[target], text)
@@ -153,21 +155,20 @@ func TestTagResolutionErrors(t *testing.T) {
 
 func TestTagPlacement(t *testing.T) {
 	for _, tt := range []struct{ name, content, want string }{
-		{"unknown tag", "harnesses:\n  codex:\n    environment:\n      A: !foo x\n", "agx.yaml:4: unknown tag !foo; use !env, !file, or !secret"},
-		{"secret in harness args", "harnesses:\n  codex:\n    args: [--key, !secret k]\n", "agx.yaml:3: !secret cannot be used in harness args, which other processes can read (ps); set it in the harness environment instead"},
-		{"env in an argument group", "harnesses:\n  codex:\n    args:\n      - values: [!env TOKEN]\n", "agx.yaml:4: !env cannot be used in harness args"},
-		{"tag in an MCP command", "mcp:\n  c:\n    command: [!env X]\n", "agx.yaml:3: !env is allowed only in"},
-		{"tag in an executable", "harnesses:\n  codex:\n    executable: !file x\n", "agx.yaml:3: !file is allowed only in"},
-		{"tag in a secret definition", "secrets:\n  s:\n    kind: environment\n    variable: !env X\n", "!env is allowed only in"},
+		{"unknown tag", "harnesses:\n  codex:\n    environment:\n      A: !foo x\n", "main.yaml:4: unknown tag !foo; use !env, !file, or !secret"},
+		{"secret in harness args", "harnesses:\n  codex:\n    args: [--key, !secret k]\n", "main.yaml:3: !secret cannot be used in harness args, which other processes can read (ps); set it in the harness environment instead"},
+		{"env in an argument group", "harnesses:\n  codex:\n    args:\n      - values: [!env TOKEN]\n", "main.yaml:4: !env cannot be used in harness args"},
+		{"tag in an MCP command", "mcp:\n  c:\n    command: [!env X]\n", "main.yaml:3: !env is allowed only in"},
+		{"tag in an executable", "harnesses:\n  codex:\n    executable: !file x\n", "main.yaml:3: !file is allowed only in"},
+		{"tag in a secret definition", "secrets:\n  s:\n    kind: command\n    command: [!env X]\n", "!env is allowed only in"},
 		{"tagged key", "harnesses:\n  codex:\n    environment:\n      !env A: b\n", "!env is allowed only in"},
 		{"tagged mapping", "harnesses:\n  codex:\n    environment:\n      A: !secret {x: y}\n", "!secret needs a scalar argument"},
 		{"reserved variable", "harnesses:\n  codex:\n    environment:\n      A: !env AGX_X\n", "AGX_ variables are reserved"},
 		{"invalid variable", "harnesses:\n  codex:\n    environment:\n      A: !env 1X\n", "!env needs a variable name"},
-		{"non-secret tag in auth", "mcp:\n  c:\n    url: 'https://example.com/mcp'\n    auth: !env TOKEN\n", "auth must be a secret kind"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), tt.content)
-			_, err := config.Read(root, builtins)
+			root := fragment(t, t.TempDir(), tt.content)
+			_, err := config.Load(root, config.Options{Builtins: builtins})
 			wantError(t, err, tt.want)
 		})
 	}
@@ -187,7 +188,7 @@ func TestTagPlacement(t *testing.T) {
 		{
 			name:    "bare secret ID as auth",
 			content: "secrets:\n  s: {kind: keychain}\nmcp:\n  c:\n    url: 'https://example.com/mcp'\n    auth: s\n",
-			want:    `unknown kind "s"; reference a secret with auth: !secret s`,
+			want:    "to use secret s, write auth: !secret s",
 		},
 		{
 			name:    "managed header",
@@ -196,8 +197,8 @@ func TestTagPlacement(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), tt.content)
-			_, err := config.Load(root, t.TempDir(), builtins)
+			root := fragment(t, t.TempDir(), tt.content)
+			_, err := config.Load(root, config.Options{Builtins: builtins, Cache: t.TempDir()})
 			wantError(t, err, tt.want)
 		})
 	}

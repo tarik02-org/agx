@@ -17,8 +17,7 @@ func TestHarnessSettings(t *testing.T) {
       model_providers:
         cpa: {wire_api: responses}
 `)
-	root := write(t, filepath.Join(dir, "agx.yaml"), `imports: [{path: more.yaml}]
-harnesses:
+	root := fragment(t, dir, `harnesses:
   codex:
     settings:
       model: o3
@@ -33,8 +32,8 @@ harnesses:
       instructions: !file prompt.md
       model_providers:
         cpa: {name: CPA, base_url: "http://127.0.0.1:8317/v1", max_retries: 3}
-`)
-	c, err := config.Load(root, filepath.Join(dir, "cache"), builtins)
+`, "more.yaml")
+	c, err := config.Load(root, config.Options{Builtins: builtins, Cache: filepath.Join(dir, "cache")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +58,7 @@ harnesses:
 	for _, s := range h.SettingSources {
 		sources[config.FormatSettingPath(s.Path)] = filepath.Base(s.Source.Path)
 	}
-	if sources["sandbox_workspace_write.network_access"] != "agx.yaml" ||
+	if sources["sandbox_workspace_write.network_access"] != "main.yaml" ||
 		sources["model_providers.cpa.wire_api"] != "more.yaml" || len(sources) != 9 {
 		t.Fatalf("sources = %v", sources)
 	}
@@ -69,11 +68,11 @@ func TestHarnessSettingsErrors(t *testing.T) {
 	for name, tt := range map[string]struct{ config, want string }{
 		"secret": {
 			"harnesses:\n  codex:\n    settings:\n      token: !secret t\n",
-			"agx.yaml:4: !secret is not allowed in harness settings",
+			"main.yaml:4: !secret is not allowed in harness settings",
 		},
 		"env": {
 			"harnesses:\n  claude:\n    settings:\n      env: {KEY: !env KEY}\n",
-			"agx.yaml:4: !env is not allowed in harness settings",
+			"main.yaml:4: !env is not allowed in harness settings",
 		},
 		"pi": {
 			"harnesses:\n  pi-work:\n    base: pi\n    settings: {defaultModel: x}\n",
@@ -89,12 +88,12 @@ func TestHarnessSettingsErrors(t *testing.T) {
 		},
 		"not a map": {
 			"harnesses:\n  codex:\n    settings: [a]\n",
-			"settings must be a mapping",
+			"settings: expected a mapping, not a list",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), tt.config)
-			_, err := config.Load(root, filepath.Join(t.TempDir(), "cache"), builtins)
+			root := fragment(t, t.TempDir(), tt.config)
+			_, err := config.Load(root, config.Options{Builtins: builtins, Cache: filepath.Join(t.TempDir(), "cache")})
 			wantError(t, err, tt.want)
 		})
 	}
@@ -105,9 +104,8 @@ func TestHarnessSettingsErrors(t *testing.T) {
 			filepath.Join(dir, "a.yaml"),
 			"harnesses:\n  codex:\n    settings: {model_providers: {cpa: {name: A}}}\n",
 		)
-		root := write(t, filepath.Join(dir, "agx.yaml"),
-			"imports: [{path: a.yaml}]\nharnesses:\n  codex:\n    settings: {model_providers: {cpa: {name: B}}}\n")
-		_, err := config.Load(root, filepath.Join(dir, "cache"), builtins)
+		root := fragment(t, dir, "harnesses:\n  codex:\n    settings: {model_providers: {cpa: {name: B}}}\n", "a.yaml")
+		_, err := config.Load(root, config.Options{Builtins: builtins, Cache: filepath.Join(dir, "cache")})
 		wantError(t, err, "settings model_providers.cpa.name already set at", "a.yaml:3")
 	})
 }

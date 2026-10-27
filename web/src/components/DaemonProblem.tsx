@@ -38,6 +38,8 @@ export function DaemonProblem({ error }: { readonly error: DaemonError }) {
       return null;
     case "failed_precondition":
       return <Problem title="Not possible here">{error.message}</Problem>;
+    case "choose_file":
+      return <Problem title="Choose a file">{error.message}</Problem>;
     case "needs_login":
       return (
         <Problem title="Sign-in needed">
@@ -49,6 +51,7 @@ export function DaemonProblem({ error }: { readonly error: DaemonError }) {
     case "timeout":
     case "internal":
     case "mcp_failed":
+    case "network":
       return <Problem title="Request failed">{error.message}</Problem>;
   }
 }

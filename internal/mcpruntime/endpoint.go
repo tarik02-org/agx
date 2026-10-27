@@ -17,7 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/tarik02-org/agx/internal/auth"
@@ -63,33 +62,22 @@ type Endpoint struct {
 	starting       int
 	remoteSessions map[string]*remoteSession
 	generation     uint64
-	closeDone      chan struct{}
 	closed         bool
-	// closing holds the stdio sessions Close waits for, so Kill can still reach them.
-	closing []*stdioSession
-	state   string
+	state          string
 	// problem explains the latest failure for runtime views; it never contains values.
 	problem string
 }
 
+// stdioSession is a harness session on a stdio server's process: one it shares, or its own.
 type stdioSession struct {
 	transport  *mcp.StreamableServerTransport
 	downstream mcp.Connection
-	// closeUpstream closes the connection to the session's own process, or leaves its shared
-	// server.
-	closeUpstream func()
-	cancel        context.CancelFunc
-	// kill ends the server's process tree at once, or only leaves a shared server; exited
-	// closes once its process exited, or once the session left its shared server.
-	kill   func()
-	exited chan struct{}
-	// process is the session's own process; shared is the server a shared session joined.
-	process  *process
-	shared   *sharedServer
-	done     sync.Once
-	ended    chan struct{}
-	active   int
-	lastUsed time.Time
+	client     *sharedClient
+	cancel     context.CancelFunc
+	done       sync.Once
+	ended      chan struct{}
+	active     int
+	lastUsed   time.Time
 }
 
 type remoteSession struct {
@@ -102,7 +90,8 @@ type remoteSession struct {
 
 // New returns the endpoint of MCP server id. A stdio server whose definition sets share joins
 // a server of shared rooted at root: the launch directory or repository root its share mode
-// keys on, empty for global. Without shared, every session gets its own process.
+// keys on, empty for global; any other gets a process of shared per session. Without shared,
+// the endpoint runs its processes itself.
 func New(
 	ctx context.Context,
 	id config.ID,
@@ -124,11 +113,14 @@ func New(
 		auth:           manager,
 		sessions:       map[string]*stdioSession{},
 		remoteSessions: map[string]*remoteSession{},
-		closeDone:      make(chan struct{}),
 		state:          "connecting",
+		shared:         shared,
+		shareRoot:      root,
 	}
-	if shared != nil && c.Transport == "stdio" && c.ShareMode() != config.ShareNone {
-		e.shared, e.shareRoot = shared, root
+	if shared == nil {
+		e.shared = NewShared(ctx, "", nil)
+	}
+	if c.Transport == "stdio" {
 		e.shareKey = shareKey(id, c, root, secrets, inputs)
 	}
 	go e.expireIdle()
@@ -169,55 +161,41 @@ func (e *Endpoint) resolve(
 	)
 }
 
+// setState must be called with e.mu held.
+func (e *Endpoint) setState(state, problem string) {
+	if e.state != state || e.problem != problem {
+		e.state, e.problem = state, problem
+		e.shared.notify()
+	}
+}
+
 // fail must be called with e.mu held.
 func (e *Endpoint) fail(err error) {
 	if e.closed {
 		return
 	}
-	e.state = "failed"
+	state := "failed"
 	if errors.As(err, &needsAuth{}) {
-		e.state = "needs_auth"
+		state = "needs_auth"
 	}
-	e.problem = err.Error()
+	e.setState(state, err.Error())
 }
 
-// Close ends every session and waits until their stdio servers exited: each gets its input
-// closed first, so it can exit by itself, and is killed only when it outlasts the grace periods.
-// Remote sessions are deleted upstream.
+// Close ends every session, which lets the stdio processes of none else exit, and deletes remote
+// sessions upstream.
 func (e *Endpoint) Close() {
 	e.mu.Lock()
 	if e.closed {
 		e.mu.Unlock()
-		<-e.closeDone
 		return
 	}
+	e.setState("failed", e.problem)
 	e.closed = true
-	e.state = "failed"
 	e.cancel()
 	e.inputs = nil
 	stdio, remote := e.takeSessionsLocked(func(int, time.Time) bool { return true })
-	e.closing = stdio
 	e.mu.Unlock()
-	defer close(e.closeDone)
 	e.release(stdio, remote)
-	for _, s := range stdio {
-		<-s.exited
-	}
-}
-
-// Kill ends the endpoint like Close, but kills its stdio servers at once, also those a Close
-// in progress waits for.
-func (e *Endpoint) Kill() {
-	e.mu.Lock()
-	stdio := slices.Clone(e.closing)
-	for _, s := range e.sessions {
-		stdio = append(stdio, s)
-	}
-	e.mu.Unlock()
-	for _, s := range stdio {
-		s.kill()
-	}
-	e.Close()
 }
 
 // Reset ends all sessions and the credentials cached with them while keeping the
@@ -229,7 +207,7 @@ func (e *Endpoint) Reset() {
 		return
 	}
 	e.generation++
-	e.state = "connecting"
+	e.setState("connecting", e.problem)
 	stdio, remote := e.takeSessionsLocked(func(int, time.Time) bool { return true })
 	e.mu.Unlock()
 	e.release(stdio, remote)
@@ -318,10 +296,9 @@ func (e *Endpoint) deleteUpstream(upstreamID, credential string, headers map[str
 	}
 }
 
-// close ends the session without waiting for its server: cancelling the session's context
-// starts the server's shutdown (see startStdio).
+// close ends the session without waiting for its server, which stops once no session uses it.
 func (s *stdioSession) close() {
-	s.done.Do(func() { s.cancel(); s.closeUpstream(); _ = s.downstream.Close(); close(s.ended) })
+	s.done.Do(func() { s.cancel(); s.client.end(); _ = s.downstream.Close(); close(s.ended) })
 }
 
 func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -360,16 +337,15 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	e.serveStdio(w, r)
 }
 
-func initialRequest(r *http.Request) ([]byte, error) {
+// initialRequest checks that a request without a session ID initializes one, and returns the
+// protocol version it asks for.
+func initialRequest(r *http.Request) (string, error) {
 	if r.Method != http.MethodPost {
-		return nil, fmt.Errorf("session ID required")
-	}
-	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
-		return nil, fmt.Errorf("Content-Type must be application/json")
+		return "", fmt.Errorf("session ID required")
 	}
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	var msg struct {
 		JSONRPC string          `json:"jsonrpc"`
@@ -378,40 +354,32 @@ func initialRequest(r *http.Request) ([]byte, error) {
 		Params  json.RawMessage `json:"params"`
 	}
 	if err := json.Unmarshal(data, &msg); err != nil {
-		return nil, fmt.Errorf("invalid initialization request")
+		return "", fmt.Errorf("invalid initialization request")
 	}
 	if msg.JSONRPC != "2.0" || msg.Method != "initialize" || len(msg.ID) == 0 || string(msg.ID) == "null" {
-		return nil, fmt.Errorf("expected initialize request with an ID")
+		return "", fmt.Errorf("expected initialize request with an ID")
 	}
 	var params struct {
 		ProtocolVersion string `json:"protocolVersion"`
 	}
 	if json.Unmarshal(msg.Params, &params) != nil || params.ProtocolVersion == "" {
-		return nil, fmt.Errorf("missing protocolVersion")
+		return "", fmt.Errorf("missing protocolVersion")
 	}
 	r.Body = io.NopCloser(bytes.NewReader(data))
-	return data, nil
+	return params.ProtocolVersion, nil
 }
 
 func (e *Endpoint) serveStdio(w http.ResponseWriter, r *http.Request) {
 	id := r.Header.Get("Mcp-Session-Id")
 	var s *stdioSession
 	if id == "" {
-		initial, err := initialRequest(r)
+		version, err := initialRequest(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		var init struct {
-			Params struct {
-				ProtocolVersion string `json:"protocolVersion"`
-			} `json:"params"`
-		}
-		_ = json.Unmarshal(initial, &init)
-		switch init.Params.ProtocolVersion {
-		case "2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25":
-		default:
-			http.Error(w, "stdio bridge supports MCP through 2025-11-25", http.StatusBadRequest)
+		if !slices.Contains(protocolVersions, version) {
+			http.Error(w, "stdio bridge supports MCP through "+sharedProtocol, http.StatusBadRequest)
 			return
 		}
 		id, s = e.openStdio(w)
@@ -455,12 +423,6 @@ func (e *Endpoint) serveStdio(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "GET requires text/event-stream", http.StatusNotAcceptable)
 		return
 	}
-	accept := r.Header.Get("Accept")
-	if r.Method == http.MethodPost &&
-		(!strings.Contains(accept, "application/json") || !strings.Contains(accept, "text/event-stream")) {
-		http.Error(w, "Accept must contain application/json and text/event-stream", http.StatusNotAcceptable)
-		return
-	}
 	w.Header().Set("Mcp-Session-Id", id)
 	s.transport.ServeHTTP(w, r)
 }
@@ -489,11 +451,7 @@ func (e *Endpoint) openStdio(w http.ResponseWriter) (string, *stdioSession) {
 	go e.release(idleStdio, idleRemote)
 
 	id := securefs.Token()
-	start := e.startStdio
-	if e.shared != nil {
-		start = e.joinShared
-	}
-	s, err := start(id, inputs)
+	s, err := e.join(id, inputs)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.starting--
@@ -533,7 +491,7 @@ func (e *Endpoint) openStdio(w http.ResponseWriter) (string, *stdioSession) {
 	s.active = 1
 	s.lastUsed = time.Now()
 	e.sessions[id] = s
-	e.state, e.problem = "ready", ""
+	e.setState("ready", "")
 	return id, s
 }
 
@@ -564,27 +522,18 @@ func (e *Endpoint) startProcess(base, resolve context.Context, inputs map[string
 		}
 		cmd.Env = append(cmd.Env, name+"="+value)
 	}
-	platform.IsolateOwned(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		cancel()
 		return nil, err
 	}
-	exited := make(chan struct{})
-	// Most stdio servers exit when their input ends; a termination request and then the kill
-	// that WaitDelay sends cover those that do not.
+	// Most stdio servers exit when their input ends; a termination request and then a kill of
+	// their group cover those that do not, and WaitDelay those that escaped the group.
 	cmd.Cancel = func() error {
 		_ = stdin.Close()
-		time.AfterFunc(inputGrace, func() {
-			select {
-			case <-exited:
-			default:
-				platform.Terminate(cmd)
-			}
-		})
 		return nil
 	}
-	cmd.WaitDelay = inputGrace + terminateGrace
+	cmd.WaitDelay = inputGrace + 2*terminateGrace
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		_ = stdin.Close()
@@ -592,128 +541,49 @@ func (e *Endpoint) startProcess(base, resolve context.Context, inputs map[string
 		return nil, err
 	}
 	// Upstream stderr is deliberately not copied: it can contain credentials.
-	if err := cmd.Start(); err != nil {
-		_ = stdin.Close()
-		_ = stdout.Close()
-		cancel()
-		return nil, err
-	}
-	owned, err := platform.Own(cmd)
+	group, err := platform.Start(cmd)
 	if err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
 		_ = stdin.Close()
 		_ = stdout.Close()
 		cancel()
 		return nil, err
 	}
-	// On Windows, the kill closes the job handle, which must happen once.
-	kill := sync.OnceFunc(owned)
+	context.AfterFunc(ctx, func() {
+		time.AfterFunc(inputGrace, group.Terminate)
+		time.AfterFunc(inputGrace+terminateGrace, group.Kill)
+	})
 	conn, err := (&mcp.IOTransport{Reader: stdout, Writer: stdin}).Connect(ctx)
 	if err != nil {
-		kill()
-		_ = cmd.Wait()
+		group.Kill()
+		_ = group.Wait()
 		cancel()
 		return nil, err
 	}
+	exited := make(chan struct{})
 	go func() {
-		_ = cmd.Wait()
+		_ = group.Wait()
 		close(exited)
-		// Descendants the server left behind end with it.
-		kill()
 	}()
 	return &process{
 		pid:     cmd.Process.Pid,
 		started: time.Now(),
 		conn:    conn,
 		cancel:  cancel,
-		kill:    kill,
+		kill:    group.Kill,
 		exited:  exited,
 	}, nil
 }
 
-func (e *Endpoint) startStdio(id string, inputs map[string]string) (*stdioSession, error) {
-	ctx, cancel := context.WithCancel(e.ctx)
-	p, err := e.startProcess(ctx, ctx, inputs)
-	if err != nil {
-		cancel()
-		return nil, err
-	}
-	up := p.conn
-	t := &mcp.StreamableServerTransport{SessionID: id}
-	down, err := t.Connect(ctx)
-	if err != nil {
-		p.kill()
-		_ = up.Close()
-		cancel()
-		<-p.exited
-		return nil, err
-	}
-	s := &stdioSession{
-		transport:     t,
-		downstream:    down,
-		closeUpstream: func() { _ = up.Close() },
-		cancel:        cancel,
-		kill:          p.kill,
-		exited:        p.exited,
-		process:       p,
-		ended:         make(chan struct{}),
-	}
-	go func() {
-		defer s.close()
-		for {
-			message, err := down.Read(ctx)
-			if err != nil {
-				return
-			}
-			if err := up.Write(ctx, message); err != nil {
-				return
-			}
-		}
-	}()
-	go func() {
-		defer s.close()
-		for {
-			message, err := up.Read(ctx)
-			if err != nil {
-				return
-			}
-			// The streamable transport rejects messages that have no open stream to go to:
-			// notifications while the client holds no GET stream, or responses whose request
-			// stream disconnected. Delivery is best effort per the MCP spec; the session lives on.
-			// A closed session also surfaces here and ends the loop through down.Read.
-			if err := down.Write(ctx, message); err != nil {
-				request, ok := message.(*jsonrpc.Request)
-				if !ok || !request.IsCall() {
-					continue
-				}
-				// Answer undeliverable server requests so the server does not wait forever.
-				refusal := &jsonrpc.Response{
-					ID: request.ID,
-					Error: &jsonrpc.Error{
-						Code:    jsonrpc.CodeInternalError,
-						Message: "client has no open stream for server requests",
-					},
-				}
-				if err := up.Write(ctx, refusal); err != nil {
-					return
-				}
-			}
-		}
-	}()
-	go func() {
-		<-p.exited
-		e.sessionEnded(id, s)
-	}()
-	return s, nil
-}
-
-// joinShared opens a client session on the endpoint's shared server, starting the server
-// when none runs for its share key.
-func (e *Endpoint) joinShared(id string, inputs map[string]string) (*stdioSession, error) {
+// join opens session id on the endpoint's server process, starting the process when none runs
+// for its share key; a server that shares no process gets one for the session alone.
+func (e *Endpoint) join(id string, inputs map[string]string) (*stdioSession, error) {
 	ctx, cancel := context.WithCancel(e.ctx)
 	joinCtx, stopJoin := context.WithTimeout(ctx, sharedStartTimeout)
-	server, err := e.shared.join(joinCtx, e, inputs)
+	key := e.shareKey
+	if e.definition.ShareMode() == config.ShareNone {
+		key += "/" + id
+	}
+	server, err := e.shared.join(joinCtx, e, key, inputs)
 	stopJoin()
 	if err != nil {
 		cancel()
@@ -732,20 +602,7 @@ func (e *Endpoint) joinShared(id string, inputs map[string]string) (*stdioSessio
 		cancel()
 		return nil, err
 	}
-	exited := make(chan struct{})
-	s := &stdioSession{
-		transport:  t,
-		downstream: down,
-		closeUpstream: func() {
-			client.end()
-			close(exited)
-		},
-		cancel: cancel,
-		exited: exited,
-		shared: server,
-		ended:  make(chan struct{}),
-	}
-	s.kill = s.close
+	s := &stdioSession{transport: t, downstream: down, client: client, cancel: cancel, ended: make(chan struct{})}
 	go func() {
 		<-client.Ended()
 		e.sessionEnded(id, s)
@@ -767,50 +624,17 @@ type Process struct {
 	StopsAt time.Time
 }
 
-// Processes lists the processes of the endpoint's unshared sessions, and the IDs of the
-// shared processes its other sessions use.
-func (e *Endpoint) Processes() ([]Process, []int) {
+// Processes lists the IDs of the processes the endpoint's sessions use.
+func (e *Endpoint) Processes() []int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	own, shared := []Process{}, []int{}
+	pids := []int{}
 	for _, s := range e.sessions {
-		switch {
-		case s.process != nil:
-			own = append(own, Process{
-				ID:        e.id,
-				PID:       s.process.pid,
-				Directory: e.definition.Cwd,
-				Share:     config.ShareNone,
-				Sessions:  1,
-				Started:   s.process.started,
-			})
-		case s.shared != nil:
-			if pid := s.shared.pid(); pid != 0 {
-				shared = append(shared, pid)
-			}
+		if pid := s.client.server.pid(); pid != 0 {
+			pids = append(pids, pid)
 		}
 	}
-	return own, shared
-}
-
-// StopProcess ends the session whose own process has this process ID, which stops the process.
-// It reports whether the endpoint had one.
-func (e *Endpoint) StopProcess(pid int) bool {
-	e.mu.Lock()
-	var found *stdioSession
-	for id, s := range e.sessions {
-		if s.process != nil && s.process.pid == pid {
-			found = s
-			delete(e.sessions, id)
-			break
-		}
-	}
-	e.mu.Unlock()
-	if found == nil {
-		return false
-	}
-	found.close()
-	return true
+	return pids
 }
 
 // sessionEnded forgets session id once its process exited or it left its shared server.
@@ -822,7 +646,7 @@ func (e *Endpoint) sessionEnded(id string, s *stdioSession) {
 		delete(e.sessions, id)
 	}
 	if !e.closed {
-		e.state = "connecting"
+		e.setState("connecting", e.problem)
 	}
 }
 
@@ -888,18 +712,58 @@ func (e *Endpoint) serveRemote(w http.ResponseWriter, r *http.Request) {
 			forget()
 		}
 		e.mu.Unlock()
-		if errors.As(err, &needsAuth{}) {
+		switch {
+		case errors.As(err, &needsAuth{}):
 			http.Error(w, "upstream credential unavailable; see agx secret status", http.StatusUnauthorized)
-		} else {
+		case errors.Is(err, auth.ErrRefreshFailed):
+			http.Error(w, "upstream credential refresh failed; see agx launch show", http.StatusServiceUnavailable)
+		default:
 			http.Error(w, "upstream header unavailable; see agx launch show", http.StatusBadGateway)
 		}
 		return
 	}
+	secretID := e.definition.Auth.Secret
+	secret := e.secrets[secretID]
+	// A 401 for an OAuth token is answered by refreshing it once and resending the request, so
+	// the body must be replayable; MCP POSTs are single JSON-RPC messages.
+	refreshable := secret.Kind == "oauth" && credential != ""
+	if refreshable && r.Body != nil && r.Body != http.NoBody {
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "cannot read request", http.StatusBadRequest)
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(data))
+		r.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(data)), nil }
+	}
+	// refreshErr holds why a rejected token could not be renewed, for the 401's explanation.
+	var refreshErr error
+	transport := roundTripper(func(req *http.Request) (*http.Response, error) {
+		resp, err := http.DefaultTransport.RoundTrip(req)
+		if err != nil || resp.StatusCode != http.StatusUnauthorized || !refreshable {
+			return resp, err
+		}
+		var renewed string
+		renewed, refreshErr = e.auth.Refresh(req.Context(), secretID, secret, origin, credential)
+		if refreshErr == nil {
+			retry := req.Clone(req.Context())
+			if req.GetBody != nil {
+				// The buffered body above cannot fail to replay.
+				retry.Body, _ = req.GetBody()
+			}
+			retry.Header.Set("Authorization", "Bearer "+renewed)
+			_ = resp.Body.Close()
+			credential = renewed
+			return http.DefaultTransport.RoundTrip(retry)
+		}
+		return resp, nil
+	})
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	stop := context.AfterFunc(e.ctx, cancel)
 	defer stop()
 	proxy := &httputil.ReverseProxy{
+		Transport: transport,
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
 			// SetURL appends the incoming launch path; the upstream is the configured URL itself.
@@ -928,7 +792,7 @@ func (e *Endpoint) serveRemote(w http.ResponseWriter, r *http.Request) {
 			resp.Header.Del("WWW-Authenticate")
 			var unauthorized error
 			if resp.StatusCode == http.StatusUnauthorized {
-				unauthorized = e.unauthorized(resp.Request.Context(), credential, challenge)
+				unauthorized = e.unauthorized(resp.Request.Context(), credential, challenge, refreshErr)
 			}
 			success := resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices
 			e.mu.Lock()
@@ -957,7 +821,7 @@ func (e *Endpoint) serveRemote(w http.ResponseWriter, r *http.Request) {
 			case initial && success:
 				session.upstreamID = resp.Header.Get("Mcp-Session-Id")
 				session.credential, session.headers = credential, headers
-				e.state, e.problem = "ready", ""
+				e.setState("ready", "")
 			case initial:
 				forget()
 				e.fail(fmt.Errorf("upstream rejected initialization with HTTP %d", resp.StatusCode))
@@ -1010,7 +874,14 @@ func (e *Endpoint) remoteCredentials(
 	origin string,
 ) (string, map[string]string, error) {
 	credential := ""
-	if id := e.definition.Auth.Secret; id != "" {
+	switch id := e.definition.Auth.Secret; {
+	case e.definition.Auth.Env != "" || e.definition.Auth.File != "":
+		value, err := e.resolve(ctx, "mcp "+string(e.id)+" auth", e.definition.Auth.Value, inputs)
+		if err != nil {
+			return "", nil, needsAuth{err}
+		}
+		credential = value
+	case id != "":
 		secret := e.secrets[id]
 		value, err := e.auth.Value(ctx, id, secret, e.secrets, inputs, origin)
 		switch {
@@ -1018,6 +889,8 @@ func (e *Endpoint) remoteCredentials(
 			credential = value
 		case secret.Implicit && errors.Is(err, auth.ErrNoCredential):
 			// On-demand OAuth sends no credential until the server asks for a login.
+		case errors.Is(err, auth.ErrRefreshFailed):
+			return "", nil, fmt.Errorf("mcp %s auth: %w", e.id, err)
 		default:
 			return "", nil, needsAuth{fmt.Errorf("mcp %s auth: %w", e.id, err)}
 		}
@@ -1040,15 +913,17 @@ func (e *Endpoint) remoteCredentials(
 // unauthorized classifies an upstream 401 as needing authorization when the server has an auth
 // secret. On-demand OAuth applies only once the server advertises OAuth discovery; otherwise,
 // as for servers without auth, the 401 is an ordinary upstream failure and nil is returned.
-func (e *Endpoint) unauthorized(ctx context.Context, credential, challenge string) error {
+func (e *Endpoint) unauthorized(ctx context.Context, credential, challenge string, refreshErr error) error {
 	id := e.definition.Auth.Secret
-	if id == "" {
+	switch secret := e.secrets[id]; {
+	case e.definition.Auth.Env != "" || e.definition.Auth.File != "":
+		return needsAuth{fmt.Errorf("MCP server %s rejected the credential of %s", e.id, e.definition.Auth)}
+	case id == "":
 		return nil
-	}
-	secret := e.secrets[id]
-	if secret.Kind != "oauth" {
+	case secret.Kind != "oauth":
 		return needsAuth{fmt.Errorf("MCP server %s rejected the credential of secret %s", e.id, id)}
 	}
+	secret := e.secrets[id]
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	err := e.auth.RequireLogin(ctx, id, secret, e.definition.URL, challenge)
@@ -1058,8 +933,15 @@ func (e *Endpoint) unauthorized(ctx context.Context, credential, challenge strin
 	if credential == "" {
 		return needsAuth{fmt.Errorf("MCP server %s requires login; run agx secret login %s", e.id, id)}
 	}
+	if refreshErr != nil {
+		return needsAuth{fmt.Errorf("MCP server %s rejected its login: %w", e.id, refreshErr)}
+	}
 	return needsAuth{fmt.Errorf("MCP server %s rejected its login; run agx secret login %s", e.id, id)}
 }
+
+type roundTripper func(*http.Request) (*http.Response, error)
+
+func (f roundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 // validHeaderValue follows RFC 9110 field values: no control characters except tab.
 func validHeaderValue(value string) bool {

@@ -1,6 +1,6 @@
 # Support OpenCode through one plugin that asks the daemon per location
 
-Status: proposed.
+Status: deferred. Not implemented.
 
 OpenCode 2 runs one server for many directories: the shared background service
 that every `opencode` attaches to, a private `--standalone` server, or
@@ -59,8 +59,7 @@ there. A subdirectory is its own location.
    lease, as for other launches). When the daemon is unreachable, setup still
    succeeds with no resources and the loop keeps retrying; when it answers, the
    plugin fills the state and reloads.
-3. A renewal that finds the launch unknown (a daemon replaced without
-   restoring it) or its snapshot outdated (configuration or packages changed)
+3. A renewal that finds the launch unknown (a daemon replaced) or its snapshot outdated (configuration or packages changed)
    prepares a new location launch and reloads. Unlike other harnesses, OpenCode
    picks up new MCP endpoints, skills, and instructions without a restart.
 4. The cleanup function finishes the launch. OpenCode runs it when the plugin
@@ -80,10 +79,9 @@ daemon's answer before touching an editor.
 environment_inputs)`, and `RenewLaunch`/`FinishLaunch` accept the location
 launch's lifecycle token. A location launch is a launch without a wrapper: mode
 `plugin`, harness `opencode` (or the definition named by `AGX_HARNESS`, below),
-its own grant and lifecycle token, shown by `agx launch list`. It is
-persisted like other launches ([ADR 0016](0016-launches-survive-daemon-restarts.md)),
-but a restarted daemon does not need `RestoreLaunch` from it: the plugin
-prepares again and reloads.
+its own grant and lifecycle token, shown by `agx launch list`. Unlike other
+launches ([ADR 0016](0016-launches-survive-daemon-restarts.md)), it is not
+attached to a restarted daemon: the plugin prepares again and reloads.
 
 Environment inputs (`!env` values) come from the OpenCode server's own
 environment: the daemon answers a first request with the names it needs, as it

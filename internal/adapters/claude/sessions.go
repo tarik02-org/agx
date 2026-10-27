@@ -1,7 +1,6 @@
 package claude
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -87,7 +86,7 @@ func parseTranscript(f *os.File, info fs.FileInfo) (adapters.Session, bool, erro
 	err := adapters.ScanHead(f, func(line []byte) bool {
 		complete := session.Message != "" && session.Directory != "" && !session.Started.IsZero()
 		// Titles may follow anywhere, so once the rest is known only lines that can carry one are decoded.
-		if complete && !containsAny(line, titleMarkers) {
+		if complete && !adapters.ContainsAny(line, titleMarkers) {
 			return true
 		}
 		var e entry
@@ -116,7 +115,7 @@ func parseTranscript(f *os.File, info fs.FileInfo) (adapters.Session, bool, erro
 	if err == nil {
 		err = adapters.ScanTail(f, info.Size(), func(line []byte) {
 			var e entry
-			if containsAny(line, titleMarkers) && json.Unmarshal(line, &e) == nil {
+			if adapters.ContainsAny(line, titleMarkers) && json.Unmarshal(line, &e) == nil {
 				title.add(e)
 			}
 		})
@@ -161,13 +160,4 @@ func userText(content json.RawMessage) string {
 		return ""
 	}
 	return text
-}
-
-func containsAny(line []byte, markers [][]byte) bool {
-	for _, m := range markers {
-		if bytes.Contains(line, m) {
-			return true
-		}
-	}
-	return false
 }

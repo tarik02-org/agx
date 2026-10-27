@@ -86,7 +86,7 @@ func parseRemoteRefs(out string) []Ref {
 		case a.Tag != b.Tag:
 			return boolOrder(!a.Tag)
 		case a.Tag:
-			return compareVersions(b.Name, a.Name)
+			return naturalCompare(b.Name, a.Name)
 		default:
 			return cmp.Compare(a.Name, b.Name)
 		}
@@ -101,8 +101,8 @@ func boolOrder(first bool) int {
 	return 1
 }
 
-// compareVersions orders names with their digit runs compared as numbers, so v1.10 follows v1.9.
-func compareVersions(a, b string) int {
+// naturalCompare orders names with their digit runs compared as numbers, so v1.10 follows v1.9.
+func naturalCompare(a, b string) int {
 	for a != "" && b != "" {
 		aDigits, bDigits := unicode.IsDigit(rune(a[0])), unicode.IsDigit(rune(b[0]))
 		if aDigits != bDigits {

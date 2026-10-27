@@ -46,14 +46,16 @@ with:
 agx secret login tracker
 ```
 
-`agx mcp login tracker` does the same for a server's own login.
-
 This opens the authorization page in your browser and waits until you finish.
 `--no-browser` prints the URL instead, for example to open it on another device
 of yours; the browser must still be able to reach `127.0.0.1` on this machine,
 since that is where the login returns. Tokens are stored in the OS keychain
 (macOS Keychain, Windows Credential Manager, or the Secret Service on Linux) and
-refreshed automatically.
+refreshed automatically: an expired access token is renewed when the server is
+next used, and one the server rejects early, with 401, is renewed and the request
+sent again. `agx secret status` shows such a token as "renews on next use". When
+the authorization server refuses the refresh token itself, the secret reports
+`needs_login` with the server's error code until you log in again.
 
 Until you log in, the server reports `needs-auth`, and tool calls from the
 harness fail with an error telling you to run the login.
@@ -84,7 +86,8 @@ daemon receives the login there, on a port that can change. agx acts as a
 public client: it uses PKCE and no client secret, so this only works with
 providers that allow public clients.
 
-Optional OAuth fields: `scopes` (a list), `issuer`, and `resource`.
+Optional OAuth fields: `scopes` (a list), `issuer`, and `resource`. The issuer and its
+endpoints must use https; plain http is accepted only on loopback addresses.
 
 ### GitHub
 
@@ -94,7 +97,7 @@ instead, stored in the OS keychain:
 
 ```sh
 agx mcp add github https://api.githubcopilot.com/mcp/ --auth keychain
-agx secret set github --stdin < github-token.txt
+agx secret set github < github-token.txt
 ```
 
 agx sends the token as a bearer token. To replace it, run `secret set` again.
@@ -116,6 +119,9 @@ mcp:
   shared:
     url: https://shared.example.com/mcp
     auth: !secret team-token                  # a secret defined under secrets
+  ci:
+    url: https://ci.example.com/mcp
+    auth: !env CI_TOKEN                       # or !file PATH
   public:
     url: https://public.example.com/mcp
     auth: none                                # never send credentials
@@ -124,14 +130,16 @@ mcp:
 - **Omitted**: the server is used without credentials until it answers with an
   OAuth challenge; then it needs `agx secret login <id>`.
 - **`oauth`**, or a mapping with `kind: oauth`: always OAuth.
-- **`keychain`**: a token stored with `agx secret set github --stdin`, sent as
+- **`keychain`**: a token stored with `agx secret set github`, sent as
   a bearer token.
-- **`!secret <id>`**: any [secret](secrets.md), such as an environment variable
-  or a command's output, sent as a bearer token. Several servers can share one.
+- **`!secret <id>`**: any [secret](secrets.md), such as a command's output,
+  sent as a bearer token. Several servers can share one.
+- **`!env <NAME>`** or **`!file <path>`**: a variable of the shell you launch
+  from, or a file's contents, sent as a bearer token.
 - **`none`**: no credentials.
 
-The secret of an inline `auth` takes the server's ID: `agx secret set github
---stdin`, `agx secret login sso`, `agx secret logout github`.
+The secret of an inline `auth` takes the server's ID: `agx secret set github`,
+`agx secret login sso`, `agx secret logout github`.
 
 ## Testing a server
 
@@ -198,8 +206,9 @@ directory per call, and printed as one line per file:
 [image/png, 34 KB] /tmp/agx-mcp-123/1.png
 ```
 
-`--json` prints the result, with file content as `{type, mime_type, path,
-size}` instead of base64:
+`--json` prints the result, with the content items as the server sent them,
+except that binary content names its `path` and `size` instead of carrying
+base64 data:
 
 ```json
 {"version":1,"data":{"mcp_id":"tracker","tool":"search_issues","is_error":false,"content":[{"type":"text","text":"…"}],"structured_content":null}}
@@ -242,8 +251,8 @@ mcp:
 `load: on_demand` keeps the server out of every harness's configuration, while
 launches still select it as usual: `agx mcp tools` lists it, with its
 description, and `agx mcp call jira.<tool> …` calls it. `agx mcp add` takes
-`--load on_demand` and `--description <text>`; `agx mcp list`, `agx resolve`,
-and `agx explain` show the load mode.
+`--load on_demand` and `--description <text>`; `agx mcp list` and
+`agx explain` show the load mode.
 
 agx does not tell agents about on-demand servers itself. Add an instruction that
 does, worded for your setup, for example:
@@ -307,7 +316,7 @@ with the shared directory or repository (none for `global`) and refuses
 sampling and elicitation. `share` applies only to local servers; remote servers
 already serve many sessions.
 
-`agx mcp add` takes `--share`; `agx mcp list`, `agx resolve`, and `agx explain`
+`agx mcp add` takes `--share`; `agx mcp list` and `agx explain`
 show the share mode. `agx mcp ps` lists the local server processes running now,
 shared or not, with their sessions and launches, and when an idle one stops.
 `--cwd <directory>` keeps those working in exactly that directory, `--under

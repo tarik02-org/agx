@@ -36,7 +36,8 @@ agx mcp types [<server> ...] [--out <dir>] [--all]
   into a new temporary directory per call (`agx-mcp-*`). Human output prints a
   line per file, `[image/png, 34 KB] /tmp/agx-mcp-123/1.png`. `--json` prints
   `{"version":1,"data":{"mcp_id","tool","is_error","content":[…],"structured_content"}}`,
-  where a binary item carries `{type, mime_type, path, size}` instead of base64.
+  where content items are as the server sent them, except that binary data is
+  replaced by its `path` and `size`.
 - Exit codes: 0 on success, 1 on failure or a result with `isError` (the
   document still prints), 2 on usage errors. An unknown tool or invalid
   arguments fail with `invalid_request` and the closest tool or argument names;

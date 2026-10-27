@@ -16,56 +16,6 @@ keyring library's in-memory provider. CI also lints for Linux and Windows,
 checks that `buf generate` and `go generate` leave no diff, and builds the Nix
 package on Linux and macOS.
 
-## What the tests cover
-
-- **Configuration** (`internal/config`): import order, optional imports, glob
-  drop-ins and the default root, import cycles and errors inside imports;
-  override precedence between fragments and between configuration and packages;
-  package manifest rules and namespaces; inline definitions in every form and ID
-  collisions reported at both locations; generated skill validation; pinned
-  sources (`rev`, `hash`, `/nix/store`) and lock requirements; `~` expansion in
-  every place it applies, with `~user` rejected; scope resolution, removals,
-  re-additions, harness filters, symlink canonicalization, and traces;
-  instruction order; snapshot identity (content-sensitive, independent of line
-  numbers and `!file` content).
-- **Harness definitions**: field-by-field merging across fragments, set-once
-  conflicts, `override`, base chains, argument groups per mode, and validation
-  (cycles, unknown bases, shadowed commands, modes of another built-in).
-- **Injected values**: tag placement, resolution per mode, errors naming the
-  location but not the value, and that resolved values never appear in snapshot
-  or configuration JSON.
-- **Editing** (`internal/config/edit`): exact text after edits, with comments,
-  blank lines, quoting, flow style, and tags kept; reference removal and pruning;
-  writability checks and mode-preserving writes.
-- **Adapters**: mode classification of native arguments for each harness,
-  Codex `-C`/`--cd` rewriting, and the exact argv, environment, unset variables,
-  and artifacts `adapters.Build` produces for Codex, Claude Code, and Pi; Codex
-  thread plans; the Agent SDK `initialize` merge; and the app-server relay's
-  request, response, and notification rewrites against a fake host.
-- **Sessions**: parsing of small crafted Codex, Claude Code, and Pi stores in
-  `testdata/` (titles, first messages, subagents, malformed files, titles beyond
-  the read head), the parse cache, launch record matching and pruning, search.
-- **Shims**: install, sync, stale targets, scripts, and that files agx did not
-  create or that changed since are never replaced or removed.
-- **OAuth** (`internal/auth`): PKCE S256, state and callback replay rejection,
-  pending-login sharing, serialized refresh with rotation, origin binding,
-  logout, on-demand OAuth from a `401` with RFC 9728 resource validation,
-  cancellation, expiry, keychain item separation, and no plaintext fallback.
-- **End to end** (`internal/e2e`): builds `agx`, a fake harness, and a fake stdio
-  MCP server (Go programs, so they run on every OS), then checks `--version`,
-  passthrough without a daemon, a managed launch through a harness definition
-  with its skill and instructions artifacts, an MCP tool call through the daemon
-  with the launch grant, the finished launch revoking that grant, the Agent SDK
-  `initialize` merge on the harness's input, native exit status, and daemon
-  stop. The fake harness also serves a minimal Codex app server: two threads in
-  different scopes get their own MCP servers, grants, instructions, and disabled
-  plugins, and closing a thread revokes its grant only. Restarts: a running
-  launch's grant calls its tool again after a plain `daemon stop` and the next
-  daemon's start (the harness re-initializing on 404), after another build
-  replaces the busy daemon, and on a new port when the old one is taken; a
-  forced stop revokes the grant and clears the state file; an app-server
-  thread keeps working and new threads start after a restart.
-
 ## Exercised manually
 
 The real native harnesses were exercised on macOS arm64 with temporary account
@@ -93,7 +43,7 @@ children to their jobs before resuming them; the end-to-end test runs a stdio
 MCP server through that path in CI. Native Windows harness executables must be
 `.exe` files; PATH lookup skips `.cmd`/`.bat` wrappers and reports an actionable
 error when nothing else matches. Windows symlinks need Developer Mode, so shims
-there are hard links, and tests that need symlinks skip without them. Git
+there are copies, and tests that need symlinks skip without them. Git
 checkouts without symlink support store links as files, so their package hashes
 can differ from other platforms.
 
@@ -118,8 +68,8 @@ keeps its modification time and size; it publishes only valid configurations.
 An invalid reload blocks new preparations while existing launches retain their
 snapshots. Ended launches and package operations are pruned after an hour; idle
 MCP sessions after 30 minutes. Package caches and generated artifacts are
-retained; automatic garbage collection, upstream pooling, registries, a UI, and
-automatic native binary updates are deferred.
+retained; automatic garbage collection, registries, a UI, and automatic native
+binary updates are deferred.
 
 Managed instructions use Codex's `developer_instructions` override (a thread's
 `developerInstructions` under `app-server`), Claude's

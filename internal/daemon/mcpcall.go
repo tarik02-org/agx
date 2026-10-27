@@ -18,7 +18,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
-	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/mcpruntime"
 	"github.com/tarik02-org/agx/internal/mcptools"
@@ -58,7 +57,7 @@ func (s *Server) callScope(ctx context.Context, header http.Header, msg *v1.McpC
 		if msg.All {
 			return nil, rpcError(connect.CodeInvalidArgument, "all and launch_id exclude each other")
 		}
-		return s.launchScope(ctx, authorization, management, msg.LaunchId)
+		return s.launchScope(authorization, management, msg.LaunchId)
 	}
 	if !management {
 		return nil, rpcError(connect.CodeUnauthenticated, "management credential or launch grant required")
@@ -110,31 +109,15 @@ func scopeSnapshot(c *config.Config, ids []config.ID) *config.Snapshot {
 	return snapshot
 }
 
-func (s *Server) launchScope(
-	ctx context.Context,
-	authorization string,
-	management bool,
-	id string,
-) (*callScope, error) {
+func (s *Server) launchScope(authorization string, management bool, id string) (*callScope, error) {
 	s.mu.Lock()
 	l := s.launches[id]
 	token, bearer := strings.CutPrefix(authorization, "Bearer ")
 	if l == nil || !active(l.view.State) || time.Now().After(l.expires) ||
-		!management && (!bearer || !auth.Match(l.grant, token)) {
+		!management && (!bearer || !matches(l.grant, token)) {
 		s.mu.Unlock()
 		return nil, rpcError(connect.CodeUnauthenticated, "invalid or expired launch grant")
 	}
-	pending := l.restored && l.endpoints == nil && l.unavailable == "" && !l.threadServer
-	s.mu.Unlock()
-	if pending {
-		if err := s.revive(ctx, l, nil, false); err != nil {
-			return nil, rpcError(
-				connect.CodeUnavailable,
-				"the launch is restored after a daemon restart; retry shortly",
-			)
-		}
-	}
-	s.mu.Lock()
 	endpoints, snapshot, unavailable := l.endpoints, l.snapshot, l.unavailable
 	s.mu.Unlock()
 	if unavailable != "" {

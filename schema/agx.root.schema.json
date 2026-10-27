@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tarik02-org/agx/master/schema/agx.root.schema.json",
+  "$defs": {
+    "Daemon": {
+      "properties": {
+        "lease_seconds": {
+          "type": "integer",
+          "minimum": 3,
+          "description": "Launch lease length; defaults to 60."
+        },
+        "renew_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Lease renewal interval, shorter than the lease; defaults to 20."
+        },
+        "autostart": {
+          "type": "boolean",
+          "description": "Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    }
+  },
+  "properties": {
+    "fragments": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "description": "Fragments to load, relative to this file: paths, which must exist, or glob patterns, which may match nothing, loaded in lexical order."
+    },
+    "daemon": {
+      "$ref": "#/$defs/Daemon",
+      "description": "Launch lease timing and automatic daemon startup."
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "title": "agx root configuration"
+}

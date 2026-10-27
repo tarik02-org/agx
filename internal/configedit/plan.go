@@ -75,7 +75,6 @@ func (s *Session) Plan() (*Plan, error) {
 		plan.Files = append(plan.Files, PlannedFile{Path: path, Kind: Fragment, Before: f.Original(), After: after})
 		overlay[path] = after
 	}
-	fragments := len(plan.Files)
 	for _, path := range s.writeOrder {
 		before, err := os.ReadFile(path)
 		if errors.Is(err, fs.ErrNotExist) {
@@ -99,30 +98,13 @@ func (s *Session) Plan() (*Plan, error) {
 			return nil, coded(ReadOnly, err)
 		}
 	}
-	c, err := config.LoadWith(s.Paths.Config, s.Paths.Cache, s.Builtins, overlay)
+	c, err := config.Load(s.Paths.Config, config.Options{Builtins: s.Builtins, Cache: s.Paths.Cache, Overlay: overlay})
 	if err != nil {
 		return nil, errorf(
 			ConfigInvalid,
 			"the change would make the configuration invalid, so nothing was written: %w",
 			err,
 		)
-	}
-	for _, p := range plan.Files[:fragments] {
-		if slices.Contains(c.Files, p.Path) {
-			continue
-		}
-		// A fragment outside the configuration is checked on its own.
-		if _, err := config.LoadWith(p.Path, s.Paths.Cache, s.Builtins, overlay); err != nil {
-			return nil, errorf(
-				ConfigInvalid,
-				"the change would make %s invalid, so nothing was written: %w",
-				p.Path,
-				err,
-			)
-		}
-		if s.Warn != nil {
-			s.Warn("%s is not imported by %s; its definitions apply once it is", p.Path, s.Root)
-		}
 	}
 	for _, path := range slices.Sorted(maps.Keys(s.Locks)) {
 		current, err := os.ReadFile(path)

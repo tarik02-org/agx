@@ -82,7 +82,7 @@ func sopsValue(
 		return "", fmt.Errorf("secret %s: cannot read sops file %s", id, s.File)
 	}
 	ageKey := ""
-	if s.AgeKey.Tagged() {
+	if s.AgeKey.String() != "" {
 		ageKey, err = s.AgeKey.Resolve("secret "+string(id)+" age_key", env, secret)
 		if err != nil {
 			return "", err

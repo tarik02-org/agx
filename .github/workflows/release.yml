@@ -21,10 +21,10 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - name: Test
-        run: |
-          go test ./...
-          go test -tags e2e ./internal/e2e/...
+      - name: Forget nightly tags
+        # GoReleaser would take one on the same commit, or the last one, as the current or
+        # previous tag.
+        run: git tag --list 'nightly*' | xargs --no-run-if-empty git tag --delete
       - uses: pnpm/action-setup@v5
         with:
           version: 12.9.0

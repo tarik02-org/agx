@@ -2,22 +2,16 @@ package securefs
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
-	"strings"
 )
 
-func Token() string {
-	var b [32]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(b[:])
-}
+func Token() string { return rand.Text() }
 
 // Write never changes permissions of an existing parent; callers harden agx-owned directories with EnsureDir.
 func Write(path string, data []byte, mode os.FileMode) error {
@@ -58,94 +52,106 @@ func WriteJSON(path string, value any) error {
 
 func Within(root, path string) bool {
 	rel, err := filepath.Rel(root, path)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+	return err == nil && filepath.IsLocal(rel)
 }
 
+// Contained resolves rel inside root; os.Root rejects symlinks that leave it.
 func Contained(root, rel string) (string, error) {
-	if filepath.IsAbs(rel) {
-		return "", fmt.Errorf("package paths must be relative: %s", rel)
-	}
-	p := filepath.Join(root, rel)
-	if !Within(root, p) {
+	if !filepath.IsLocal(rel) {
 		return "", fmt.Errorf("path escapes package: %s", rel)
 	}
-	resolved, err := filepath.EvalSymlinks(p)
+	r, err := os.OpenRoot(root)
 	if err != nil {
 		return "", err
 	}
-	canonicalRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
+	defer func() { _ = r.Close() }()
+	if _, err := r.Stat(rel); err != nil {
 		return "", err
 	}
-	if !Within(canonicalRoot, resolved) {
-		return "", fmt.Errorf("path escapes package: %s", rel)
+	return filepath.Join(root, rel), nil
+}
+
+// Walk visits src and, for a directory, everything under it but .git in lexical order, with rel
+// slash-separated and content set for files. Internal symlinks are followed so a walk sees what
+// a later read would; escaping or cyclic ones are rejected.
+func Walk(src string, visit func(rel string, info fs.FileInfo, content io.Reader) error) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
 	}
-	return resolved, nil
+	// A single file has no tree for a symlink to escape.
+	fsys, start := os.DirFS(filepath.Dir(src)), filepath.Base(src)
+	if info.IsDir() {
+		root, err := os.OpenRoot(src)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = root.Close() }()
+		fsys, start = root.FS(), "."
+	}
+	var active []fs.FileInfo
+	var walk func(name, rel string) error
+	walk = func(name, rel string) error {
+		info, err := fs.Stat(fsys, name)
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			if !info.Mode().IsRegular() {
+				return fmt.Errorf("unsupported package file: %s", rel)
+			}
+			f, err := fsys.Open(name)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = f.Close() }()
+			return visit(rel, info, f)
+		}
+		for _, a := range active {
+			if os.SameFile(a, info) {
+				return fmt.Errorf("symlink cycle at %s", rel)
+			}
+		}
+		if err := visit(rel, info, nil); err != nil {
+			return err
+		}
+		active = append(active, info)
+		defer func() { active = active[:len(active)-1] }()
+		entries, err := fs.ReadDir(fsys, name)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			if e.Name() == ".git" {
+				continue
+			}
+			if err := walk(path.Join(name, e.Name()), path.Join(rel, e.Name())); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return walk(start, ".")
 }
 
 // CopyTree dereferences internal symlinks so cached content cannot change later.
 func CopyTree(src, dst string) error {
-	root, err := filepath.EvalSymlinks(src)
-	if err != nil {
-		return err
-	}
-	active := map[string]bool{}
-	var copyPath func(string, string) error
-	copyPath = func(from, to string) error {
-		real, err := filepath.EvalSymlinks(from)
-		if err != nil {
-			return err
+	return Walk(src, func(rel string, info fs.FileInfo, content io.Reader) error {
+		to := filepath.Join(dst, filepath.FromSlash(rel))
+		if content == nil {
+			return os.MkdirAll(to, 0o700)
 		}
-		if !Within(root, real) {
-			return fmt.Errorf("symlink escapes package: %s", from)
-		}
-		info, err := os.Stat(real)
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			if active[real] {
-				return fmt.Errorf("symlink cycle at %s", from)
-			}
-			active[real] = true
-			defer delete(active, real)
-			if err := os.MkdirAll(to, 0o700); err != nil {
-				return err
-			}
-			entries, err := os.ReadDir(real)
-			if err != nil {
-				return err
-			}
-			for _, e := range entries {
-				if e.Name() == ".git" {
-					continue
-				}
-				if err := copyPath(filepath.Join(real, e.Name()), filepath.Join(to, e.Name())); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("unsupported package file: %s", from)
-		}
-		in, err := os.Open(real)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = in.Close() }()
 		out, err := os.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600|info.Mode().Perm()&0o111)
 		if err != nil {
 			return err
 		}
-		_, err = io.Copy(out, in)
+		_, err = io.Copy(out, content)
 		closeErr := out.Close()
 		if err != nil {
 			return err
 		}
 		return closeErr
-	}
-	return copyPath(root, dst)
+	})
 }
 
 func EnsureDir(path string) error {

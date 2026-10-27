@@ -171,7 +171,7 @@ func mcpStatus(t *testing.T, endpoint, authorization string) int {
 }
 
 // awaitServing waits until an MCP endpoint serves new sessions, which for a launch a restarted
-// daemon restored means its wrapper resent its environment.
+// daemon does not hold means its wrapper attached it.
 func awaitServing(t *testing.T, endpoint, authorization string) {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
@@ -187,26 +187,21 @@ func awaitServing(t *testing.T, endpoint, authorization string) {
 	}
 }
 
-// savedLaunches lists the launch IDs in the daemon's state file.
-func (e *env) savedLaunches() []string {
+// revoked reports whether the daemon's state file refuses attaching launch id.
+func (e *env) revoked(id string) bool {
 	e.t.Helper()
 	b, err := os.ReadFile(filepath.Join(e.dir, "state", "daemon-state.json"))
 	if err != nil {
 		e.t.Fatal(err)
 	}
 	var state struct {
-		Launches []struct {
-			ID string `json:"id"`
-		} `json:"launches"`
+		Revoked map[string]time.Time `json:"revoked"`
 	}
 	if err := json.Unmarshal(b, &state); err != nil {
 		e.t.Fatal(err)
 	}
-	ids := []string{}
-	for _, l := range state.Launches {
-		ids = append(ids, l.ID)
-	}
-	return ids
+	_, ok := state.Revoked[id]
+	return ok
 }
 
 // launches returns the state of each launch the daemon lists.
@@ -256,19 +251,9 @@ func TestDaemonRestart(t *testing.T) {
 			t.Fatalf("echo before the restart = %q", got)
 		}
 		id := launchID(h.endpoint())
-		if saved := e.savedLaunches(); !slices.Equal(saved, []string{id}) {
-			t.Fatalf("state file holds %q, want %q", saved, id)
-		}
-		b, err := os.ReadFile(filepath.Join(e.dir, "state", "daemon-state.json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(string(b), h.dump.Env["AGX_MCP_GRANT"]) || strings.Contains(string(b), token) {
-			t.Fatal("the state file holds a secret")
-		}
 
 		r := e.ok("daemon", "stop")
-		if !strings.Contains(r.stdout, "restores its active launch") {
+		if !strings.Contains(r.stdout, "its active launch attaches to the next daemon") {
 			t.Errorf("daemon stop printed %q", r.stdout)
 		}
 		e.stopDaemon(false)
@@ -276,12 +261,13 @@ func TestDaemonRestart(t *testing.T) {
 			t.Fatalf("endpoint answered HTTP %d with no daemon running", got)
 		}
 
-		// Any command starts the next daemon, which restores the launch on the same port.
+		// Any command starts the next daemon, on the same port, to which the wrapper attaches the
+		// launch.
 		e.ok("secret", "status")
-		if got := e.launches()[id]; got != "running" {
-			t.Fatalf("restored launch is %q", got)
-		}
 		awaitServing(t, h.endpoint(), h.grant())
+		if got := e.launches()[id]; got != "STATE_RUNNING" {
+			t.Fatalf("attached launch is %q", got)
+		}
 		tools, reinitialized := h.call()
 		if tools["agx-echo"] != want || reinitialized != 1 {
 			t.Fatalf("echo after the restart = %q, sessions started again %d\n%s",
@@ -289,11 +275,8 @@ func TestDaemonRestart(t *testing.T) {
 		}
 
 		h.exit()
-		if got := e.launches()[id]; got != "finished" {
+		if got := e.launches()[id]; got != "STATE_FINISHED" {
 			t.Errorf("launch after its harness exited is %q\n%s", got, h.stderr.String())
-		}
-		if saved := e.savedLaunches(); len(saved) != 0 {
-			t.Errorf("state file still holds %q", saved)
 		}
 	})
 
@@ -325,8 +308,8 @@ func TestDaemonRestart(t *testing.T) {
 		t.Cleanup(func() { e.stopDaemon(true) })
 		h := e.hold(binaries.agx)
 		e.stopDaemon(true)
-		if saved := e.savedLaunches(); len(saved) != 0 {
-			t.Fatalf("state file after a forced stop holds %q", saved)
+		if !e.revoked(launchID(h.endpoint())) {
+			t.Fatal("the state file does not keep the forced stop's revocation")
 		}
 		e.ok("daemon", "start")
 		if got := mcpStatus(t, h.endpoint(), h.grant()); got != http.StatusUnauthorized {
@@ -334,6 +317,60 @@ func TestDaemonRestart(t *testing.T) {
 		}
 		if states := e.launches(); len(states) != 0 {
 			t.Fatalf("launches after a forced stop = %v", states)
+		}
+	})
+
+	t.Run("killed daemon without saved state", func(t *testing.T) {
+		e := restartEnv(t)
+		t.Cleanup(func() { e.stopDaemon(true) })
+		h := e.hold(binaries.agx)
+		id := launchID(h.endpoint())
+		// The daemon dies without saving, as when the job of the process that started it closes.
+		killDaemon(t, e)
+		if err := os.Remove(filepath.Join(e.dir, "state", "daemon-state.json")); err != nil {
+			t.Fatal(err)
+		}
+		// No command runs: the wrapper starts the next daemon, which takes the launch back.
+		awaitServing(t, h.endpoint(), h.grant())
+		tools, _ := h.call()
+		if tools["agx-echo"] != want {
+			t.Fatalf("echo after the daemon was killed = %q\n%s", tools["agx-echo"], h.stderr.String())
+		}
+		if got := e.launches()[id]; got != "STATE_RUNNING" {
+			t.Fatalf("re-attached launch is %q", got)
+		}
+		if !strings.Contains(h.stderr.String(), "starting a new one") {
+			t.Errorf("the wrapper did not say it replaced the daemon:\n%s", h.stderr.String())
+		}
+		log, err := os.ReadFile(filepath.Join(e.dir, "cache", "runtime", "daemon.log"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(log), "launch re-attached by its wrapper") {
+			t.Errorf("the daemon log does not show the re-attachment:\n%s", log)
+		}
+	})
+
+	t.Run("lease expired while no daemon ran", func(t *testing.T) {
+		e := restartEnv(t)
+		config, err := os.ReadFile(filepath.Join(e.dir, "config", "agx.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.write(
+			"config/agx.yaml",
+			strings.Replace(string(config), "renew_seconds: 1}", "renew_seconds: 1, lease_seconds: 3}", 1),
+		)
+		t.Cleanup(func() { e.stopDaemon(true) })
+		h := e.hold(binaries.agx)
+		e.stopDaemon(false)
+		time.Sleep(4 * time.Second)
+		// The wrapper attaches the launch to the next daemon all the same.
+		e.ok("secret", "status")
+		awaitServing(t, h.endpoint(), h.grant())
+		tools, _ := h.call()
+		if tools["agx-echo"] != want {
+			t.Fatalf("echo after the lease ran out = %q\n%s", tools["agx-echo"], h.stderr.String())
 		}
 	})
 
@@ -361,7 +398,7 @@ func TestDaemonRestart(t *testing.T) {
 		// The launch keeps its lease and grant; only its harness's endpoint URL is wrong now.
 		moved := "http://" + next.Host + old.Path
 		awaitServing(t, moved, h.grant())
-		if got := e.launches()[id]; got != "running" {
+		if got := e.launches()[id]; got != "STATE_RUNNING" {
 			t.Fatalf("launch is %q", got)
 		}
 	})
@@ -400,4 +437,27 @@ func daemonURL(t *testing.T, e *env) *url.URL {
 		t.Fatal(err)
 	}
 	return u
+}
+
+// killDaemon ends the daemon at once, without letting it shut down.
+func killDaemon(t *testing.T, e *env) {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(e.dir, "cache", "runtime", "daemon.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var discovery struct {
+		PID int `json:"pid"`
+	}
+	if err := json.Unmarshal(b, &discovery); err != nil || discovery.PID == 0 {
+		t.Fatalf("no daemon PID in discovery: %v", err)
+	}
+	process, err := os.FindProcess(discovery.PID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = process.Wait()
 }

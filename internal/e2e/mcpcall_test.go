@@ -16,13 +16,11 @@ func TestMCPCalls(t *testing.T) {
 	e := newEnv(t)
 	starts := filepath.Join(e.dir, "starts")
 	mcp := filepath.ToSlash(binaries.mcp)
-	e.write("config/agx.yaml", `secrets:
-  token: {kind: environment, variable: E2E_TOKEN}
-mcp:
+	e.write("config/main.yaml", `mcp:
   echo:
     command: ['`+mcp+`']
     environment:
-      ECHO_TOKEN: !secret token
+      ECHO_TOKEN: !env E2E_TOKEN
       FAKEMCP_STARTS: '`+filepath.ToSlash(starts)+`'
   tracker:
     command: ['`+mcp+`']
@@ -42,22 +40,19 @@ harnesses:
 	t.Cleanup(func() { e.stopDaemon(true) })
 
 	type tool struct {
-		Name         string          `json:"name"`
-		Signature    string          `json:"signature"`
-		Description  *string         `json:"description"`
-		InputSchema  json.RawMessage `json:"input_schema"`
-		OutputSchema json.RawMessage `json:"output_schema"`
+		Name         string `json:"name"`
+		InputSchema  string `json:"input_schema_json"`
+		OutputSchema string `json:"output_schema_json"`
 	}
 	type server struct {
-		ID          string  `json:"id"`
-		Description *string `json:"description"`
-		Load        string  `json:"load"`
-		State       string  `json:"state"`
-		Message     *string `json:"message"`
-		Tools       []tool  `json:"tools"`
+		ID          string `json:"mcp_id"`
+		Description string `json:"description"`
+		Load        string `json:"load"`
+		State       string `json:"state"`
+		Tools       []tool `json:"tools"`
 	}
 	var listed struct {
-		MCP []server `json:"mcp"`
+		MCP []server `json:"servers"`
 	}
 
 	t.Run("tools", func(t *testing.T) {
@@ -66,21 +61,16 @@ harnesses:
 		for _, s := range listed.MCP {
 			ids = append(ids, s.ID+"/"+s.Load+"/"+s.State)
 		}
-		if !slices.Equal(ids, []string{"echo/native/ready", "tracker/on_demand/ready"}) {
+		if !slices.Equal(ids, []string{"echo/LOAD_NATIVE/STATE_READY", "tracker/LOAD_ON_DEMAND/STATE_READY"}) {
 			t.Fatalf("servers = %q", ids)
 		}
-		if d := listed.MCP[1].Description; d == nil || *d != "Issues of the platform team" {
+		if d := listed.MCP[1].Description; d != "Issues of the platform team" {
 			t.Fatalf("description = %v", d)
 		}
-		shape := listed.MCP[0].Tools[1]
-		if shape.Name != "shape" || string(shape.InputSchema) != "null" || !strings.HasPrefix(shape.Signature,
-			`shape(query: string, exact?: boolean, filter?: { owner: string }, limit?: number`) {
-			t.Fatalf("shape = %+v", shape)
-		}
-		e.jsonOK(&listed, "mcp", "tools", "echo", "--schema")
-		if len(listed.MCP) != 1 || string(listed.MCP[0].Tools[1].InputSchema) == "null" ||
-			string(listed.MCP[0].Tools[1].OutputSchema) == "null" {
-			t.Fatalf("tools echo --schema = %+v", listed)
+		e.jsonOK(&listed, "mcp", "tools", "echo")
+		if len(listed.MCP) != 1 || listed.MCP[0].Tools[1].Name != "shape" || listed.MCP[0].Tools[1].InputSchema == "" ||
+			listed.MCP[0].Tools[1].OutputSchema == "" {
+			t.Fatalf("tools echo = %+v", listed)
 		}
 		e.jsonOK(&listed, "mcp", "tools", "--all")
 		if len(listed.MCP) != 3 {
@@ -88,7 +78,10 @@ harnesses:
 		}
 		e.jsonFail("not_found", "mcp", "tools", "elsewhere")
 		human := e.ok("mcp", "tools", "echo")
-		if !strings.Contains(human.stdout, "shape(query: string") ||
+		if !strings.Contains(
+			human.stdout,
+			"shape(query: string, exact?: boolean, filter?: { owner: string }, limit?: number",
+		) ||
 			!strings.Contains(human.stdout, "  Answer the arguments.\n") {
 			t.Fatalf("tools echo printed %q", human.stdout)
 		}
@@ -97,9 +90,14 @@ harnesses:
 	type content struct {
 		Type     string  `json:"type"`
 		Text     *string `json:"text"`
-		MIMEType *string `json:"mime_type"`
+		MIMEType *string `json:"mimeType"`
 		Path     *string `json:"path"`
 		Size     *int64  `json:"size"`
+		// Resource holds an embedded resource, whose binary content goes to a file too.
+		Resource *struct {
+			Text *string `json:"text"`
+			Path *string `json:"path"`
+		} `json:"resource"`
 	}
 	var called struct {
 		MCPID             string          `json:"mcp_id"`
@@ -166,10 +164,10 @@ harnesses:
 		}
 		image, resource := called.Content[1], called.Content[2]
 		if len(called.Content) != 3 || image.Type != "image" || *image.MIMEType != "image/png" ||
-			*image.Size != 67 || resource.Type != "resource" || resource.Text != nil {
+			*image.Size != 67 || resource.Type != "resource" || resource.Resource == nil || resource.Resource.Text != nil {
 			t.Fatalf("media = %+v", called.Content)
 		}
-		imagePath, pdf := *image.Path, *resource.Path
+		imagePath, pdf := *image.Path, *resource.Resource.Path
 		if filepath.Dir(imagePath) != dir || filepath.Ext(imagePath) != ".png" || filepath.Ext(pdf) != ".pdf" ||
 			filepath.Base(imagePath) == "1.png" {
 			t.Fatalf("a second call into the same directory wrote %s and %s", imagePath, pdf)

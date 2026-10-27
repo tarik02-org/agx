@@ -72,11 +72,6 @@ const (
 	ConfigurationServiceApplyChangesProcedure = "/agx.v1.ConfigurationService/ApplyChanges"
 	// PackageServiceInstallProcedure is the fully-qualified name of the PackageService's Install RPC.
 	PackageServiceInstallProcedure = "/agx.v1.PackageService/Install"
-	// PackageServiceUpdateProcedure is the fully-qualified name of the PackageService's Update RPC.
-	PackageServiceUpdateProcedure = "/agx.v1.PackageService/Update"
-	// PackageServiceWatchOperationProcedure is the fully-qualified name of the PackageService's
-	// WatchOperation RPC.
-	PackageServiceWatchOperationProcedure = "/agx.v1.PackageService/WatchOperation"
 	// PackageServicePreviewSourceProcedure is the fully-qualified name of the PackageService's
 	// PreviewSource RPC.
 	PackageServicePreviewSourceProcedure = "/agx.v1.PackageService/PreviewSource"
@@ -107,9 +102,9 @@ const (
 	// LaunchServicePrepareThreadLaunchProcedure is the fully-qualified name of the LaunchService's
 	// PrepareThreadLaunch RPC.
 	LaunchServicePrepareThreadLaunchProcedure = "/agx.v1.LaunchService/PrepareThreadLaunch"
-	// LaunchServiceRestoreLaunchProcedure is the fully-qualified name of the LaunchService's
-	// RestoreLaunch RPC.
-	LaunchServiceRestoreLaunchProcedure = "/agx.v1.LaunchService/RestoreLaunch"
+	// LaunchServiceAttachLaunchProcedure is the fully-qualified name of the LaunchService's
+	// AttachLaunch RPC.
+	LaunchServiceAttachLaunchProcedure = "/agx.v1.LaunchService/AttachLaunch"
 	// RuntimeServiceGetRuntimeProcedure is the fully-qualified name of the RuntimeService's GetRuntime
 	// RPC.
 	RuntimeServiceGetRuntimeProcedure = "/agx.v1.RuntimeService/GetRuntime"
@@ -130,6 +125,8 @@ const (
 	// RuntimeServiceStopMcpProcessProcedure is the fully-qualified name of the RuntimeService's
 	// StopMcpProcess RPC.
 	RuntimeServiceStopMcpProcessProcedure = "/agx.v1.RuntimeService/StopMcpProcess"
+	// RuntimeServiceStopProcedure is the fully-qualified name of the RuntimeService's Stop RPC.
+	RuntimeServiceStopProcedure = "/agx.v1.RuntimeService/Stop"
 	// UIServiceCreateLoginCodeProcedure is the fully-qualified name of the UIService's CreateLoginCode
 	// RPC.
 	UIServiceCreateLoginCodeProcedure = "/agx.v1.UIService/CreateLoginCode"
@@ -142,6 +139,9 @@ const (
 	SecretServiceGetSecretStatusProcedure = "/agx.v1.SecretService/GetSecretStatus"
 	// SecretServiceLogoutProcedure is the fully-qualified name of the SecretService's Logout RPC.
 	SecretServiceLogoutProcedure = "/agx.v1.SecretService/Logout"
+	// SecretServiceRotateSecretProcedure is the fully-qualified name of the SecretService's
+	// RotateSecret RPC.
+	SecretServiceRotateSecretProcedure = "/agx.v1.SecretService/RotateSecret"
 )
 
 // ConfigurationServiceClient is a client for the agx.v1.ConfigurationService service.
@@ -440,9 +440,8 @@ func (UnimplementedConfigurationServiceHandler) ApplyChanges(context.Context, *c
 
 // PackageServiceClient is a client for the agx.v1.PackageService service.
 type PackageServiceClient interface {
-	Install(context.Context, *connect.Request[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error)
-	Update(context.Context, *connect.Request[v1.UpdateRequest]) (*connect.Response[v1.UpdateResponse], error)
-	WatchOperation(context.Context, *connect.Request[v1.WatchOperationRequest]) (*connect.ServerStreamForClient[v1.WatchOperationResponse], error)
+	// Installs the configuration's packages, streaming progress and then the result or failure.
+	Install(context.Context, *connect.Request[v1.InstallRequest]) (*connect.ServerStreamForClient[v1.InstallResponse], error)
 	// Fetches a Git source into the cache and lists the skills it holds, without changing the
 	// configuration; previews expire after 30 minutes.
 	PreviewSource(context.Context, *connect.Request[v1.PreviewSourceRequest]) (*connect.Response[v1.PreviewSourceResponse], error)
@@ -470,18 +469,6 @@ func NewPackageServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+PackageServiceInstallProcedure,
 			connect.WithSchema(packageServiceMethods.ByName("Install")),
-			connect.WithClientOptions(opts...),
-		),
-		update: connect.NewClient[v1.UpdateRequest, v1.UpdateResponse](
-			httpClient,
-			baseURL+PackageServiceUpdateProcedure,
-			connect.WithSchema(packageServiceMethods.ByName("Update")),
-			connect.WithClientOptions(opts...),
-		),
-		watchOperation: connect.NewClient[v1.WatchOperationRequest, v1.WatchOperationResponse](
-			httpClient,
-			baseURL+PackageServiceWatchOperationProcedure,
-			connect.WithSchema(packageServiceMethods.ByName("WatchOperation")),
 			connect.WithClientOptions(opts...),
 		),
 		previewSource: connect.NewClient[v1.PreviewSourceRequest, v1.PreviewSourceResponse](
@@ -514,8 +501,6 @@ func NewPackageServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 // packageServiceClient implements PackageServiceClient.
 type packageServiceClient struct {
 	install         *connect.Client[v1.InstallRequest, v1.InstallResponse]
-	update          *connect.Client[v1.UpdateRequest, v1.UpdateResponse]
-	watchOperation  *connect.Client[v1.WatchOperationRequest, v1.WatchOperationResponse]
 	previewSource   *connect.Client[v1.PreviewSourceRequest, v1.PreviewSourceResponse]
 	readPreviewFile *connect.Client[v1.ReadPreviewFileRequest, v1.ReadPreviewFileResponse]
 	listSourceRefs  *connect.Client[v1.ListSourceRefsRequest, v1.ListSourceRefsResponse]
@@ -523,18 +508,8 @@ type packageServiceClient struct {
 }
 
 // Install calls agx.v1.PackageService.Install.
-func (c *packageServiceClient) Install(ctx context.Context, req *connect.Request[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error) {
-	return c.install.CallUnary(ctx, req)
-}
-
-// Update calls agx.v1.PackageService.Update.
-func (c *packageServiceClient) Update(ctx context.Context, req *connect.Request[v1.UpdateRequest]) (*connect.Response[v1.UpdateResponse], error) {
-	return c.update.CallUnary(ctx, req)
-}
-
-// WatchOperation calls agx.v1.PackageService.WatchOperation.
-func (c *packageServiceClient) WatchOperation(ctx context.Context, req *connect.Request[v1.WatchOperationRequest]) (*connect.ServerStreamForClient[v1.WatchOperationResponse], error) {
-	return c.watchOperation.CallServerStream(ctx, req)
+func (c *packageServiceClient) Install(ctx context.Context, req *connect.Request[v1.InstallRequest]) (*connect.ServerStreamForClient[v1.InstallResponse], error) {
+	return c.install.CallServerStream(ctx, req)
 }
 
 // PreviewSource calls agx.v1.PackageService.PreviewSource.
@@ -559,9 +534,8 @@ func (c *packageServiceClient) InspectSource(ctx context.Context, req *connect.R
 
 // PackageServiceHandler is an implementation of the agx.v1.PackageService service.
 type PackageServiceHandler interface {
-	Install(context.Context, *connect.Request[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error)
-	Update(context.Context, *connect.Request[v1.UpdateRequest]) (*connect.Response[v1.UpdateResponse], error)
-	WatchOperation(context.Context, *connect.Request[v1.WatchOperationRequest], *connect.ServerStream[v1.WatchOperationResponse]) error
+	// Installs the configuration's packages, streaming progress and then the result or failure.
+	Install(context.Context, *connect.Request[v1.InstallRequest], *connect.ServerStream[v1.InstallResponse]) error
 	// Fetches a Git source into the cache and lists the skills it holds, without changing the
 	// configuration; previews expire after 30 minutes.
 	PreviewSource(context.Context, *connect.Request[v1.PreviewSourceRequest]) (*connect.Response[v1.PreviewSourceResponse], error)
@@ -581,22 +555,10 @@ type PackageServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewPackageServiceHandler(svc PackageServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	packageServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("PackageService").Methods()
-	packageServiceInstallHandler := connect.NewUnaryHandler(
+	packageServiceInstallHandler := connect.NewServerStreamHandler(
 		PackageServiceInstallProcedure,
 		svc.Install,
 		connect.WithSchema(packageServiceMethods.ByName("Install")),
-		connect.WithHandlerOptions(opts...),
-	)
-	packageServiceUpdateHandler := connect.NewUnaryHandler(
-		PackageServiceUpdateProcedure,
-		svc.Update,
-		connect.WithSchema(packageServiceMethods.ByName("Update")),
-		connect.WithHandlerOptions(opts...),
-	)
-	packageServiceWatchOperationHandler := connect.NewServerStreamHandler(
-		PackageServiceWatchOperationProcedure,
-		svc.WatchOperation,
-		connect.WithSchema(packageServiceMethods.ByName("WatchOperation")),
 		connect.WithHandlerOptions(opts...),
 	)
 	packageServicePreviewSourceHandler := connect.NewUnaryHandler(
@@ -627,10 +589,6 @@ func NewPackageServiceHandler(svc PackageServiceHandler, opts ...connect.Handler
 		switch r.URL.Path {
 		case PackageServiceInstallProcedure:
 			packageServiceInstallHandler.ServeHTTP(w, r)
-		case PackageServiceUpdateProcedure:
-			packageServiceUpdateHandler.ServeHTTP(w, r)
-		case PackageServiceWatchOperationProcedure:
-			packageServiceWatchOperationHandler.ServeHTTP(w, r)
 		case PackageServicePreviewSourceProcedure:
 			packageServicePreviewSourceHandler.ServeHTTP(w, r)
 		case PackageServiceReadPreviewFileProcedure:
@@ -648,16 +606,8 @@ func NewPackageServiceHandler(svc PackageServiceHandler, opts ...connect.Handler
 // UnimplementedPackageServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedPackageServiceHandler struct{}
 
-func (UnimplementedPackageServiceHandler) Install(context.Context, *connect.Request[v1.InstallRequest]) (*connect.Response[v1.InstallResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.PackageService.Install is not implemented"))
-}
-
-func (UnimplementedPackageServiceHandler) Update(context.Context, *connect.Request[v1.UpdateRequest]) (*connect.Response[v1.UpdateResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.PackageService.Update is not implemented"))
-}
-
-func (UnimplementedPackageServiceHandler) WatchOperation(context.Context, *connect.Request[v1.WatchOperationRequest], *connect.ServerStream[v1.WatchOperationResponse]) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.PackageService.WatchOperation is not implemented"))
+func (UnimplementedPackageServiceHandler) Install(context.Context, *connect.Request[v1.InstallRequest], *connect.ServerStream[v1.InstallResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.PackageService.Install is not implemented"))
 }
 
 func (UnimplementedPackageServiceHandler) PreviewSource(context.Context, *connect.Request[v1.PreviewSourceRequest]) (*connect.Response[v1.PreviewSourceResponse], error) {
@@ -687,9 +637,10 @@ type LaunchServiceClient interface {
 	// Prepares the resources of one such thread as a launch under the process's launch. It shares
 	// the parent's lease and lifecycle token and ends with it.
 	PrepareThreadLaunch(context.Context, *connect.Request[v1.PrepareThreadLaunchRequest]) (*connect.Response[v1.PrepareThreadLaunchResponse], error)
-	// Resends what a daemon restored after a restart does not keep: the environment inputs of a
-	// launch, or one of its thread launches, and the native arguments of the launch itself.
-	RestoreLaunch(context.Context, *connect.Request[v1.RestoreLaunchRequest]) (*connect.Response[v1.RestoreLaunchResponse], error)
+	// Hands a daemon that does not hold a launch, or let it expire, everything its wrapper keeps,
+	// so the launch serves again under its ID and grant: after a restart, an upgrade, or a crash.
+	// Attaching a launch the daemon holds changes nothing; a revoked launch cannot come back.
+	AttachLaunch(context.Context, *connect.Request[v1.AttachLaunchRequest]) (*connect.Response[v1.AttachLaunchResponse], error)
 }
 
 // NewLaunchServiceClient constructs a client for the agx.v1.LaunchService service. By default, it
@@ -739,10 +690,10 @@ func NewLaunchServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(launchServiceMethods.ByName("PrepareThreadLaunch")),
 			connect.WithClientOptions(opts...),
 		),
-		restoreLaunch: connect.NewClient[v1.RestoreLaunchRequest, v1.RestoreLaunchResponse](
+		attachLaunch: connect.NewClient[v1.AttachLaunchRequest, v1.AttachLaunchResponse](
 			httpClient,
-			baseURL+LaunchServiceRestoreLaunchProcedure,
-			connect.WithSchema(launchServiceMethods.ByName("RestoreLaunch")),
+			baseURL+LaunchServiceAttachLaunchProcedure,
+			connect.WithSchema(launchServiceMethods.ByName("AttachLaunch")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -756,7 +707,7 @@ type launchServiceClient struct {
 	revokeLaunch        *connect.Client[v1.RevokeLaunchRequest, v1.RevokeLaunchResponse]
 	resolveThread       *connect.Client[v1.ResolveThreadRequest, v1.ResolveThreadResponse]
 	prepareThreadLaunch *connect.Client[v1.PrepareThreadLaunchRequest, v1.PrepareThreadLaunchResponse]
-	restoreLaunch       *connect.Client[v1.RestoreLaunchRequest, v1.RestoreLaunchResponse]
+	attachLaunch        *connect.Client[v1.AttachLaunchRequest, v1.AttachLaunchResponse]
 }
 
 // PrepareLaunch calls agx.v1.LaunchService.PrepareLaunch.
@@ -789,9 +740,9 @@ func (c *launchServiceClient) PrepareThreadLaunch(ctx context.Context, req *conn
 	return c.prepareThreadLaunch.CallUnary(ctx, req)
 }
 
-// RestoreLaunch calls agx.v1.LaunchService.RestoreLaunch.
-func (c *launchServiceClient) RestoreLaunch(ctx context.Context, req *connect.Request[v1.RestoreLaunchRequest]) (*connect.Response[v1.RestoreLaunchResponse], error) {
-	return c.restoreLaunch.CallUnary(ctx, req)
+// AttachLaunch calls agx.v1.LaunchService.AttachLaunch.
+func (c *launchServiceClient) AttachLaunch(ctx context.Context, req *connect.Request[v1.AttachLaunchRequest]) (*connect.Response[v1.AttachLaunchResponse], error) {
+	return c.attachLaunch.CallUnary(ctx, req)
 }
 
 // LaunchServiceHandler is an implementation of the agx.v1.LaunchService service.
@@ -805,9 +756,10 @@ type LaunchServiceHandler interface {
 	// Prepares the resources of one such thread as a launch under the process's launch. It shares
 	// the parent's lease and lifecycle token and ends with it.
 	PrepareThreadLaunch(context.Context, *connect.Request[v1.PrepareThreadLaunchRequest]) (*connect.Response[v1.PrepareThreadLaunchResponse], error)
-	// Resends what a daemon restored after a restart does not keep: the environment inputs of a
-	// launch, or one of its thread launches, and the native arguments of the launch itself.
-	RestoreLaunch(context.Context, *connect.Request[v1.RestoreLaunchRequest]) (*connect.Response[v1.RestoreLaunchResponse], error)
+	// Hands a daemon that does not hold a launch, or let it expire, everything its wrapper keeps,
+	// so the launch serves again under its ID and grant: after a restart, an upgrade, or a crash.
+	// Attaching a launch the daemon holds changes nothing; a revoked launch cannot come back.
+	AttachLaunch(context.Context, *connect.Request[v1.AttachLaunchRequest]) (*connect.Response[v1.AttachLaunchResponse], error)
 }
 
 // NewLaunchServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -853,10 +805,10 @@ func NewLaunchServiceHandler(svc LaunchServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(launchServiceMethods.ByName("PrepareThreadLaunch")),
 		connect.WithHandlerOptions(opts...),
 	)
-	launchServiceRestoreLaunchHandler := connect.NewUnaryHandler(
-		LaunchServiceRestoreLaunchProcedure,
-		svc.RestoreLaunch,
-		connect.WithSchema(launchServiceMethods.ByName("RestoreLaunch")),
+	launchServiceAttachLaunchHandler := connect.NewUnaryHandler(
+		LaunchServiceAttachLaunchProcedure,
+		svc.AttachLaunch,
+		connect.WithSchema(launchServiceMethods.ByName("AttachLaunch")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/agx.v1.LaunchService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -873,8 +825,8 @@ func NewLaunchServiceHandler(svc LaunchServiceHandler, opts ...connect.HandlerOp
 			launchServiceResolveThreadHandler.ServeHTTP(w, r)
 		case LaunchServicePrepareThreadLaunchProcedure:
 			launchServicePrepareThreadLaunchHandler.ServeHTTP(w, r)
-		case LaunchServiceRestoreLaunchProcedure:
-			launchServiceRestoreLaunchHandler.ServeHTTP(w, r)
+		case LaunchServiceAttachLaunchProcedure:
+			launchServiceAttachLaunchHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -908,8 +860,8 @@ func (UnimplementedLaunchServiceHandler) PrepareThreadLaunch(context.Context, *c
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.PrepareThreadLaunch is not implemented"))
 }
 
-func (UnimplementedLaunchServiceHandler) RestoreLaunch(context.Context, *connect.Request[v1.RestoreLaunchRequest]) (*connect.Response[v1.RestoreLaunchResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.RestoreLaunch is not implemented"))
+func (UnimplementedLaunchServiceHandler) AttachLaunch(context.Context, *connect.Request[v1.AttachLaunchRequest]) (*connect.Response[v1.AttachLaunchResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.AttachLaunch is not implemented"))
 }
 
 // RuntimeServiceClient is a client for the agx.v1.RuntimeService service.
@@ -930,6 +882,9 @@ type RuntimeServiceClient interface {
 	// Stops one stdio MCP server process. Its sessions end, so harnesses reconnect and the next
 	// session starts it again; a shared process stops for every launch using it.
 	StopMcpProcess(context.Context, *connect.Request[v1.StopMcpProcessRequest]) (*connect.Response[v1.StopMcpProcessResponse], error)
+	// Stops the daemon. Without force, wrappers attach their active launches to the next daemon;
+	// force revokes their MCP access.
+	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 }
 
 // NewRuntimeServiceClient constructs a client for the agx.v1.RuntimeService service. By default, it
@@ -985,6 +940,12 @@ func NewRuntimeServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(runtimeServiceMethods.ByName("StopMcpProcess")),
 			connect.WithClientOptions(opts...),
 		),
+		stop: connect.NewClient[v1.StopRequest, v1.StopResponse](
+			httpClient,
+			baseURL+RuntimeServiceStopProcedure,
+			connect.WithSchema(runtimeServiceMethods.ByName("Stop")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -997,6 +958,7 @@ type runtimeServiceClient struct {
 	callTool         *connect.Client[v1.CallToolRequest, v1.CallToolResponse]
 	listMcpProcesses *connect.Client[v1.ListMcpProcessesRequest, v1.ListMcpProcessesResponse]
 	stopMcpProcess   *connect.Client[v1.StopMcpProcessRequest, v1.StopMcpProcessResponse]
+	stop             *connect.Client[v1.StopRequest, v1.StopResponse]
 }
 
 // GetRuntime calls agx.v1.RuntimeService.GetRuntime.
@@ -1034,6 +996,11 @@ func (c *runtimeServiceClient) StopMcpProcess(ctx context.Context, req *connect.
 	return c.stopMcpProcess.CallUnary(ctx, req)
 }
 
+// Stop calls agx.v1.RuntimeService.Stop.
+func (c *runtimeServiceClient) Stop(ctx context.Context, req *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error) {
+	return c.stop.CallUnary(ctx, req)
+}
+
 // RuntimeServiceHandler is an implementation of the agx.v1.RuntimeService service.
 type RuntimeServiceHandler interface {
 	GetRuntime(context.Context, *connect.Request[v1.GetRuntimeRequest]) (*connect.Response[v1.GetRuntimeResponse], error)
@@ -1052,6 +1019,9 @@ type RuntimeServiceHandler interface {
 	// Stops one stdio MCP server process. Its sessions end, so harnesses reconnect and the next
 	// session starts it again; a shared process stops for every launch using it.
 	StopMcpProcess(context.Context, *connect.Request[v1.StopMcpProcessRequest]) (*connect.Response[v1.StopMcpProcessResponse], error)
+	// Stops the daemon. Without force, wrappers attach their active launches to the next daemon;
+	// force revokes their MCP access.
+	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 }
 
 // NewRuntimeServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1103,6 +1073,12 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 		connect.WithSchema(runtimeServiceMethods.ByName("StopMcpProcess")),
 		connect.WithHandlerOptions(opts...),
 	)
+	runtimeServiceStopHandler := connect.NewUnaryHandler(
+		RuntimeServiceStopProcedure,
+		svc.Stop,
+		connect.WithSchema(runtimeServiceMethods.ByName("Stop")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.RuntimeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RuntimeServiceGetRuntimeProcedure:
@@ -1119,6 +1095,8 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 			runtimeServiceListMcpProcessesHandler.ServeHTTP(w, r)
 		case RuntimeServiceStopMcpProcessProcedure:
 			runtimeServiceStopMcpProcessHandler.ServeHTTP(w, r)
+		case RuntimeServiceStopProcedure:
+			runtimeServiceStopHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1154,6 +1132,10 @@ func (UnimplementedRuntimeServiceHandler) ListMcpProcesses(context.Context, *con
 
 func (UnimplementedRuntimeServiceHandler) StopMcpProcess(context.Context, *connect.Request[v1.StopMcpProcessRequest]) (*connect.Response[v1.StopMcpProcessResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.StopMcpProcess is not implemented"))
+}
+
+func (UnimplementedRuntimeServiceHandler) Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.Stop is not implemented"))
 }
 
 // UIServiceClient is a client for the agx.v1.UIService service.
@@ -1235,6 +1217,11 @@ type SecretServiceClient interface {
 	SetSecret(context.Context, *connect.Request[v1.SetSecretRequest]) (*connect.Response[v1.SetSecretResponse], error)
 	GetSecretStatus(context.Context, *connect.Request[v1.GetSecretStatusRequest]) (*connect.Response[v1.GetSecretStatusResponse], error)
 	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error)
+	// Renews an OAuth secret's access token with its refresh token now, whether or not it
+	// expired. A missing login, or a refresh token the authorization server refuses, fails with
+	// REASON_NEEDS_LOGIN; an authorization server that cannot be reached or fails with
+	// REASON_NETWORK.
+	RotateSecret(context.Context, *connect.Request[v1.RotateSecretRequest]) (*connect.Response[v1.RotateSecretResponse], error)
 }
 
 // NewSecretServiceClient constructs a client for the agx.v1.SecretService service. By default, it
@@ -1272,6 +1259,12 @@ func NewSecretServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(secretServiceMethods.ByName("Logout")),
 			connect.WithClientOptions(opts...),
 		),
+		rotateSecret: connect.NewClient[v1.RotateSecretRequest, v1.RotateSecretResponse](
+			httpClient,
+			baseURL+SecretServiceRotateSecretProcedure,
+			connect.WithSchema(secretServiceMethods.ByName("RotateSecret")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1281,6 +1274,7 @@ type secretServiceClient struct {
 	setSecret       *connect.Client[v1.SetSecretRequest, v1.SetSecretResponse]
 	getSecretStatus *connect.Client[v1.GetSecretStatusRequest, v1.GetSecretStatusResponse]
 	logout          *connect.Client[v1.LogoutRequest, v1.LogoutResponse]
+	rotateSecret    *connect.Client[v1.RotateSecretRequest, v1.RotateSecretResponse]
 }
 
 // Login calls agx.v1.SecretService.Login.
@@ -1303,6 +1297,11 @@ func (c *secretServiceClient) Logout(ctx context.Context, req *connect.Request[v
 	return c.logout.CallUnary(ctx, req)
 }
 
+// RotateSecret calls agx.v1.SecretService.RotateSecret.
+func (c *secretServiceClient) RotateSecret(ctx context.Context, req *connect.Request[v1.RotateSecretRequest]) (*connect.Response[v1.RotateSecretResponse], error) {
+	return c.rotateSecret.CallUnary(ctx, req)
+}
+
 // SecretServiceHandler is an implementation of the agx.v1.SecretService service.
 type SecretServiceHandler interface {
 	// Starts an OAuth login, or joins the one pending for the secret, and reports it until it
@@ -1312,6 +1311,11 @@ type SecretServiceHandler interface {
 	SetSecret(context.Context, *connect.Request[v1.SetSecretRequest]) (*connect.Response[v1.SetSecretResponse], error)
 	GetSecretStatus(context.Context, *connect.Request[v1.GetSecretStatusRequest]) (*connect.Response[v1.GetSecretStatusResponse], error)
 	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error)
+	// Renews an OAuth secret's access token with its refresh token now, whether or not it
+	// expired. A missing login, or a refresh token the authorization server refuses, fails with
+	// REASON_NEEDS_LOGIN; an authorization server that cannot be reached or fails with
+	// REASON_NETWORK.
+	RotateSecret(context.Context, *connect.Request[v1.RotateSecretRequest]) (*connect.Response[v1.RotateSecretResponse], error)
 }
 
 // NewSecretServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1345,6 +1349,12 @@ func NewSecretServiceHandler(svc SecretServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(secretServiceMethods.ByName("Logout")),
 		connect.WithHandlerOptions(opts...),
 	)
+	secretServiceRotateSecretHandler := connect.NewUnaryHandler(
+		SecretServiceRotateSecretProcedure,
+		svc.RotateSecret,
+		connect.WithSchema(secretServiceMethods.ByName("RotateSecret")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.SecretService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SecretServiceLoginProcedure:
@@ -1355,6 +1365,8 @@ func NewSecretServiceHandler(svc SecretServiceHandler, opts ...connect.HandlerOp
 			secretServiceGetSecretStatusHandler.ServeHTTP(w, r)
 		case SecretServiceLogoutProcedure:
 			secretServiceLogoutHandler.ServeHTTP(w, r)
+		case SecretServiceRotateSecretProcedure:
+			secretServiceRotateSecretHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1378,4 +1390,8 @@ func (UnimplementedSecretServiceHandler) GetSecretStatus(context.Context, *conne
 
 func (UnimplementedSecretServiceHandler) Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.SecretService.Logout is not implemented"))
+}
+
+func (UnimplementedSecretServiceHandler) RotateSecret(context.Context, *connect.Request[v1.RotateSecretRequest]) (*connect.Response[v1.RotateSecretResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.SecretService.RotateSecret is not implemented"))
 }

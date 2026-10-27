@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -26,7 +28,9 @@ type provider struct {
 	*httptest.Server
 	challenge string
 	refreshes atomic.Int32
-	failures  chan string
+	// refuse makes refreshes fail like a revoked refresh token.
+	refuse   atomic.Bool
+	failures chan string
 }
 
 func newProvider(t *testing.T) *provider {
@@ -63,10 +67,15 @@ func newProvider(t *testing.T) *provider {
 				})
 				return
 			}
-			if r.Form.Get("refresh_token") != "refresh-fixture" {
+			if token := r.Form.Get("refresh_token"); token != "refresh-fixture" && token != "rotated" {
 				fail("wrong refresh token")
 			}
 			p.refreshes.Add(1)
+			if p.refuse.Load() {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_grant", "error_description": "revoked"})
+				return
+			}
 			time.Sleep(50 * time.Millisecond)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"access_token": "refreshed", "refresh_token": "rotated", "token_type": "Bearer", "expires_in": 3600,
@@ -99,7 +108,7 @@ func newManager(t *testing.T) (*auth.Manager, string) {
 		manager.Callback(w, r)
 	}))
 	t.Cleanup(callback.Close)
-	manager = auth.New(callback.URL + "/oauth/callback")
+	manager = auth.New(callback.URL+"/oauth/callback", auth.OpenStore(t.TempDir()))
 	return manager, callback.URL + "/oauth/callback"
 }
 
@@ -236,12 +245,14 @@ func TestKeychainWithoutFallback(t *testing.T) {
 	); err == nil {
 		t.Fatal("an inline secret read a top-level secret's item")
 	}
-	if err := manager.Set("token", config.Secret{Kind: "environment"}, []byte("x")); err == nil {
+	if err := manager.Set("token", config.Secret{Kind: "command"}, []byte("x")); err == nil {
 		t.Fatal("a non-keychain secret was stored")
 	}
+	// Without the store key's keychain item, another process cannot read or write the store.
 	keyring.MockInitWithError(errors.New("storage unavailable"))
 	t.Cleanup(keyring.MockInit)
-	err := manager.Set("other", secret, []byte("value"))
+	fresh, _ := newManager(t)
+	err := fresh.Set("other", secret, []byte("value"))
 	if err == nil {
 		t.Fatal("storage failure was not reported; there is no plaintext fallback")
 	}
@@ -440,5 +451,253 @@ func TestLoginWithoutClientRegistration(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
 		}
+	}
+}
+
+func TestOpenIDDiscoveryWithPathInsertion(t *testing.T) {
+	keyring.MockInit()
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/.well-known/openid-configuration/tenant" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer": server.URL + "/tenant", "authorization_endpoint": server.URL + "/authorize",
+			"token_endpoint": server.URL + "/token",
+		})
+	}))
+	t.Cleanup(server.Close)
+	manager, _ := newManager(t)
+	secret := config.Secret{Kind: "oauth", Issuer: server.URL + "/tenant", ClientID: "agx"}
+	attempt, err := manager.Begin(t.Context(), "fixture", secret, server.URL+"/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.Release(attempt)
+}
+
+func TestLoginRequiresHTTPS(t *testing.T) {
+	keyring.MockInit()
+	manager, _ := newManager(t)
+	for issuer, refused := range map[string]bool{
+		"http://example.com":   true,
+		"http://10.0.0.1":      true,
+		"http://localhost.com": true,
+		"ftp://example.com":    true,
+		"http://localhost:1":   false,
+		"http://[::1]:1":       false,
+		"http://127.0.0.2:1":   false,
+	} {
+		secret := config.Secret{Kind: "oauth", Issuer: issuer, ClientID: "agx"}
+		_, err := manager.Begin(t.Context(), "fixture", secret, "http://127.0.0.1:1/mcp")
+		if err == nil || strings.Contains(err.Error(), "must use https") != refused {
+			t.Errorf("issuer %s: %v", issuer, err)
+		}
+	}
+}
+
+// login completes an OAuth login of secret fixture against p.
+func login(t *testing.T, manager *auth.Manager, callback string, p *provider, secret config.Secret) {
+	t.Helper()
+	attempt, err := manager.Begin(t.Context(), "fixture", secret, p.URL+"/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Release(attempt)
+	q := query(t, attempt)
+	p.challenge = q.Get("code_challenge")
+	if code := get(t, callback+"?state="+q.Get("state")+"&code=fixture"); code != http.StatusOK {
+		t.Fatalf("callback = %d", code)
+	}
+	if err := manager.Wait(t.Context(), attempt); err != nil {
+		t.Fatalf("login outcome: %v", err)
+	}
+}
+
+func TestRefreshRejectedToken(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	manager, callback := newManager(t)
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	login(t, manager, callback, p, secret)
+
+	// The server rejected a token agx still considers valid.
+	value, err := manager.Refresh(t.Context(), "fixture", secret, p.URL, "initial")
+	if err != nil || value != "refreshed" {
+		t.Fatalf("Refresh = %q, %v", value, err)
+	}
+	// A request that saw the old token rejected too reuses the renewed one.
+	value, err = manager.Refresh(t.Context(), "fixture", secret, p.URL, "initial")
+	if err != nil || value != "refreshed" || p.refreshes.Load() != 1 {
+		t.Fatalf("second Refresh = %q, %v after %d refreshes", value, err, p.refreshes.Load())
+	}
+	p.check(t)
+}
+
+func TestRefusedRefresh(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	manager, callback := newManager(t)
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	login(t, manager, callback, p, secret)
+	if status := manager.Status("fixture", secret, nil); status.State != "ready" || !status.Refreshable {
+		t.Fatalf("status after login = %+v", status)
+	}
+
+	p.refuse.Store(true)
+	time.Sleep(1100 * time.Millisecond)
+	_, err := manager.Value(t.Context(), "fixture", secret, nil, nil, p.URL)
+	if err == nil || errors.Is(err, auth.ErrRefreshFailed) ||
+		!strings.Contains(err.Error(), "HTTP 400 (invalid_grant)") ||
+		!strings.Contains(err.Error(), "agx secret login fixture") ||
+		strings.Contains(err.Error(), "revoked") {
+		t.Fatalf("refused refresh: %v", err)
+	}
+	status := manager.Status("fixture", secret, nil)
+	if status.State != "needs_login" || !strings.Contains(status.Problem, "invalid_grant") {
+		t.Fatalf("status after a refused refresh = %+v", status)
+	}
+	// A refused refresh token is not sent again.
+	if _, err := manager.Value(t.Context(), "fixture", secret, nil, nil, p.URL); err == nil || p.refreshes.Load() != 1 {
+		t.Fatalf("after %d refreshes: %v", p.refreshes.Load(), err)
+	}
+
+	p.refuse.Store(false)
+	login(t, manager, callback, p, secret)
+	if status := manager.Status("fixture", secret, nil); status.State != "ready" {
+		t.Fatalf("status after a new login = %+v", status)
+	}
+	p.check(t)
+}
+
+func TestUnreachableRefresh(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	manager, callback := newManager(t)
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	login(t, manager, callback, p, secret)
+
+	origin := p.URL
+	p.Close()
+	time.Sleep(1100 * time.Millisecond)
+	_, err := manager.Value(t.Context(), "fixture", secret, nil, nil, origin)
+	if !errors.Is(err, auth.ErrRefreshFailed) || !strings.Contains(err.Error(), "cannot reach the token endpoint") {
+		t.Fatalf("unreachable token endpoint: %v", err)
+	}
+	if status := manager.Status("fixture", secret, nil); status.State != "ready" || !status.Refreshable {
+		t.Fatalf("a failed refresh changed the status: %+v", status)
+	}
+}
+
+func TestRotate(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	manager, callback := newManager(t)
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	if _, err := manager.Rotate(t.Context(), "fixture", secret); !errors.Is(err, auth.ErrNoCredential) {
+		t.Fatalf("rotate before login: %v", err)
+	}
+	if _, err := manager.Rotate(t.Context(), "fixture", config.Secret{Kind: "keychain"}); err == nil {
+		t.Fatal("a keychain secret was rotated")
+	}
+	login(t, manager, callback, p, secret)
+
+	// The access token is still valid; rotating renews it anyway.
+	expires, err := manager.Rotate(t.Context(), "fixture", secret)
+	if err != nil || time.Until(expires) < 59*time.Minute {
+		t.Fatalf("Rotate = %v, %v", expires, err)
+	}
+	if value, err := manager.Value(
+		t.Context(),
+		"fixture",
+		secret,
+		nil,
+		nil,
+		p.URL,
+	); err != nil ||
+		value != "refreshed" {
+		t.Fatalf("value after rotating = %q, %v", value, err)
+	}
+
+	// A refused refresh token is tried again on request, and a success clears the refusal.
+	p.refuse.Store(true)
+	if _, err := manager.Rotate(t.Context(), "fixture", secret); err == nil || errors.Is(err, auth.ErrRefreshFailed) {
+		t.Fatalf("refused rotation: %v", err)
+	}
+	if state := manager.Status("fixture", secret, nil).State; state != "needs_login" {
+		t.Fatalf("status after a refused rotation = %s", state)
+	}
+	p.refuse.Store(false)
+	if _, err := manager.Rotate(t.Context(), "fixture", secret); err != nil {
+		t.Fatalf("rotation after the server accepts again: %v", err)
+	}
+	if state := manager.Status("fixture", secret, nil).State; state != "ready" {
+		t.Fatalf("status after a successful rotation = %s", state)
+	}
+	if n := p.refreshes.Load(); n != 3 {
+		t.Fatalf("%d refreshes, want 3", n)
+	}
+	p.check(t)
+}
+
+// A harness cancelling its request mid-refresh must not lose the rotated refresh token: servers
+// that rotate invalidate the old one as soon as they answer.
+func TestCancelledRefreshKeepsRotatedToken(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	manager, callback := newManager(t)
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	login(t, manager, callback, p, secret)
+	time.Sleep(1100 * time.Millisecond)
+
+	// The provider takes 50 ms to answer a refresh; the caller gives up after 10.
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+	defer cancel()
+	_, _ = manager.Value(ctx, "fixture", secret, nil, nil, p.URL)
+	value, err := manager.Value(t.Context(), "fixture", secret, nil, nil, p.URL)
+	if err != nil || value != "refreshed" {
+		t.Fatalf("value after a cancelled refresh = %q, %v", value, err)
+	}
+	if n := p.refreshes.Load(); n != 1 {
+		t.Fatalf("%d refreshes, want the cancelled one to have finished and been kept", n)
+	}
+	p.check(t)
+}
+
+func TestStore(t *testing.T) {
+	keyring.MockInit()
+	dir := t.TempDir()
+	store := auth.OpenStore(dir)
+	long := strings.Repeat("x", 10000)
+	if err := store.Set("a", long); err != nil {
+		t.Fatal(err)
+	}
+	// Another process opens the same store and asks the keychain for the key itself.
+	if got, err := auth.OpenStore(dir).Get("a"); err != nil || got != long {
+		t.Fatalf("Get from another store = %d bytes, %v", len(got), err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "secrets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "xxxx") {
+		t.Fatal("the store file holds a value in plaintext")
+	}
+	if err := store.Delete("a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := auth.OpenStore(dir).Get("a"); err == nil {
+		t.Fatal("a deleted value is still there")
+	}
+
+	if err := store.Set("b", "kept"); err != nil {
+		t.Fatal(err)
+	}
+	// A keychain that lost the master key, as after a reset, leaves the store unreadable.
+	keyring.MockInit()
+	if _, err := auth.OpenStore(dir).Get("b"); err == nil || !strings.Contains(err.Error(), "no master key") {
+		t.Fatalf("a store without its master key: %v", err)
 	}
 }

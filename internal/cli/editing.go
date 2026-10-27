@@ -14,7 +14,7 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
-	"github.com/tarik02-org/agx/internal/yaml"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/tarik02-org/agx/internal/cli/prompt"
 	"github.com/tarik02-org/agx/internal/cli/ui"
@@ -40,11 +40,16 @@ func (f *editFlags) register(cmd *cobra.Command, defines bool) {
 	cmd.Flags().StringVar(&f.scope, "scope", "user",
 		"where to enable: user (everywhere), here (this directory), or a directory")
 	cmd.Flags().StringSliceVar(&f.harnesses, "harness", nil, "enable only for these harnesses (repeatable)")
-	cmd.Flags().StringVar(&f.file, "file", "", "fragment to write definitions to (default: the root configuration)")
+	f.registerFile(cmd)
 	if defines {
 		cmd.Flags().BoolVar(&f.defineOnly, "define-only", false, "define without enabling")
 	}
 	f.registerYes(cmd)
+}
+
+func (f *editFlags) registerFile(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&f.file, "file", "",
+		"fragment for new definitions and rules, relative to the root configuration's directory")
 }
 
 func (f *editFlags) registerYes(cmd *cobra.Command) {
@@ -106,23 +111,35 @@ type session struct {
 	// written lists the files the commit wrote.
 	written []string
 	// result records what the command did, for its JSON document.
-	result editJSON
+	result edits
 }
 
-func scopeJSONOf(s scope) *scopeJSON {
-	out := &scopeJSON{Harnesses: slices.Clone(s.Harnesses)}
-	if out.Harnesses == nil {
-		out.Harnesses = []string{}
-	}
-	if s.Directory != "" {
-		directory := s.Directory
-		out.Directory = &directory
-	}
-	return out
+// edits is the document of a command that edits configuration.
+type edits struct {
+	Files    []fileChange   `json:"files"`
+	Defined  []definitionID `json:"defined"`
+	Enabled  []definitionID `json:"enabled"`
+	Disabled []definitionID `json:"disabled"`
+	Removed  []definitionID `json:"removed"`
+	// Scope is where resources were enabled or disabled; null when the command changed no scope.
+	Scope *scope `json:"scope"`
+	// NeedsLogin says whether a server mcp add defined asks for an OAuth login.
+	NeedsLogin *bool `json:"needs_login,omitempty"`
+}
+
+type fileChange struct {
+	Path string `json:"path"`
+	Diff string `json:"diff"`
+}
+
+// definitionID names a definition by its configuration section, such as mcp or harnesses.
+type definitionID struct {
+	Kind config.Kind `json:"kind"`
+	ID   string      `json:"id"`
 }
 
 func newSession(ctx context.Context, paths platform.Paths, builtins config.Builtins, yes bool) (*session, error) {
-	c, err := config.Load(paths.Config, paths.Cache, builtins)
+	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
 	if err != nil {
 		return nil, codedf(codeConfigInvalid, "configuration is invalid; fix it before editing: %w", err)
 	}
@@ -130,60 +147,87 @@ func newSession(ctx context.Context, paths platform.Paths, builtins config.Built
 	if err != nil {
 		return nil, err
 	}
-	edits.Warn = func(format string, args ...any) { ui.Diagnose(ui.Warn, format, args...) }
 	// JSON mode implies --yes and never prompts.
 	tty := interactive() && !scripting.enabled
-	return &session{
+	s := &session{
 		Session:     edits,
 		ctx:         ctx,
 		yes:         yes || !tty,
 		interactive: tty,
-		result: editJSON{
-			Files:    []fileChangeJSON{},
-			Defined:  []definitionJSON{},
-			Enabled:  []definitionJSON{},
-			Disabled: []definitionJSON{},
-			Removed:  []definitionJSON{},
-		},
-	}, nil
-}
-
-// report prints the session's JSON document in JSON mode.
-func (s *session) report() error {
-	if !scripting.enabled {
-		return nil
 	}
-	return printJSON(s.result)
+	if tty {
+		edits.Choose = s.chooseFile
+	}
+	return s, nil
 }
 
-// definitionFile is where new definitions go: --file, or the root configuration.
-func (s *session) definitionFile(flag string) (string, error) {
+// useFile makes --file, relative to the root configuration's directory, the fragment new
+// definitions and rules go to.
+func (s *session) useFile(flag string) error {
 	if flag == "" {
-		return s.Root, nil
+		return nil
 	}
 	expanded, err := config.ExpandHome(flag)
 	if err != nil {
-		return "", &usageError{fmt.Errorf("--file: %w", err)}
+		return &usageError{fmt.Errorf("--file: %w", err)}
 	}
-	abs, err := filepath.Abs(expanded)
-	if err != nil {
-		return "", err
+	if !filepath.IsAbs(expanded) {
+		expanded = filepath.Join(s.Dir, expanded)
 	}
-	return config.Canonical(abs)
+	s.File = expanded
+	return nil
 }
 
-// enable selects id in the first rule matching target, or in a new rule in fallback.
-func (s *session) enable(kind, id string, target scope, fallback string) (bool, error) {
-	s.result.Enabled = append(s.result.Enabled, definitionJSON{Kind: kind, ID: id})
-	s.result.Scope = scopeJSONOf(target)
-	return s.Enable(kind, id, target, fallback)
+// chooseFile asks which writable fragment new definitions go to, or for a new one in agx.d.
+func (s *session) chooseFile(candidates []string) (string, error) {
+	labels := []string{}
+	for _, path := range candidates {
+		labels = append(labels, ui.ShortPath(path, ""))
+	}
+	i, err := prompt.Choose(s.ctx, "Write to:", append(labels, "new file…"))
+	if err != nil {
+		return "", promptError(err)
+	}
+	if i < len(candidates) {
+		return candidates[i], nil
+	}
+	name, err := prompt.Input(s.ctx, "File name in agx.d:", "main", func(name string) error {
+		if name == "" || strings.ContainsAny(name, `/\`) {
+			return errors.New("a file name without directories")
+		}
+		return nil
+	})
+	if err != nil {
+		return "", promptError(err)
+	}
+	return filepath.Join(s.Dir, "agx.d", strings.TrimSuffix(name, ".yaml")+".yaml"), nil
+}
+
+// report prints the session's JSON document in JSON mode; a person saw the diff.
+func (s *session) report() error {
+	return emit(s.result, func() error { return nil })
+}
+
+// definitionFile is where new definitions go: --file, or the fragment Target chooses.
+func (s *session) definitionFile(flag string) (string, error) {
+	if err := s.useFile(flag); err != nil {
+		return "", err
+	}
+	return s.Target()
+}
+
+// enable selects id in the first rule matching target, or in a new rule in the target fragment.
+func (s *session) enable(kind config.Kind, id string, target scope) (bool, error) {
+	s.result.Enabled = append(s.result.Enabled, definitionID{Kind: kind, ID: id})
+	s.result.Scope = &target
+	return s.Enable(kind, id, target)
 }
 
 // disable takes id out of the target scope.
-func (s *session) disable(kind, id string, target scope, fallback string) (bool, error) {
-	s.result.Disabled = append(s.result.Disabled, definitionJSON{Kind: kind, ID: id})
-	s.result.Scope = scopeJSONOf(target)
-	return s.Disable(kind, id, target, fallback)
+func (s *session) disable(kind config.Kind, id string, target scope) (bool, error) {
+	s.result.Disabled = append(s.result.Disabled, definitionID{Kind: kind, ID: id})
+	s.result.Scope = &target
+	return s.Disable(kind, id, target)
 }
 
 var errDeclined = errors.New("nothing was written")
@@ -225,12 +269,10 @@ func (s *session) commit() (bool, error) {
 		return false, err
 	}
 	for _, p := range plan.Files {
-		s.result.Files = append(s.result.Files, fileChangeJSON{Path: p.Path, Diff: p.Diff(), Written: true})
+		s.result.Files = append(s.result.Files, fileChange{Path: p.Path, Diff: p.Diff()})
 	}
-	if !scripting.enabled {
-		for _, path := range s.written {
-			_, _ = fmt.Fprintln(ui.Stderr, ui.Stderr.Status(ui.OK, "Wrote "+ui.Stderr.Path(path)+"."))
-		}
+	for _, path := range s.written {
+		_, _ = fmt.Fprintln(ui.Stderr, ui.Stderr.Status(ui.OK, "Wrote "+ui.Stderr.Path(path)+"."))
 	}
 	s.Config = plan.Config
 	return true, nil
@@ -291,32 +333,30 @@ func (s *session) ask(label, placeholder string, validate func(string) error) (s
 	return value, promptError(err)
 }
 
-func kindLabel(kind string) string { return configedit.KindLabel(kind) }
-
 // define adds a top-level definition to file, refusing an ID that is already defined.
-func (s *session) define(kind, id, file string, value *yaml.Node) error {
+func (s *session) define(kind config.Kind, id, file string, value *yaml.Node) error {
 	if at, exists := configedit.Lookup(s.Config, kind, id); exists {
 		return codedf(
 			codeConflict,
 			"%s %s is already defined at %s:%d",
-			kindLabel(kind),
+			kind.Label(),
 			id,
 			at.Source.Path,
 			at.Source.Line,
 		)
 	}
-	f, err := s.File(file)
+	f, err := s.Open(file)
 	if err != nil {
 		return err
 	}
 	f.Define(kind, id, value)
-	s.result.Defined = append(s.result.Defined, definitionJSON{Kind: kind, ID: id})
+	s.result.Defined = append(s.result.Defined, definitionID{Kind: kind, ID: id})
 	return nil
 }
 
 // enableAfterDefine enables a new definition unless --define-only; scope edits go to a matching
-// rule, otherwise beside the definition.
-func (s *session) enableAfterDefine(kind, id, file string, flags editFlags) error {
+// rule, otherwise in the target fragment.
+func (s *session) enableAfterDefine(kind config.Kind, id string, flags editFlags) error {
 	if flags.defineOnly {
 		return nil
 	}
@@ -324,16 +364,16 @@ func (s *session) enableAfterDefine(kind, id, file string, flags editFlags) erro
 	if err != nil {
 		return err
 	}
-	_, err = s.enable(kind, id, target, file)
+	_, err = s.enable(kind, id, target)
 	return err
 }
 
 // removeDefinition deletes a fragment's definition of id, with its references when force is set.
-func (s *session) removeDefinition(kind, id string, force bool) error {
+func (s *session) removeDefinition(kind config.Kind, id string, force bool) error {
 	if err := s.RemoveDefinition(kind, id, force); err != nil {
 		return err
 	}
-	s.result.Removed = append(s.result.Removed, definitionJSON{Kind: kind, ID: id})
+	s.result.Removed = append(s.result.Removed, definitionID{Kind: kind, ID: id})
 	return nil
 }
 

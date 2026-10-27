@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -170,8 +171,8 @@ func Arguments(
 	missing := []string{}
 	for _, name := range root.Required {
 		if _, ok := out.Get(name); !ok {
-			property, _ := root.Properties.Get(name)
-			missing = append(missing, name+" ("+renderer{root: schema, compact: true}.typeOf(property, 1)+")")
+			property := renderer{root: schema, compact: true}.typeOf(root.Properties[name], 1)
+			missing = append(missing, name+" ("+property+")")
 		}
 	}
 	if len(missing) > 0 {
@@ -186,20 +187,17 @@ func propertySchema(root *Schema, key string) (*Schema, bool) {
 	if root == nil {
 		return nil, true
 	}
-	if property, ok := root.Properties.Get(key); ok {
+	if property, ok := root.Properties[key]; ok {
 		return property, true
 	}
-	switch {
-	case root.Additional != nil && root.Additional.Schema != nil:
-		return root.Additional.Schema, true
-	case root.Additional != nil:
-		return nil, root.Additional.Allowed
+	if root.AdditionalProperties != nil {
+		return root.AdditionalProperties, !rejectsAll(root.AdditionalProperties)
 	}
 	return nil, len(root.Properties) == 0
 }
 
 func unknownArgument(root *Schema, key string) string {
-	names := root.Properties.Names()
+	names := slices.Sorted(maps.Keys(root.Properties))
 	message := "unknown argument " + key + Suggest(key, names)
 	if len(names) > 8 && !strings.Contains(message, "did you mean") {
 		message += "; agx mcp tools <server> lists its arguments"
@@ -225,8 +223,7 @@ func (r renderer) types(s *Schema) []string {
 		out = append(out, jsonType(*s.Const))
 	case len(s.Enum) > 0:
 		for _, v := range s.Enum {
-			b, _ := json.Marshal(v)
-			out = append(out, jsonType(b))
+			out = append(out, jsonType(v))
 		}
 	case len(s.AnyOf) > 0 || len(s.OneOf) > 0:
 		for _, member := range append(slices.Clone(s.AnyOf), s.OneOf...) {
@@ -236,8 +233,8 @@ func (r renderer) types(s *Schema) []string {
 			}
 			out = append(out, member...)
 		}
-	case len(s.Type) > 0:
-		out = append(out, s.Type...)
+	case len(typeKeyword(s)) > 0:
+		out = append(out, typeKeyword(s)...)
 	case len(s.Properties) > 0:
 		out = append(out, "object")
 	case s.Items != nil:
@@ -246,17 +243,17 @@ func (r renderer) types(s *Schema) []string {
 	return dedupe(out)
 }
 
-func jsonType(raw []byte) string {
-	switch t := strings.TrimSpace(string(raw)); {
-	case t == "null":
+func jsonType(v any) string {
+	switch v.(type) {
+	case nil:
 		return "null"
-	case t == "true" || t == "false":
+	case bool:
 		return "boolean"
-	case strings.HasPrefix(t, `"`):
+	case string:
 		return "string"
-	case strings.HasPrefix(t, "{"):
+	case map[string]any:
 		return "object"
-	case strings.HasPrefix(t, "["):
+	case []any:
 		return "array"
 	}
 	return "number"
@@ -330,10 +327,7 @@ func (r renderer) coerce(s *Schema, key, text string) (any, error) {
 func (r renderer) enum(s *Schema) []any {
 	switch {
 	case s.Const != nil:
-		var v any
-		if json.Unmarshal(*s.Const, &v) == nil {
-			return []any{v}
-		}
+		return []any{*s.Const}
 	case len(s.Enum) > 0:
 		return s.Enum
 	case len(s.AnyOf) > 0 || len(s.OneOf) > 0:

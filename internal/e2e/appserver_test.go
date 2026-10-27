@@ -63,19 +63,18 @@ func TestCodexAppServer(t *testing.T) {
 	e := newEnv(t)
 	other := filepath.Join(e.dir, "other")
 	e.write("other/.keep", "")
-	e.write("config/agx.yaml", `skills:
+	e.write("config/main.yaml", `skills:
   review: {path: ./skills/review}
 instructions:
   rules: {text: E2E instructions.}
   others: {text: Other instructions.}
 secrets:
-  token: {kind: environment, variable: E2E_TOKEN}
   sealed: {kind: sops, file: ./sealed.json, key: echo.extra}
 mcp:
   echo:
     command: ['`+filepath.ToSlash(binaries.mcp)+`']
     environment:
-      ECHO_TOKEN: !secret token
+      ECHO_TOKEN: !env E2E_TOKEN
       ECHO_EXTRA: !secret sealed
   second:
     command: ['`+filepath.ToSlash(binaries.mcp)+`']
@@ -95,8 +94,8 @@ scopes:
 harnesses:
   codex:
     executable: '`+filepath.ToSlash(binaries.harness)+`'
-daemon: {renew_seconds: 1}
 `)
+	e.write("config/agx.yaml", "fragments: [main.yaml]\ndaemon: {renew_seconds: 1}\n")
 	e.ok("install")
 	e.ok("daemon", "start")
 	t.Cleanup(func() { e.stopDaemon(true) })
@@ -206,7 +205,7 @@ daemon: {renew_seconds: 1}
 			threads[l.SessionID] = l.State
 		}
 	}
-	if len(view.Launches) != 3 || threads[work.id] != "running" || threads[second.id] != "running" {
+	if len(view.Launches) != 3 || threads[work.id] != "STATE_RUNNING" || threads[second.id] != "STATE_RUNNING" {
 		t.Fatalf("launches = %+v", view.Launches)
 	}
 	if r := e.ok("launch", "list"); !strings.Contains(r.stdout, "thread") {
@@ -266,7 +265,7 @@ daemon: {renew_seconds: 1}
 	}
 	e.jsonOK(&view, "launch", "list")
 	for _, l := range view.Launches {
-		if l.State != "finished" {
+		if l.State != "STATE_FINISHED" {
 			t.Errorf("launch %s is %s after the process exited", l.ID, l.State)
 		}
 	}

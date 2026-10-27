@@ -1,7 +1,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -9,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/tarik02-org/agx/internal/yaml"
+	"go.yaml.in/yaml/v4"
 )
 
 // ModePassthrough is the mode of invocations that run without a managed launch, such as
@@ -34,70 +33,44 @@ func Bare(builtins Builtins) *Config {
 
 // ArgGroup is a list of native arguments scoped to modes; no modes means every session mode.
 type ArgGroup struct {
-	Values []Value  `json:"values"`
-	Modes  []string `json:"modes,omitempty"`
-}
-
-type argGroupFields struct {
-	Values []Value  `yaml:"values"`
-	Modes  []string `yaml:"modes"`
-}
-
-func (g *ArgGroup) UnmarshalYAML(node *yaml.Node) error {
-	switch node.Kind {
-	case yaml.SequenceNode:
-		return node.Load(&g.Values, yaml.WithKnownFields())
-	case yaml.MappingNode:
-		var plain argGroupFields
-		if err := node.Load(&plain, yaml.WithKnownFields()); err != nil {
-			return err
-		}
-		for i := 0; i+1 < len(node.Content); i += 2 {
-			if node.Content[i].Value == "modes" && len(plain.Modes) == 0 {
-				return errors.New("modes must not be empty; omit it to apply in every session mode")
-			}
-		}
-		g.Values, g.Modes = plain.Values, plain.Modes
-		return nil
-	default:
-		return errors.New("argument group must be a list of strings or {values, modes}")
-	}
+	Values []Value  `yaml:"values" json:"values"`
+	Modes  []string `yaml:"modes"  json:"modes,omitempty"`
 }
 
 // Args is a harness's argument groups: a flat list of strings is one group for every session mode.
 type Args []ArgGroup
 
 func (a *Args) UnmarshalYAML(node *yaml.Node) error {
-	if node.Kind != yaml.SequenceNode {
-		return errors.New("args must be a list of strings or a list of argument groups")
-	}
-	scalars := 0
-	for _, child := range node.Content {
-		if child.Kind == yaml.ScalarNode {
-			scalars++
-		}
-	}
-	switch {
-	case len(node.Content) == 0:
-		*a = nil
+	*a = nil
+	if len(node.Content) == 0 {
 		return nil
-	case scalars == len(node.Content):
+	}
+	if node.Content[0].Kind == yaml.ScalarNode {
 		var group ArgGroup
-		if err := node.Load(&group.Values, yaml.WithKnownFields()); err != nil {
+		if err := node.Load(&group.Values); err != nil {
 			return err
 		}
 		*a = Args{group}
-		return nil
-	case scalars > 0:
-		return errors.New(
-			"args mixes strings with argument groups; write a flat list of strings or a list of groups",
-		)
-	}
-	var groups []ArgGroup
-	if err := node.Load(&groups, yaml.WithKnownFields()); err != nil {
+	} else if err := node.Load((*[]ArgGroup)(a), yaml.WithKnownFields()); err != nil {
 		return err
 	}
-	*a = groups
+	for _, g := range *a {
+		for _, v := range g.Values {
+			// Process arguments are visible to every local user (ps, /proc), so credentials must
+			// not reach them; !file stays allowed for non-secret content such as prompts.
+			if v.Env != "" || v.Secret != "" {
+				tag, name := "!env", v.Env
+				if v.Secret != "" {
+					tag, name = "!secret", string(v.Secret)
+				}
+				return &SourceError{Line: v.Source.Line, Err: fmt.Errorf(
+					"%s cannot be used in harness args, which other processes can read (ps); "+
+						"set it in the harness environment instead, such as environment: {NAME: %s %s}",
+					tag, tag, name,
+				)}
+			}
+		}
+	}
 	return nil
 }
 
@@ -105,7 +78,7 @@ func (a *Args) UnmarshalYAML(node *yaml.Node) error {
 type Harness struct {
 	Base        string           `yaml:"base"        jsonschema_description:"Harness this definition extends."`
 	Executable  string           `yaml:"executable"  jsonschema_description:"Absolute path of the native executable; may start with ~/."`
-	Args        Args             `yaml:"args"        jsonschema_description:"Native arguments inserted before the caller's: a list of strings for every session mode, or a list of groups."`
+	Args        Args             `yaml:"args"        jsonschema_description:"Native arguments inserted before the caller's: a list of strings for every session mode, or a list of {values, modes} groups."`
 	Environment map[string]Value `yaml:"environment" jsonschema_description:"Environment variables for the harness."`
 	Add         SelectionSpec    `yaml:"add"         jsonschema_description:"Resources selected for this harness."`
 	Remove      SelectionSpec    `yaml:"remove"      jsonschema_description:"Resources deselected for this harness."`
@@ -140,20 +113,20 @@ type HarnessSelection struct {
 
 // ResolvedHarness layers a definition over its base chain.
 type ResolvedHarness struct {
-	Name    string
-	Builtin string
+	Name    string `json:"name"`
+	Builtin string `json:"builtin"`
 	// Chain lists the built-in first and Name last.
-	Chain       []string
-	Executable  string
-	Args        []ArgGroup
-	Environment map[string]Value
+	Chain       []string         `json:"chain"`
+	Executable  string           `json:"executable"`
+	Args        []ArgGroup       `json:"args"`
+	Environment map[string]Value `json:"environment"`
 	// Hidden keeps the harness out of the launcher's new-session list. Definitions based on it do
 	// not inherit it, so hiding a built-in leaves its variants offered.
-	Hidden bool
+	Hidden bool `json:"hidden"`
 	// Settings are the native settings layered along the chain, without nulls.
-	Settings map[string]any
+	Settings map[string]any `json:"settings"`
 	// SettingSources locates each resolved leaf in the definition that set it.
-	SettingSources []SettingSource
+	SettingSources []SettingSource `json:"setting_sources"`
 }
 
 // Arguments returns the argument groups that apply to mode, in order.
@@ -242,27 +215,17 @@ func (c *Config) HarnessNames() []string {
 }
 
 func (m *merger) harnesses(d Document) error {
-	c, node, path := m.c, m.node, m.path
-	names := []string{}
-	for name := range d.Harnesses {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
+	c := m.c
+	for _, name := range sortedKeys(d.Harnesses) {
 		h := d.Harnesses[name]
-		if !validIDSegment.MatchString(name) {
-			return fmt.Errorf("%s: invalid harness name %q", path, name)
-		}
-		at := func(keys ...string) Source {
-			return position(node, path, append([]string{"harnesses", name}, keys...)...)
-		}
+		at := func(keys ...string) Source { return m.at.at(append([]string{"harnesses", name}, keys...)...) }
 		if h.Executable != "" {
 			executable, err := ExpandHome(h.Executable)
 			if err != nil {
-				return fmt.Errorf("%s: harness %s: executable %w", locate(at("executable")), name, err)
+				return errorAt(at("executable"), "harness %s: executable %w", name, err)
 			}
 			if !filepath.IsAbs(executable) {
-				return fmt.Errorf("%s: harness %s: executable must be absolute", locate(at("executable")), name)
+				return errorAt(at("executable"), "harness %s: executable must be absolute", name)
 			}
 			h.Executable = filepath.Clean(executable)
 		}
@@ -277,9 +240,8 @@ func (m *merger) harnesses(d Document) error {
 		}
 		set := func(field string, at Source, apply func()) error {
 			if previous, ok := def.sources[field]; ok {
-				return fmt.Errorf(
-					"%s: harness %s: %s already set at %s; set override: true to replace the definition",
-					locate(at),
+				return errorAt(
+					at, "harness %s: %s already set at %s; set override: true to replace the definition",
 					name,
 					field,
 					locate(previous),
@@ -343,9 +305,11 @@ func (m *merger) harnesses(d Document) error {
 						previous = at
 					}
 				}
-				return fmt.Errorf(
-					"%s: harness %s: settings %s already set at %s; set override: true to replace the definition",
-					locate(at("settings")),
+				return errorAt(
+					at(
+						"settings",
+					),
+					"harness %s: settings %s already set at %s; set override: true to replace the definition",
 					name,
 					FormatSettingPath(path),
 					locate(previous),
@@ -383,28 +347,24 @@ func (c *Config) validateHarnesses() error {
 		def := c.Harnesses[name]
 		_, builtin := c.builtins.Harnesses[name]
 		if builtin && def.Base != "" {
-			return fmt.Errorf("%s: built-in harness %s cannot set base", locate(def.sources["base"]), name)
+			return errorAt(def.sources["base"], "built-in harness %s cannot set base", name)
 		}
 		if !builtin && slices.Contains(c.builtins.Commands, name) {
-			return fmt.Errorf("%s: harness %s would shadow the agx %s command", locate(def.Source), name, name)
+			return errorAt(def.Source, "harness %s would shadow the agx %s command", name, name)
 		}
 		h, err := c.Harness(name)
 		if err != nil {
-			return fmt.Errorf("%s: %w", locate(def.Source), err)
+			return errorAt(def.Source, "%w", err)
 		}
 		modes := c.builtins.Harnesses[h.Builtin]
 		if err := c.validateSettings(name, def, h); err != nil {
 			return err
 		}
 		for _, g := range def.Args {
-			if len(g.Values) == 0 {
-				return fmt.Errorf("%s: harness %s: argument group needs values", locate(def.Source), name)
-			}
 			for _, mode := range g.Modes {
 				if !slices.Contains(modes, mode) {
-					return fmt.Errorf(
-						"%s: harness %s: %s has no mode %q (modes: %s)",
-						locate(def.Source),
+					return errorAt(
+						def.Source, "harness %s: %s has no mode %q (modes: %s)",
 						name,
 						h.Builtin,
 						mode,
@@ -413,22 +373,11 @@ func (c *Config) validateHarnesses() error {
 				}
 			}
 		}
-		for key := range def.Environment {
-			// AGX_ variables carry launch grants and management credentials.
-			if !validEnvironment.MatchString(key) || strings.HasPrefix(strings.ToUpper(key), "AGX_") {
-				return fmt.Errorf(
-					"%s: harness %s: invalid environment name %q",
-					locate(def.sources["environment."+key]),
-					name,
-					key,
-				)
-			}
-		}
 	}
 	for _, s := range c.Scopes {
 		for _, name := range s.Harnesses {
 			if _, err := c.Harness(name); err != nil {
-				return fmt.Errorf("%s: scope: %w", locate(s.Source), err)
+				return errorAt(s.Source, "scope: %w", err)
 			}
 		}
 	}
@@ -437,35 +386,6 @@ func (c *Config) validateHarnesses() error {
 
 func (s Selection) empty() bool {
 	return len(s.Skills) == 0 && len(s.Instructions) == 0 && len(s.MCP) == 0 && len(s.Bundles) == 0
-}
-
-func locate(s Source) string { return fmt.Sprintf("%s:%d", s.Path, s.Line) }
-
-// position locates the mapping key at path, falling back to the nearest ancestor found.
-func position(node *yaml.Node, file string, path ...string) Source {
-	out := Source{Path: file, Line: 1, Column: 1}
-	if node == nil || len(node.Content) == 0 {
-		return out
-	}
-	n := node.Content[0]
-	for _, key := range path {
-		if n.Kind != yaml.MappingNode {
-			return out
-		}
-		found := false
-		for i := 0; i+1 < len(n.Content); i += 2 {
-			if n.Content[i].Value == key {
-				out.Line, out.Column = n.Content[i].Line, n.Content[i].Column
-				n = n.Content[i+1]
-				found = true
-				break
-			}
-		}
-		if !found {
-			return out
-		}
-	}
-	return out
 }
 
 // validateSettings checks a definition's resolved settings against its built-in harness.
@@ -479,9 +399,8 @@ func (c *Config) validateSettings(name string, def HarnessDefinition, h Resolved
 	}
 	check, ok := c.builtins.Settings[h.Builtin]
 	if !ok {
-		return fmt.Errorf(
-			"%s: harness %s: %s takes no settings; pass its options in args instead",
-			locate(at),
+		return errorAt(
+			at, "harness %s: %s takes no settings; pass its options in args instead",
 			name,
 			h.Builtin,
 		)
@@ -495,7 +414,7 @@ func (c *Config) validateSettings(name string, def HarnessDefinition, h Resolved
 		}
 	}
 	if err := check(h.Settings, args); err != nil {
-		return fmt.Errorf("%s: harness %s: %w", locate(at), name, err)
+		return errorAt(at, "harness %s: %w", name, err)
 	}
 	return nil
 }

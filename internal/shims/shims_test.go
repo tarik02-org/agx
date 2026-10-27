@@ -62,21 +62,13 @@ func TestInstallSyncsDefinitions(t *testing.T) {
 	if got["codex-cpa"] != Created || got["claude-x"] != Created {
 		t.Fatalf("first install = %v", got)
 	}
-	kind := kinds()[0]
-	file := filepath.Join(dir, fileName("codex-cpa", kind))
-	switch kind {
-	case Symlink:
-		if link, err := os.Readlink(file); err != nil || link != agx {
-			t.Fatalf("symlink = %q, %v", link, err)
+	file := filepath.Join(dir, fileName("codex-cpa"))
+	if runtime.GOOS == "windows" {
+		if b, err := os.ReadFile(file); err != nil || string(b) != "agx binary" || recorded(dir) != agx {
+			t.Fatalf("copy = %q, %v; recorded %q", b, err, recorded(dir))
 		}
-	case Hardlink:
-		a, errA := os.Stat(file)
-		b, errB := os.Stat(agx)
-		if errA != nil || errB != nil || !os.SameFile(a, b) {
-			t.Fatalf("hard link does not share agx's file: %v %v", errA, errB)
-		}
-	default:
-		t.Fatalf("unexpected first kind %s", kind)
+	} else if link, err := os.Readlink(file); err != nil || link != agx {
+		t.Fatalf("symlink = %q, %v", link, err)
 	}
 	if got := install(
 		t,
@@ -93,7 +85,7 @@ func TestInstallSyncsDefinitions(t *testing.T) {
 	if got["claude-x"] != Removed || got["pi-r"] != Created || got["codex-cpa"] != Unchanged {
 		t.Fatalf("sync = %v", got)
 	}
-	if _, err := os.Lstat(filepath.Join(dir, fileName("claude-x", kind))); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Lstat(filepath.Join(dir, fileName("claude-x"))); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("shim of a removed definition remains: %v", err)
 	}
 	if s := states(t, dir, agx, []string{"codex-cpa", "pi-r", "new"}); s["codex-cpa"] != Current ||
@@ -108,59 +100,32 @@ func TestInstallSyncsDefinitions(t *testing.T) {
 	if got := actions(changes); got["codex-cpa"] != Removed || got["pi-r"] != Removed {
 		t.Fatalf("remove = %v", got)
 	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
-		t.Fatalf("directory not empty after remove: %v", entries)
+	if _, err := os.Stat(dir); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("directory remains after remove: %v", err)
 	}
 }
 
-func TestForeignFilesAreLeftAlone(t *testing.T) {
+// agx owns the shim directory: installing replaces and removes anything else there.
+func TestInstallOwnsTheDirectory(t *testing.T) {
 	agx := target(t)
 	dir := filepath.Join(t.TempDir(), "shims")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	foreign := filepath.Join(dir, fileName("foreign-x", kinds()[0]))
-	if err := os.WriteFile(foreign, []byte("mine"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	changes, err := Install(dir, agx, []string{"foreign-x", "pi-r"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, c := range changes {
-		if c.Name == "foreign-x" && (c.Action != Kept || c.State != Conflict) {
-			t.Fatalf("foreign file change = %+v", c)
+	for _, file := range []string{fileName("pi-r"), "stray"} {
+		if err := os.WriteFile(filepath.Join(dir, file), []byte("other"), 0o755); err != nil {
+			t.Fatal(err)
 		}
 	}
-	if b, _ := os.ReadFile(foreign); string(b) != "mine" {
-		t.Fatalf("foreign file overwritten: %q", b)
+	if s := states(t, dir, agx, []string{"pi-r"}); s["pi-r"] != Stale || s["stray"] != Stale {
+		t.Fatalf("states = %v", s)
 	}
-	if s := states(t, dir, agx, []string{"foreign-x"}); s["foreign-x"] != Conflict {
-		t.Fatalf("state = %v", s)
+	got := install(t, dir, agx, "pi-r")
+	if runtime.GOOS != "windows" && got["pi-r"] != Updated || got["stray"] != Removed {
+		t.Fatalf("install = %v", got)
 	}
-
-	// A shim the user replaced is no longer agx's.
-	shim := filepath.Join(dir, fileName("pi-r", kinds()[0]))
-	if err := os.Remove(shim); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(shim, []byte("user"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if s := states(t, dir, agx, []string{"pi-r"}); s["pi-r"] != Modified {
-		t.Fatalf("state = %v, want modified", s)
-	}
-	changes, err = Remove(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := actions(changes); got["pi-r"] != Kept {
-		t.Fatalf("remove = %v", got)
-	}
-	for _, path := range []string{foreign, shim} {
-		if _, err := os.Stat(path); err != nil {
-			t.Fatalf("%s removed: %v", path, err)
-		}
+	if s := states(t, dir, agx, []string{"pi-r"}); s["pi-r"] != Current || len(s) != 1 {
+		t.Fatalf("states = %v", s)
 	}
 }
 
@@ -177,43 +142,6 @@ func TestStaleTarget(t *testing.T) {
 	}
 	if s := states(t, dir, other, []string{"codex-cpa"}); s["codex-cpa"] != Current {
 		t.Fatalf("state = %v", s)
-	}
-}
-
-func TestManifestCannotEscape(t *testing.T) {
-	dir := t.TempDir()
-	manifest := `{"version":1,"shims":[{"name":"x","file":"../victim","kind":"symlink","target":"/agx"}]}`
-	if err := os.WriteFile(filepath.Join(dir, manifestName), []byte(manifest), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Remove(dir); err == nil || !strings.Contains(err.Error(), "invalid entry") {
-		t.Fatalf("Remove = %v, want the manifest rejected", err)
-	}
-}
-
-func TestScript(t *testing.T) {
-	agx := target(t)
-	dir := t.TempDir()
-	s, err := write(dir, "claude-x", agx, Script)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := os.ReadFile(filepath.Join(dir, s.File))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if runtime.GOOS == "windows" {
-		if s.File != "claude-x.cmd" || !strings.Contains(string(b), `"`+agx+`" claude-x %*`) {
-			t.Fatalf("script %s = %q", s.File, b)
-		}
-	} else if want := "#!/bin/sh\nexec '" + agx + "' 'claude-x' \"$@\"\n"; string(b) != want {
-		t.Fatalf("script = %q, want %q", b, want)
-	}
-	if ok, err := current(dir, s, agx); err != nil || !ok {
-		t.Fatalf("current = %v, %v", ok, err)
-	}
-	if got := script("/it's/agx", "x"); runtime.GOOS != "windows" && !strings.Contains(string(got), `'/it'\''s/agx'`) {
-		t.Fatalf("quoting = %q", got)
 	}
 }
 
@@ -243,39 +171,43 @@ func TestCollisions(t *testing.T) {
 	}
 }
 
-func TestDefaultDir(t *testing.T) {
+func TestDir(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		local := t.TempDir()
 		t.Setenv("LOCALAPPDATA", local)
-		if dir, err := DefaultDir(); err != nil || dir != filepath.Join(local, "agx", "shims") {
-			t.Fatalf("DefaultDir = %q, %v", dir, err)
+		if dir, err := Dir(); err != nil || dir != filepath.Join(local, "agx", "shims") {
+			t.Fatalf("Dir = %q, %v", dir, err)
 		}
 		return
 	}
 	data := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", data)
-	if dir, err := DefaultDir(); err != nil || dir != filepath.Join(data, "agx", "shims") {
-		t.Fatalf("DefaultDir = %q, %v", dir, err)
+	if dir, err := Dir(); err != nil || dir != filepath.Join(data, "agx", "shims") {
+		t.Fatalf("Dir = %q, %v", dir, err)
 	}
 	home := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", "")
 	t.Setenv("HOME", home)
-	if dir, err := DefaultDir(); err != nil || dir != filepath.Join(home, ".local", "share", "agx", "shims") {
-		t.Fatalf("DefaultDir = %q, %v", dir, err)
+	if dir, err := Dir(); err != nil || dir != filepath.Join(home, ".local", "share", "agx", "shims") {
+		t.Fatalf("Dir = %q, %v", dir, err)
 	}
 }
 
-func TestManifestFromNewerAgx(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(
-		filepath.Join(dir, manifestName),
-		[]byte(`{"version":2,"shims":[],"extra":1}`),
-		0o644,
-	); err != nil {
+// A Windows shim hands off to the agx it was made for, whatever build its own file holds.
+func TestOrigin(t *testing.T) {
+	agx := target(t)
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	dir, err := Dir()
+	if err != nil {
 		t.Fatal(err)
 	}
-	_, err := Remove(dir)
-	if err == nil || !strings.Contains(err.Error(), "uses format version 2, but this agx reads only version 1") {
-		t.Fatalf("Remove = %v, want the newer manifest rejected", err)
+	install(t, dir, agx, "claude-cpa")
+	if origin, ok := Origin(filepath.Join(dir, fileName("claude-cpa"))); ok != (runtime.GOOS == "windows") ||
+		ok && origin != agx {
+		t.Fatalf("Origin = %q, %v", origin, ok)
+	}
+	if _, ok := Origin(agx); ok {
+		t.Fatal("a file outside the shim directory has an origin")
 	}
 }

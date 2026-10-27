@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -27,7 +26,7 @@ import (
 func mcpCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "mcp",
-		Short:   "Add, list, remove, log in to, test, and call MCP servers",
+		Short:   "Add, list, remove, test, and call MCP servers",
 		GroupID: "config",
 	}
 	test := &cobra.Command{
@@ -38,12 +37,10 @@ func mcpCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command
 			return testMCP(cmd.Context(), *paths, *builtins, args[0])
 		},
 	}
-	jsonFlag(test)
 	command.AddCommand(
 		mcpAddCommand(paths, builtins),
-		listCommand(paths, builtins, edit.MCP),
-		removeCommand(paths, builtins, edit.MCP),
-		mcpLoginCommand(paths, builtins),
+		listCommand(paths, builtins, config.KindMCPServers),
+		removeCommand(paths, builtins, config.KindMCPServers),
 		test,
 		mcpToolsCommand(paths, builtins),
 		mcpCallCommand(paths, builtins),
@@ -52,64 +49,6 @@ func mcpCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command
 		mcpStopCommand(paths, builtins),
 	)
 	return command
-}
-
-func mcpLoginCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
-	noBrowser := false
-	cmd := &cobra.Command{
-		Use:   "login <id>",
-		Short: "Log in to an MCP server's OAuth secret, as agx secret login does for that secret",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := config.Load(paths.Config, paths.Cache, *builtins)
-			if err != nil {
-				return coded(codeConfigInvalid, err)
-			}
-			id, err := loginSecret(c, args[0])
-			if err != nil {
-				return err
-			}
-			return login(cmd.Context(), *paths, id, !noBrowser, autostart(c))
-		},
-	}
-	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the authorization URL without opening a browser")
-	jsonFlag(cmd)
-	return cmd
-}
-
-// loginSecret is the secret an MCP server logs in with: its inline or on-demand auth, which takes
-// its ID, or the top-level secret it references.
-func loginSecret(c *config.Config, id string) (string, error) {
-	server, ok := c.MCP[config.ID(id)]
-	if !ok {
-		return "", codedf(codeNotFound, "unknown MCP server %s", id)
-	}
-	secret := c.Secrets[server.Auth.Secret]
-	switch {
-	case server.Transport != "http":
-		return "", codedf(codeFailedPrecondition, "MCP server %s runs over stdio and has no login", id)
-	case server.Auth.None:
-		return "", codedf(codeFailedPrecondition, "MCP server %s has auth: none", id)
-	case secret.Kind == "sops":
-		return "", codedf(
-			codeFailedPrecondition,
-			"MCP server %s authenticates with sops secret %s; edit it with sops %s",
-			id, server.Auth.Secret, secret.File,
-		)
-	case secret.Kind == "file":
-		return "", codedf(
-			codeFailedPrecondition,
-			"MCP server %s authenticates with file secret %s; write the token to %s",
-			id, server.Auth.Secret, secret.File,
-		)
-	case secret.Kind != "oauth":
-		return "", codedf(
-			codeFailedPrecondition,
-			"MCP server %s authenticates with %s secret %s; store it with agx secret set %s --stdin",
-			id, secret.Kind, server.Auth.Secret, server.Auth.Secret,
-		)
-	}
-	return string(server.Auth.Secret), nil
 }
 
 func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
@@ -221,10 +160,14 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 				case authValue == "":
 				case authValue == "none" || authValue == "oauth" || authValue == "keychain":
 					edit.Set(definition, "auth", edit.Scalar(authValue))
-				case strings.HasPrefix(authValue, "!secret "):
+				case strings.HasPrefix(authValue, "!"):
 					edit.Set(definition, "auth", value(authValue))
 				default:
-					return &usageError{fmt.Errorf("--auth must be none, oauth, keychain, or '!secret <id>'")}
+					return &usageError{
+						fmt.Errorf(
+							"--auth must be none, oauth, keychain, '!secret <id>', '!env NAME', or '!file PATH'",
+						),
+					}
 				}
 			}
 			if description != "" {
@@ -240,10 +183,10 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			if err != nil {
 				return err
 			}
-			if err := s.define(edit.MCP, id, file, definition); err != nil {
+			if err := s.define(config.KindMCPServers, id, file, definition); err != nil {
 				return err
 			}
-			if err := s.enableAfterDefine(edit.MCP, id, file, flags); err != nil {
+			if err := s.enableAfterDefine(config.KindMCPServers, id, flags); err != nil {
 				return err
 			}
 			needsLogin := false
@@ -253,7 +196,7 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 				return err
 			}
 			if ok && command == nil && authValue != "none" && authValue != "keychain" &&
-				!strings.HasPrefix(authValue, "!secret") {
+				!strings.HasPrefix(authValue, "!") {
 				if needsLogin, err = offerLogin(cmd.Context(), s, id, target, !noBrowser); err != nil {
 					return err
 				}
@@ -262,12 +205,11 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 		},
 	}
 	flags.register(cmd, true)
-	jsonFlag(cmd)
 	cmd.Flags().
 		StringArrayVar(&headers, "header", nil, "HTTP header KEY=VALUE; VALUE may be '!secret id', '!env NAME', or '!file path'")
 	cmd.Flags().StringArrayVar(&env, "env", nil, "stdio environment KEY=VALUE; VALUE may be a tag as for --header")
 	cmd.Flags().
-		StringVar(&authValue, "auth", "", "HTTP auth: none, oauth, keychain, or '!secret id' (default: OAuth on demand)")
+		StringVar(&authValue, "auth", "", "HTTP auth: none, oauth, keychain, '!secret id', '!env NAME', or '!file path' (default: OAuth on demand)")
 	cmd.Flags().StringVar(&clientID, "client-id", "",
 		"OAuth public client ID, for servers that do not register clients automatically")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the login URL without opening a browser")
@@ -319,19 +261,16 @@ func daemonReachable(paths platform.Paths) bool {
 	if err != nil {
 		return false
 	}
-	ctx, cancel := boundedContext()
-	defer cancel()
-	_, err = c.runtime.GetRuntime(ctx, request(&v1.GetRuntimeRequest{}, c.discovery.Token))
+	_, err = c.runtime.GetRuntime(context.Background(), connect.NewRequest(&v1.GetRuntimeRequest{}))
 	return err == nil
 }
 
 func testMCP(ctx context.Context, paths platform.Paths, builtins config.Builtins, id string) error {
-	c, err := config.Load(paths.Config, paths.Cache, builtins)
+	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
 	if err != nil {
 		return coded(codeConfigInvalid, err)
 	}
-	definition, ok := c.MCP[config.ID(id)]
-	if !ok {
+	if _, ok := c.MCP[config.ID(id)]; !ok {
 		return codedf(codeNotFound, "unknown MCP server %s", id)
 	}
 	// Only the variables the server's values read are forwarded, as for a launch.
@@ -353,64 +292,24 @@ func testMCP(ctx context.Context, paths platform.Paths, builtins config.Builtins
 	progress("Connecting to " + id)
 	call, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	response, err := client.runtime.TestMcpServer(call, request(&v1.TestMcpServerRequest{
+	response, err := client.runtime.TestMcpServer(call, connect.NewRequest(&v1.TestMcpServerRequest{
 		McpId:             id,
 		Directory:         directory,
 		EnvironmentInputs: inputs,
-	}, client.discovery.Token))
-	if scripting.enabled {
-		return printMCPTest(id, definition.Transport, response, err)
-	}
+	}))
 	if err != nil {
 		return fmt.Errorf("MCP server %s: %w", id, err)
 	}
-	out := ui.Stdout
 	msg := response.Msg
-	server := strings.TrimSpace(msg.ServerName + " " + msg.ServerVersion)
-	tools := slices.Sorted(slices.Values(msg.Tools))
-	_, err = fmt.Fprint(out,
-		out.Status(ui.OK, fmt.Sprintf("%s answered with %s.", id, plural(len(tools), "tool")))+"\n",
-		out.Fields([2]string{"server", server}, [2]string{"tools", strings.Join(tools, " ")}),
-	)
-	return err
-}
-
-// printMCPTest writes mcp test's document. A server that fails the test still gets one, with its
-// state and the endpoint's diagnosis, and exits 1; failures to reach the daemon are errors.
-func printMCPTest(id, transport string, response *connect.Response[v1.TestMcpServerResponse], err error) error {
-	if err != nil {
-		var state string
-		switch errorCode(err) {
-		case codeNeedsLogin:
-			state = "needs_auth"
-		case codeFailedPrecondition, codeTimeout:
-			state = "failed"
-		default:
-			return fmt.Errorf("MCP server %s: %w", id, err)
-		}
-		message := err.Error()
-		var rpc *connect.Error
-		if errors.As(err, &rpc) {
-			message = rpc.Message()
-		}
-		if printErr := printJSON(mcpTestJSON{
-			ID: id, Transport: transport, Tools: []mcpToolJSON{}, State: state, Message: &message,
-		}); printErr != nil {
-			return printErr
-		}
-		return &ExitError{Code: 1}
-	}
-	msg := response.Msg
-	tools := []mcpToolJSON{}
-	for _, t := range msg.ToolDetails {
-		tools = append(tools, mcpToolJSON{Name: t.Name, Description: jsonString(t.Description)})
-	}
-	return printJSON(mcpTestJSON{
-		ID:        id,
-		Transport: transport,
-		Server:    &mcpTestServerJSON{Name: jsonString(msg.ServerName), Version: jsonString(msg.ServerVersion)},
-		Tools:     tools,
-		State:     "ready",
+	return emit(msg, func() error {
+		out := ui.Stdout
+		server := strings.TrimSpace(msg.ServerName + " " + msg.ServerVersion)
+		tools := slices.Sorted(slices.Values(msg.Tools))
+		_, err := fmt.Fprint(out,
+			out.Status(ui.OK, fmt.Sprintf("%s answered with %s.", id, plural(len(tools), "tool")))+"\n",
+			out.Fields([2]string{"server", server}, [2]string{"tools", strings.Join(tools, " ")}),
+		)
+		return err
 	})
 }
 
@@ -418,29 +317,26 @@ func printMCPTest(id, transport string, response *connect.Response[v1.TestMcpSer
 func mcpRows(c *config.Config) ([]string, [][]string, any) {
 	out := ui.Stdout
 	rows := [][]string{}
-	items := []mcpServerJSON{}
+	servers := map[config.ID]config.MCPServer{}
 	for _, id := range slices.Sorted(maps.Keys(c.MCP)) {
 		server := c.MCP[id]
+		server.Environment, server.Headers = redact(server.Environment), redact(server.Headers)
+		servers[id] = server
 		target := server.URL
 		if server.Transport == "stdio" {
 			target = strings.Join(server.Command, " ")
 		}
 		authText := ""
-		var auth *mcpAuthJSON
 		switch secret := c.Secrets[server.Auth.Secret]; {
 		case server.Auth.None:
 			authText = "none"
-			auth = &mcpAuthJSON{Kind: "none"}
 		case server.Transport == "stdio":
 		case secret.Owner == id && secret.Implicit:
 			authText = "oauth (on demand)"
-			auth = &mcpAuthJSON{Kind: secret.Kind, SecretID: jsonString(string(server.Auth.Secret)), OnDemand: true}
 		case secret.Owner == id:
 			authText = secret.Kind
-			auth = &mcpAuthJSON{Kind: secret.Kind, SecretID: jsonString(string(server.Auth.Secret))}
 		default:
-			authText = "!secret " + string(server.Auth.Secret)
-			auth = &mcpAuthJSON{Kind: secret.Kind, SecretID: jsonString(string(server.Auth.Secret))}
+			authText = server.Auth.String()
 		}
 		// Like auth for stdio, share does not apply to HTTP servers.
 		shareText := server.ShareMode()
@@ -451,20 +347,22 @@ func mcpRows(c *config.Config) ([]string, [][]string, any) {
 			out.ID(string(id)), server.Transport, target, authText, server.Load, shareText,
 			out.Path(location(c, server.Source)),
 		})
-		items = append(items, mcpServerJSON{
-			ID:          string(id),
-			Transport:   server.Transport,
-			URL:         jsonString(server.URL),
-			Command:     server.Command,
-			Auth:        auth,
-			Load:        server.Load,
-			Share:       server.ShareMode(),
-			Description: jsonString(server.Description),
-			Inline:      server.Inline,
-			Source:      configSource(server.Source),
-		})
 	}
-	return []string{"ID", "TRANSPORT", "TARGET", "AUTH", "LOAD", "SHARE", "SOURCE"}, rows, mcpListJSON{MCP: items}
+	return []string{"ID", "TRANSPORT", "TARGET", "AUTH", "LOAD", "SHARE", "SOURCE"}, rows, servers
+}
+
+// redact leaves literal values out of output, since they may be credentials typed into the
+// configuration; tagged values keep their reference.
+func redact(values map[string]config.Value) map[string]config.Value {
+	if values == nil {
+		return nil
+	}
+	out := map[string]config.Value{}
+	for key, value := range values {
+		value.Literal = ""
+		out[key] = value
+	}
+	return out
 }
 
 func location(c *config.Config, source config.Source) string {
@@ -472,23 +370,23 @@ func location(c *config.Config, source config.Source) string {
 }
 
 // listCommand lists the definitions of a kind as a table or JSON.
-func listCommand(paths *platform.Paths, builtins *config.Builtins, kind string) *cobra.Command {
+func listCommand(paths *platform.Paths, builtins *config.Builtins, kind config.Kind) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "list",
-		Short: map[string]string{
-			edit.MCP:          "List MCP servers",
-			edit.Skills:       "List skills",
-			edit.Instructions: "List instructions",
-			"harnesses":       "List harnesses",
+		Short: map[config.Kind]string{
+			config.KindMCPServers:   "List MCP servers",
+			config.KindSkills:       "List skills",
+			config.KindInstructions: "List instructions",
+			config.KindHarnesses:    "List harnesses",
 		}[kind],
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var c *config.Config
 			var err error
-			if kind == "harnesses" {
-				c, err = config.Read(paths.Config, *builtins)
+			if kind == config.KindHarnesses {
+				c, err = config.Load(paths.Config, config.Options{Builtins: *builtins})
 			} else {
-				c, err = config.Load(paths.Config, paths.Cache, *builtins)
+				c, err = config.Load(paths.Config, config.Options{Builtins: *builtins, Cache: paths.Cache})
 			}
 			if err != nil {
 				return coded(codeConfigInvalid, err)
@@ -497,37 +395,35 @@ func listCommand(paths *platform.Paths, builtins *config.Builtins, kind string) 
 			var rows [][]string
 			var document any
 			switch kind {
-			case edit.MCP:
+			case config.KindMCPServers:
 				headers, rows, document = mcpRows(c)
-			case edit.Skills:
+			case config.KindSkills:
 				headers, rows, document = skillRows(c)
-			case edit.Instructions:
+			case config.KindInstructions:
 				headers, rows, document = instructionsRows(c)
 			default:
 				headers, rows, document = harnessRows(c)
 			}
-			if scripting.enabled {
-				return printJSON(document)
-			}
-			if len(rows) == 0 {
-				_, err := fmt.Fprintln(ui.Stdout, ui.Stdout.Muted("None defined."))
+			return emit(document, func() error {
+				if len(rows) == 0 {
+					_, err := fmt.Fprintln(ui.Stdout, ui.Stdout.Muted("None defined."))
+					return err
+				}
+				_, err := io.WriteString(ui.Stdout, ui.Stdout.Table(headers, rows, 2))
 				return err
-			}
-			_, err = io.WriteString(ui.Stdout, ui.Stdout.Table(headers, rows, 2))
-			return err
+			})
 		},
 	}
-	jsonFlag(cmd)
 	return cmd
 }
 
 // removeCommand deletes a definition, refusing while other entries reference it unless forced.
-func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind string) *cobra.Command {
+func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind config.Kind) *cobra.Command {
 	var flags editFlags
 	force := false
 	cmd := &cobra.Command{
 		Use:   "remove <id>",
-		Short: removeShort(kindLabel(kind)),
+		Short: removeShort(kind.Label()),
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := newSession(cmd.Context(), *paths, *builtins, flags.yes)
@@ -544,9 +440,9 @@ func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind string
 				}
 			}
 			_, isSkill := s.Config.Skills[config.ID(id)]
-			isPackage := kind == edit.Skills && !isSkill && s.SkillPackage(config.ID(id))
+			isPackage := kind == config.KindSkills && !isSkill && s.SkillPackage(config.ID(id))
 			switch {
-			case kind == "harnesses":
+			case kind == config.KindHarnesses:
 				err = s.removeHarness(id, force)
 			case isPackage:
 				err = s.removePackage(config.ID(id), force)
@@ -560,7 +456,7 @@ func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind string
 			if err != nil {
 				return err
 			}
-			if written && isPackage && !scripting.enabled {
+			if written && isPackage {
 				disabled := []string{}
 				for _, d := range s.result.Disabled {
 					disabled = append(disabled, d.ID)
@@ -575,7 +471,6 @@ func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind string
 		},
 	}
 	flags.registerYes(cmd)
-	jsonFlag(cmd)
 	cmd.Flags().BoolVar(&force, "force", false, "also remove the entries that reference it")
 	return cmd
 }

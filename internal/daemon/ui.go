@@ -145,7 +145,7 @@ func (s *Server) serveUISchema(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthenticated", http.StatusUnauthorized)
 		return
 	}
-	schema, err := config.Schema(false, s.builtins)
+	schema, err := config.Schema(config.FragmentSchema, s.builtins)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

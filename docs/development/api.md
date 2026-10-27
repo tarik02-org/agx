@@ -11,18 +11,18 @@ The Go module path is `github.com/tarik02-org/agx`.
 - `ConfigurationService`: validate the daemon's configured root and resolve a
   directory for an optional harness, including provenance and required
   environment names.
-- `PackageService`: start install/update operations and watch their progress.
+- `PackageService`: install packages, streaming progress and then the result.
   The CLI installs in-process instead; both paths share the installer lock.
 - `LaunchService`: prepare, renew, finish, and administratively revoke a launch;
-  resolve and prepare thread launches of a process serving many threads; restore
-  a launch a restarted daemon brought back.
+  resolve and prepare thread launches of a process serving many threads; attach
+  a launch, with its thread launches, to a daemon that does not hold it.
 - `RuntimeService`: inspect/watch redacted daemon, launch, and MCP server state;
   `TestMcpServer`, which connects to one MCP server outside any launch and
   lists its tools with their descriptions (`agx mcp test`), accepting only the
   environment variables the server's values name and reporting failures with the
   endpoint's diagnostics; and `ListTools` and `CallTool`, which list and call the
   tools of the MCP servers in a call scope (`agx mcp tools`, `agx mcp call`, and
-  the client of `agx mcp types`).
+  the client of `agx mcp types`); and `Stop`, which stops the daemon.
 - `SecretService`: log in with OAuth, set a keychain secret, inspect secret
   state, and log out.
 
@@ -93,31 +93,30 @@ parent's lease and lifecycle token. Renewing it with `session_id` reports its
 thread and marks it running; it finishes with outcome `thread_closed`, and ends
 with its parent however the parent ends.
 
-A daemon stopped without force keeps its active launches for the next one
+Launches outlive the daemon that prepared them
 ([ADR 0016](../adr/0016-launches-survive-daemon-restarts.md)). When renewal fails,
 the wrapper rereads discovery and renews with the daemon it names, whatever its
-build, until its lease runs out. `RenewLaunchResponse.restore_launch_ids` lists
-the launch and its thread launches that the new daemon restored and that wait for
-`RestoreLaunch`: management authorization, the lifecycle token in the message, and
-the environment inputs (plus, for the launch itself, the native arguments and
-executable) it was prepared with, which the state file never holds. Until then a restored process
-serving threads answers `Unavailable` to thread preparation.
+build. When that daemon does not hold the launch, or let it expire, the wrapper
+sends `AttachLaunch` with management authorization: the launch, its grant and
+lifecycle token, the environment inputs, native arguments, and executable it was
+prepared with, and its active thread launches with their grants
+(`PrepareThreadLaunchResponse.grant`) and inputs. Attaching is idempotent; a
+revoked launch is refused. Until a launch is attached, its MCP endpoints answer
+503 with `Retry-After`.
 
-Use management authorization for other RPCs. Preparation and package mutations
-require an idempotency key: retries within the same daemon instance return the
-same operation/launch instead of duplicating effects. Renew and finish are
-idempotent; a terminal launch cannot be revived. Revoke releases its MCP runtime
-without signaling the harness process.
-Reject reuse of an idempotency key with different parameters.
+Use management authorization for other RPCs. Preparation is not idempotent: a
+retried preparation prepares another launch. Renew and finish are idempotent; a
+terminal launch cannot be revived. Revoke releases its MCP runtime without
+signaling the harness process.
 
 ## Watches and failures
 
 Runtime watches start with a complete redacted view and send replacement views
 when state changes. Clients reconnect by requesting a fresh view; v1 does not
 promise durable event replay. Slow observers must not block MCP traffic.
-Package-operation watches likewise emit current state through a terminal outcome.
-Losing an observer does not cancel package installation. Daemon restart may abort
-operations; atomic cache/lock writes allow a safe retry.
+`Install` streams progress through a terminal outcome. Losing the caller does not
+cancel the installation. Daemon restart may abort it; atomic cache/lock writes
+allow a safe retry.
 
 `Login` is server-streaming and takes a secret ID: a top-level OAuth secret or an
 MCP server with inline or on-demand OAuth. Its first message, `started`, carries

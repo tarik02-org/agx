@@ -84,9 +84,9 @@ func PackageID(c *config.Config, source Source, packageID string) (config.ID, er
 	return id, nil
 }
 
-// DeclarePackage declares a Git source as package id in file, unless the package exists with the
-// same source. It reports whether it declared one.
-func (s *Session) DeclarePackage(id config.ID, source Source, file string) (bool, error) {
+// DeclarePackage declares a Git source as package id in the target fragment, unless the package
+// exists with the same source. It reports whether it declared one.
+func (s *Session) DeclarePackage(id config.ID, source Source) (bool, error) {
 	if p, exists := s.Config.Packages[id]; exists {
 		if p.Git != source.Git || p.Ref != source.Ref || p.Subdir != source.Subdir {
 			return false, errorf(
@@ -104,11 +104,15 @@ func (s *Session) DeclarePackage(id config.ID, source Source, file string) (bool
 	if source.Subdir != "" {
 		edit.Set(definition, "subdir", edit.Scalar(source.Subdir))
 	}
-	f, err := s.File(file)
+	file, err := s.Target()
 	if err != nil {
 		return false, err
 	}
-	if f.Definition(Packages, string(id)) != nil {
+	f, err := s.Open(file)
+	if err != nil {
+		return false, err
+	}
+	if f.Definition(config.KindPackages, string(id)) != nil {
 		return false, errorf(
 			Conflict,
 			"package %s is already defined in %s; pass --package to choose another ID",
@@ -116,19 +120,18 @@ func (s *Session) DeclarePackage(id config.ID, source Source, file string) (bool
 			file,
 		)
 	}
-	f.Define(Packages, string(id), definition)
+	f.Define(config.KindPackages, string(id), definition)
 	return true, nil
 }
 
 // Install installs the edited configuration's packages into the cache, keeping the lockfiles it
-// would write in the session. Definitions in file, when it is outside the configuration, are
-// installed on their own, as planning checks them.
-func (s *Session) Install(ctx context.Context, file string) error {
+// would write in the session.
+func (s *Session) Install(ctx context.Context) error {
 	overlay, err := s.Overlay()
 	if err != nil {
 		return err
 	}
-	result, err := packages.Install(ctx, s.loadRoot(file), s.Paths.Cache, s.Builtins, packages.Options{
+	result, err := packages.Install(ctx, s.Paths.Config, s.Paths.Cache, s.Builtins, packages.Options{
 		Overlay: overlay,
 		Stage:   true,
 	})
@@ -139,18 +142,11 @@ func (s *Session) Install(ctx context.Context, file string) error {
 	return nil
 }
 
-// Load loads the edited configuration, or file on its own when it is outside the configuration.
-func (s *Session) Load(file string) (*config.Config, error) {
+// Load loads the edited configuration.
+func (s *Session) Load() (*config.Config, error) {
 	overlay, err := s.Overlay()
 	if err != nil {
 		return nil, err
 	}
-	return config.LoadWith(s.loadRoot(file), s.Paths.Cache, s.Builtins, overlay)
-}
-
-func (s *Session) loadRoot(file string) string {
-	if file != s.Root && !slices.Contains(s.Config.Files, file) {
-		return file
-	}
-	return s.Paths.Config
+	return config.Load(s.Paths.Config, config.Options{Builtins: s.Builtins, Cache: s.Paths.Cache, Overlay: overlay})
 }

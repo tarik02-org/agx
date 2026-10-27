@@ -78,10 +78,10 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 				}
 				edit.Set(definition, "path", edit.Scalar(writtenPath(file, abs)))
 			}
-			if err := s.define(edit.Instructions, id, file, definition); err != nil {
+			if err := s.define(config.KindInstructions, id, file, definition); err != nil {
 				return err
 			}
-			if err := s.enableAfterDefine(edit.Instructions, id, file, flags); err != nil {
+			if err := s.enableAfterDefine(config.KindInstructions, id, flags); err != nil {
 				return err
 			}
 			if _, err := s.commit(); err != nil {
@@ -91,13 +91,12 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 		},
 	}
 	flags.register(add, true)
-	jsonFlag(add)
 	add.Flags().StringVar(&id, "id", "", "instructions ID (default: the file stem)")
 	add.Flags().StringVar(&text, "text", "", "instructions text instead of a file")
 	command.AddCommand(
 		add,
-		listCommand(paths, builtins, edit.Instructions),
-		removeCommand(paths, builtins, edit.Instructions),
+		listCommand(paths, builtins, config.KindInstructions),
+		removeCommand(paths, builtins, config.KindInstructions),
 	)
 	return command
 }
@@ -105,7 +104,6 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 func instructionsRows(c *config.Config) ([]string, [][]string, any) {
 	out := ui.Stdout
 	rows := [][]string{}
-	items := []instructionsJSON{}
 	for _, id := range slices.Sorted(maps.Keys(c.Instructions)) {
 		i := c.Instructions[id]
 		kind, from := "file", ui.ShortPath(i.Path, "")
@@ -122,16 +120,8 @@ func instructionsRows(c *config.Config) ([]string, [][]string, any) {
 			order = strconv.Itoa(i.Order)
 		}
 		rows = append(rows, []string{out.ID(string(id)), kind, order, from, out.Path(location(c, i.Source))})
-		items = append(items, instructionsJSON{
-			ID:     string(id),
-			Kind:   kind,
-			Path:   jsonString(i.Path),
-			Order:  jsonInt(i.Order),
-			Inline: i.Inline,
-			Source: configSource(i.Source),
-		})
 	}
-	return []string{"ID", "KIND", "ORDER", "FROM", "SOURCE"}, rows, instructionsListJSON{Instructions: items}
+	return []string{"ID", "KIND", "ORDER", "FROM", "SOURCE"}, rows, c.Instructions
 }
 
 func excerpt(text string, limit int) string {
@@ -209,12 +199,12 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 			if err != nil {
 				return err
 			}
-			f, err := s.File(file)
+			f, err := s.Open(file)
 			if err != nil {
 				return err
 			}
-			f.Define("harnesses", name, definition)
-			s.result.Defined = append(s.result.Defined, definitionJSON{Kind: "harnesses", ID: name})
+			f.Define(config.KindHarnesses, name, definition)
+			s.result.Defined = append(s.result.Defined, definitionID{Kind: config.KindHarnesses, ID: name})
 			ok, err := s.commit()
 			if err != nil {
 				return err
@@ -226,21 +216,23 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 		},
 	}
 	flags.registerYes(add)
-	jsonFlag(add)
-	add.Flags().
-		StringVar(&flags.file, "file", "", "fragment to write the definition to (default: the root configuration)")
+	flags.registerFile(add)
 	add.Flags().StringVar(&base, "base", "", "harness this definition extends")
 	add.Flags().StringVar(&executable, "executable", "", "absolute path of the native executable")
 	add.Flags().
 		StringArrayVar(&env, "env", nil, "environment KEY=VALUE; VALUE may be '!secret id', '!env NAME', or '!file path'")
-	command.AddCommand(add, listCommand(paths, builtins, "harnesses"), removeCommand(paths, builtins, "harnesses"))
+	command.AddCommand(
+		add,
+		listCommand(paths, builtins, config.KindHarnesses),
+		removeCommand(paths, builtins, config.KindHarnesses),
+	)
 	return command
 }
 
 func harnessRows(c *config.Config) ([]string, [][]string, any) {
 	out := ui.Stdout
 	rows := [][]string{}
-	items := []harnessJSON{}
+	items := []config.ResolvedHarness{}
 	for _, name := range c.HarnessNames() {
 		h, err := c.Harness(name)
 		if err != nil {
@@ -252,24 +244,14 @@ func harnessRows(c *config.Config) ([]string, [][]string, any) {
 			base = "built-in"
 		}
 		source := ""
-		var sourceDocument *sourceJSON
 		if defined {
 			source = location(c, def.Source)
-			document := configSource(def.Source)
-			sourceDocument = &document
 		}
 		rows = append(rows, []string{out.ID(name), base, h.Builtin, ui.ShortPath(h.Executable, ""), out.Path(source)})
-		items = append(items, harnessJSON{
-			Name:             name,
-			Base:             jsonString(def.Base),
-			Builtin:          h.Builtin,
-			Executable:       jsonString(h.Executable),
-			Settings:         def.Settings,
-			ResolvedSettings: h.Settings,
-			Source:           sourceDocument,
-		})
+		h.Environment = redact(h.Environment)
+		items = append(items, h)
 	}
-	return []string{"NAME", "BASE", "BUILT-IN", "EXECUTABLE", "SOURCE"}, rows, harnessListJSON{Harnesses: items}
+	return []string{"NAME", "BASE", "BUILT-IN", "EXECUTABLE", "SOURCE"}, rows, items
 }
 
 // removeHarness deletes every fragment's declaration of a harness. Definitions extending it must
@@ -279,7 +261,7 @@ func (s *session) removeHarness(name string, force bool) error {
 	if err := s.RemoveHarness(name, force); err != nil {
 		return err
 	}
-	s.result.Removed = append(s.result.Removed, definitionJSON{Kind: "harnesses", ID: name})
+	s.result.Removed = append(s.result.Removed, definitionID{Kind: config.KindHarnesses, ID: name})
 	return nil
 }
 
@@ -322,15 +304,14 @@ func useCommands(paths *platform.Paths, builtins *config.Builtins) []*cobra.Comm
 				if err != nil {
 					return err
 				}
-				fallback, err := s.ruleFile(kind, id, flags.file)
-				if err != nil {
+				if err := s.useFile(flags.file); err != nil {
 					return err
 				}
 				var changed bool
 				if use {
-					changed, err = s.enable(kind, id, target, fallback)
+					changed, err = s.enable(kind, id, target)
 				} else {
-					changed, err = s.disable(kind, id, target, fallback)
+					changed, err = s.disable(kind, id, target)
 				}
 				if err != nil {
 					return err
@@ -340,7 +321,7 @@ func useCommands(paths *platform.Paths, builtins *config.Builtins) []*cobra.Comm
 					if !use {
 						state = "disabled"
 					}
-					hint(fmt.Sprintf("%s %s is already %s %s.", kindLabel(kind), id, state, inScope(target)))
+					hint(fmt.Sprintf("%s %s is already %s %s.", kind.Label(), id, state, inScope(target)))
 					return s.report()
 				}
 				if _, err := s.commit(); err != nil {
@@ -352,10 +333,9 @@ func useCommands(paths *platform.Paths, builtins *config.Builtins) []*cobra.Comm
 		cmd.Flags().StringVar(&flags.scope, "scope", "user",
 			"user (everywhere), here (this directory), or a directory")
 		cmd.Flags().StringSliceVar(&flags.harnesses, "harness", nil, "only for these harnesses (repeatable)")
-		cmd.Flags().StringVar(&flags.file, "file", "", "fragment for a new rule (default: beside the definition)")
+		flags.registerFile(cmd)
 		cmd.Flags().StringVar(&kind, "kind", "", "skills, instructions, mcp, or bundles, when the ID names several")
 		flags.registerYes(cmd)
-		jsonFlag(cmd)
 		out = append(out, cmd)
 	}
 	return out
@@ -371,16 +351,16 @@ func inScope(target scope) string {
 	return "in " + target.String()
 }
 
-// resourceKind finds which kind of definition id names.
-func resourceKind(c *config.Config, id, kind string) (string, error) {
-	kinds := []string{}
-	for _, k := range []string{edit.Skills, edit.Instructions, edit.MCP, edit.Bundles} {
-		if _, exists := configedit.Lookup(c, k, id); exists && (kind == "" || kind == k) {
+// resourceKind finds which kind of definition id names, of the kind named, if any.
+func resourceKind(c *config.Config, id, only string) (config.Kind, error) {
+	kinds := []config.Kind{}
+	for _, k := range config.SelectionKinds {
+		if _, exists := configedit.Lookup(c, k, id); exists && (only == "" || only == string(k)) {
 			kinds = append(kinds, k)
 		}
 	}
 	switch {
-	case kind != "" && !slices.Contains([]string{edit.Skills, edit.Instructions, edit.MCP, edit.Bundles}, kind):
+	case only != "" && !slices.Contains(config.SelectionKinds, config.Kind(only)):
 		return "", &usageError{fmt.Errorf("--kind must be skills, instructions, mcp, or bundles")}
 	case len(kinds) == 0:
 		return "", codedf(
@@ -389,15 +369,13 @@ func resourceKind(c *config.Config, id, kind string) (string, error) {
 			id,
 		)
 	case len(kinds) > 1:
-		return "", &usageError{fmt.Errorf("%s names %s; choose with --kind", id, strings.Join(kinds, " and "))}
+		return "", &usageError{
+			fmt.Errorf(
+				"%s names %s; choose with --kind",
+				id,
+				strings.ReplaceAll(config.JoinKinds(kinds), ", ", " and "),
+			),
+		}
 	}
 	return kinds[0], nil
-}
-
-// ruleFile is where a new rule for id goes: --file, else the fragment defining it, else the root.
-func (s *session) ruleFile(kind, id, flag string) (string, error) {
-	if flag != "" {
-		return s.definitionFile(flag)
-	}
-	return s.RuleFile(kind, id), nil
 }

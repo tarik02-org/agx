@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -26,9 +27,7 @@ import (
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/daemon"
 	"github.com/tarik02-org/agx/internal/platform"
-	"github.com/tarik02-org/agx/internal/securefs"
 	"github.com/tarik02-org/agx/internal/sessions"
 )
 
@@ -61,7 +60,7 @@ type harnessConfig struct {
 
 func loadHarnesses(path string, builtins config.Builtins) harnessConfig {
 	// Harnesses come only from configuration fragments, so packages need not be installed.
-	c, err := config.Read(path, builtins)
+	c, err := config.Load(path, config.Options{Builtins: builtins})
 	if err != nil {
 		return harnessConfig{config: config.Bare(builtins), err: err}
 	}
@@ -115,13 +114,13 @@ func runHarness(
 	mode := adapter.Classify(args)
 	if mode == config.ModePassthrough {
 		// Without a managed launch there is no daemon to ask, so secrets resolve here when their
-		// kind allows it: environment, command, keychain, or sops.
+		// kind allows it: command, keychain, or sops.
 		harnessArgs, harnessEnv, err := h.Resolve(mode, os.LookupEnv, func(id config.ID) (string, error) {
 			secret, ok := harnesses.config.Secrets[id]
 			if !ok {
 				return "", fmt.Errorf("unknown secret %s; passthrough commands read only configuration fragments", id)
 			}
-			return auth.LocalValue(ctx, id, secret, harnesses.config.Secrets, os.LookupEnv)
+			return auth.LocalValue(ctx, auth.OpenStore(paths.State), id, secret, harnesses.config.Secrets, os.LookupEnv)
 		})
 		if err != nil {
 			// Native commands agx does not manage, such as --help or login, still run as the
@@ -134,11 +133,15 @@ func runHarness(
 			cmd.Env = append(cmd.Env, key+"="+harnessEnv[key])
 		}
 		cmd.Env = guardEnviron(cmd.Env)
-		return supervise(cmd, nil, nil)
+		return passthrough(cmd)
 	}
 	directory, nativeArgs, err := adapter.Directory(args, cwd)
 	if err != nil {
 		return err
+	}
+	assigned := ""
+	if a, ok := adapter.(adapters.SessionAssigner); ok {
+		assigned, nativeArgs = a.AssignSession(nativeArgs, newUUID())
 	}
 	// The daemon cannot tell a directory missing here from one it cannot resolve.
 	if info, err := os.Stat(directory); err != nil {
@@ -170,12 +173,10 @@ func runHarness(
 			shellQuote(c.discovery.Config),
 		)
 	}
-	resolveCtx, cancel := context.WithTimeout(ctx, callTimeout)
 	resolved, err := c.config.Resolve(
-		resolveCtx,
-		request(&v1.ResolveRequest{Directory: directory, Harness: name}, c.discovery.Token),
+		ctx,
+		connect.NewRequest(&v1.ResolveRequest{Directory: directory, Harness: name}),
 	)
-	cancel()
 	if err != nil {
 		return err
 	}
@@ -189,31 +190,23 @@ func runHarness(
 	}
 	// The harness inherits this environment, so the daemon reads its configuration from here;
 	// an empty value tells the daemon the variable is unset.
-	for _, name := range adapter.Forwarded() {
+	for _, name := range adapters.Forwarded(adapter) {
 		inputs[name] = os.Getenv(name)
 	}
-	prepare := request(
-		&v1.PrepareLaunchRequest{
-			RequestId:         securefs.Token(),
-			SnapshotId:        resolved.Msg.Snapshot.Id,
-			Directory:         directory,
-			Harness:           name,
-			NativeArguments:   nativeArgs,
-			EnvironmentInputs: inputs,
-			Executable:        executable,
-		},
-		c.discovery.Token,
-	)
+	prepare := &v1.PrepareLaunchRequest{
+		SnapshotId:        resolved.Msg.Snapshot.Id,
+		Directory:         directory,
+		Harness:           name,
+		NativeArguments:   nativeArgs,
+		EnvironmentInputs: inputs,
+		Executable:        executable,
+	}
 	prepareLaunch := func() (*connect.Response[v1.PrepareLaunchResponse], error) {
 		ctx, cancel := context.WithTimeout(ctx, launchTimeout)
 		defer cancel()
-		prepare.Header().Set("Authorization", "Bearer "+c.discovery.Token)
-		return c.launches.PrepareLaunch(ctx, prepare)
+		return c.launches.PrepareLaunch(ctx, connect.NewRequest(prepare))
 	}
 	prepared, err := prepareLaunch()
-	if err != nil && connect.CodeOf(err) == connect.CodeUnavailable && !stopping(err) {
-		prepared, err = prepareLaunch()
-	}
 	// A restarting daemon refuses new launches; the next one, which the restart or this command
 	// starts, takes the same request.
 	deadline := time.Now().Add(restartWait)
@@ -278,55 +271,67 @@ func runHarness(
 	if resumed != "" {
 		record.Sessions = []string{resumed}
 	}
+	if assigned != "" {
+		record.Sessions, record.Exact = []string{assigned}, true
+	}
 	if err := records.Start(record); err != nil {
 		ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
 	}
-	link := newLease(paths, c, p.Launch.Id, p.LifecycleToken)
-	link.remember(p.Launch.Id, inputs, nativeArgs, executable)
+	link := newLease(paths, c, &v1.AttachLaunchRequest{
+		Launch:            p.Launch,
+		Grant:             p.Spawn.EnvironmentOverrides[adapters.GrantEnvironment],
+		LifecycleToken:    p.LifecycleToken,
+		EnvironmentInputs: inputs,
+		NativeArguments:   nativeArgs,
+		Executable:        executable,
+	})
 	finished := make(chan struct{})
 	var wg sync.WaitGroup
 	start := func() {
 		// The daemon's expiry turns into a monotonic deadline, which a wall clock jump leaves be.
 		expires := time.Now().Add(time.Until(p.Launch.GetExpiresAt().AsTime()))
-		// Failures are retried every second until the lease runs out, because the daemon may
-		// recover, or another one restore the launch, before then.
+		// Failures are retried for as long as the harness runs: a daemon may recover, or another
+		// one take the launch.
+		paused := false
 		renew := func() (bool, bool) {
-			ctx, cancel := boundedContext()
-			defer cancel()
 			response, err := link.renew(
-				ctx,
+				context.Background(),
 				&v1.RenewLaunchRequest{LaunchId: p.Launch.Id, HarnessPid: uint64(cmd.Process.Pid)},
 			)
 			if err == nil {
 				if next := response.GetExpiresAt(); next != nil {
 					expires = time.Now().Add(time.Until(next.AsTime()))
 				}
+				if paused {
+					ui.Diagnose(ui.Info, "MCP access is back.")
+					paused = false
+				}
 				return true, true
 			}
-			var rpcErr *connect.Error
-			ended := ""
-			if errors.As(err, &rpcErr) {
-				ended = rpcErr.Meta().Get(daemon.EndedHeader)
-			}
-			switch {
-			case ended == "revoked":
+			switch code := connect.CodeOf(err); {
+			case ended(err) == "revoked":
 				ui.Diagnose(ui.Warn, "launch was revoked; MCP access is lost. Relaunch to reconnect.")
 				return false, false
-			case ended == "finished":
+			case ended(err) == "finished":
 				return false, false
-			case ended == "" && connect.CodeOf(err) == connect.CodeNotFound:
-				// A serving daemon has restored every launch it could; the next one would not either.
+			case code == connect.CodeInvalidArgument, code == connect.CodeUnauthenticated:
 				ui.Diagnose(
 					ui.Warn,
-					"the daemon no longer knows this launch (revoked by agx daemon stop --force, or its saved state "+
-						"was lost); MCP access is lost. Relaunch to reconnect.",
+					"the daemon no longer holds this launch and refused to take it back: %v; MCP access is lost. "+
+						"Relaunch to reconnect.",
+					err,
 				)
 				return false, false
-			case ended == "" && time.Now().Before(expires):
+			case code == connect.CodeUnavailable && !stopping(err) && link.replaceCrashed(ctx):
+				return false, true
+			case time.Now().Before(expires):
 				return false, true
 			}
-			ui.Diagnose(ui.Warn, "launch lease expired; MCP access is lost. Relaunch to reconnect.")
-			return false, false
+			if !paused {
+				ui.Diagnose(ui.Warn, "no agx daemon serves this launch; MCP access is paused until one does: %v", err)
+				paused = true
+			}
+			return false, true
 		}
 		wg.Go(func() {
 			interval := time.Duration(p.RenewAfterSeconds) * time.Second
@@ -345,7 +350,7 @@ func runHarness(
 					wait = backoff(failures)
 					failures++
 				}
-				// A daemon that replaced this one renews, and restores the launch, at once.
+				// A daemon that replaced this one gets the launch at once.
 				if !link.await(finished, wait) {
 					return
 				}
@@ -423,10 +428,8 @@ func runHarness(
 	if err := records.Finish(p.Launch.Id, time.Now()); err != nil {
 		ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
 	}
-	finishCtx, cancel := boundedContext()
-	defer cancel()
 	if err := link.call(func(c *client) error {
-		_, err := c.launches.FinishLaunch(finishCtx, request(finish, p.LifecycleToken))
+		_, err := c.launches.FinishLaunch(context.Background(), withToken(finish, p.LifecycleToken))
 		return err
 	}); err != nil {
 		ui.Diagnose(ui.Warn, "launch cleanup unavailable; lease expiry will release MCP resources")
@@ -512,4 +515,13 @@ func warnDiagnostics(diagnostics []*v1.Diagnostic) {
 			ui.Diagnose(ui.Warn, "%s", d.Summary)
 		}
 	}
+}
+
+// newUUID returns a random version 4 UUID.
+func newUUID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }

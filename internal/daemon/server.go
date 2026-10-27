@@ -9,11 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime/debug"
 	"sort"
 	"strconv"
@@ -53,13 +55,6 @@ func init() {
 // discovery when the running daemon has a different version.
 var ErrVersionMismatch = errors.New("daemon version mismatch")
 
-// ErrNewerDiscovery is returned by ReadDiscovery when the discovery file has a format newer than
-// this build reads, written by a newer agx; this build must neither use nor replace that daemon.
-var ErrNewerDiscovery = errors.New("daemon discovery from a newer agx")
-
-// discoveryFormat is the format version of the discovery file.
-const discoveryFormat = 1
-
 // ErrUnavailable marks ReadDiscovery errors that leave no daemon to reach: it is not running,
 // or its discovery file is invalid.
 var ErrUnavailable = errors.New("daemon unavailable")
@@ -71,32 +66,28 @@ func (u unavailable) Error() string { return string(u) }
 
 func (u unavailable) Is(target error) bool { return target == ErrUnavailable }
 
-// KeptLaunchesHeader carries, in a response to a stop without force, how many active launches
-// the daemon keeps for the next one to restore.
-const KeptLaunchesHeader = "Agx-Kept-Launches"
-
-// historyRetention keeps ended launches and finished operations
-// around long enough for idempotent replays and status inspection.
+// historyRetention keeps ended launches around for status inspection.
 const historyRetention = time.Hour
 
 type Discovery struct {
-	// Format is the file's format version, discoveryFormat; files from builds before it have none.
-	// Version names the agx release, which older builds compare, so it keeps its name.
-	Format     int    `json:"format"`
 	Version    string `json:"version"`
 	Build      string `json:"build"`
 	InstanceID string `json:"instance_id"`
 	URL        string `json:"url"`
 	Token      string `json:"token"`
 	Config     string `json:"config"`
-	// RestoresLaunches marks a daemon that keeps its active launches for the next one when it
-	// stops without force, so replacing it does not end their MCP access.
-	RestoresLaunches bool `json:"restores_launches,omitempty"`
+	// PID is the daemon's process, for diagnosing one that stopped answering.
+	PID int `json:"pid,omitempty"`
 }
 
+// verifier hashes a launch credential, so the daemon never holds one it could leak.
+func verifier(value string) [32]byte { return sha256.Sum256([]byte(value)) }
+
+func matches(hash [32]byte, value string) bool { return hash == verifier(value) }
+
 type launch struct {
-	// view.ExpiresAt shows and saves expires, which alone decides expiry: it holds a monotonic
-	// clock reading, so that a wall clock jump expires no lease early or late.
+	// view.ExpiresAt shows expires, which alone decides expiry: it holds a monotonic clock
+	// reading, so that a wall clock jump expires no lease early or late.
 	view      *v1.Launch
 	expires   time.Time
 	grant     [32]byte
@@ -106,72 +97,53 @@ type launch struct {
 	endpoints map[config.ID]*mcpruntime.Endpoint
 	snapshot  *config.Snapshot
 	// target is the harness process a launch started; its thread launches share it.
-	target adapters.Target
-	ended  time.Time
-	// created and lease are kept with the launch's state; lease is how long a renewal extends it.
+	target  adapters.Target
+	ended   time.Time
 	created time.Time
-	lease   time.Duration
+	// lease is how long a renewal extends the launch.
+	lease time.Duration
 	// threadServer marks a harness process serving many threads; its launch has no endpoints.
 	threadServer bool
-	// restored marks a launch a restarted daemon restored from its state file, until its wrapper
-	// resent what that file does not hold (RestoreLaunch). Until then, endpoints and snapshot
-	// stay nil, except that endpoints needing no environment inputs are rebuilt on first use.
-	restored bool
-	// unavailable says why a restored launch's MCP servers cannot be served, when its snapshot no
-	// longer resolves to the same ID.
+	// unavailable says why an attached launch's MCP servers cannot be served, when its directory
+	// no longer resolves to the snapshot it started with.
 	unavailable string
-	// reviving serializes rebuilding a restored launch.
-	reviving sync.Mutex
-}
-
-type prepareRecord struct {
-	fingerprint string
-	response    []byte
-	launchID    string
-}
-
-type operation struct {
-	fingerprint string
-	requestID   string
-	state       *v1.WatchOperationResponse
-	finished    time.Time
 }
 
 type Server struct {
-	mu           sync.Mutex
-	reloadMu     sync.Mutex
-	paths        platform.Paths
-	adapters     adapters.Registry
-	builtins     config.Builtins
-	config       *config.Config
-	configErr    error
-	inputs       *config.Inputs
-	discovery    Discovery
-	manager      *auth.Manager
-	launches     map[string]*launch
-	preparations map[string]prepareRecord
-	operations   map[string]*operation
-	// operationRequests maps idempotency keys to operations also held in operations.
-	operationRequests map[string]*operation
-	ctx               context.Context
-	cancel            context.CancelFunc
-	stop              chan struct{}
+	mu        sync.Mutex
+	reloadMu  sync.Mutex
+	paths     platform.Paths
+	adapters  adapters.Registry
+	builtins  config.Builtins
+	config    *config.Config
+	configErr error
+	inputs    *config.Inputs
+	discovery Discovery
+	manager   *auth.Manager
+	launches  map[string]*launch
+	ctx       context.Context
+	cancel    context.CancelFunc
+	stop      chan struct{}
 	// forced is set by a stop that revokes active launches instead of keeping them.
 	forced bool
-	// grace, when set by a stop, replaces daemon.shutdown_grace_seconds.
+	// revoked maps launches revoked within revokedRetention, by this daemon or one before it, to
+	// when; their wrappers cannot attach them again.
+	revoked map[string]time.Time
+	// attachMu serializes AttachLaunch.
+	attachMu sync.Mutex
+	// grace, when set by a stop, replaces ShutdownGrace.
 	grace time.Duration
 	drain *drain
-	// flushed is set once a stopping daemon collected the state the next one gets; new launches
-	// are refused from then on, for their callers to retry with the next daemon.
-	flushed bool
+	// stopped is set once a stopping daemon collected its launches; new launches are refused
+	// from then on, for their callers to retry with the next daemon.
+	stopped bool
 	// installs counts package installations running off their requests; none starts once
 	// installsClosed is set, so that waiting for them is final.
 	installs       sync.WaitGroup
 	installsClosed bool
-	// store keeps active launches across restarts; generation numbers the states built for it.
-	store      *stateStore
-	generation uint64
-	port       int
+	port           int
+	// changed wakes runtime watchers when launches or their MCP servers change.
+	changed *notifier
 	// clients pools the daemon's own MCP client sessions for ListTools and CallTool.
 	clients *clientPool
 	// ui holds the web UI's login codes and sessions.
@@ -189,8 +161,9 @@ type Server struct {
 
 // Serve runs the daemon until stop closes or a stop request arrives, then shuts down gracefully:
 // it takes no new launches or MCP sessions, lets requests in flight finish for the grace period,
-// saves its launches, and lets its MCP servers exit. When ctx ends, it shuts down at once, still
-// saving its launches. builtins must describe the adapters in registry.
+// and lets its MCP servers exit. When ctx ends, it shuts down at once. Unless the stop forces,
+// wrappers attach their launches to the next daemon. builtins must describe the adapters in
+// registry.
 func Serve(
 	ctx context.Context,
 	stop <-chan struct{},
@@ -211,37 +184,32 @@ func Serve(
 	}
 	defer func() { _ = lock.Unlock() }()
 	discoveryPath := filepath.Join(paths.Runtime, "daemon.json")
+	// Discovery left behind names the port of a daemon that was killed, which its launches'
+	// harnesses use; the state file names the port of one that stopped.
+	port := 0
+	if previous, err := ReadDiscovery(paths); err == nil || errors.Is(err, ErrVersionMismatch) {
+		if u, err := url.Parse(previous.URL); err == nil {
+			port, _ = strconv.Atoi(u.Port())
+		}
+		slog.Warn("the previous daemon stopped without shutting down", "pid", previous.PID, "url", previous.URL)
+	}
 	// The startup lock makes stale discovery replacement safe.
 	if err := os.Remove(discoveryPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	c, inputs, err := config.LoadTracked(paths.Config, paths.Cache, builtins)
+	inputs := &config.Inputs{}
+	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache, Inputs: inputs})
 	if err != nil {
 		return err
 	}
-	store := &stateStore{path: StatePath(paths), interval: renewalWriteInterval}
-	port, restored, err := loadState(store.path, paths.Config, time.Now())
-	// Without a readable state, launch files may still belong to launches a daemon could restore.
-	sweep := err == nil
-	var newer newerState
-	var invalid invalidState
-	switch {
-	case errors.As(err, &newer):
-		return err
-	case errors.As(err, &invalid):
-		aside := store.path + ".bad-" + time.Now().UTC().Format("20060102T150405Z")
-		if renameErr := os.Rename(store.path, aside); renameErr != nil {
-			fmt.Fprintf(
-				os.Stderr,
-				"agx daemon: ignoring saved launches: %v; cannot move it aside: %v\n",
-				err,
-				renameErr,
-			)
-		} else {
-			fmt.Fprintf(os.Stderr, "agx daemon: ignoring saved launches: %v; moved it to %s\n", err, aside)
-		}
-	case err != nil:
-		fmt.Fprintf(os.Stderr, "agx daemon: ignoring saved launches: %v\n", err)
+	// Holding the startup lock, no other daemon writes these directories.
+	removeAbandonedTemporaries(paths.State, time.Now())
+	state, err := loadState(StatePath(paths), time.Now())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "agx daemon: %v\n", err)
+	}
+	if port == 0 {
+		port = state.Port
 	}
 	listener, err := listen(ctx, port)
 	if err != nil {
@@ -252,48 +220,53 @@ func Serve(
 	serverCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 	discovery := Discovery{
-		Format:           discoveryFormat,
-		Version:          Version,
-		Build:            Build(),
-		InstanceID:       securefs.Token(),
-		URL:              "http://" + listener.Addr().String(),
-		Token:            securefs.Token(),
-		Config:           paths.Config,
-		RestoresLaunches: true,
+		Version:    Version,
+		Build:      Build(),
+		InstanceID: securefs.Token(),
+		URL:        "http://" + listener.Addr().String(),
+		Token:      securefs.Token(),
+		Config:     paths.Config,
+		PID:        os.Getpid(),
 	}
 	s := &Server{
-		paths:             paths,
-		adapters:          registry,
-		builtins:          builtins,
-		config:            c,
-		inputs:            inputs,
-		discovery:         discovery,
-		ctx:               serverCtx,
-		cancel:            cancel,
-		stop:              make(chan struct{}),
-		drain:             newDrain(),
-		launches:          map[string]*launch{},
-		preparations:      map[string]prepareRecord{},
-		operations:        map[string]*operation{},
-		operationRequests: map[string]*operation{},
-		store:             store,
-		port:              listener.Addr().(*net.TCPAddr).Port,
-		clients:           newClientPool(),
-		ui:                newUISessions(),
-		icons:             newMCPIcons(filepath.Join(paths.Cache, "mcp-icons.json")),
-		shared:            mcpruntime.NewShared(serverCtx, Version),
+		paths:     paths,
+		adapters:  registry,
+		builtins:  builtins,
+		config:    c,
+		inputs:    inputs,
+		discovery: discovery,
+		ctx:       serverCtx,
+		cancel:    cancel,
+		stop:      make(chan struct{}),
+		drain:     newDrain(),
+		launches:  map[string]*launch{},
+		revoked:   state.Revoked,
+		port:      listener.Addr().(*net.TCPAddr).Port,
+		clients:   newClientPool(),
+		ui:        newUISessions(),
+		icons:     newMCPIcons(filepath.Join(paths.Cache, "mcp-icons.json")),
+		changed:   &notifier{},
 	}
-	if port != 0 && port != s.port && len(restored) > 0 {
+	s.shared = mcpruntime.NewShared(serverCtx, Version, s.changed.notify)
+	if port != 0 && port != s.port {
 		fmt.Fprintf(
 			os.Stderr,
-			"agx daemon: port %d is taken; restored launches keep their lease, but harnesses holding "+
-				"endpoint URLs of port %d lose MCP access until they get new ones\n",
+			"agx daemon: port %d is taken; harnesses holding endpoint URLs of port %d lose MCP access "+
+				"until they get new ones\n",
 			port,
 			port,
 		)
 	}
-	s.restore(restored, sweep)
-	s.manager = auth.New(discovery.URL + "/oauth/callback")
+	s.mu.Lock()
+	s.saveState()
+	s.mu.Unlock()
+	// Launch files of launches whose wrappers did not attach them within a lease belong to
+	// harnesses that ended while no daemon ran.
+	started := time.Now()
+	sweep := time.AfterFunc(time.Duration(c.Daemon.LeaseSeconds)*time.Second, func() { s.sweep(started) })
+	defer sweep.Stop()
+	slog.Info("daemon started", "version", Version, "build", Build(), "pid", os.Getpid(), "url", discovery.URL)
+	s.manager = auth.New(discovery.URL+"/oauth/callback", auth.OpenStore(paths.State))
 	mux := http.NewServeMux()
 	interceptor := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
@@ -328,46 +301,6 @@ func Serve(
 	mux.Handle("/ui/", s.serveUI())
 	mux.HandleFunc("/launch/", s.serveMCP)
 	mux.HandleFunc("/oauth/callback", s.manager.Callback)
-	mux.HandleFunc("/stop", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if !equalBearer(r.Header.Get("Authorization"), discovery.Token) {
-			http.Error(w, "unauthenticated", http.StatusUnauthorized)
-			return
-		}
-		var grace time.Duration
-		if value := r.URL.Query().Get("grace"); value != "" {
-			parsed, err := time.ParseDuration(value)
-			if err != nil || parsed <= 0 {
-				http.Error(w, "grace must be a positive duration", http.StatusBadRequest)
-				return
-			}
-			grace = parsed
-		}
-		s.expire()
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		// Without force, active launches stay in the state file for the next daemon to restore.
-		s.forced = s.forced || r.URL.Query().Get("force") == "true"
-		if grace > 0 {
-			s.grace = grace
-		}
-		kept := 0
-		for _, l := range s.launches {
-			if active(l.view.State) && l.view.ParentLaunchId == "" && !s.forced {
-				kept++
-			}
-		}
-		select {
-		case <-s.stop:
-		default:
-			close(s.stop)
-		}
-		w.Header().Set(KeptLaunchesHeader, strconv.Itoa(kept))
-		w.WriteHeader(http.StatusNoContent)
-	})
 	tracked := s.drain.track(mux)
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Host != listener.Addr().String() {
@@ -409,16 +342,13 @@ loop:
 		case <-ticker.C:
 			s.expire()
 			s.clients.expire(time.Now())
-			if s.store.due(time.Now()) {
-				s.persist(false)
-			}
 		}
 	}
 	s.drain.start()
 	if graceful {
 		s.settle(ctx)
 	}
-	launches := s.flush()
+	launches := s.stopLaunches()
 	s.clients.closeAll()
 	// Shutdown closes the listener at once; requests that outlasted the grace period end as
 	// their MCP sessions close.
@@ -428,7 +358,7 @@ loop:
 		defer close(shutdownDone)
 		_ = server.Shutdown(shutdownCtx)
 	}()
-	s.closeLaunches(ctx, launches)
+	s.closeLaunches(launches)
 	stopKilling := context.AfterFunc(ctx, s.shared.Kill)
 	s.shared.Close()
 	stopKilling()
@@ -464,9 +394,9 @@ var selfAuthorized = map[string]bool{
 // next daemon.
 var startsWork = map[string]bool{
 	agxv1connect.LaunchServicePrepareLaunchProcedure:       true,
+	agxv1connect.LaunchServiceAttachLaunchProcedure:        true,
 	agxv1connect.LaunchServicePrepareThreadLaunchProcedure: true,
 	agxv1connect.PackageServiceInstallProcedure:            true,
-	agxv1connect.PackageServiceUpdateProcedure:             true,
 	agxv1connect.PackageServicePreviewSourceProcedure:      true,
 	agxv1connect.ConfigurationServicePlanChangesProcedure:  true,
 	agxv1connect.ConfigurationServiceApplyChangesProcedure: true,
@@ -477,12 +407,8 @@ var startsWork = map[string]bool{
 
 // settle waits for the grace period until requests in flight finished, or ctx ends.
 func (s *Server) settle(ctx context.Context) {
-	c, _ := s.reload()
 	s.mu.Lock()
-	if c == nil {
-		c = s.config
-	}
-	grace := time.Duration(c.Daemon.ShutdownGraceSeconds) * time.Second
+	grace := ShutdownGrace
 	if s.grace > 0 {
 		grace = s.grace
 	}
@@ -532,9 +458,13 @@ func (s *Server) reload() (*config.Config, error) {
 		}
 		return current, nil
 	}
-	c, inputs, err := config.LoadTracked(s.paths.Config, s.paths.Cache, s.builtins)
+	inputs = &config.Inputs{}
+	c, err := config.Load(s.paths.Config, config.Options{Builtins: s.builtins, Cache: s.paths.Cache, Inputs: inputs})
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if (err == nil) != (s.configErr == nil) {
+		s.changed.notify()
+	}
 	s.configErr = err
 	s.inputs = inputs
 	if err == nil {
@@ -554,7 +484,7 @@ func (l *launch) extend(expires time.Time) {
 }
 
 // end must be called with s.mu held; endpoint and cache cleanup run outside it. A launch's
-// thread launches end with it.
+// thread launches end with it. A revocation is saved by the caller.
 func (s *Server) end(l *launch, state v1.Launch_State) {
 	if !active(l.view.State) {
 		return
@@ -562,6 +492,17 @@ func (s *Server) end(l *launch, state v1.Launch_State) {
 	l.view.State = state
 	l.ended = time.Now()
 	l.cancel()
+	s.changed.notify()
+	if state == v1.Launch_STATE_REVOKED {
+		if s.revoked == nil {
+			s.revoked = map[string]time.Time{}
+		}
+		s.revoked[l.view.Id] = l.ended
+	}
+	// A finished launch is the normal outcome; the others cut a running harness off.
+	if state != v1.Launch_STATE_FINISHED && l.view.ParentLaunchId == "" {
+		slog.Info("launch ended", "launch", shortID(l.view.Id), "harness", l.view.Harness, "state", savedEnd(state))
+	}
 	s.clients.closeLaunch(l.view.Id)
 	go s.release(l.view.Id, l.endpoints)
 	for _, child := range s.children(l) {
@@ -593,29 +534,55 @@ func closeEndpoints(endpoints map[config.ID]*mcpruntime.Endpoint) {
 	wg.Wait()
 }
 
+// Stop makes the daemon stop; without force, wrappers attach its active launches to the next
+// daemon.
+func (s *Server) Stop(
+	ctx context.Context,
+	req *connect.Request[v1.StopRequest],
+) (*connect.Response[v1.StopResponse], error) {
+	grace := req.Msg.Grace.AsDuration()
+	if req.Msg.Grace != nil && grace <= 0 {
+		return nil, rpcError(connect.CodeInvalidArgument, "grace must be a positive duration")
+	}
+	s.expire()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.forced = s.forced || req.Msg.Force
+	if grace > 0 {
+		s.grace = grace
+	}
+	var kept uint32
+	for _, l := range s.launches {
+		if active(l.view.State) && l.view.ParentLaunchId == "" && !s.forced {
+			kept++
+		}
+	}
+	select {
+	case <-s.stop:
+	default:
+		close(s.stop)
+	}
+	return connect.NewResponse(&v1.StopResponse{KeptLaunches: kept}), nil
+}
+
 func (s *Server) expire() {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	now := time.Now()
-	ended := false
 	for _, l := range s.launches {
 		if active(l.view.State) && now.After(l.expires) {
 			s.end(l, v1.Launch_STATE_EXPIRED)
-			ended = true
 		}
 	}
 	s.prune(now)
-	s.mu.Unlock()
-	if ended {
-		s.persist(false)
-	}
 }
 
-// flush writes the state the next daemon gets and returns the daemon's launches. A forced stop
-// revokes them; otherwise they stay in the state file, with their launch files, for the next
-// daemon to restore.
-func (s *Server) flush() []*launch {
+// stopLaunches refuses new launches from now on and returns the daemon's launches. A forced stop
+// revokes them; otherwise their launch files stay for the next daemon.
+func (s *Server) stopLaunches() []*launch {
 	s.mu.Lock()
-	s.flushed = true
+	defer s.mu.Unlock()
+	s.stopped = true
 	launches := []*launch{}
 	for _, l := range s.launches {
 		if s.forced {
@@ -623,37 +590,25 @@ func (s *Server) flush() []*launch {
 		}
 		launches = append(launches, l)
 	}
-	s.mu.Unlock()
-	// Requests still in flight must not rewrite the state once it holds what the next daemon gets.
-	s.persist(false)
-	s.store.freeze()
+	if s.forced {
+		s.saveState()
+	}
+	slog.Info("daemon stopping", "launches", len(launches), "forced", s.forced)
 	return launches
 }
 
-// closeLaunches ends the MCP sessions of launches, letting their servers exit, or killing them
-// once ctx ends; for a forced stop, it also removes their launch files.
-func (s *Server) closeLaunches(ctx context.Context, launches []*launch) {
+// closeLaunches ends the MCP sessions of launches, letting their servers exit; for a forced
+// stop, it also removes their launch files.
+func (s *Server) closeLaunches(launches []*launch) {
 	s.mu.Lock()
 	forced := s.forced
-	all := map[*mcpruntime.Endpoint]bool{}
-	for _, l := range launches {
-		for _, e := range l.endpoints {
-			all[e] = true
-		}
-	}
 	s.mu.Unlock()
-	stopKilling := context.AfterFunc(ctx, func() {
-		for e := range all {
-			go e.Kill()
-		}
-	})
-	defer stopKilling()
 	var cleanup sync.WaitGroup
 	for _, l := range launches {
 		s.mu.Lock()
 		endpoints := l.endpoints
 		s.mu.Unlock()
-		// end releases asynchronously; wait here so shutdown does not leave children or cache dirs.
+		// end releases asynchronously; wait here so shutdown does not leave cache dirs.
 		if forced {
 			cleanup.Go(func() { s.release(l.view.Id, endpoints) })
 		} else {
@@ -663,34 +618,20 @@ func (s *Server) closeLaunches(ctx context.Context, launches []*launch) {
 	cleanup.Wait()
 }
 
-// persist writes the active launches to the state file; a renewal alone is throttled, and the
-// periodic check writes it later. Failures are logged: launches keep working, but a restarted
-// daemon would not restore them.
-func (s *Server) persist(renewal bool) {
-	s.mu.Lock()
-	s.generation++
-	generation := s.generation
-	state := savedState{Version: stateVersion, Port: s.port, Config: s.paths.Config, Launches: []savedLaunch{}}
-	parents := []*launch{}
-	for _, l := range s.launches {
-		if active(l.view.State) && l.view.ParentLaunchId == "" {
-			parents = append(parents, l)
-		}
+// sweep removes the launch files, older than started, of launches the daemon does not hold.
+func (s *Server) sweep(started time.Time) {
+	root := filepath.Join(s.paths.Cache, "launches")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
 	}
-	sort.Slice(parents, func(i, j int) bool { return parents[i].created.Before(parents[j].created) })
-	for _, parent := range parents {
-		state.Launches = append(state.Launches, saveLaunch(parent))
-		children := s.children(parent)
-		sort.Slice(children, func(i, j int) bool { return children[i].created.Before(children[j].created) })
-		for _, child := range children {
-			if active(child.view.State) {
-				state.Launches = append(state.Launches, saveLaunch(child))
-			}
+	for _, entry := range entries {
+		s.mu.Lock()
+		held := s.launches[entry.Name()] != nil
+		s.mu.Unlock()
+		if info, err := entry.Info(); err == nil && !held && info.ModTime().Before(started) {
+			_ = os.RemoveAll(filepath.Join(root, entry.Name()))
 		}
-	}
-	s.mu.Unlock()
-	if _, err := s.store.write(generation, state, renewal, time.Now()); err != nil {
-		fmt.Fprintf(os.Stderr, "agx daemon: cannot save launches for a restart: %v\n", err)
 	}
 }
 
@@ -715,17 +656,31 @@ func (s *Server) prune(now time.Time) {
 			delete(s.launches, id)
 		}
 	}
-	for requestID, record := range s.preparations {
-		if s.launches[record.launchID] == nil {
-			delete(s.preparations, requestID)
-		}
+}
+
+// notifier wakes those waiting for the next change.
+type notifier struct {
+	mu sync.Mutex
+	ch chan struct{}
+}
+
+func (n *notifier) notify() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.ch != nil {
+		close(n.ch)
+		n.ch = nil
 	}
-	for id, op := range s.operations {
-		if !op.finished.IsZero() && op.finished.Before(cutoff) {
-			delete(s.operations, id)
-			delete(s.operationRequests, op.requestID)
-		}
+}
+
+// next closes at the next change.
+func (n *notifier) next() <-chan struct{} {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.ch == nil {
+		n.ch = make(chan struct{})
 	}
+	return n.ch
 }
 
 func equalBearer(header, token string) bool {
@@ -744,27 +699,26 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	l := s.launches[parts[0]]
-	if l == nil || !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") || !active(l.view.State) ||
-		time.Now().After(l.expires) ||
-		!auth.Match(l.grant, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")) {
-		s.mu.Unlock()
-		http.Error(w, "invalid or expired launch grant", http.StatusUnauthorized)
+	_, revoked := s.revoked[parts[0]]
+	grant, bearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	attaching := !revoked && (l == nil || l.view.State == v1.Launch_STATE_EXPIRED || time.Now().After(l.expires))
+	valid := !revoked && l != nil && active(l.view.State) && bearer && matches(l.grant, grant)
+	s.mu.Unlock()
+	if attaching {
+		// The launch's wrapper attaches it once it notices this daemon.
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "launch not attached yet; retry shortly", http.StatusServiceUnavailable)
 		return
 	}
-	pending := l.restored && l.endpoints == nil && l.unavailable == "" && !l.threadServer
-	s.mu.Unlock()
+	if !valid {
+		http.Error(w, "invalid or ended launch grant", http.StatusUnauthorized)
+		return
+	}
 	// A stopping daemon finishes the sessions it serves but opens none; event streams would
 	// outlast it.
 	if s.drain.draining() && (r.Header.Get("Mcp-Session-Id") == "" || r.Method == http.MethodGet) {
 		refuse(w)
 		return
-	}
-	if pending {
-		if err := s.revive(r.Context(), l, nil, false); err != nil {
-			w.Header().Set("Retry-After", "1")
-			http.Error(w, errAwaitingWrapper.Error(), http.StatusServiceUnavailable)
-			return
-		}
 	}
 	s.mu.Lock()
 	e, unavailable := l.endpoints[config.ID(parts[1])], l.unavailable
@@ -892,10 +846,9 @@ func (s *Server) WatchRuntime(
 	if !s.managed(req.Header()) {
 		return rpcError(connect.CodeUnauthenticated, "management credential required")
 	}
-	ticker := time.NewTicker(250 * time.Millisecond)
-	defer ticker.Stop()
 	previous := ""
 	for {
+		changed := s.changed.next()
 		view := s.runtime()
 		hash := config.Digest(view)
 		if hash != previous {
@@ -909,7 +862,7 @@ func (s *Server) WatchRuntime(
 			return ctx.Err()
 		case <-s.drain.stopping.Done():
 			return refusal()
-		case <-ticker.C:
+		case <-changed:
 		}
 	}
 }
@@ -994,19 +947,6 @@ func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 	if err != nil {
 		return d, unavailable("daemon unavailable; run agx daemon start")
 	}
-	// The format decodes first, so a newer one is recognized even when its fields changed.
-	var header struct {
-		Format int `json:"format"`
-	}
-	if err := json.Unmarshal(b, &header); err == nil && header.Format > discoveryFormat {
-		return Discovery{}, fmt.Errorf(
-			"%w: %s has format %d, newer than this agx reads (%d); the daemon runs a newer agx, so upgrade agx",
-			ErrNewerDiscovery,
-			path,
-			header.Format,
-			discoveryFormat,
-		)
-	}
 	if err := json.Unmarshal(b, &d); err != nil {
 		return d, unavailable("invalid daemon discovery; restart the daemon")
 	}
@@ -1022,8 +962,7 @@ func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 	if err != nil || port < 1 || port > 65535 {
 		return d, unavailable("invalid daemon port")
 	}
-
-	if d.Version != Version || d.Build != Build() {
+	if d.Build != Build() {
 		return d, fmt.Errorf(
 			"%w: it runs a different agx build; run agx daemon stop, then retry",
 			ErrVersionMismatch,
@@ -1054,9 +993,44 @@ var Build = sync.OnceValue(func() string {
 // configError reports why the daemon's configuration failed to load. Validation messages name
 // files, lines, and IDs, never resolved values.
 func configError(err error) error {
-	return reasonError(
-		connect.CodeFailedPrecondition,
-		v1.ErrorDetail_REASON_CONFIG_INVALID,
-		"daemon configuration invalid: "+err.Error(),
-	)
+	return configInvalid("daemon configuration invalid: "+err.Error(), err)
+}
+
+// savedEnd names how a launch ended, for the log.
+func savedEnd(state v1.Launch_State) string {
+	switch state {
+	case v1.Launch_STATE_REVOKED:
+		return "revoked"
+	case v1.Launch_STATE_EXPIRED:
+		return "expired"
+	case v1.Launch_STATE_FINISHED:
+		return "finished"
+	case v1.Launch_STATE_UNSPECIFIED, v1.Launch_STATE_PREPARED, v1.Launch_STATE_RUNNING:
+	}
+	return "unknown"
+}
+
+// abandonedTemporary matches the temporary files securefs.Write creates; one that outlives its
+// write was left by a process killed mid-write.
+var abandonedTemporary = regexp.MustCompile(`^\.agx-[0-9]+$`)
+
+// removeAbandonedTemporaries deletes temporary files in dir that a killed process left. Commands
+// write launch records there too, so only files older than any write could take are removed.
+func removeAbandonedTemporaries(dir string, now time.Time) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() || !abandonedTemporary.MatchString(entry.Name()) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || now.Sub(info.ModTime()) < 10*time.Minute {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, entry.Name())); err == nil {
+			slog.Info("removed a file an interrupted write left", "file", filepath.Join(dir, entry.Name()))
+		}
+	}
 }

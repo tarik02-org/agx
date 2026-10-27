@@ -197,8 +197,8 @@ Settings therefore never hold secrets and can be shown in full anywhere.
 - **Schema**: `settings` is `{"type": "object"}` with additional properties
   allowed and a description naming each harness's native schema. Editors
   validate the agx side only.
-- **`agx harness list --json`** shows each definition's own and resolved
-  settings; **`explain --harness <name>`** shows the resolved map with the
+- **`agx harness list --json`** shows each harness's resolved settings and
+  the source of every leaf; **`explain --harness <name>`** shows the resolved map with the
   source of every leaf and, with `--verbose`, the delivered form (the `-c`
   arguments, or the path and contents of the Claude settings file).
   **`resolve`** is about resources and does not show them.

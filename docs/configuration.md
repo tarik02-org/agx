@@ -1,15 +1,16 @@
 # Configuration
 
 agx reads one YAML configuration that says which instructions, skills, and MCP
-servers each directory gets. You can build it entirely with commands such as
-`agx mcp add`, write it by hand, or mix both: the commands keep your comments
-and layout.
+servers each directory gets: a root file, `agx.yaml`, that lists fragments
+holding the definitions. You can build it entirely with commands such as `agx
+mcp add`, write it by hand, or mix both: the commands keep your comments and
+layout.
 
 ## Where files live
 
 | What | Default location | Override |
 | --- | --- | --- |
-| Configuration | `agx/agx.yaml` in your config directory | `AGX_CONFIG` or `--config` |
+| Configuration: the root file, with fragments beside it in `agx.d/` | `agx/agx.yaml` in your config directory | `AGX_CONFIG` or `--config` |
 | Cache: installed packages, generated files, daemon log | `agx` in your cache directory | `AGX_CACHE` or `--cache` |
 | State: launch records, the daemon's saved launches | `agx` in your state directory | `AGX_STATE` |
 
@@ -34,7 +35,8 @@ export AGX_CONFIG=/tmp/agx-test/agx.yaml AGX_CACHE=/tmp/agx-test/cache
 A `--config` file that does not exist is an error, so a typo cannot silently
 give you an empty configuration; only the `add` commands create it. The default
 location and `AGX_CONFIG` may point at a file that does not exist yet: agx then
-runs with an empty configuration, and the first `add` creates it.
+reads it as `fragments: [agx.d/*.yaml]`, and the first `add` writes that file with
+`agx.d/main.yaml` beside it.
 Use the same configuration and cache for every agx command in a session; the
 daemon serves one configuration at a time (see [The daemon](daemon.md)).
 
@@ -42,6 +44,8 @@ agx does not look for configuration files inside projects. A directory gets its
 resources from rules in your configuration that name it.
 
 ## A first configuration
+
+Definitions and rules go in a fragment, such as `agx.d/main.yaml`:
 
 ```yaml
 instructions:
@@ -82,8 +86,8 @@ agx explain ~/work/legacy
 ```
 
 `explain` lists every selected and removed resource with the file and line that
-decided it, and marks on-demand MCP servers. `agx resolve` prints just the result, and `agx config validate`
-checks the whole configuration.
+decided it, and marks on-demand MCP servers. `agx config validate` checks the
+whole configuration.
 
 ## Scopes
 
@@ -96,8 +100,10 @@ rules win:
 3. Within one rule, `add` happens before `remove`.
 
 A deeper rule can remove what a parent added, and an even deeper rule can add
-it back. Directories match by whole path components: `~/work/app` does not
-match `~/work/apple`. Symlinks are resolved first.
+it back. Removing a skill removes it however many bundles supplied it, and
+removing a bundle removes each of its resources. Directories match by whole path
+components: `~/work/app` does not match `~/work/apple`. Symlinks are resolved
+first.
 
 Limit a rule to some harnesses with `harnesses`:
 
@@ -111,8 +117,8 @@ scopes:
 
 The rule then applies only to Claude Code launches and to
 [harness definitions](harnesses.md) based on it. `agx explain --harness claude`
-shows the result for one harness; without `--harness`, `explain` and `resolve`
-skip harness-specific rules.
+shows the result for one harness; without `--harness`, `explain`
+skips harness-specific rules.
 
 ## Selection lists
 
@@ -165,40 +171,39 @@ scopes:
 Removing a bundle removes everything in it, even items another bundle also
 added.
 
-## Splitting configuration into files
+## The root file and fragments
 
-The root file can import others. Relative paths are relative to the file that
-contains them:
+The root file holds only `fragments` and [daemon settings](#daemon-settings);
+everything else lives in the fragments it lists. Relative entries are
+relative to the root file's directory, beside the link when the root is a
+symlink:
 
 ```yaml
-imports:
-  - path: personal.yaml
-  - path: local.yaml
-    optional: true          # skipped when the file does not exist
-  - glob: agx.d/*.yaml      # every match, in name order
+fragments:
+  - personal.yaml           # must exist
+  - agx.d/*.yaml            # every match, in name order; may match nothing
 ```
 
-Imports load in order, before the file that imports them. Name drop-ins
+An entry containing `*`, `?`, or `[` is a glob; any other entry is a path.
+Fragments load in list order and cannot list others. Name drop-ins
 `10-team.yaml`, `50-local.yaml` to control their order.
 
 When there is no root file at all, agx behaves as if it contained just
-`imports: [{glob: agx.d/*.yaml}]`, so a directory of drop-ins works without one.
-The editing commands create the root file with that import when they first
-write.
+`fragments: [agx.d/*.yaml]`, so a directory of fragments works without one.
 
-Generated configuration belongs in a drop-in too, so the root file stays yours.
-The Home Manager module (`programs.agx.settings`, see the README) writes
-`agx.d/10-home-manager.yaml` and warns at activation when an existing root file
-does not import `agx.d/*.yaml`.
+Generated configuration belongs in a fragment too. The Home Manager module
+(`programs.agx.settings`, see the README) writes `agx.d/10-home-manager.yaml`,
+writes the root file only when its settings include `daemon`, and warns at
+activation when an existing root file does not list `agx.d/*.yaml`.
 
 Defining the same ID twice is an error, unless the later definition says
-`override: true`. Harness definitions and `daemon` settings are the exception:
-they merge field by field across files.
+`override: true`. Harness definitions are the exception: they merge field by
+field across files.
 
 ### Paths
 
 - Relative paths in a file are relative to that file.
-- `~/` expands to your home directory in directories, imports, resource paths,
+- `~/` expands to your home directory in directories, fragment entries, resource paths,
   harness executables, MCP server commands, and `!file` values. `~user` and
   `$VAR` are not expanded.
 - Keep machine-specific paths in a separate file, such as an ignored
@@ -217,7 +222,7 @@ package versions. On a new machine:
 2. Provide whatever your secrets need, such as the sops age key.
 3. Run `agx install --frozen` to install exactly the locked packages.
 4. Run `agx secret login <id>` for each MCP server that uses OAuth, and `agx
-   secret set <id> --stdin` for each keychain secret. Both stay in each
+   secret set <id>` for each keychain secret. Both stay in each
    machine's keychain.
 
 ## Editing with commands
@@ -246,13 +251,20 @@ Options shared by the commands that write:
 | `--scope here` | the current directory and below |
 | `--scope <dir>` | that directory and below; it must exist, except for `unuse` |
 | `--harness <name>` | only for launches of that harness; repeatable |
-| `--file <path>` | write new definitions into this file instead of the root |
+| `--file <path>` | the fragment for new definitions and rules, relative to the root file's directory |
 | `--define-only` | define without enabling (`add` commands) |
 | `-y`, `--yes` | write without asking |
 
 On a terminal, each command shows the change as a diff and asks before writing;
 missing arguments are asked for. Without a terminal, it writes without asking,
 and a missing argument is an error.
+
+A changed definition stays in the file that defines it, and `use` or `unuse`
+edits a matching rule wherever it is. Anything new goes to the fragment `--file`
+names, which the root must list, or else to the only writable fragment, or to
+a new `agx.d/main.yaml` when there is none. With several, a terminal asks which,
+offering a new file in `agx.d/` too; without one, or with `--json`, the command
+fails with `choose_file` and lists them.
 
 A few things worth knowing:
 
@@ -263,8 +275,8 @@ A few things worth knowing:
   broader rule adds it, adds it to a `remove` list. `use` undoes that.
 - `remove` refuses while other rules or bundles still refer to the definition
   and lists them; `--force` removes those references too.
-- Files that are read-only, or inside `/nix/store`, are refused; use `--file`
-  to write somewhere else.
+- Files that are read-only, or inside `/nix/store`, are refused, and are not
+  offered as fragments to write to.
 - Definitions that come from packages cannot be removed one by one. `agx skill
   remove <package-id>` removes a whole package of skills, such as one `skill
   add` declared, with its lock entries and the rule `add` entries that enable
@@ -283,28 +295,35 @@ this line at the top of a configuration file:
 # yaml-language-server: $schema=https://raw.githubusercontent.com/tarik02-org/agx/master/schema/agx.schema.json
 ```
 
-Use `agx.package.schema.json` for package manifests. `agx config schema` (or
-`agx config schema --package`) prints the schema matching your agx version. To
+Use `agx.root.schema.json` for the root file and `agx.package.schema.json` for
+package manifests. `agx config schema` (with `--root` or `--package`) prints the
+schema matching your agx version. To
 stop the editor complaining about agx's tags, declare them:
 
 ```json
 "yaml.customTags": ["!env scalar", "!file scalar", "!secret scalar"]
 ```
 
-The schema checks structure only; `agx config validate` also checks references
-and paths.
+agx checks every fragment and package manifest against the same schema when it
+loads them, so an error names the key path, such as `mcp.github.command: not
+allowed here`. `agx config validate` also checks references and paths.
 
 ## Daemon settings
+
+These go in the root file:
 
 ```yaml
 daemon:
   autostart: true               # start the daemon when a command needs it
-  shutdown_grace_seconds: 10    # how long stopping waits for MCP calls in flight
   lease_seconds: 60             # how long a launch survives without its wrapper
   renew_seconds: 20             # how often wrappers renew (less than the lease)
 ```
 
 All of these are optional. See [The daemon](daemon.md).
+
+The daemon rereads configuration when a file it read changes. A configuration
+that fails to load does not replace the last valid one: running launches keep
+theirs, and new launches fail until it is fixed.
 
 ## Related pages
 

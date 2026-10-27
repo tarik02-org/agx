@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -13,18 +14,40 @@ const schemaBase = "https://raw.githubusercontent.com/tarik02-org/agx/master/sch
 
 var (
 	idPattern          = `^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$`
-	environmentPattern = `^(?![Aa][Gg][Xx]_)[a-zA-Z_][a-zA-Z0-9_]*$`
+	environmentPattern = validEnvironment.String()
 	// pathPattern matches selection entries read as paths: ., /, ~, or an absolute Windows path.
 	pathPattern = `^([./~]|[A-Za-z]:[\\/]|\\\\)`
 	// skillFileKey rejects absolute keys, . and .. segments, backslashes, and SKILL.md.
 	skillFileKey = `^/|(^|/)\.{1,2}(/|$)|//|\\|(^|/)\.git(/|$)|^[Ss][Kk][Ii][Ll][Ll]\.[Mm][Dd]$`
 )
 
-// manifestExcluded lists the top-level fields package manifests cannot declare.
-var manifestExcluded = []string{"imports", "lockfile", "scopes", "harnesses", "daemon"}
+// SchemaKind names a kind of configuration file, each with its own schema.
+type SchemaKind string
 
-// Schema renders the JSON Schema of configuration fragments, or of package manifests.
-func Schema(manifest bool, builtins Builtins) ([]byte, error) {
+const (
+	// RootSchema is the root configuration file, which holds fragments and daemon settings.
+	RootSchema SchemaKind = "root"
+	// FragmentSchema is a fragment the root lists, which holds definitions.
+	FragmentSchema SchemaKind = "fragment"
+	// ManifestSchema is a package manifest.
+	ManifestSchema SchemaKind = "manifest"
+)
+
+// SchemaFiles names the published schema of each kind.
+var SchemaFiles = map[SchemaKind]string{
+	RootSchema:     "agx.root.schema.json",
+	FragmentSchema: "agx.schema.json",
+	ManifestSchema: "agx.package.schema.json",
+}
+
+// sections lists the top-level fields of fragments.
+var sections = []string{"packages", "skills", "instructions", "mcp", "secrets", "bundles", "scopes", "harnesses"}
+
+// manifestExcluded lists the fragment fields package manifests cannot declare.
+var manifestExcluded = []string{"scopes", "harnesses"}
+
+// Schema renders the JSON Schema of a kind of configuration file.
+func Schema(kind SchemaKind, builtins Builtins) ([]byte, error) {
 	r := &jsonschema.Reflector{
 		FieldNameTag:               "yaml",
 		RequiredFromJSONSchemaTags: true,
@@ -38,18 +61,28 @@ func Schema(manifest bool, builtins Builtins) ([]byte, error) {
 			return nil
 		},
 	}
-	s := r.Reflect(Document{})
-	s.Definitions["Args"] = argsSchema(builtins)
-	s.ID = schemaBase + "agx.schema.json"
-	s.Title = "agx configuration fragment"
-	if manifest {
-		s.ID = schemaBase + "agx.package.schema.json"
+	var s *jsonschema.Schema
+	switch kind {
+	case RootSchema:
+		s = r.Reflect(RootFile{})
+		s.Title = "agx root configuration"
+	case FragmentSchema:
+		s = r.Reflect(Document{})
+		s.Title = "agx configuration fragment"
+	case ManifestSchema:
+		s = r.Reflect(Document{})
 		s.Title = "agx package manifest"
 		for _, name := range manifestExcluded {
 			s.Properties.Delete(name)
 		}
-		pruneDefinitions(s)
+	default:
+		return nil, fmt.Errorf("unknown schema kind %q", kind)
 	}
+	s.ID = jsonschema.ID(schemaBase + SchemaFiles[kind])
+	if kind != RootSchema {
+		s.Definitions["Args"] = argsSchema(builtins)
+	}
+	pruneDefinitions(s)
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return nil, err
@@ -57,7 +90,7 @@ func Schema(manifest bool, builtins Builtins) ([]byte, error) {
 	return append(b, '\n'), nil
 }
 
-// pruneDefinitions drops definitions only the removed manifest fields referenced.
+// pruneDefinitions drops definitions nothing references, such as those of removed fields.
 func pruneDefinitions(root *jsonschema.Schema) {
 	used := map[string]bool{}
 	var visit func(*jsonschema.Schema)
@@ -123,17 +156,9 @@ func (ID) JSONSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{Type: "string", Pattern: idPattern}
 }
 
-// argsSchema accepts a flat list of values, or a list of groups; an empty list is both.
+// argsSchema accepts a flat list of values, or a list of {values, modes} groups; an empty list
+// is both.
 func argsSchema(builtins Builtins) *jsonschema.Schema {
-	return &jsonschema.Schema{
-		AnyOf: []*jsonschema.Schema{
-			{Type: "array", Items: &jsonschema.Schema{Ref: "#/$defs/Value"}},
-			{Type: "array", Items: argGroupSchema(builtins)},
-		},
-	}
-}
-
-func argGroupSchema(builtins Builtins) *jsonschema.Schema {
 	one := uint64(1)
 	values := &jsonschema.Schema{Type: "array", Items: &jsonschema.Schema{Ref: "#/$defs/Value"}, MinItems: &one}
 	modes := []any{}
@@ -153,17 +178,19 @@ func argGroupSchema(builtins Builtins) *jsonschema.Schema {
 		MinItems:    &one,
 		Description: "Session modes the group applies to; omit for every mode except passthrough.",
 	})
+	group := &jsonschema.Schema{
+		Description:          "Native arguments limited to session modes.",
+		Type:                 "object",
+		Properties:           properties,
+		Required:             []string{"values"},
+		AdditionalProperties: jsonschema.FalseSchema,
+	}
+	flat := &jsonschema.Schema{Items: &jsonschema.Schema{Type: "string"}}
 	return &jsonschema.Schema{
-		Description: "Native arguments: a list, or {values, modes} to limit them to session modes.",
-		OneOf: []*jsonschema.Schema{
-			values,
-			{
-				Type:                 "object",
-				Properties:           properties,
-				Required:             []string{"values"},
-				AdditionalProperties: jsonschema.FalseSchema,
-			},
-		},
+		Type: "array",
+		If:   flat,
+		Then: &jsonschema.Schema{Items: &jsonschema.Schema{Ref: "#/$defs/Value"}},
+		Else: &jsonschema.Schema{Items: group},
 	}
 }
 
@@ -171,32 +198,27 @@ func (Harness) JSONSchemaExtend(s *jsonschema.Schema) {
 	base, _ := s.Properties.Get("base")
 	base.Pattern = validIDSegment.String()
 	env, _ := s.Properties.Get("environment")
-	env.PropertyNames = &jsonschema.Schema{Pattern: environmentPattern}
-}
-
-func (Import) JSONSchemaExtend(s *jsonschema.Schema) {
-	s.OneOf = []*jsonschema.Schema{requires("path"), requires("glob")}
-	s.If = requires("glob")
-	s.Then = forbid()
-	s.Then.Properties.Set("optional", &jsonschema.Schema{Const: false})
+	// AGX_ variables carry launch grants and management credentials.
+	env.PropertyNames = &jsonschema.Schema{
+		Pattern: environmentPattern,
+		Not:     &jsonschema.Schema{Pattern: `^[Aa][Gg][Xx]_`},
+	}
 }
 
 func (Package) JSONSchemaExtend(s *jsonschema.Schema) {
 	pinning(s)
-	s.OneOf = []*jsonschema.Schema{requires("path"), requires("git")}
-	s.AllOf = append(s.AllOf, &jsonschema.Schema{If: requires("rev"), Then: requires("git")})
+	local := forbid("ref")
+	local.Required = []string{"path"}
+	s.If, s.Then, s.Else = requires("git"), forbid("path"), local
 }
 
-// pinning constrains the rev and hash fields of a source and keeps ref and rev apart.
+// pinning constrains the hash field of a source.
 func pinning(s *jsonschema.Schema) {
-	rev, _ := s.Properties.Get("rev")
-	rev.Pattern = revPattern.String()
 	hash, _ := s.Properties.Get("hash")
 	hash.Pattern = contentHashPattern.String()
-	s.AllOf = append(s.AllOf, &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{"ref", "rev"}}})
 }
 
-var gitFields = []string{"git", "ref", "rev", "hash"}
+var gitFields = []string{"git", "ref", "hash"}
 
 func (Skill) JSONSchemaExtend(s *jsonschema.Schema) { skillSchema(s) }
 
@@ -208,46 +230,50 @@ func skillSchema(s *jsonschema.Schema) {
 	frontmatter, _ := s.Properties.Get("frontmatter")
 	frontmatter.PropertyNames = &jsonschema.Schema{Not: &jsonschema.Schema{Enum: []any{"name", "description"}}}
 	files, _ := s.Properties.Get("files")
-	files.PropertyNames = &jsonschema.Schema{Not: &jsonschema.Schema{Pattern: skillFileKey}}
-	generatedOnly := []string{"name", "description", "frontmatter", "files"}
+	files.PropertyNames = &jsonschema.Schema{MinLength: ptr(uint64(1)), Not: &jsonschema.Schema{Pattern: skillFileKey}}
 	generated := forbid(append([]string{"path"}, gitFields...)...)
-	generated.Required = []string{"content", "description"}
-	git := forbid(append([]string{"content"}, generatedOnly...)...)
-	git.Required = []string{"git"}
-	local := forbid(append(append([]string{"content"}, generatedOnly...), gitFields...)...)
-	local.Required = []string{"path"}
-	s.OneOf = []*jsonschema.Schema{generated, git, local}
+	generated.Required = []string{"description"}
+	written := forbid("name", "description", "frontmatter", "files")
+	written.If, written.Else = requires("git"), local()
+	s.If, s.Then, s.Else = requires("content"), generated, written
+}
+
+// local matches a resource read from a local path.
+func local() *jsonschema.Schema {
+	s := forbid("ref", "hash")
+	s.Required = []string{"path"}
+	return s
 }
 
 func (Instructions) JSONSchemaExtend(s *jsonschema.Schema) { instructionsSchema(s) }
 
 func instructionsSchema(s *jsonschema.Schema) {
 	pinning(s)
-	text := forbid(append([]string{"path"}, gitFields...)...)
-	text.Required = []string{"text"}
-	git := forbid("text")
-	git.Required = []string{"git", "path"}
-	local := forbid(append([]string{"text"}, gitFields...)...)
-	local.Required = []string{"path"}
-	s.OneOf = []*jsonschema.Schema{text, git, local}
+	file := &jsonschema.Schema{Required: []string{"path"}}
+	file.If, file.Else = requires("git"), local()
+	s.If, s.Then, s.Else = requires("text"), forbid(append([]string{"path"}, gitFields...)...), file
 }
 
-// JSONSchema accepts text, a path to copy, or {content, executable}.
+// JSONSchema accepts {content, executable} or {path}.
 func (SkillFile) JSONSchema() *jsonschema.Schema {
 	properties := jsonschema.NewProperties()
 	properties.Set("content", &jsonschema.Schema{Type: "string"})
 	properties.Set("executable", &jsonschema.Schema{Type: "boolean"})
+	properties.Set("path", &jsonschema.Schema{
+		Type:        "string",
+		MinLength:   ptr(uint64(1)),
+		Description: "File to copy, relative to this file; ending in / copies a directory.",
+	})
+	copied := forbid("executable")
+	copied.Required = []string{"path"}
 	return &jsonschema.Schema{
-		Description: "File text, a path to copy (ending in / for a directory), or {content, executable}.",
-		OneOf: []*jsonschema.Schema{
-			{Type: "string"},
-			{
-				Type:                 "object",
-				Properties:           properties,
-				Required:             []string{"content"},
-				AdditionalProperties: jsonschema.FalseSchema,
-			},
-		},
+		Description:          "{content, executable} for file text, or {path} to copy a file or directory.",
+		Type:                 "object",
+		Properties:           properties,
+		AdditionalProperties: jsonschema.FalseSchema,
+		If:                   requires("content"),
+		Then:                 forbid("path"),
+		Else:                 copied,
 	}
 }
 
@@ -255,7 +281,7 @@ func (SkillFile) JSONSchema() *jsonschema.Schema {
 func selectionEntry(s *jsonschema.Schema, description string, reference *jsonschema.Schema) {
 	s.Properties.Delete("override")
 	inline := *s
-	*s = jsonschema.Schema{Description: description, OneOf: []*jsonschema.Schema{reference, &inline}}
+	*s = jsonschema.Schema{Description: description, If: isString, Then: reference, Else: &inline}
 }
 
 func (SkillItem) JSONSchemaExtend(s *jsonschema.Schema) {
@@ -280,6 +306,10 @@ func (MCPItem) JSONSchemaExtend(s *jsonschema.Schema) {
 	)
 }
 
+// isString decides between a string form and a mapping, which reports errors more readably than
+// oneOf does.
+var isString = &jsonschema.Schema{Type: "string"}
+
 func pathOrID() *jsonschema.Schema {
 	return &jsonschema.Schema{Type: "string", AnyOf: []*jsonschema.Schema{{Pattern: idPattern}, {Pattern: pathPattern}}}
 }
@@ -290,16 +320,15 @@ func (MCPServer) JSONSchemaExtend(s *jsonschema.Schema) { mcpSchema(s) }
 
 func mcpSchema(s *jsonschema.Schema) {
 	env, _ := s.Properties.Get("environment")
-	env.PropertyNames = &jsonschema.Schema{Pattern: `^[a-zA-Z_][a-zA-Z0-9_]*$`}
-	stdio := forbid("url", "headers", "auth")
-	stdio.Properties.Set("transport", &jsonschema.Schema{Const: "stdio"})
-	http := forbid("command", "environment", "cwd")
-	http.Properties.Set("transport", &jsonschema.Schema{Const: "http"})
-	s.OneOf = []*jsonschema.Schema{requires("url"), requires("command")}
-	s.AllOf = []*jsonschema.Schema{
-		{If: requires("command"), Then: stdio},
-		{If: requires("url"), Then: http},
-	}
+	env.PropertyNames = &jsonschema.Schema{Pattern: environmentPattern}
+	command, _ := s.Properties.Get("command")
+	command.MinItems = ptr(uint64(1))
+	command.PrefixItems = []*jsonschema.Schema{{MinLength: ptr(uint64(1))}}
+	// Shared processes are for stdio; an HTTP server already serves many sessions.
+	http := forbid("command", "environment", "cwd", "share")
+	stdio := forbid("headers", "auth")
+	stdio.Required = []string{"command"}
+	s.If, s.Then, s.Else = requires("url"), http, stdio
 }
 
 // JSONSchema accepts a string for the kind shorthand, none, and !secret ID, which YAML editors
@@ -316,14 +345,13 @@ func (MCPShare) JSONSchema() *jsonschema.Schema {
 		Description: "stdio: none gives each harness session its own process (default); directory, " +
 			"repo, or global share one process per launch directory, repository root, or " +
 			"everywhere. {type, idle} also sets how long it stays after its last session.",
-		OneOf: []*jsonschema.Schema{
-			{Enum: modes},
-			{
-				Type:                 "object",
-				Properties:           properties,
-				Required:             []string{"type"},
-				AdditionalProperties: jsonschema.FalseSchema,
-			},
+		If:   isString,
+		Then: &jsonschema.Schema{Enum: modes},
+		Else: &jsonschema.Schema{
+			Type:                 "object",
+			Properties:           properties,
+			Required:             []string{"type"},
+			AdditionalProperties: jsonschema.FalseSchema,
 		},
 	}
 }
@@ -331,26 +359,27 @@ func (MCPShare) JSONSchema() *jsonschema.Schema {
 func (MCPAuth) JSONSchema() *jsonschema.Schema {
 	inline := &jsonschema.Schema{Ref: "#/$defs/Secret", Not: requires("override")}
 	return &jsonschema.Schema{
-		Description: "http: bearer credential: oauth or keychain, none, an inline secret, or !secret ID; " +
-			"omitted means OAuth when the server asks for it.",
-		OneOf: []*jsonschema.Schema{
-			{Type: "string", Pattern: idPattern},
-			inline,
-		},
+		Description: "http: bearer credential: oauth or keychain, none, an inline secret, or !secret ID, " +
+			"!env NAME, or !file PATH; omitted means OAuth when the server asks for it.",
+		If:   isString,
+		Else: inline,
 	}
 }
 
 func (Secret) JSONSchemaExtend(s *jsonschema.Schema) {
 	kind, _ := s.Properties.Get("kind")
-	kind.Enum = []any{"environment", "daemon_environment", "command", "file", "keychain", "oauth", "sops"}
+	kind.Enum = []any{"command", "keychain", "oauth", "sops"}
 	kind.Description = "How the secret is obtained."
+	command, _ := s.Properties.Get("command")
+	command.MinItems = ptr(uint64(1))
+	command.PrefixItems = []*jsonschema.Schema{{MinLength: ptr(uint64(1))}}
 	s.AllOf = []*jsonschema.Schema{
 		{
-			If:   when("kind", &jsonschema.Schema{Enum: []any{"environment", "daemon_environment"}}),
-			Then: requires("variable"),
+			If:   when("kind", &jsonschema.Schema{Const: "sops"}),
+			Then: requires("file"),
+			Else: forbid("file", "key", "age_key"),
 		},
 		{If: when("kind", &jsonschema.Schema{Const: "command"}), Then: requires("command")},
-		{If: when("kind", &jsonschema.Schema{Enum: []any{"file", "sops"}}), Then: requires("file")},
 	}
 }
 
@@ -358,10 +387,9 @@ func (Secret) JSONSchemaExtend(s *jsonschema.Schema) {
 func (SecretKey) JSONSchema() *jsonschema.Schema {
 	segment := &jsonschema.Schema{Type: "string", MinLength: ptr(uint64(1))}
 	return &jsonschema.Schema{
-		OneOf: []*jsonschema.Schema{
-			{Type: "string", Pattern: `^[^.]+(\.[^.]+)*$`},
-			{Type: "array", Items: segment, MinItems: ptr(uint64(1))},
-		},
+		If:   isString,
+		Then: &jsonschema.Schema{Pattern: `^[^.]+(\.[^.]+)*$`},
+		Else: &jsonschema.Schema{Type: "array", Items: segment, MinItems: ptr(uint64(1))},
 	}
 }
 

@@ -78,6 +78,7 @@ let
                 headers.X-Api-Key = config.lib.agx.secret "docs-key";
               };
               harnesses.codex.environment.HOME_DIR = config.lib.agx.env "HOME";
+              daemon.lease_seconds = 90;
             };
             harnesses.codex.package = pkgs.writeShellScriptBin "codex" "exit 0";
             harnesses.claude = { };
@@ -91,6 +92,7 @@ let
   configDir =
     if pkgs.stdenv.hostPlatform.isDarwin then "Library/Application Support/agx" else ".config/agx";
   dropIn = cfg.home.file."${configDir}/agx.d/10-home-manager.yaml".source;
+  root = cfg.home.file."${configDir}/agx.yaml".source;
   activation = pkgs.writeText "activation" (
     lib.concatMapStrings (entry: entry.data) (lib.attrValues cfg.home.activation)
   );
@@ -100,8 +102,11 @@ pkgs.runCommand "agx-home-manager-module" { } ''
   grep -q 'X-Api-Key: !secret docs-key' ${dropIn}
   grep -q 'HOME_DIR: !env HOME' ${dropIn}
   grep -q 'executable: /nix/store/.*/bin/codex' ${dropIn}
-  grep -q 'shims install --dir /home/test/.local/share/agx/shims' ${activation}
-  grep -q 'does not import agx.d' ${activation}
+  ! grep -q daemon ${dropIn}
+  grep -q 'lease_seconds: 90' ${root}
+  grep -q 'agx.d/\*.yaml' ${root}
+  grep -q "XDG_DATA_HOME='\?/home/test/.local/share'\? .*" ${activation}
+  grep -q 'does not list agx.d' ${activation}
   [ -L ${links}/bin/codex ] && [ -L ${links}/bin/claude ]
   [ ${lib.escapeShellArg (toString cfg.home.sessionPath)} = /home/test/.local/share/agx/shims ]
   touch $out

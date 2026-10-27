@@ -68,13 +68,13 @@ reason.
   mappings, and rules an edit empties are pruned; untouched empty rules stay.
 - **Validation.** Edited fragments, and the lockfiles a Git skill source needs,
   are passed to the loader as an in-memory overlay; nothing is written unless
-  the whole configuration loads, and a fragment outside the imports is also
-  loaded on its own. Writes keep the file's mode, land at a symlink's target,
+  the whole configuration loads. New definitions go to a fragment the root
+  lists ([ADR 0027](0027-root-file-and-fragments.md)). Writes keep the file's mode, land at a symlink's target,
   and replace the file atomically; lockfiles are written private.
 - **Placement.** Matching rules in files that cannot be written are skipped, so a
   read-only or generated fragment does not block enabling elsewhere; only the
-  chosen target is refused. `use`/`unuse` create a missing rule beside the
-  definition when that fragment is writable, else in the root. New directory
+  chosen target is refused. `use`/`unuse` create a missing rule in the target
+  fragment ([ADR 0027](0027-root-file-and-fragments.md)). New directory
   rules spell paths under the home directory as `~/…`; new resource paths are
   relative when inside the fragment's directory.
 - **Login and test.** The probe is the unauthenticated request on-demand OAuth
@@ -87,8 +87,8 @@ reason.
   so one checkout and one lock entry serve every chosen skill. A package root
   without `agx.package.yaml` declares the skills found in it. The repository is
   installed with its lock staged in memory before the picker opens, so the
-  picker lists what loading will define. Branch refs resolve against the
-  clone's remote branches.
+  picker lists what loading will define. Only the requested ref is fetched,
+  without history.
 - **Prompts.** `huh` fields: text input, a yes/no confirmation, and a
   filterable multi-select for packages with dozens of skills, drawn inline on
   stderr with the launcher's styling and `--color`. They began as hand-written

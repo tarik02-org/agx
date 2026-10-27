@@ -19,7 +19,7 @@ func resolveFixture(t *testing.T) (root, work string) {
 	}
 	work = mkdir(t, filepath.Join(dir, "work"))
 	mkdir(t, filepath.Join(work, "sub", "deep"))
-	root = write(t, filepath.Join(dir, "agx.yaml"), `skills:
+	root = fragment(t, dir, `skills:
   review: {path: ./skills/review}
   lint: {path: ./skills/lint}
   deploy: {path: ./skills/deploy}
@@ -164,7 +164,7 @@ func TestSnapshotIdentity(t *testing.T) {
 	work := mkdir(t, filepath.Join(dir, "work"))
 	notes := write(t, filepath.Join(dir, "notes.md"), "one")
 	prompt := write(t, filepath.Join(dir, "prompt.txt"), "secret prompt")
-	root := write(t, filepath.Join(dir, "agx.yaml"), `instructions:
+	root := fragment(t, dir, `instructions:
   notes: {path: ./notes.md}
 scopes:
   - add: {instructions: [notes]}

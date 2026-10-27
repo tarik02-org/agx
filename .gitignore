@@ -2,7 +2,9 @@
 .audit/
 decisions.tsv
 result
-/dist/
+dist/
+completions/
+manpages/
 /internal/ui/dist/*
 !/internal/ui/dist/.keep
 /web/node_modules/

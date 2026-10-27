@@ -34,7 +34,7 @@ optional `files`, materialized as a skill directory for each launch.
 fetched and locked like a package under the resource's kind and ID.
 
 **Pinned source**: A package or Git source whose content is fixed by a full
-commit `rev`, a content `hash`, or a `/nix/store` path, so it needs no lock entry.
+commit `ref`, a content `hash`, or a `/nix/store` path, so it needs no lock entry.
 
 **MCP server**: A named entry in the `mcp` configuration section: an MCP server
 together with the account and settings used to reach it, so `github-work` and

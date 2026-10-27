@@ -40,19 +40,65 @@ type Adapter interface {
 	// Arguments returns the native arguments that bring a launch's skills, instructions, and
 	// MCP servers to the harness. They precede the definition's groups and the caller's arguments.
 	Arguments(launch Launch) ([]string, error)
-	// Install registers what the harness cannot load per launch, for each of targets. It runs
-	// from explicit installation, with a target per harness definition, and from a launch whose
-	// Arguments report ErrNotInstalled, with the launch's target. It returns a Skipped error
-	// when the harness cannot take the installation and works without it.
-	Install(ctx context.Context, c *config.Config, cache string, targets []Target) error
-	// Forwarded names the caller's environment variables that locate the harness's own
-	// configuration, such as its home directory. Wrappers send them to the daemon, set or not.
-	Forwarded() []string
 	// Sessions lists the sessions in the harness's own store, honouring its home override, and
 	// parses files through files. A missing store holds no sessions; the store is never written.
 	Sessions(ctx context.Context, files SessionFiles) ([]Session, error)
 	// Resume returns the native arguments that resume a session in its directory.
 	Resume(session Session) []string
+}
+
+// Installer is an adapter whose harness needs a native installation.
+type Installer interface {
+	// Install registers what the harness cannot load per launch, for each of targets. It runs
+	// from explicit installation, with a target per harness definition, and from a launch whose
+	// Arguments report ErrNotInstalled, with the launch's target. It returns a Skipped error
+	// when the harness cannot take the installation and works without it.
+	Install(ctx context.Context, c *config.Config, cache string, targets []Target) error
+}
+
+// Forwarder is an adapter whose harness reads its own configuration from the caller's
+// environment.
+type Forwarder interface {
+	// Forwarded names the caller's environment variables that locate the harness's own
+	// configuration, such as its home directory. Wrappers send them to the daemon, set or not.
+	Forwarded() []string
+}
+
+// Forwarded is what a's harness reads from the caller's environment; nil for most.
+func Forwarded(a Adapter) []string {
+	if f, ok := a.(Forwarder); ok {
+		return f.Forwarded()
+	}
+	return nil
+}
+
+// Doctor is an adapter that checks what a definition's launches need beyond the executable.
+type Doctor interface {
+	// Doctor checks definition h, whose native executable is executable and whose processes
+	// installation describes as target.
+	Doctor(
+		ctx context.Context,
+		c *config.Config,
+		cache string,
+		h config.ResolvedHarness,
+		executable string,
+		target Target,
+	) []Check
+}
+
+// Check is one row of agx doctor.
+type Check struct {
+	Name string
+	// Status is pass, warn, or fail.
+	Status, Detail, Hint string
+}
+
+// SessionAssigner is an adapter whose harness starts a session under an ID agx chooses, so the
+// launch's record names its session instead of matching sessions by time.
+type SessionAssigner interface {
+	// AssignSession returns the ID of the session native args start, and args that start it
+	// under that ID: id, unless args name one. It returns "" when args resume a session.
+	AssignSession(args []string, id string) (string, []string)
 }
 
 // SettingsAdapter is an adapter whose harness takes a definition's native settings.
@@ -335,7 +381,11 @@ func (r Registry) Install(
 	}
 	warnings := []string{}
 	for _, name := range r.Names() {
-		err := r.adapters[name].Install(ctx, c, cache, targets[name])
+		installer, ok := r.adapters[name].(Installer)
+		if !ok {
+			continue
+		}
+		err := installer.Install(ctx, c, cache, targets[name])
 		var skipped Skipped
 		switch {
 		case errors.As(err, &skipped):
@@ -412,11 +462,12 @@ func withArtifacts(ctx context.Context, a Adapter, l Launch, call func(Launch) e
 		return err
 	}
 	err = call(l)
-	if !errors.Is(err, ErrNotInstalled) {
+	installer, ok := a.(Installer)
+	if !errors.Is(err, ErrNotInstalled) || !ok {
 		return err
 	}
 	var skipped Skipped
-	switch err := a.Install(ctx, l.Snapshot.Config, l.Cache, []Target{l.Target}); {
+	switch err := installer.Install(ctx, l.Snapshot.Config, l.Cache, []Target{l.Target}); {
 	case errors.As(err, &skipped):
 		l.Warn(skipped.Reason + "; launching without skills")
 		l.Uninstalled = true

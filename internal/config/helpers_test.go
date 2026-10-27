@@ -24,6 +24,15 @@ func write(t *testing.T, path, content string) string {
 	return path
 }
 
+// fragment writes content to main.yaml in dir and returns the root configuration importing it
+// after the fragments before.
+func fragment(t *testing.T, dir, content string, before ...string) string {
+	t.Helper()
+	write(t, filepath.Join(dir, "main.yaml"), content)
+	fragments := strings.Join(append(before, "main.yaml"), ", ")
+	return write(t, filepath.Join(dir, "agx.yaml"), "fragments: ["+fragments+"]\n")
+}
+
 // absolute replaces ABS in YAML with dir, written so that it is absolute on every platform.
 func absolute(dir, content string) string {
 	return strings.ReplaceAll(content, "ABS", filepath.ToSlash(dir))
@@ -53,7 +62,7 @@ func canonical(t *testing.T, path string) string {
 
 func read(t *testing.T, root string) *config.Config {
 	t.Helper()
-	c, err := config.Read(root, builtins)
+	c, err := config.Load(root, config.Options{Builtins: builtins})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +72,7 @@ func read(t *testing.T, root string) *config.Config {
 // load reads and validates the configuration at root with an empty cache.
 func load(t *testing.T, root string) *config.Config {
 	t.Helper()
-	c, err := config.Load(root, filepath.Join(t.TempDir(), "cache"), builtins)
+	c, err := config.Load(root, config.Options{Builtins: builtins, Cache: filepath.Join(t.TempDir(), "cache")})
 	if err != nil {
 		t.Fatal(err)
 	}

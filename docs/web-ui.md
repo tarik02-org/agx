@@ -51,9 +51,10 @@ Configuration files are edited directly from the tree's files. Secrets stored in
 Nothing is written while you edit. Changes are staged, and **Staged changes**
 lists them, with the diff of every file they touch on a second tab; **Apply** writes them all at once,
 formatted and commented as the CLI leaves them, or none if a file changed since
-the diff. Files that are links, such as those Home Manager manages, and
+the diff. New definitions go to the only writable fragment; with several, the review asks
+which one, or for a new file. Files that are links, such as those Home Manager manages, and
 definitions from packages are shown read-only. See
-[ADR 0026](adr/0026-web-ui.md) for the design.
+[ADR 0028](adr/0028-web-ui.md) for the design.
 
 ```sh
 agx ui            # opens the UI in your browser, signed in and scoped to this directory

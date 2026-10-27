@@ -143,24 +143,21 @@ func (a Adapter) Arguments(l adapters.Launch) ([]string, error) {
 	// Codex has no file-based developer instructions (model_instructions_file replaces the
 	// base prompt instead), so they travel in argv and replace a configured value.
 	if o.instructions != "" {
-		assignment, err := adapters.TOMLAssignment("developer_instructions", o.instructions)
+		value, err := tomlValue(o.instructions)
 		if err != nil {
 			return nil, err
 		}
-		prefix = append(prefix, "-c", assignment)
+		prefix = append(prefix, "-c", "developer_instructions="+value)
 	}
 	for _, p := range o.plugins {
 		prefix = append(prefix, "-c", "plugins."+p.id+".enabled="+strconv.FormatBool(p.enabled))
 	}
 	for _, s := range o.servers {
-		assignment, err := adapters.TOMLAssignment(
-			"mcp_servers."+s.name,
-			map[string]any{"url": s.url, "bearer_token_env_var": adapters.GrantEnvironment},
-		)
+		value, err := tomlValue(map[string]any{"url": s.url, "bearer_token_env_var": adapters.GrantEnvironment})
 		if err != nil {
 			return nil, err
 		}
-		prefix = append(prefix, "-c", assignment)
+		prefix = append(prefix, "-c", "mcp_servers."+s.name+"="+value)
 	}
 	return prefix, nil
 }
@@ -233,19 +230,18 @@ func resources(l adapters.Launch) (overrides, error) {
 	if err != nil {
 		return o, err
 	}
-	disabled, err := pluginsDisabled(home, l.Target.Arguments)
-	if err != nil {
-		return o, err
+	disabled := ""
+	if executable, err := codexExecutable(l.Target); err == nil {
+		disabled = pluginsDisabled(context.Background(), executable, home, l.Target)
 	}
 	switch {
 	case l.Uninstalled:
 		// The skipped installation said why; MCP servers and instructions go on without skills.
-	case disabled != "" && l.Target.Executable == "":
+	case disabled != "":
 		if len(selected) > 0 {
 			l.Warn(disabled + "; launching without skills")
 		}
 	default:
-		// A configured executable may enable plugins itself, so its installation lets Codex decide.
 		installed, err := installedPlugins(home)
 		if err != nil {
 			return o, err

@@ -16,7 +16,10 @@
     {
       packages = forAllSystems (pkgs: rec {
         web = pkgs.callPackage ./nix/web.nix { };
-        agx = pkgs.callPackage ./package.nix { inherit web; };
+        agx = pkgs.callPackage ./package.nix {
+          inherit web;
+          rev = self.shortRev or self.dirtyShortRev or null;
+        };
         default = agx;
       });
 

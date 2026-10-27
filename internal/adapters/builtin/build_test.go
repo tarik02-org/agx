@@ -12,7 +12,6 @@ import (
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/securefs"
 )
 
 const grant = "grant-token"
@@ -49,7 +48,8 @@ func newFixture(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	executable := "'" + filepath.ToSlash(fake) + "'"
-	write(t, filepath.Join(dir, "agx.yaml"), `skills:
+	write(t, filepath.Join(dir, "agx.yaml"), "fragments: [main.yaml]\n")
+	write(t, filepath.Join(dir, "main.yaml"), `skills:
   review: {path: ./skills/review}
 instructions:
   first: {text: first}
@@ -72,7 +72,10 @@ harnesses:
   claude: {executable: `+executable+`}
   pi: {executable: `+executable+`}
 `)
-	c, err := config.Load(filepath.Join(dir, "agx.yaml"), filepath.Join(dir, "cache"), builtin.Registry().Builtins(nil))
+	c, err := config.Load(
+		filepath.Join(dir, "agx.yaml"),
+		config.Options{Builtins: builtin.Registry().Builtins(nil), Cache: filepath.Join(dir, "cache")},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +249,7 @@ func TestBuildCodex(t *testing.T) {
 	}
 
 	other := "agx-" + strings.Repeat("0", 24)
-	writeCatalog(t, f, home, other, selected)
+	installPlugins(t, home, other, selected)
 	plan, s, err := f.build(t, "codex", "exec", "hi")
 	if err != nil {
 		t.Fatal(err)
@@ -259,10 +262,10 @@ func TestBuildCodex(t *testing.T) {
 		"-c",
 		"plugins." + selected + "@agx-managed.enabled=true",
 		"-c",
-		`mcp_servers.agx-up={"bearer_token_env_var" = "AGX_MCP_GRANT", "url" = "http://127.0.0.1:9/launch/L/mcp/up"}`,
+		`mcp_servers.agx-up={bearer_token_env_var = 'AGX_MCP_GRANT', url = 'http://127.0.0.1:9/launch/L/mcp/up'}`,
 		"-c",
-		`mcp_servers.agx-team-remote={"bearer_token_env_var" = "AGX_MCP_GRANT", ` +
-			`"url" = "http://127.0.0.1:9/launch/L/mcp/team%2Fremote"}`,
+		`mcp_servers.agx-team-remote={bearer_token_env_var = 'AGX_MCP_GRANT', ` +
+			`url = 'http://127.0.0.1:9/launch/L/mcp/team%2Fremote'}`,
 		"--definition",
 		"exec",
 		"hi",
@@ -286,7 +289,7 @@ func TestBuildCodexAppServer(t *testing.T) {
 	other := "agx-" + strings.Repeat("0", 24)
 	home := t.TempDir()
 	t.Setenv("CODEX_HOME", home)
-	writeCatalog(t, f, home, other, "review-"+hash[:12])
+	installPlugins(t, home, other, "review-"+hash[:12])
 	// The process carries no snapshot resources; its threads get theirs.
 	plan, s, err := f.build(t, "codex", "app-server")
 	if err != nil {
@@ -345,10 +348,15 @@ func TestBuildCodexAppServer(t *testing.T) {
 }
 
 func TestBuildCodexPluginsDisabled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake Codex is a shell script")
+	}
 	f := newFixture(t)
+	// Codex reports plugins off, and runs no other command.
+	write(t, filepath.Join(filepath.Dir(f.work), "bin", "fake"), "#!/bin/sh\n"+
+		`[ "$*" = "features list" ] && printf 'plugins  stable  false\n' || exit 1`+"\n")
 	home := t.TempDir()
 	t.Setenv("CODEX_HOME", home)
-	write(t, filepath.Join(home, "config.toml"), "model = \"x\"\n\n[features]\nplugins = false\n")
 	plan, s, err := f.build(t, "codex", "exec", "hi")
 	if err != nil {
 		t.Fatal(err)
@@ -357,18 +365,17 @@ func TestBuildCodexPluginsDisabled(t *testing.T) {
 		"-c",
 		`developer_instructions="first\n\nsecond\n\n"`,
 		"-c",
-		`mcp_servers.agx-up={"bearer_token_env_var" = "AGX_MCP_GRANT", "url" = "http://127.0.0.1:9/launch/L/mcp/up"}`,
+		`mcp_servers.agx-up={bearer_token_env_var = 'AGX_MCP_GRANT', url = 'http://127.0.0.1:9/launch/L/mcp/up'}`,
 		"-c",
-		`mcp_servers.agx-team-remote={"bearer_token_env_var" = "AGX_MCP_GRANT", ` +
-			`"url" = "http://127.0.0.1:9/launch/L/mcp/team%2Fremote"}`,
+		`mcp_servers.agx-team-remote={bearer_token_env_var = 'AGX_MCP_GRANT', ` +
+			`url = 'http://127.0.0.1:9/launch/L/mcp/team%2Fremote'}`,
 		"--definition",
 		"exec",
 		"hi",
 	})
-	// The configured executable cannot run, so the installation it is given fails and the
-	// launch reports why plugins are off.
+	// The launch reports why plugins are off.
 	want := "Codex plugins are disabled (features.plugins = false in " + filepath.Join(home, "config.toml") +
-		"); agx skills for Codex need them: set features.plugins = true, or pass -c features.plugins=true " +
+		" or the harness arguments); agx skills for Codex need them: set features.plugins = true, or pass -c features.plugins=true " +
 		"in the harness definition's args; launching without skills"
 	if !slices.Equal(plan.Warnings, []string{want}) {
 		t.Errorf("warnings = %q, want %q", plan.Warnings, want)
@@ -381,15 +388,9 @@ func TestBuildCodexPluginsDisabled(t *testing.T) {
 	}
 }
 
-// writeCatalog records plugins as published, and installs them in home as Codex does.
-func writeCatalog(t *testing.T, f fixture, home string, names ...string) {
+// installPlugins installs plugins in home as Codex does.
+func installPlugins(t *testing.T, home string, names ...string) {
 	t.Helper()
-	if err := securefs.WriteJSON(
-		filepath.Join(f.cache, "native", "catalog.json"),
-		map[string]any{"version": 1, "names": names},
-	); err != nil {
-		t.Fatal(err)
-	}
 	config := ""
 	for _, name := range names {
 		config += "[plugins.\"" + name + "@agx-managed\"]\nenabled = true\n"
@@ -440,22 +441,5 @@ func TestServerNames(t *testing.T) {
 		if len(name) > 32 {
 			t.Errorf("%s: %q is longer than 32 characters", id, name)
 		}
-	}
-}
-
-func TestTOMLAssignment(t *testing.T) {
-	got, err := adapters.TOMLAssignment("key", "quote \" and \\ and\nnewline")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var decoded map[string]string
-	value := strings.TrimPrefix(got, "key=")
-	// TOML basic strings use JSON-compatible escapes for these characters.
-	if err := json.Unmarshal(
-		[]byte(`{"key":`+value+`}`),
-		&decoded,
-	); err != nil ||
-		decoded["key"] != "quote \" and \\ and\nnewline" {
-		t.Fatalf("TOMLAssignment = %s (%v)", got, err)
 	}
 }

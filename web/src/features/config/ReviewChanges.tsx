@@ -24,18 +24,30 @@ import {
 } from "~/components/ui/sheet.tsx";
 import { Spinner } from "~/components/ui/spinner.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs.tsx";
-import { PlannedFiles, useApply, usePlan } from "~/features/config/plan.tsx";
+import { Daemon } from "~/daemon/Daemon.ts";
+import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
+import { ChooseFile, PlannedFiles, useApply, usePlan } from "~/features/config/plan.tsx";
 import { useStaging } from "~/features/config/staging.ts";
+import { shortPath } from "~/lib/path.ts";
 
 /** The staged changes, the diff they make, and the apply that writes them at once. */
 export function ReviewChanges() {
-  const { changes, reviewing, review, unstage, clear } = useStaging();
+  const { changes, reviewing, review, unstage, clear, file, target } = useStaging();
   const [tab, setTab] = useState<"changes" | "files">("changes");
+  const configuration = useDaemonQuery(
+    queryKeys.configuration,
+    Daemon.use((daemon) => daemon.configuration),
+  );
+  const home = configuration.data?.home ?? "";
   const plan = usePlan(
     changes.map((change) => change.change),
+    file,
     reviewing,
   );
-  const apply = useApply(changes.map((change) => change.change));
+  const apply = useApply(
+    changes.map((change) => change.change),
+    file,
+  );
   return (
     <Sheet open={reviewing} onOpenChange={review}>
       <SheetContent className="data-[side=right]:sm:max-w-3xl">
@@ -58,48 +70,66 @@ export function ReviewChanges() {
             </EmptyHeader>
           </Empty>
         ) : (
-          <Tabs
-            value={tab}
-            onValueChange={(next) => setTab(next === "files" ? "files" : "changes")}
-            className="min-h-0 flex-1 px-4"
-          >
-            <TabsList>
-              <TabsTrigger value="changes">Changes ({changes.length})</TabsTrigger>
-              <TabsTrigger value="files">
-                Files{plan.isSuccess && ` (${plan.data.length})`}
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="changes" className="min-h-0">
-              <ScrollArea className="h-full">
-                <ItemGroup>
-                  {changes.map((change) => (
-                    <Item key={change.key} size="sm" variant="outline">
-                      <ItemContent>
-                        <ItemTitle className="font-mono">{change.label}</ItemTitle>
-                      </ItemContent>
-                      <ItemActions>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`Unstage ${change.label}`}
-                          onClick={() => unstage(change.key)}
-                        >
-                          <XIcon />
-                        </Button>
-                      </ItemActions>
-                    </Item>
-                  ))}
-                </ItemGroup>
-              </ScrollArea>
-            </TabsContent>
-            <TabsContent value="files" className="min-h-0">
-              <ScrollArea className="h-full">
-                {plan.isPending && <Pending className="h-40" />}
-                {plan.isError && <DaemonProblem error={plan.error} />}
-                {plan.isSuccess && <PlannedFiles files={plan.data} />}
-              </ScrollArea>
-            </TabsContent>
-          </Tabs>
+          <>
+            {plan.error?.reason === "choose_file" && (
+              <div className="px-4">
+                <ChooseFile files={plan.error.files} home={home} onChoose={target} />
+              </div>
+            )}
+            {file !== "" && (
+              <div className="flex items-center gap-2 px-4 text-xs">
+                <span className="text-muted-foreground">New definitions go to</span>
+                <span className="truncate font-mono">{shortPath(file, home)}</span>
+                <Button variant="link" size="xs" onClick={() => target("")}>
+                  Change
+                </Button>
+              </div>
+            )}
+            <Tabs
+              value={tab}
+              onValueChange={(next) => setTab(next === "files" ? "files" : "changes")}
+              className="min-h-0 flex-1 px-4"
+            >
+              <TabsList>
+                <TabsTrigger value="changes">Changes ({changes.length})</TabsTrigger>
+                <TabsTrigger value="files">
+                  Files{plan.isSuccess && ` (${plan.data.length})`}
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="changes" className="min-h-0">
+                <ScrollArea className="h-full">
+                  <ItemGroup>
+                    {changes.map((change) => (
+                      <Item key={change.key} size="sm" variant="outline">
+                        <ItemContent>
+                          <ItemTitle className="font-mono">{change.label}</ItemTitle>
+                        </ItemContent>
+                        <ItemActions>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Unstage ${change.label}`}
+                            onClick={() => unstage(change.key)}
+                          >
+                            <XIcon />
+                          </Button>
+                        </ItemActions>
+                      </Item>
+                    ))}
+                  </ItemGroup>
+                </ScrollArea>
+              </TabsContent>
+              <TabsContent value="files" className="min-h-0">
+                <ScrollArea className="h-full">
+                  {plan.isPending && <Pending className="h-40" />}
+                  {plan.isError && plan.error.reason !== "choose_file" && (
+                    <DaemonProblem error={plan.error} />
+                  )}
+                  {plan.isSuccess && <PlannedFiles files={plan.data} />}
+                </ScrollArea>
+              </TabsContent>
+            </Tabs>
+          </>
         )}
         {apply.error !== null && (
           <div className="px-4">

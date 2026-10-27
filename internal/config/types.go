@@ -19,23 +19,63 @@ import (
 
 type ID string
 
+// Kind is a kind of definition, named by its top-level section; the selection kinds are also
+// the keys of selection lists.
+type Kind string
+
+const (
+	KindSkills       Kind = "skills"
+	KindInstructions Kind = "instructions"
+	KindMCPServers   Kind = "mcp"
+	KindBundles      Kind = "bundles"
+	KindSecrets      Kind = "secrets"
+	KindPackages     Kind = "packages"
+	KindHarnesses    Kind = "harnesses"
+)
+
+var (
+	// Kinds lists every kind of definition.
+	Kinds = []Kind{KindSkills, KindInstructions, KindMCPServers, KindSecrets, KindBundles, KindPackages, KindHarnesses}
+	// SelectionKinds are the kinds selection lists hold, in the order documents write them.
+	SelectionKinds = []Kind{KindSkills, KindInstructions, KindMCPServers, KindBundles}
+)
+
+// kindNames holds each kind's name in messages and the agx command managing it.
+var kindNames = map[Kind]struct{ label, command string }{
+	KindSkills:       {"skill", "skill"},
+	KindInstructions: {"instructions", "instructions"},
+	KindMCPServers:   {"MCP server", "mcp"},
+	KindBundles:      {"bundle", "bundles"},
+	KindSecrets:      {"secret", "secret"},
+	KindPackages:     {"package", "package"},
+	KindHarnesses:    {"harness", "harness"},
+}
+
+// Label names the kind in messages.
+func (k Kind) Label() string { return kindNames[k].label }
+
+// Command is the agx command managing the kind.
+func (k Kind) Command() string { return kindNames[k].command }
+
+// JoinKinds lists kinds for messages, such as "skills, mcp".
+func JoinKinds(kinds []Kind) string {
+	names := []string{}
+	for _, k := range kinds {
+		names = append(names, string(k))
+	}
+	return strings.Join(names, ", ")
+}
+
 type Source struct {
 	Path   string `json:"path"`
 	Line   int    `json:"line"`
 	Column int    `json:"column"`
 }
 
-type Import struct {
-	Path     string `yaml:"path"     jsonschema_description:"Fragment to load, relative to this file."`
-	Glob     string `yaml:"glob"     jsonschema_description:"Pattern of fragments to load in lexical order; may match nothing."`
-	Optional bool   `yaml:"optional" jsonschema_description:"Skip a path import whose file is missing."`
-}
-
 type Package struct {
 	Path     string `yaml:"path"     json:"path,omitempty"   jsonschema_description:"Local package directory."`
 	Git      string `yaml:"git"      json:"git,omitempty"    jsonschema_description:"Git repository URL."`
-	Ref      string `yaml:"ref"      json:"ref,omitempty"    jsonschema_description:"Git branch, tag, or commit, locked at install."`
-	Rev      string `yaml:"rev"      json:"rev,omitempty"    jsonschema_description:"Full 40-character Git commit; pins the source without a lock entry."`
+	Ref      string `yaml:"ref"      json:"ref,omitempty"    jsonschema_description:"Git branch, tag, or commit, locked at install; a full 40-character commit pins the source without a lock entry."`
 	Hash     string `yaml:"hash"     json:"hash,omitempty"   jsonschema_description:"Content hash verified at install; pins the source without a lock entry."`
 	Subdir   string `yaml:"subdir"   json:"subdir,omitempty" jsonschema_description:"Package root within the source."`
 	Override bool   `yaml:"override" json:"-"                jsonschema_description:"Replace an existing definition."`
@@ -69,14 +109,13 @@ func (p Package) LockSource() Package {
 // Pinned reports whether the source determines its content without a lock entry: a full commit,
 // a content hash, or a directory inside the read-only Nix store.
 func (p Package) Pinned() bool {
-	return p.Rev != "" || p.Hash != "" || p.Path != "" && InNixStore(p.Path)
+	return IsCommit(p.Ref) || p.Hash != "" || p.Path != "" && InNixStore(p.Path)
 }
 
 // GitSource fetches a skill or instructions file from a repository as an anonymous package.
 type GitSource struct {
 	Git  string `yaml:"git"  json:"git,omitempty"  jsonschema_description:"Git repository holding the resource, fetched like a package; path is then relative to the checkout."`
-	Ref  string `yaml:"ref"  json:"ref,omitempty"  jsonschema_description:"git: branch, tag, or commit, locked at install."`
-	Rev  string `yaml:"rev"  json:"rev,omitempty"  jsonschema_description:"git: full 40-character commit; pins the source without a lock entry."`
+	Ref  string `yaml:"ref"  json:"ref,omitempty"  jsonschema_description:"git: branch, tag, or commit, locked at install; a full 40-character commit pins the source without a lock entry."`
 	Hash string `yaml:"hash" json:"hash,omitempty" jsonschema_description:"git: content hash of the checkout, verified at install; pins the source without a lock entry."`
 }
 
@@ -114,17 +153,17 @@ type Instructions struct {
 // LoadNative or LoadOnDemand once merged.
 type MCPServer struct {
 	// Transport follows from url (http) or command (stdio) once merged.
-	Transport   string           `yaml:"transport"   json:"transport"             jsonschema:"enum=stdio,enum=http"       jsonschema_description:"How to reach the server; inferred from url (http) or command (stdio)."`
-	Command     []string         `yaml:"command"     json:"command,omitempty"                                             jsonschema_description:"stdio: server command and arguments."`
-	URL         string           `yaml:"url"         json:"url,omitempty"                                                 jsonschema_description:"http: server URL; http or https."`
-	Cwd         string           `yaml:"cwd"         json:"cwd,omitempty"                                                 jsonschema_description:"stdio: working directory; defaults to the launch directory."`
-	Environment map[string]Value `yaml:"environment" json:"environment,omitempty"                                         jsonschema_description:"stdio: environment variables for the server."`
-	Headers     map[string]Value `yaml:"headers"     json:"headers,omitempty"                                             jsonschema_description:"http: extra request headers."`
+	Transport   string           `yaml:"-"           json:"transport"`
+	Command     []string         `yaml:"command"     json:"command,omitempty"     jsonschema_description:"stdio: server command and arguments."`
+	URL         string           `yaml:"url"         json:"url,omitempty"         jsonschema_description:"http: server URL; http or https."`
+	Cwd         string           `yaml:"cwd"         json:"cwd,omitempty"         jsonschema_description:"stdio: working directory; defaults to the launch directory."`
+	Environment map[string]Value `yaml:"environment" json:"environment,omitempty" jsonschema_description:"stdio: environment variables for the server."`
+	Headers     map[string]Value `yaml:"headers"     json:"headers,omitempty"     jsonschema_description:"http: extra request headers."`
 	Auth        MCPAuth          `yaml:"auth"        json:"auth"`
-	Description string           `yaml:"description" json:"description,omitempty"                                         jsonschema_description:"What the server offers, shown by agx mcp tools."`
-	Load        string           `yaml:"load"        json:"load"                  jsonschema:"enum=native,enum=on_demand" jsonschema_description:"native: in the harness's tool list (default); on_demand: reached with agx mcp call."`
+	Description string           `yaml:"description" json:"description,omitempty" jsonschema_description:"What the server offers, shown by agx mcp tools."`
+	Load        string           `yaml:"load"        json:"load"                  jsonschema_description:"native: in the harness's tool list (default); on_demand: reached with agx mcp call." jsonschema:"enum=native,enum=on_demand"`
 	Share       MCPShare         `yaml:"share"       json:"share,omitzero"`
-	Override    bool             `yaml:"override"    json:"-"                                                             jsonschema_description:"Replace an existing definition."`
+	Override    bool             `yaml:"override"    json:"-"                     jsonschema_description:"Replace an existing definition."`
 	Inline      bool             `yaml:"-"           json:"-"`
 	Source      Source           `yaml:"-"           json:"source"`
 }
@@ -163,13 +202,13 @@ func (c MCPServer) ShareMode() string {
 	return c.Share.Type
 }
 
-// MCPAuth is the credential an HTTP MCP server sends as its bearer token: a top-level secret
-// referenced with !secret, an inline secret owned by the entry, or none. Merging stores an
+// MCPAuth is the credential an HTTP MCP server sends as its bearer token: a tagged value
+// (!secret, !env, or !file), an inline secret owned by the entry, or none. Merging stores an
 // inline secret, including the implicit on-demand OAuth of an HTTP entry without auth, in
 // Config.Secrets under the entry's ID and points Secret at it.
 type MCPAuth struct {
-	Secret ID   `json:"secret,omitempty"`
-	None   bool `json:"none,omitempty"`
+	Value
+	None bool `json:"none,omitempty"`
 	// Inline is the entry's own secret as configured; nil for references, none, and stdio.
 	Inline *Secret `json:"-"`
 }
@@ -177,11 +216,10 @@ type MCPAuth struct {
 // Secret defines how a credential is obtained.
 type Secret struct {
 	Kind     string    `yaml:"kind"      json:"kind"                jsonschema:"required"`
-	Variable string    `yaml:"variable"  json:"variable,omitempty"                        jsonschema_description:"Environment variable holding the secret."`
 	Command  []string  `yaml:"command"   json:"command,omitempty"                         jsonschema_description:"Command whose trimmed stdout is the secret."`
-	File     string    `yaml:"file"      json:"file,omitempty"                            jsonschema_description:"sops: encrypted file; file: file holding the secret. Relative to the declaring fragment."`
+	File     string    `yaml:"file"      json:"file,omitempty"                            jsonschema_description:"sops: encrypted file, relative to the declaring fragment."`
 	Key      SecretKey `yaml:"key"       json:"key,omitempty"                             jsonschema_description:"sops: dotted key path or list of segments to extract; omit to read the whole file."`
-	AgeKey   Value     `yaml:"age_key"   json:"age_key,omitzero"                          jsonschema_description:"sops: age identity passed to sops as SOPS_AGE_KEY: !secret ID, !env NAME, or !file PATH."`
+	AgeKey   Value     `yaml:"age_key"   json:"age_key,omitzero"                          jsonschema_description:"sops: age identity passed to sops as SOPS_AGE_KEY."`
 	Issuer   string    `yaml:"issuer"    json:"issuer,omitempty"                          jsonschema_description:"OAuth issuer URL; discovered when omitted."`
 	ClientID string    `yaml:"client_id" json:"client_id,omitempty"                       jsonschema_description:"OAuth public client ID."`
 	Resource string    `yaml:"resource"  json:"resource,omitempty"                        jsonschema_description:"OAuth resource indicator."`
@@ -238,20 +276,20 @@ type ScopeSpec struct {
 	Remove    SelectionSpec `yaml:"remove"    jsonschema_description:"Resources to deselect."`
 }
 
-// DefaultShutdownGraceSeconds is daemon.shutdown_grace_seconds when no fragment sets it.
-const DefaultShutdownGraceSeconds = 10
-
 type Daemon struct {
-	LeaseSeconds         int   `yaml:"lease_seconds"          json:"lease_seconds"          jsonschema:"minimum=3" jsonschema_description:"Launch lease length; defaults to 60."`
-	RenewSeconds         int   `yaml:"renew_seconds"          json:"renew_seconds"          jsonschema:"minimum=1" jsonschema_description:"Lease renewal interval, shorter than the lease; defaults to 20."`
-	ShutdownGraceSeconds int   `yaml:"shutdown_grace_seconds" json:"shutdown_grace_seconds" jsonschema:"minimum=1" jsonschema_description:"How long a stopping daemon lets MCP requests and tool calls in flight finish; defaults to 10. daemon stop and daemon restart take --timeout instead."`
-	Autostart            *bool `yaml:"autostart"              json:"autostart,omitempty"                           jsonschema_description:"Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."`
-	Override             bool  `yaml:"override"               json:"-"                                             jsonschema_description:"Replace settings made by earlier fragments."`
+	LeaseSeconds int   `yaml:"lease_seconds" json:"lease_seconds"       jsonschema:"minimum=3" jsonschema_description:"Launch lease length; defaults to 60."`
+	RenewSeconds int   `yaml:"renew_seconds" json:"renew_seconds"       jsonschema:"minimum=1" jsonschema_description:"Lease renewal interval, shorter than the lease; defaults to 20."`
+	Autostart    *bool `yaml:"autostart"     json:"autostart,omitempty"                        jsonschema_description:"Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."`
 }
 
+// RootFile is the root configuration file: the fragments it lists and machine-level settings.
+type RootFile struct {
+	Fragments []string `yaml:"fragments" jsonschema_description:"Fragments to load, relative to this file: paths, which must exist, or glob patterns, which may match nothing, loaded in lexical order."`
+	Daemon    Daemon   `yaml:"daemon"    jsonschema_description:"Launch lease timing and automatic daemon startup."`
+}
+
+// Document is a configuration fragment, or a package manifest.
 type Document struct {
-	Imports      []Import            `yaml:"imports"      jsonschema_description:"Fragments loaded before this file."`
-	Lockfile     string              `yaml:"lockfile"     jsonschema_description:"Lockfile for unpinned packages declared here; defaults to agx.lock.json."`
 	Packages     map[ID]Package      `yaml:"packages"     jsonschema_description:"Package sources by ID."`
 	Skills       map[ID]Skill        `yaml:"skills"       jsonschema_description:"Skills: directories containing SKILL.md, Git sources, or generated from content."`
 	Instructions map[ID]Instructions `yaml:"instructions" jsonschema_description:"Instructions applied to launches: files, Git sources, or text."`
@@ -260,7 +298,6 @@ type Document struct {
 	Bundles      map[ID]BundleSpec   `yaml:"bundles"      jsonschema_description:"Named selections of resources."`
 	Scopes       []ScopeSpec         `yaml:"scopes"       jsonschema_description:"Directory rules that add or remove resources."`
 	Harnesses    map[string]Harness  `yaml:"harnesses"    jsonschema_description:"Built-in harness customizations and new definitions."`
-	Daemon       Daemon              `yaml:"daemon"       jsonschema_description:"Launch lease timing and automatic daemon startup."`
 }
 
 type Config struct {
@@ -283,8 +320,9 @@ type Config struct {
 	// rootDefinitions maps definitions from configuration fragments to their override flag,
 	// so package manifests merged later cannot replace them.
 	rootDefinitions map[string]bool
-	daemonSet       map[string]bool
-	builtins        Builtins
+	// fragments holds the root's fragment entries, resolved: absolute paths and glob patterns.
+	fragments []string
+	builtins  Builtins
 }
 
 // MissingPackage is a package that is not installed. Root is the declared package the warning
@@ -377,7 +415,8 @@ func Canonical(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Resolve the existing prefix as scopes may name directories not created yet.
+	// Resolve the existing prefix as scopes may name directories not created yet, or
+	// ones this process may not read, such as a home directory seen from a build sandbox.
 	suffix := []string{}
 	for {
 		real, err := filepath.EvalSymlinks(abs)
@@ -388,7 +427,7 @@ func Canonical(path string) (string, error) {
 			}
 			return filepath.Clean(real), nil
 		}
-		if !os.IsNotExist(err) {
+		if !os.IsNotExist(err) && !os.IsPermission(err) {
 			return "", err
 		}
 		parent := filepath.Dir(abs)
@@ -459,7 +498,7 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 			}
 		})
 		if err != nil {
-			return fmt.Errorf("%s: %w", locate(step.Source), err)
+			return errorAt(step.Source, "%w", err)
 		}
 		return nil
 	}
@@ -583,9 +622,9 @@ func (s *Snapshot) MCPInjections() []Injection {
 			continue
 		}
 		server := s.Config.MCP[r.ID]
-		if id := server.Auth.Secret; id != "" {
-			auth := injection("mcp "+string(r.ID)+" auth", Value{Secret: id, Source: server.Source})
-			if secret := s.Config.Secrets[id]; secret.Owner != "" {
+		if server.Auth.Tagged() {
+			auth := injection("mcp "+string(r.ID)+" auth", server.Auth.Value)
+			if secret := s.Config.Secrets[server.Auth.Secret]; server.Auth.Secret != "" && secret.Owner != "" {
 				auth.Text = secret.Kind
 				if secret.Implicit {
 					auth.Text += " (on demand)"

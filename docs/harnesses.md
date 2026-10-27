@@ -116,14 +116,14 @@ For example, `codex exec …` is `exec`, `claude -p …` is `print`, and `claude
 --resume …` is `resume`; help, version, and login commands are `passthrough`.
 
 `args` is either a flat list, used for every mode except `passthrough`, or a
-list of groups:
+list of `{values, modes}` groups:
 
 ```yaml
 harnesses:
   codex-cpa:
     base: codex
     args:
-      - [--search]                               # every mode except passthrough
+      - values: [--search]                       # every mode except passthrough
       - values: [--profile, cpa]
         modes: [interactive, exec, resume]       # only these modes
 ```
@@ -225,16 +225,16 @@ definition, so `codex-work` works in any shell, editor, or tool that expects a
 plain executable.
 
 ```sh
-agx shims install       # create, update, and remove shims to match your definitions
-agx shims list          # show them and their state
-agx shims remove        # delete them all
+agx shims install       # make the shim directory match your definitions
+agx shims list          # show the shims and their state
+agx shims remove        # delete the shim directory
 ```
 
-Shims go to `~/.local/share/agx/shims` (`%LOCALAPPDATA%\agx\shims` on Windows),
-or the directory given with `--dir`. Add that directory to your `PATH`; `install`
-and `list` warn when it is missing or when another program with the same name
-comes first. Run `agx shims install` again after adding or removing definitions.
-Built-in harnesses get no shim. agx only touches shims it created.
+Shims go to `~/.local/share/agx/shims` (`%LOCALAPPDATA%\agx\shims` on Windows).
+Add that directory to your `PATH`; `install` and `list` warn when it is missing
+or when another program with the same name comes first. Run `agx shims install`
+again after adding or removing definitions. Built-in harnesses get no shim. The
+directory is agx's: `install` removes any other file in it.
 
 Any link to agx named after a harness works the same way, built-ins included:
 a `codex` link to agx, earlier on `PATH` than Codex itself, runs `agx codex`.
@@ -243,8 +243,9 @@ uses `harnesses.codex.executable` when set. Package managers such as Nix can
 install these links themselves instead of running `agx shims install`;
 `agx doctor` accepts definitions that `PATH` already runs as agx this way.
 
-On Unix shims are symlinks; on Windows they are hard links or copies named
-`<name>.exe`.
+On Unix shims are symlinks; on Windows they are copies of agx named
+`<name>.exe` that run the agx recorded beside them, so they keep working after
+agx updates.
 
 ## Harness-specific notes
 

@@ -3,25 +3,30 @@ package configedit_test
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/tarik02-org/agx/internal/yaml"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/configedit"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
 var builtins = builtin.Registry().Builtins([]string{"agx", "help", "install", "run"})
 
-// workspace is an isolated configuration directory with a skill and instructions on disk.
+// root lists main.yaml and drop-ins in agx.d.
+const root = "fragments: [main.yaml, agx.d/*.yaml]\n"
+
+// workspace is an isolated configuration directory with a skill and instructions on disk, whose
+// root lists main.yaml.
 type workspace struct {
 	dir   string
+	main  string
 	paths platform.Paths
 }
 
@@ -40,7 +45,8 @@ func newWorkspace(t *testing.T, configuration string) *workspace {
 		w.write(t, filepath.Join("skills", name, "SKILL.md"), "---\nname: "+name+"\ndescription: "+name+" skill\n---\n")
 	}
 	w.write(t, "AGENTS.md", "Be brief.\n")
-	w.write(t, "agx.yaml", configuration)
+	w.write(t, "agx.yaml", root)
+	w.main = w.write(t, "main.yaml", configuration)
 	return w
 }
 
@@ -67,7 +73,7 @@ func (w *workspace) read(t *testing.T, rel string) string {
 
 func (w *workspace) session(t *testing.T) *configedit.Session {
 	t.Helper()
-	c, err := config.Load(w.paths.Config, w.paths.Cache, builtins)
+	c, err := config.Load(w.paths.Config, config.Options{Builtins: builtins, Cache: w.paths.Cache})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +115,8 @@ func after(t *testing.T, p *configedit.Plan, path string) string {
 
 func wantCode(t *testing.T, err error, want configedit.Code) {
 	t.Helper()
-	if code, ok := configedit.CodeOf(err); !ok || code != want {
+	var edited *configedit.Error
+	if !errors.As(err, &edited) || edited.Code != want {
 		t.Fatalf("error = %v, want code %s", err, want)
 	}
 }
@@ -121,26 +128,25 @@ skills:
 instructions:
   agents:
     path: ./AGENTS.md
-imports:
-  - glob: agx.d/*.yaml
 `
 
 func TestDefineCreatesAndReplaces(t *testing.T) {
 	w := newWorkspace(t, base)
 	fragment := w.write(t, "agx.d/10-mcp.yaml", "mcp:\n  fs:\n    command: [server-fs] # local\n")
 	s := w.session(t)
-	if err := s.Define(edit.MCP, "docs", node(t, "url: https://example.com/mcp\n"), s.Root); err != nil {
+	s.File = w.main
+	if err := s.Define(config.KindMCPServers, "docs", node(t, "url: https://example.com/mcp\n")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Define(edit.Skills, "alpha", node(t, "path: ./skills/beta\n"), ""); err != nil {
+	if err := s.Define(config.KindSkills, "alpha", node(t, "path: ./skills/beta\n")); err != nil {
 		t.Fatal(err)
 	}
-	// An existing definition is replaced where it is, whatever file the change names.
-	if err := s.Define(edit.MCP, "fs", node(t, "command: [server-fs, --root, /]\n"), s.Root); err != nil {
+	// An existing definition is replaced where it is, whatever the target fragment.
+	if err := s.Define(config.KindMCPServers, "fs", node(t, "command: [server-fs, --root, /]\n")); err != nil {
 		t.Fatal(err)
 	}
 	p := plan(t, s)
-	root := after(t, p, s.Root)
+	root := after(t, p, w.main)
 	want := `# The configuration.
 skills:
   alpha:
@@ -148,8 +154,6 @@ skills:
 instructions:
   agents:
     path: ./AGENTS.md
-imports:
-  - glob: agx.d/*.yaml
 mcp:
   docs:
     url: https://example.com/mcp
@@ -175,13 +179,10 @@ func TestDefineRefusesReadOnlyFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := w.session(t)
-	wantCode(t, s.Define(edit.MCP, "fs", node(t, "command: [other]\n"), ""), configedit.ReadOnly)
-	if err := s.Define(edit.MCP, "new", node(t, "command: [new]\n"), fragment); err != nil {
-		t.Fatal(err)
-	}
-	_, err := s.Plan()
-	wantCode(t, err, configedit.ReadOnly)
-	wantCode(t, s.Define("unknown", "x", node(t, "a: b\n"), ""), configedit.InvalidRequest)
+	wantCode(t, s.Define(config.KindMCPServers, "fs", node(t, "command: [other]\n")), configedit.ReadOnly)
+	s.File = fragment
+	wantCode(t, s.Define(config.KindMCPServers, "new", node(t, "command: [new]\n")), configedit.ReadOnly)
+	wantCode(t, s.Define("unknown", "x", node(t, "a: b\n")), configedit.InvalidRequest)
 }
 
 func TestUndefineRemovesReferences(t *testing.T) {
@@ -195,17 +196,17 @@ scopes:
       bundles: [dev]
 `)
 	s := w.session(t)
-	if err := s.Undefine(edit.Skills, "alpha"); err != nil {
+	if err := s.Undefine(config.KindSkills, "alpha"); err != nil {
 		t.Fatal(err)
 	}
-	got := after(t, plan(t, s), s.Root)
+	got := after(t, plan(t, s), w.main)
 	if strings.Contains(got, "alpha") {
 		t.Fatalf("references remain:\n%s", got)
 	}
 	if !strings.Contains(got, "instructions: [agents]") || !strings.Contains(got, "bundles: [dev]") {
 		t.Fatalf("unrelated entries went:\n%s", got)
 	}
-	wantCode(t, s.Undefine(edit.MCP, "missing"), configedit.NotFound)
+	wantCode(t, s.Undefine(config.KindMCPServers, "missing"), configedit.NotFound)
 }
 
 func TestEnableDisable(t *testing.T) {
@@ -217,18 +218,13 @@ func TestEnableDisable(t *testing.T) {
 	}
 	// Rules spell directories under the home directory with ~/, as on Windows runners' temp.
 	written := configedit.HomeRelative(work)
-	if _, err := s.Enable(edit.Skills, "alpha", configedit.NewScope("", nil), s.Root); err != nil {
+	if _, err := s.Enable(config.KindSkills, "alpha", configedit.NewScope("", nil)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Enable(
-		edit.Instructions,
-		"agents",
-		configedit.NewScope(work, []string{"codex"}),
-		s.Root,
-	); err != nil {
+	if _, err := s.Enable(config.KindInstructions, "agents", configedit.NewScope(work, []string{"codex"})); err != nil {
 		t.Fatal(err)
 	}
-	got := after(t, plan(t, s), s.Root)
+	got := after(t, plan(t, s), w.main)
 	want := base + `scopes:
   - add:
       skills: [alpha]
@@ -240,25 +236,24 @@ func TestEnableDisable(t *testing.T) {
 	if got != want {
 		t.Fatalf("enabled =\n%s\nwant\n%s", got, want)
 	}
-	if err := os.WriteFile(w.paths.Config, []byte(got), 0o644); err != nil {
+	if err := os.WriteFile(w.main, []byte(got), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Disabling what a matching rule selects drops the entry, and the rule it empties.
 	s = w.session(t)
 	if _, err := s.Disable(
-		edit.Instructions,
+		config.KindInstructions,
 		"agents",
 		configedit.NewScope(work, []string{"codex"}),
-		s.Root,
 	); err != nil {
 		t.Fatal(err)
 	}
 	// Disabling in a directory what an outer rule selects writes a remove entry.
-	if _, err := s.Disable(edit.Skills, "alpha", configedit.NewScope(work, nil), s.Root); err != nil {
+	if _, err := s.Disable(config.KindSkills, "alpha", configedit.NewScope(work, nil)); err != nil {
 		t.Fatal(err)
 	}
-	got = after(t, plan(t, s), s.Root)
+	got = after(t, plan(t, s), w.main)
 	want = base + `scopes:
   - add:
       skills: [alpha]
@@ -297,7 +292,7 @@ func TestWriteFile(t *testing.T) {
 	)
 	wantCode(t, s.WriteFile(filepath.Join(w.dir, "skills", "alpha"), nil), configedit.InvalidRequest)
 	wantCode(t, s.WriteFile("skills/alpha/SKILL.md", nil), configedit.InvalidRequest)
-	wantCode(t, s.WriteFile(w.paths.Config, nil), configedit.InvalidRequest)
+	wantCode(t, s.WriteFile(w.main, nil), configedit.InvalidRequest)
 	wantCode(
 		t,
 		s.WriteFile(filepath.Join(w.dir, "cache", "packages", "kit", "skill", "SKILL.md"), nil),
@@ -330,10 +325,15 @@ func TestPlanHashesAndApplyConflicts(t *testing.T) {
 	w := newWorkspace(t, base)
 	s := w.session(t)
 	fragment := filepath.Join(w.dir, "agx.d", "20-new.yaml")
-	if err := s.Define(edit.MCP, "docs", node(t, "url: https://example.com/mcp\n"), fragment); err != nil {
+	s.File = fragment
+	if err := s.Define(config.KindMCPServers, "docs", node(t, "url: https://example.com/mcp\n")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Enable(edit.MCP, "docs", configedit.NewScope("", nil), s.Root); err != nil {
+	if _, err := s.Enable(config.KindMCPServers, "docs", configedit.NewScope("", nil)); err != nil {
+		t.Fatal(err)
+	}
+	// An existing definition changes where it is.
+	if err := s.Define(config.KindSkills, "alpha", node(t, "path: ./skills/beta\n")); err != nil {
 		t.Fatal(err)
 	}
 	p := plan(t, s)
@@ -342,12 +342,13 @@ func TestPlanHashesAndApplyConflicts(t *testing.T) {
 	for _, f := range p.Files {
 		expected[f.Path] = f.BeforeSHA256()
 		switch f.Path {
-		case s.Root:
-			if f.BeforeSHA256() != hex.EncodeToString(sum[:]) || !strings.Contains(f.Diff(), "+      mcp: [docs]") {
-				t.Fatalf("root: %s\n%s", f.BeforeSHA256(), f.Diff())
+		case w.main:
+			if f.BeforeSHA256() != hex.EncodeToString(sum[:]) ||
+				!strings.Contains(f.Diff(), "+    path: ./skills/beta") {
+				t.Fatalf("main: %s\n%s", f.BeforeSHA256(), f.Diff())
 			}
 		case fragment:
-			if f.BeforeSHA256() != "" || !strings.HasPrefix(f.Diff(), "--- /dev/null") {
+			if f.BeforeSHA256() != "" || !strings.Contains(f.Diff(), "+      mcp: [docs]") {
 				t.Fatalf("new fragment: %q\n%s", f.BeforeSHA256(), f.Diff())
 			}
 		default:
@@ -357,13 +358,13 @@ func TestPlanHashesAndApplyConflicts(t *testing.T) {
 	if err := p.Check(expected); err != nil {
 		t.Fatal(err)
 	}
-	expected[s.Root] = strings.Repeat("0", 64)
+	expected[w.main] = strings.Repeat("0", 64)
 	wantCode(t, p.Check(expected), configedit.Conflict)
-	delete(expected, s.Root)
+	delete(expected, w.main)
 	wantCode(t, p.Check(expected), configedit.Conflict)
 
 	// A file changed after planning fails the write before anything is written.
-	w.write(t, "agx.yaml", base+"# edited\n")
+	w.write(t, "main.yaml", base+"# edited\n")
 	_, err := p.Write()
 	wantCode(t, err, configedit.Conflict)
 	if _, err := os.Stat(fragment); !os.IsNotExist(err) {
@@ -374,7 +375,7 @@ func TestPlanHashesAndApplyConflicts(t *testing.T) {
 func TestInvalidChangeWritesNothing(t *testing.T) {
 	w := newWorkspace(t, base)
 	s := w.session(t)
-	if _, err := s.Enable(edit.Skills, "missing", configedit.NewScope("", nil), s.Root); err != nil {
+	if _, err := s.Enable(config.KindSkills, "missing", configedit.NewScope("", nil)); err != nil {
 		t.Fatal(err)
 	}
 	_, err := s.Plan()
@@ -382,7 +383,7 @@ func TestInvalidChangeWritesNothing(t *testing.T) {
 	if !strings.Contains(err.Error(), "missing") {
 		t.Fatalf("the error does not name the load problem: %v", err)
 	}
-	if got := w.read(t, "agx.yaml"); got != base {
+	if got := w.read(t, "main.yaml"); got != base {
 		t.Fatalf("configuration changed:\n%s", got)
 	}
 }
@@ -404,4 +405,96 @@ func TestParseSource(t *testing.T) {
 	if got, err := configedit.ParseSource("./skills", configedit.GitHub, true); err != nil || got.Local != "./skills" {
 		t.Errorf("a local path = %+v, %v", got, err)
 	}
+}
+
+func TestTarget(t *testing.T) {
+	define := func(s *configedit.Session) error {
+		return s.Define(config.KindMCPServers, "docs", node(t, "url: https://example.com/mcp\n"))
+	}
+	t.Run("the only writable fragment", func(t *testing.T) {
+		w := newWorkspace(t, base)
+		s := w.session(t)
+		if err := define(s); err != nil {
+			t.Fatal(err)
+		}
+		if got := after(t, plan(t, s), w.main); !strings.Contains(got, "docs:") {
+			t.Fatalf("main =\n%s", got)
+		}
+	})
+	t.Run("none creates agx.d/main.yaml and the missing root", func(t *testing.T) {
+		dir, err := config.Canonical(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := &workspace{
+			dir:   dir,
+			paths: platform.Paths{Config: filepath.Join(dir, "agx.yaml"), Cache: filepath.Join(dir, "cache")},
+		}
+		s := w.session(t)
+		if err := define(s); err != nil {
+			t.Fatal(err)
+		}
+		p := plan(t, s)
+		if len(p.Files) != 2 {
+			t.Fatalf("plan = %+v", p.Files)
+		}
+		if got := after(t, p, s.Root); got != config.DefaultConfig {
+			t.Fatalf("root = %q", got)
+		}
+		if got := after(t, p, filepath.Join(dir, "agx.d", "main.yaml")); !strings.Contains(got, "docs:") {
+			t.Fatalf("main =\n%s", got)
+		}
+	})
+	t.Run("several", func(t *testing.T) {
+		w := newWorkspace(t, base)
+		other := w.write(t, "agx.d/10-other.yaml", "{}\n")
+		s := w.session(t)
+		var edited *configedit.Error
+		if err := define(s); !errors.As(err, &edited) || edited.Code != configedit.ChooseFile ||
+			len(edited.Files) != 2 || edited.Files[0] != w.main || edited.Files[1] != other {
+			t.Fatalf("error = %v (%+v)", err, edited)
+		}
+		var offered []string
+		s.Choose = func(candidates []string) (string, error) {
+			offered = candidates
+			return other, nil
+		}
+		if err := define(s); err != nil {
+			t.Fatal(err)
+		}
+		if len(offered) != 2 {
+			t.Fatalf("offered %q", offered)
+		}
+		if got := after(t, plan(t, s), other); !strings.Contains(got, "docs:") {
+			t.Fatalf("other =\n%s", got)
+		}
+	})
+	t.Run("a requested file", func(t *testing.T) {
+		w := newWorkspace(t, base)
+		w.write(t, "agx.d/10-other.yaml", "{}\n")
+		for _, file := range []string{w.paths.Config, filepath.Join(w.dir, "elsewhere.yaml")} {
+			s := w.session(t)
+			s.File = file
+			wantCode(t, define(s), configedit.InvalidRequest)
+		}
+		s := w.session(t)
+		s.File = filepath.Join(w.dir, "agx.d", "20-new.yaml")
+		if err := define(s); err != nil {
+			t.Fatal(err)
+		}
+		if got := after(t, plan(t, s), s.File); !strings.Contains(got, "docs:") {
+			t.Fatalf("new =\n%s", got)
+		}
+	})
+	t.Run("enable joins the fragment with a matching rule", func(t *testing.T) {
+		w := newWorkspace(t, base)
+		other := w.write(t, "agx.d/10-other.yaml", "scopes:\n  - add:\n      skills: [alpha]\n")
+		s := w.session(t)
+		if _, err := s.Enable(config.KindInstructions, "agents", configedit.NewScope("", nil)); err != nil {
+			t.Fatal(err)
+		}
+		if got := after(t, plan(t, s), other); !strings.Contains(got, "instructions: [agents]") {
+			t.Fatalf("other =\n%s", got)
+		}
+	})
 }

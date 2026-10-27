@@ -7,18 +7,19 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/config/edit"
 )
 
 const original = `# yaml-language-server: $schema=https://example/agx.schema.json
 # Personal agx configuration.
-imports:
-  - glob: agx.d/*.yaml   # machine drop-ins
+fragments:
+  - agx.d/*.yaml   # machine drop-ins
 
 secrets:
   gh: {kind: keychain}   # stored with agx secret set
 
-# MCP servers, alphabetical
+# config.KindMCPServers servers, alphabetical
 mcp:
   github:
     url: https://api.githubcopilot.com/mcp
@@ -95,9 +96,9 @@ func TestEditsKeepUntouchedText(t *testing.T) {
 	docs := edit.Mapping("url", "https://docs.example/mcp")
 	edit.Set(docs, "headers", edit.Mapping("X-Key", edit.Tagged("!secret", "gh")))
 	edit.Set(docs, "auth", edit.Scalar("none"))
-	f.Define(edit.MCP, "docs", docs)
+	f.Define(config.KindMCPServers, "docs", docs)
 	everywhere := f.AddRule("", nil)
-	edit.Append(f.List(f.Selection(everywhere, "add", true), edit.MCP, true), "docs")
+	edit.Append(f.List(f.Selection(everywhere, "add", true), config.KindMCPServers, true), "docs")
 	same(t, render(t, f), strings.Replace(original, `      'X-Trace': "on"
 `, `      'X-Trace': "on"
   docs:
@@ -109,12 +110,12 @@ func TestEditsKeepUntouchedText(t *testing.T) {
       mcp: [docs]
 `)
 
-	f.Define(edit.MCP, "fs", edit.Mapping(
+	f.Define(config.KindMCPServers, "fs", edit.Mapping(
 		"command", edit.Sequence(true, "up", "--stdio"),
 		"environment", edit.Mapping("TOKEN", edit.Tagged("!env", "FS_TOKEN"), "MODE", "fast"),
 	))
 	work := rule(t, f, "~/work")
-	edit.Append(f.List(f.Selection(work.Node, "add", true), edit.MCP, true), "fs")
+	edit.Append(f.List(f.Selection(work.Node, "add", true), config.KindMCPServers, true), "fs")
 	got := render(t, f)
 	for _, want := range []string{
 		"    auth: none\n  fs:\n    command: [up, --stdio]\n    environment:\n      TOKEN: !env FS_TOKEN\n      MODE: fast\n\nscopes:\n",
@@ -125,7 +126,7 @@ func TestEditsKeepUntouchedText(t *testing.T) {
 		}
 	}
 
-	edit.Append(f.List(f.Selection(work.Node, "remove", true), edit.MCP, true), "docs")
+	edit.Append(f.List(f.Selection(work.Node, "remove", true), config.KindMCPServers, true), "docs")
 	if want := "        - ./skills/review\n    remove:\n      mcp: [docs]\n  - add:\n"; !strings.Contains(
 		render(t, f),
 		want,
@@ -133,7 +134,7 @@ func TestEditsKeepUntouchedText(t *testing.T) {
 		t.Fatalf("remove list not placed in the ~/work rule:\n%s", render(t, f))
 	}
 
-	refs := f.References(edit.MCP, "docs")
+	refs := f.References(config.KindMCPServers, "docs")
 	wheres := []string{}
 	for _, r := range refs {
 		wheres = append(wheres, r.Where)
@@ -142,22 +143,22 @@ func TestEditsKeepUntouchedText(t *testing.T) {
 	if strings.Join(wheres, "; ") != "scope ~/work remove; scope everywhere add" {
 		t.Fatalf("references = %q", wheres)
 	}
-	if !f.Undefine(edit.MCP, "docs") {
+	if !f.Undefine(config.KindMCPServers, "docs") {
 		t.Fatal("docs was not defined")
 	}
 	got = render(t, f)
 	if strings.Contains(got, "docs") || strings.Contains(got, "remove:") || strings.Contains(got, "- add:") {
 		t.Fatalf("emptied lists and rules were not pruned:\n%s", got)
 	}
-	head, _, _ := strings.Cut(original, "# MCP servers")
+	head, _, _ := strings.Cut(original, "# config.KindMCPServers servers")
 	if !strings.HasPrefix(got, head) {
-		t.Fatalf("leading comments and imports changed:\n%s", got)
+		t.Fatalf("leading comments and fragments changed:\n%s", got)
 	}
 }
 
 func TestEmptyFlowMappingGrowsInBlockStyle(t *testing.T) {
 	f := open(t, "# Team servers\nmcp: {}\n")
-	f.Define(edit.MCP, "viafile", edit.Mapping("url", "https://v.example/mcp"))
+	f.Define(config.KindMCPServers, "viafile", edit.Mapping("url", "https://v.example/mcp"))
 	same(t, render(t, f), "# Team servers\nmcp:\n  viafile:\n    url: https://v.example/mcp\n")
 }
 
@@ -169,7 +170,7 @@ func TestNewFile(t *testing.T) {
 	if f.Exists || f.Original() != nil {
 		t.Fatal("a missing file reports that it exists")
 	}
-	f.Define(edit.Instructions, "pnpm", edit.Mapping("text", "Use pnpm."))
+	f.Define(config.KindInstructions, "pnpm", edit.Mapping("text", "Use pnpm."))
 	same(t, render(t, f), "instructions:\n  pnpm:\n    text: Use pnpm.\n")
 }
 
@@ -187,20 +188,20 @@ func TestEntryID(t *testing.T) {
 `)
 	add := edit.Get(f.Rules()[0].Node, "add")
 	for _, tt := range []struct {
-		kind    string
+		kind    config.Kind
 		index   int
 		id      string
 		defines bool
 	}{
-		{edit.Skills, 0, "review", false},
-		{edit.Skills, 1, "local-thing", true},
-		{edit.Skills, 2, "team", true},
-		{edit.Skills, 3, "strict", true},
-		{edit.Skills, 4, "deploy", true},
-		{edit.Instructions, 0, "AGENTS", true},
-		{edit.Bundles, 0, "./not-a-path-for-bundles", false},
+		{config.KindSkills, 0, "review", false},
+		{config.KindSkills, 1, "local-thing", true},
+		{config.KindSkills, 2, "team", true},
+		{config.KindSkills, 3, "strict", true},
+		{config.KindSkills, 4, "deploy", true},
+		{config.KindInstructions, 0, "AGENTS", true},
+		{config.KindBundles, 0, "./not-a-path-for-bundles", false},
 	} {
-		entry := edit.Get(add, tt.kind).Content[tt.index]
+		entry := edit.Get(add, string(tt.kind)).Content[tt.index]
 		if id, defines := edit.EntryID(tt.kind, entry); id != tt.id || defines != tt.defines {
 			t.Errorf("%s[%d] = %q, %v; want %q, %v", tt.kind, tt.index, id, defines, tt.id, tt.defines)
 		}

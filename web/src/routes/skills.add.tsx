@@ -43,7 +43,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs.t
 import { toast } from "~/components/ui/toast.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonMutation, useDaemonQuery } from "~/daemon/query.ts";
-import { PlannedFiles, useApply, usePlan } from "~/features/config/plan.tsx";
+import { ChooseFile, PlannedFiles, useApply, usePlan } from "~/features/config/plan.tsx";
 import { ScopePicker } from "~/features/config/ScopeDialog.tsx";
 import {
   addPackage,
@@ -318,16 +318,22 @@ function Review({
 }) {
   const navigate = useNavigate();
   const stage = useStaging((state) => state.stage);
+  const target = useStaging((state) => state.target);
   const configuration = useDaemonQuery(
     queryKeys.configuration,
     Daemon.use((daemon) => daemon.configuration),
   );
   const home = configuration.data?.home ?? "";
+  const [file, setFile] = useState("");
   const plan = usePlan(
     changes.map((change) => change.change),
+    file,
     true,
   );
-  const apply = useApply(changes.map((change) => change.change));
+  const apply = useApply(
+    changes.map((change) => change.change),
+    file,
+  );
   const done = () => void navigate({ to: "/config", search: { kind: "packages", id: packageId } });
   return (
     <Card size="sm">
@@ -342,7 +348,11 @@ function Review({
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {plan.isPending && <Pending className="h-40" />}
-        {plan.isError && <DaemonProblem error={plan.error} />}
+        {plan.error?.reason === "choose_file" ? (
+          <ChooseFile files={plan.error.files} home={home} onChoose={setFile} />
+        ) : (
+          plan.isError && <DaemonProblem error={plan.error} />
+        )}
         {apply.error !== null && <DaemonProblem error={apply.error} />}
         {plan.isSuccess && <PlannedFiles files={plan.data} />}
       </CardContent>
@@ -356,6 +366,9 @@ function Review({
           className="ml-auto"
           onClick={() => {
             stage(...changes);
+            if (file !== "") {
+              target(file);
+            }
             toast.add({ type: "success", title: "Added to staged changes" });
             done();
           }}

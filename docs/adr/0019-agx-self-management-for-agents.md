@@ -1,6 +1,6 @@
 # Let agents manage agx configuration through a built-in MCP server
 
-Status: proposed.
+Status: deferred. Not implemented.
 
 Users ask agents to "install this MCP server" or "add that skill"; without help,
 agents edit harness-native files (`~/.claude.json`, Codex `config.toml`) that agx
