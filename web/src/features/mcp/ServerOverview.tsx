@@ -1,10 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { HistoryIcon } from "lucide-react";
+import { CircleAlertIcon, HistoryIcon, RotateCwIcon } from "lucide-react";
 import { useState } from "react";
 
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Pending } from "~/components/Pending.tsx";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "~/components/ui/alert.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
+import { Button } from "~/components/ui/button.tsx";
 import {
   Card,
   CardContent,
@@ -46,13 +48,77 @@ export function ServerOverview({
     return <Pending className="h-64" />;
   }
   if (tools.isError) {
-    return <DaemonProblem error={tools.error} />;
+    return <ServerFailure mcpId={mcpId} error={tools.error} retry={() => void tools.refetch()} />;
   }
   const tool = tools.data.tools.find((t) => t.name === toolName);
   return tool === undefined ? (
     <ServerStatus server={tools.data} />
   ) : (
     <ToolPanel key={tool.name} server={tools.data} tool={tool} directory={directory} />
+  );
+}
+
+// A stdio server whose command the daemon cannot find, as Go's exec reports it.
+const missingCommand = /exec: "([^"]+)": executable file not found/;
+
+/** Why a server did not start, said in terms of what to do about it. */
+function ServerFailure({
+  mcpId,
+  error,
+  retry,
+}: {
+  readonly mcpId: string;
+  readonly error: DaemonError;
+  readonly retry: () => void;
+}) {
+  const definitions = useDaemonQuery(
+    queryKeys.definitions,
+    Daemon.use((daemon) => daemon.definitions),
+  );
+  if (error.reason !== "mcp_failed" && error.reason !== "needs_login") {
+    return <DaemonProblem error={error} />;
+  }
+  const definition = definitions.data?.find((d) => d.kind === "mcp" && d.id === mcpId);
+  const missing = missingCommand.exec(error.message)?.[1];
+  return (
+    <>
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle className="flex flex-wrap items-center gap-2">
+            <span className="font-mono">{mcpId}</span>
+            <Badge variant={error.reason === "needs_login" ? "outline" : "destructive"}>
+              {error.reason === "needs_login" ? "needs login" : "failed to start"}
+            </Badge>
+          </CardTitle>
+          {definition !== undefined && definition.description !== "" && (
+            <CardDescription>{definition.description}</CardDescription>
+          )}
+        </CardHeader>
+      </Card>
+      <Alert variant="destructive">
+        <CircleAlertIcon />
+        <AlertTitle>
+          {error.reason === "needs_login"
+            ? "It needs a login"
+            : missing !== undefined
+              ? `${missing} is not on the daemon's PATH`
+              : "It failed to start"}
+        </AlertTitle>
+        <AlertDescription>
+          {error.reason === "needs_login"
+            ? "Log in from its secret on the Runtime page, then retry."
+            : missing !== undefined
+              ? `The daemon runs with the PATH of the shell that started it. Install ${missing} there, or set the server's command to an absolute path, then retry.`
+              : error.message}
+        </AlertDescription>
+        <AlertAction>
+          <Button variant="outline" size="sm" onClick={retry}>
+            <RotateCwIcon data-icon="inline-start" />
+            Retry
+          </Button>
+        </AlertAction>
+      </Alert>
+    </>
   );
 }
 

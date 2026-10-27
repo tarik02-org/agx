@@ -1,20 +1,13 @@
 import { useQueryClient } from "@tanstack/react-query";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
-import { KeyRoundIcon, LogInIcon, LogOutIcon } from "lucide-react";
+import { LogInIcon, LogOutIcon } from "lucide-react";
 
 import { ConfirmAction } from "~/components/ConfirmAction.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
 import { Button } from "~/components/ui/button.tsx";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card.tsx";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "~/components/ui/empty.tsx";
 import { Pending } from "~/components/Pending.tsx";
 import {
   Table,
@@ -68,15 +61,9 @@ const loginOutcomes: Record<
 function SecretTable({ secrets }: { readonly secrets: ReadonlyArray<SecretStatus> }) {
   if (secrets.length === 0) {
     return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <KeyRoundIcon />
-          </EmptyMedia>
-          <EmptyTitle>No secrets</EmptyTitle>
-          <EmptyDescription>Secrets the configuration defines show up here.</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
+      <p className="text-muted-foreground text-xs">
+        None. Secrets the configuration defines show up here.
+      </p>
     );
   }
   return (

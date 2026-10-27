@@ -1,13 +1,16 @@
 # Web UI
 
 The daemon serves a web UI for what is easier to see than to read in a
-terminal. The sidebar holds what is global: the **scope**, a directory or
+terminal. Every page's header starts with the **scope**: a directory or
 everywhere, picked from the directories scope rules name or by browsing
-folders; the runtime page; and the staged changes. Each page has one header with where
-it is and every action it offers. `agx ui` scopes the UI to the directory it runs in, and the scope
-stays in the address, so a scoped page can be shared and reloaded. The sidebar,
-on every page, is the configuration as a tree: every definition by kind,
-package skills under their package, and the configuration files. Expanding a
+folders, and the harness launching there. It goes on with where the page is and
+every action it offers, **New**, and **Staged** while changes wait. `agx ui`
+scopes the UI to the directory it runs in, and the scope stays in the address,
+so a scoped page can be shared and reloaded. The sidebar holds the runtime page
+and the configuration as a tree, grouped by type, by bundle (each bundle with
+what it selects, then what no bundle selects), or by file (each fragment with
+what it defines). An empty kind offers to add one, and package skills sit under
+their package. Expanding a
 skill lists its files, and expanding an MCP server starts it and lists its
 tools. Icons hint at what each item does,
 from its name and description. A skill draws the `interface.icon_small` and
@@ -36,10 +39,12 @@ source and what it provides; what a bundle adds; instructions' text; and a
 secret's state, with setting or logging in, and the MCP servers that use it. When the UI
 is scoped, it also says why the item is or is not part of a launch there, with
 the rules that added or removed it. **Definition** edits it with a form, or as
-YAML checked against the configuration schema. The tree's **Effective** mode,
-the default when scoped, shows only what a launch in the scope directory gets,
-for any harness or the one picked; **All** shows everything. Its **+** menu
-creates a definition of any kind or adds skills from Git.
+YAML checked against the configuration schema. The tree's **In scope** mode
+shows only what a launch in the scope directory gets for the scope's harness;
+**All**, the default, shows everything and marks what is in scope. **New**
+creates a definition of any kind or adds skills from Git. The runtime page
+starts with counts and what needs attention, such as a server that fails to
+start or a secret waiting for a login.
 
 Adding skills is a wizard: a Git source (`owner/repo[@ref][/path]` or a URL),
 which the daemon fetches without configuring anything; the skills to enable,

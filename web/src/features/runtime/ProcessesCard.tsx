@@ -1,4 +1,4 @@
-import { CpuIcon, RotateCwIcon } from "lucide-react";
+import { RotateCwIcon } from "lucide-react";
 
 import { ConfirmAction } from "~/components/ConfirmAction.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
@@ -11,13 +11,6 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card.tsx";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "~/components/ui/empty.tsx";
 import { Pending } from "~/components/Pending.tsx";
 import {
   Table,
@@ -72,17 +65,9 @@ export function ProcessTable({
   );
   if (processes.length === 0) {
     return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <CpuIcon />
-          </EmptyMedia>
-          <EmptyTitle>No processes</EmptyTitle>
-          <EmptyDescription>
-            Local MCP servers start with the first session that uses them.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
+      <p className="text-muted-foreground text-xs">
+        None running. Local MCP servers start with the first session that uses them.
+      </p>
     );
   }
   return (

@@ -6,6 +6,7 @@ import { Pending } from "~/components/Pending.tsx";
 import { useRuntimeView } from "~/daemon/runtimeView.ts";
 import { InstallButton } from "~/features/runtime/InstallButton.tsx";
 import { LaunchesCard } from "~/features/runtime/LaunchesCard.tsx";
+import { RuntimeOverview } from "~/features/runtime/Overview.tsx";
 import { ProcessesCard } from "~/features/runtime/ProcessesCard.tsx";
 import { SecretsCard } from "~/features/runtime/SecretsCard.tsx";
 
@@ -34,8 +35,11 @@ function RuntimePage() {
       {state._tag === "Failed" && <DaemonProblem error={state.error} />}
       {state._tag === "Live" && (
         <>
-          <LaunchesCard launches={state.view.launches} />
-          <ProcessesCard />
+          <RuntimeOverview view={state.view} />
+          <div className="grid gap-2 xl:grid-cols-2">
+            <LaunchesCard launches={state.view.launches} />
+            <ProcessesCard />
+          </div>
           <SecretsCard />
         </>
       )}

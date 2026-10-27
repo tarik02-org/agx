@@ -1,16 +1,9 @@
-import { TerminalIcon, XIcon } from "lucide-react";
+import { XIcon } from "lucide-react";
 
 import { ConfirmAction } from "~/components/ConfirmAction.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
 import { Button } from "~/components/ui/button.tsx";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "~/components/ui/card.tsx";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "~/components/ui/empty.tsx";
 import {
   Table,
   TableBody,
@@ -41,15 +34,9 @@ export function LaunchesCard({ launches }: { readonly launches: ReadonlyArray<La
       </CardHeader>
       <CardContent>
         {launches.length === 0 ? (
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <TerminalIcon />
-              </EmptyMedia>
-              <EmptyTitle>No launches</EmptyTitle>
-              <EmptyDescription>Harnesses started through agx show up here.</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          <p className="text-muted-foreground text-xs">
+            No launches. Harnesses started through agx show up here.
+          </p>
         ) : (
           <Table>
             <TableHeader>
