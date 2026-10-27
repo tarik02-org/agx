@@ -69,8 +69,8 @@ func Owner(c *config.Config, source config.Source, id string) config.ID {
 }
 
 // Define creates or replaces the definition of id. An existing one is replaced in the file that
-// defines it; a new one goes to file.
-func (s *Session) Define(kind config.Kind, id string, value *yaml.Node, file string) error {
+// defines it; a new one goes to the target fragment.
+func (s *Session) Define(kind config.Kind, id string, value *yaml.Node) error {
 	if !slices.Contains(config.Kinds, kind) {
 		return errorf(
 			InvalidRequest,
@@ -96,9 +96,18 @@ func (s *Session) Define(kind config.Kind, id string, value *yaml.Node, file str
 		if err := edit.Writable(at.Source.Path); err != nil {
 			return coded(ReadOnly, err)
 		}
-		file = at.Source.Path
+		f, err := s.Open(at.Source.Path)
+		if err != nil {
+			return err
+		}
+		f.Define(kind, id, value)
+		return nil
 	}
-	f, err := s.File(file)
+	file, err := s.Target()
+	if err != nil {
+		return err
+	}
+	f, err := s.Open(file)
 	if err != nil {
 		return err
 	}
@@ -129,7 +138,7 @@ func (s *Session) Undefine(kind config.Kind, id string) error {
 		if !slices.Contains(s.Config.Files, at.Source.Path) {
 			return errorf(ReadOnly, "secret %s is defined by a package (%s)", id, at.Source.Path)
 		}
-		f, err := s.File(at.Source.Path)
+		f, err := s.Open(at.Source.Path)
 		if err != nil {
 			return err
 		}
@@ -176,7 +185,7 @@ func (s *Session) RemoveDefinition(kind config.Kind, id string, force bool) erro
 			id,
 		)
 	}
-	f, err := s.File(at.Source.Path)
+	f, err := s.Open(at.Source.Path)
 	if err != nil {
 		return err
 	}
@@ -235,7 +244,7 @@ type Resource struct {
 // them too. It returns the resources whose references it removed.
 func (s *Session) RemovePackage(id config.ID, force bool) ([]Resource, error) {
 	p := s.Config.Packages[id]
-	f, err := s.File(p.Source.Path)
+	f, err := s.Open(p.Source.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +280,7 @@ func (s *Session) RemovePackage(id config.ID, force bool) ([]Resource, error) {
 	blocking := []string{}
 	for _, r := range resources {
 		for _, path := range s.Fragments() {
-			f, err := s.File(path)
+			f, err := s.Open(path)
 			if err != nil {
 				return nil, err
 			}
@@ -335,7 +344,7 @@ func (s *Session) RemoveHarness(name string, force bool) error {
 	declared := false
 	filters := []string{}
 	for _, path := range s.Fragments() {
-		f, err := s.File(path)
+		f, err := s.Open(path)
 		if err != nil {
 			return err
 		}
@@ -369,7 +378,7 @@ func (s *Session) RemoveHarness(name string, force bool) error {
 			name, strings.Join(filters, "\n  "))
 	}
 	for _, path := range s.Fragments() {
-		f, err := s.File(path)
+		f, err := s.Open(path)
 		if err != nil {
 			return err
 		}
@@ -392,14 +401,4 @@ func (s *Session) RemoveHarness(name string, force bool) error {
 		}
 	}
 	return nil
-}
-
-// RuleFile is where a new rule for id goes: the fragment defining it when it can be written,
-// else the root configuration.
-func (s *Session) RuleFile(kind config.Kind, id string) string {
-	at, _ := Lookup(s.Config, kind, id)
-	if slices.Contains(s.Config.Files, at.Source.Path) && edit.Writable(at.Source.Path) == nil {
-		return at.Source.Path
-	}
-	return s.Root
 }

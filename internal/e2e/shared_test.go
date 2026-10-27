@@ -18,7 +18,7 @@ func TestSharedMCPServers(t *testing.T) {
 	sharedStarts := filepath.Join(e.dir, "shared-starts")
 	ownStarts := filepath.Join(e.dir, "own-starts")
 	mcp := filepath.ToSlash(binaries.mcp)
-	e.write("config/agx.yaml", `mcp:
+	e.write("config/main.yaml", `mcp:
   search:
     command: ['`+mcp+`']
     share: repo

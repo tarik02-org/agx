@@ -33,10 +33,9 @@ func (p positions) at(keys ...string) Source {
 	return p[""]
 }
 
-// decode parses a configuration fragment, or a package manifest, validates it against the
-// schema, and decodes it.
-func decode(path string, data []byte, manifest bool, builtins Builtins) (Document, positions, error) {
-	var d Document
+// decode parses a configuration file, validates it against the schema of its kind, and decodes it.
+func decode[T any](path string, data []byte, file SchemaKind, builtins Builtins) (T, positions, error) {
+	var d T
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	var root yaml.Node
 	if err := dec.Decode(&root); errors.Is(err, io.EOF) {
@@ -54,12 +53,12 @@ func decode(path string, data []byte, manifest bool, builtins Builtins) (Documen
 	if err != nil {
 		return d, nil, err
 	}
-	s, err := compiledSchema(manifest, builtins)
+	s, err := compiledSchema(file, builtins)
 	if err != nil {
 		return d, nil, err
 	}
 	if err := s.compiled.Validate(value); err != nil {
-		return d, nil, s.explain(at, err)
+		return d, nil, s.explain(file, at, err)
 	}
 	if err := root.Load(&d, yaml.WithKnownFields()); err != nil {
 		forgetTags(&root)
@@ -180,13 +179,13 @@ type schema struct {
 
 var schemas sync.Map
 
-// compiledSchema compiles the schema of fragments or manifests once per set of harness modes.
-func compiledSchema(manifest bool, builtins Builtins) (*schema, error) {
-	key := fmt.Sprint(manifest, Digest(builtins.Harnesses))
+// compiledSchema compiles the schema of a kind of file once per set of harness modes.
+func compiledSchema(file SchemaKind, builtins Builtins) (*schema, error) {
+	key := fmt.Sprint(file, Digest(builtins.Harnesses))
 	if s, ok := schemas.Load(key); ok {
 		return s.(*schema), nil
 	}
-	b, err := Schema(manifest, builtins)
+	b, err := Schema(file, builtins)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +209,7 @@ func compiledSchema(manifest bool, builtins Builtins) (*schema, error) {
 var printer = message.NewPrinter(language.English)
 
 // explain turns a schema violation into a located error naming the offending key path.
-func (s *schema) explain(at positions, err error) error {
+func (s *schema) explain(file SchemaKind, at positions, err error) error {
 	var v *validator.ValidationError
 	if !errors.As(err, &v) {
 		return err
@@ -237,7 +236,9 @@ func (s *schema) explain(at positions, err error) error {
 		key := k.Properties[0]
 		where = at.at(append(slices.Clone(keys), key)...)
 		problem = "unknown key " + key
-		if suggestion := closestKey(key, s.properties(v.SchemaURL)); suggestion != "" {
+		if len(keys) == 0 && misplaced(file, key) != "" {
+			problem = misplaced(file, key)
+		} else if suggestion := closestKey(key, s.properties(v.SchemaURL)); suggestion != "" {
 			problem += " (did you mean " + suggestion + "?)"
 		}
 	case *kind.PropertyNames:
@@ -270,6 +271,20 @@ func (s *schema) explain(at positions, err error) error {
 		problem = path + ": " + problem
 	}
 	return &SourceError{Path: where.Path, Line: where.Line, Err: errors.New(problem)}
+}
+
+// misplaced explains a top-level key that belongs in the other kind of configuration file.
+func misplaced(file SchemaKind, key string) string {
+	switch {
+	case file == RootSchema && slices.Contains(sections, key):
+		return fmt.Sprintf(
+			"the root configuration holds imports and daemon settings only; move %s into a fragment such as agx.d/main.yaml",
+			key,
+		)
+	case file == FragmentSchema && (key == "imports" || key == "daemon"):
+		return key + " belongs in the root configuration; fragments hold definitions only"
+	}
+	return ""
 }
 
 // properties lists the keys the schema object at url declares.

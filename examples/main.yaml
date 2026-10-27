@@ -1,0 +1,40 @@
+# Definitions and rules; agx.yaml imports this fragment. Relative paths and scope
+# directories are relative to this file.
+instructions:
+  repository:
+    path: instructions.md
+
+scopes:
+  - directory: ..
+    add:
+      instructions: [repository]
+      # Selection lists also take paths and inline definitions:
+      # skills:
+      #   - ./skills/review              # ID = folder name
+      #   - id: deploy
+      #     description: Deploy this service.
+      #     content: |
+      #       Run `make deploy` and report the release URL.
+
+# Configure an absolute executable if a harness-named wrapper shadows PATH.
+# harnesses:
+#   codex:
+#     executable: /absolute/path/to/native/executable
+
+# HTTP MCP servers log in with OAuth on demand (agx secret login <id>) unless auth
+# says otherwise. Other credentials are secrets injected at launch with !secret;
+# !env and !file also work.
+# secrets:
+#   docs-key: {kind: keychain} # agx secret set docs-key --stdin
+# mcp:
+#   tracker:
+#     url: https://tracker.example.com/mcp
+#   docs:
+#     url: https://docs.example.com/mcp
+#     auth: none
+#     headers:
+#       X-Api-Key: !secret docs-key
+
+daemon:
+  lease_seconds: 60
+  renew_seconds: 20

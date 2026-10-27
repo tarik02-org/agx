@@ -40,11 +40,16 @@ func (f *editFlags) register(cmd *cobra.Command, defines bool) {
 	cmd.Flags().StringVar(&f.scope, "scope", "user",
 		"where to enable: user (everywhere), here (this directory), or a directory")
 	cmd.Flags().StringSliceVar(&f.harnesses, "harness", nil, "enable only for these harnesses (repeatable)")
-	cmd.Flags().StringVar(&f.file, "file", "", "fragment to write definitions to (default: the root configuration)")
+	f.registerFile(cmd)
 	if defines {
 		cmd.Flags().BoolVar(&f.defineOnly, "define-only", false, "define without enabling")
 	}
 	f.registerYes(cmd)
+}
+
+func (f *editFlags) registerFile(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&f.file, "file", "",
+		"fragment for new definitions and rules, relative to the root configuration's directory")
 }
 
 func (f *editFlags) registerYes(cmd *cobra.Command) {
@@ -142,15 +147,60 @@ func newSession(ctx context.Context, paths platform.Paths, builtins config.Built
 	if err != nil {
 		return nil, err
 	}
-	edits.Warn = func(format string, args ...any) { ui.Diagnose(ui.Warn, format, args...) }
 	// JSON mode implies --yes and never prompts.
 	tty := interactive() && !scripting.enabled
-	return &session{
+	s := &session{
 		Session:     edits,
 		ctx:         ctx,
 		yes:         yes || !tty,
 		interactive: tty,
-	}, nil
+	}
+	if tty {
+		edits.Choose = s.chooseFile
+	}
+	return s, nil
+}
+
+// useFile makes --file, relative to the root configuration's directory, the fragment new
+// definitions and rules go to.
+func (s *session) useFile(flag string) error {
+	if flag == "" {
+		return nil
+	}
+	expanded, err := config.ExpandHome(flag)
+	if err != nil {
+		return &usageError{fmt.Errorf("--file: %w", err)}
+	}
+	if !filepath.IsAbs(expanded) {
+		expanded = filepath.Join(s.Dir, expanded)
+	}
+	s.File = expanded
+	return nil
+}
+
+// chooseFile asks which writable fragment new definitions go to, or for a new one in agx.d.
+func (s *session) chooseFile(candidates []string) (string, error) {
+	labels := []string{}
+	for _, path := range candidates {
+		labels = append(labels, ui.ShortPath(path, ""))
+	}
+	i, err := prompt.Choose(s.ctx, "Write to:", append(labels, "new file…"))
+	if err != nil {
+		return "", promptError(err)
+	}
+	if i < len(candidates) {
+		return candidates[i], nil
+	}
+	name, err := prompt.Input(s.ctx, "File name in agx.d:", "main", func(name string) error {
+		if name == "" || strings.ContainsAny(name, `/\`) {
+			return errors.New("a file name without directories")
+		}
+		return nil
+	})
+	if err != nil {
+		return "", promptError(err)
+	}
+	return filepath.Join(s.Dir, "agx.d", strings.TrimSuffix(name, ".yaml")+".yaml"), nil
 }
 
 // report prints the session's JSON document in JSON mode; a person saw the diff.
@@ -158,34 +208,26 @@ func (s *session) report() error {
 	return emit(s.result, func() error { return nil })
 }
 
-// definitionFile is where new definitions go: --file, or the root configuration.
+// definitionFile is where new definitions go: --file, or the fragment Target chooses.
 func (s *session) definitionFile(flag string) (string, error) {
-	if flag == "" {
-		return s.Root, nil
-	}
-	expanded, err := config.ExpandHome(flag)
-	if err != nil {
-		return "", &usageError{fmt.Errorf("--file: %w", err)}
-	}
-	abs, err := filepath.Abs(expanded)
-	if err != nil {
+	if err := s.useFile(flag); err != nil {
 		return "", err
 	}
-	return config.Canonical(abs)
+	return s.Target()
 }
 
-// enable selects id in the first rule matching target, or in a new rule in fallback.
-func (s *session) enable(kind config.Kind, id string, target scope, fallback string) (bool, error) {
+// enable selects id in the first rule matching target, or in a new rule in the target fragment.
+func (s *session) enable(kind config.Kind, id string, target scope) (bool, error) {
 	s.result.Enabled = append(s.result.Enabled, definitionID{Kind: kind, ID: id})
 	s.result.Scope = &target
-	return s.Enable(kind, id, target, fallback)
+	return s.Enable(kind, id, target)
 }
 
 // disable takes id out of the target scope.
-func (s *session) disable(kind config.Kind, id string, target scope, fallback string) (bool, error) {
+func (s *session) disable(kind config.Kind, id string, target scope) (bool, error) {
 	s.result.Disabled = append(s.result.Disabled, definitionID{Kind: kind, ID: id})
 	s.result.Scope = &target
-	return s.Disable(kind, id, target, fallback)
+	return s.Disable(kind, id, target)
 }
 
 var errDeclined = errors.New("nothing was written")
@@ -303,7 +345,7 @@ func (s *session) define(kind config.Kind, id, file string, value *yaml.Node) er
 			at.Source.Line,
 		)
 	}
-	f, err := s.File(file)
+	f, err := s.Open(file)
 	if err != nil {
 		return err
 	}
@@ -313,8 +355,8 @@ func (s *session) define(kind config.Kind, id, file string, value *yaml.Node) er
 }
 
 // enableAfterDefine enables a new definition unless --define-only; scope edits go to a matching
-// rule, otherwise beside the definition.
-func (s *session) enableAfterDefine(kind config.Kind, id, file string, flags editFlags) error {
+// rule, otherwise in the target fragment.
+func (s *session) enableAfterDefine(kind config.Kind, id string, flags editFlags) error {
 	if flags.defineOnly {
 		return nil
 	}
@@ -322,7 +364,7 @@ func (s *session) enableAfterDefine(kind config.Kind, id, file string, flags edi
 	if err != nil {
 		return err
 	}
-	_, err = s.enable(kind, id, target, file)
+	_, err = s.enable(kind, id, target)
 	return err
 }
 

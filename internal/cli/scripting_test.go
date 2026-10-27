@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -208,15 +209,16 @@ func TestJSONEdits(t *testing.T) {
 
 func TestJSONValidate(t *testing.T) {
 	path := isolate(t, scriptingConfig)
+	root := filepath.Join(filepath.Dir(filepath.Dir(path)), "agx.yaml")
 	var valid struct {
 		Root  string   `json:"root"`
 		Files []string `json:"files"`
 	}
 	okJSON(t, &valid, "config", "validate")
-	if code, docs := runJSON(t, "--config", path, "config", "validate", "--json"); code != 0 || len(docs) != 1 {
+	if code, docs := runJSON(t, "--config", root, "config", "validate", "--json"); code != 0 || len(docs) != 1 {
 		t.Fatalf("trailing --json validate exited %d: %+v", code, docs)
 	}
-	if valid.Root == "" || len(valid.Files) != 1 {
+	if valid.Root == "" || len(valid.Files) != 2 {
 		t.Fatalf("validate = %+v", valid)
 	}
 
@@ -228,7 +230,7 @@ func TestJSONValidate(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := failJSON(t, 1, codeConfigInvalid, "config", "validate", "--json")
-	if d.Error.Source == nil || d.Error.Source.Line != 4 || !strings.HasSuffix(d.Error.Source.Path, "agx.yaml") {
+	if d.Error.Source == nil || d.Error.Source.Line != 4 || !strings.HasSuffix(d.Error.Source.Path, "main.yaml") {
 		t.Fatalf("invalid validate = %+v", d.Error)
 	}
 	// --json before the command works as after it.
@@ -249,16 +251,76 @@ func TestMissingPaths(t *testing.T) {
 	if !strings.Contains(d.Error.Message, missing+" does not exist") {
 		t.Fatalf("missing --config: %s", d.Error.Message)
 	}
-	// Adding a definition creates the named file.
+	// Adding a definition creates the named root, importing the fragment it writes.
 	created := filepath.Join(dir, "created.yaml")
 	okJSON(t, nil, "--config", created, "instructions", "add", "--id", "x", "--text", "hi")
-	if _, err := os.Stat(created); err != nil {
-		t.Fatal(err)
+	if b, err := os.ReadFile(created); err != nil || string(b) != config.DefaultConfig {
+		t.Fatalf("created root: %v\n%s", err, b)
+	}
+	if b, err := os.ReadFile(
+		filepath.Join(dir, "agx.d", "main.yaml"),
+	); err != nil ||
+		!strings.Contains(string(b), "x:") {
+		t.Fatalf("created fragment: %v\n%s", err, b)
 	}
 	d = failJSON(t, 1, codeNotFound, "explain", filepath.Join(dir, "nope"), "--json")
 	if !strings.Contains(d.Error.Message, "does not exist") {
 		t.Fatalf("missing directory: %s", d.Error.Message)
 	}
+}
+
+// With several writable fragments, an adding command needs --file, relative to the root.
+func TestChooseFile(t *testing.T) {
+	first := isolate(t, "{}\n")
+	second := filepath.Join(filepath.Dir(first), "other.yaml")
+	if err := os.WriteFile(second, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := failJSON(t, 1, "choose_file", "instructions", "add", "--id", "x", "--text", "hi", "--json")
+	if !strings.Contains(d.Error.Message, "main.yaml") || !strings.Contains(d.Error.Message, "other.yaml") {
+		t.Fatalf("choose_file error: %s", d.Error.Message)
+	}
+	t.Chdir(t.TempDir())
+	var added editDocument
+	okJSON(t, &added, "instructions", "add", "--id", "x", "--text", "hi", "--file", "agx.d/other.yaml")
+	if len(added.Files) != 1 || !strings.HasSuffix(added.Files[0].Path, "other.yaml") {
+		t.Fatalf("instructions add --file = %+v", added.Files)
+	}
+	failJSON(
+		t,
+		1,
+		codeInvalidRequest,
+		"instructions",
+		"add",
+		"--id",
+		"y",
+		"--text",
+		"hi",
+		"--file",
+		"agx.yaml",
+		"--json",
+	)
+}
+
+func TestConfigSchema(t *testing.T) {
+	isolate(t, "")
+	// The schema goes to standard output as it is, not through the document writer.
+	stdout, err := os.Create(filepath.Join(t.TempDir(), "schema.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stdout
+	os.Stdout = stdout
+	code := run([]string{"agx", "config", "schema", "--root"}, io.Discard)
+	os.Stdout = saved
+	if err := stdout.Close(); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(stdout.Name())
+	if err != nil || code != 0 || !strings.Contains(string(b), `"title": "agx root configuration"`) {
+		t.Fatalf("config schema --root exited %d: %v\n%s", code, err, b)
+	}
+	failJSON(t, 2, codeUsage, "config", "schema", "--root", "--package", "--json")
 }
 
 func TestJSONCommands(t *testing.T) {

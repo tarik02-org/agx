@@ -68,13 +68,13 @@ reason.
   mappings, and rules an edit empties are pruned; untouched empty rules stay.
 - **Validation.** Edited fragments, and the lockfiles a Git skill source needs,
   are passed to the loader as an in-memory overlay; nothing is written unless
-  the whole configuration loads, and a fragment outside the imports is also
-  loaded on its own. Writes keep the file's mode, land at a symlink's target,
+  the whole configuration loads. New definitions go to a fragment the root
+  imports ([ADR 0027](0027-root-file-and-fragments.md)). Writes keep the file's mode, land at a symlink's target,
   and replace the file atomically; lockfiles are written private.
 - **Placement.** Matching rules in files that cannot be written are skipped, so a
   read-only or generated fragment does not block enabling elsewhere; only the
-  chosen target is refused. `use`/`unuse` create a missing rule beside the
-  definition when that fragment is writable, else in the root. New directory
+  chosen target is refused. `use`/`unuse` create a missing rule in the target
+  fragment ([ADR 0027](0027-root-file-and-fragments.md)). New directory
   rules spell paths under the home directory as `~/…`; new resource paths are
   relative when inside the fragment's directory.
 - **Login and test.** The probe is the unauthenticated request on-demand OAuth

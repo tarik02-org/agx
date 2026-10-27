@@ -100,6 +100,8 @@ const (
 	// A service the daemon depends on, such as an OAuth authorization server, could not be
 	// reached or failed; retrying later may succeed.
 	ErrorDetail_REASON_NETWORK ErrorDetail_Reason = 12
+	// Configuration changes could go to several fragments; the request must name one.
+	ErrorDetail_REASON_CHOOSE_FILE ErrorDetail_Reason = 13
 )
 
 // Enum value maps for ErrorDetail_Reason.
@@ -118,6 +120,7 @@ var (
 		10: "REASON_INTERNAL",
 		11: "REASON_MCP_FAILED",
 		12: "REASON_NETWORK",
+		13: "REASON_CHOOSE_FILE",
 	}
 	ErrorDetail_Reason_value = map[string]int32{
 		"REASON_UNSPECIFIED":         0,
@@ -133,6 +136,7 @@ var (
 		"REASON_INTERNAL":            10,
 		"REASON_MCP_FAILED":          11,
 		"REASON_NETWORK":             12,
+		"REASON_CHOOSE_FILE":         13,
 	}
 )
 
@@ -716,7 +720,9 @@ type ErrorDetail struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Reason ErrorDetail_Reason     `protobuf:"varint,1,opt,name=reason,proto3,enum=agx.v1.ErrorDetail_Reason" json:"reason,omitempty"`
 	// Where a configuration that does not load has the problem, when known.
-	Source        *SourceLocation `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
+	Source *SourceLocation `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
+	// With REASON_CHOOSE_FILE, the writable fragments to choose from.
+	Files         []string `protobuf:"bytes,3,rep,name=files,proto3" json:"files,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -761,6 +767,13 @@ func (x *ErrorDetail) GetReason() ErrorDetail_Reason {
 func (x *ErrorDetail) GetSource() *SourceLocation {
 	if x != nil {
 		return x.Source
+	}
+	return nil
+}
+
+func (x *ErrorDetail) GetFiles() []string {
+	if x != nil {
+		return x.Files
 	}
 	return nil
 }
@@ -5654,13 +5667,12 @@ func (*ConfigChange_WriteFile) isConfigChange_Change() {}
 func (*ConfigChange_AddPackage) isConfigChange_Change() {}
 
 // Creates or replaces a definition with the given YAML value, in the file that defines it now,
-// or in file (default: the root configuration) for a new one.
+// or in the request's target fragment for a new one.
 type DefineChange struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
 	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	Yaml          string                 `protobuf:"bytes,3,opt,name=yaml,proto3" json:"yaml,omitempty"`
-	File          string                 `protobuf:"bytes,4,opt,name=file,proto3" json:"file,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5712,13 +5724,6 @@ func (x *DefineChange) GetId() string {
 func (x *DefineChange) GetYaml() string {
 	if x != nil {
 		return x.Yaml
-	}
-	return ""
-}
-
-func (x *DefineChange) GetFile() string {
-	if x != nil {
-		return x.File
 	}
 	return ""
 }
@@ -5969,8 +5974,13 @@ func (x *PackageSource) GetSubdir() string {
 }
 
 type PlanChangesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Changes       []*ConfigChange        `protobuf:"bytes,1,rep,name=changes,proto3" json:"changes,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Changes []*ConfigChange        `protobuf:"bytes,1,rep,name=changes,proto3" json:"changes,omitempty"`
+	// The fragment new definitions, rules, and packages go to: a writable fragment the root
+	// imports, or a new file its imports match. Empty chooses the only writable fragment, or
+	// agx.d/main.yaml when there is none; with several, the plan fails with
+	// REASON_CHOOSE_FILE listing them in ErrorDetail.files.
+	File          string `protobuf:"bytes,2,opt,name=file,proto3" json:"file,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6010,6 +6020,13 @@ func (x *PlanChangesRequest) GetChanges() []*ConfigChange {
 		return x.Changes
 	}
 	return nil
+}
+
+func (x *PlanChangesRequest) GetFile() string {
+	if x != nil {
+		return x.File
+	}
+	return ""
 }
 
 type PlannedFile struct {
@@ -6122,7 +6139,9 @@ type ApplyChangesRequest struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Changes []*ConfigChange        `protobuf:"bytes,1,rep,name=changes,proto3" json:"changes,omitempty"`
 	// The files of the plan with the hashes it saw; a file that changed since fails the apply.
-	Expected      []*PlannedFile `protobuf:"bytes,2,rep,name=expected,proto3" json:"expected,omitempty"`
+	Expected []*PlannedFile `protobuf:"bytes,2,rep,name=expected,proto3" json:"expected,omitempty"`
+	// The target fragment the plan was made with.
+	File          string `protobuf:"bytes,3,opt,name=file,proto3" json:"file,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6169,6 +6188,13 @@ func (x *ApplyChangesRequest) GetExpected() []*PlannedFile {
 		return x.Expected
 	}
 	return nil
+}
+
+func (x *ApplyChangesRequest) GetFile() string {
+	if x != nil {
+		return x.File
+	}
+	return ""
 }
 
 type ApplyChangesResponse struct {
@@ -6867,10 +6893,11 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\bSeverity\x12\x18\n" +
 	"\x14SEVERITY_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10SEVERITY_WARNING\x10\x01\x12\x12\n" +
-	"\x0eSEVERITY_ERROR\x10\x02\"\xb6\x03\n" +
+	"\x0eSEVERITY_ERROR\x10\x02\"\xe4\x03\n" +
 	"\vErrorDetail\x122\n" +
 	"\x06reason\x18\x01 \x01(\x0e2\x1a.agx.v1.ErrorDetail.ReasonR\x06reason\x12.\n" +
-	"\x06source\x18\x02 \x01(\v2\x16.agx.v1.SourceLocationR\x06source\"\xc2\x02\n" +
+	"\x06source\x18\x02 \x01(\v2\x16.agx.v1.SourceLocationR\x06source\x12\x14\n" +
+	"\x05files\x18\x03 \x03(\tR\x05files\"\xda\x02\n" +
 	"\x06Reason\x12\x16\n" +
 	"\x12REASON_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16REASON_INVALID_REQUEST\x10\x01\x12\x14\n" +
@@ -6885,7 +6912,8 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x0fREASON_INTERNAL\x10\n" +
 	"\x12\x15\n" +
 	"\x11REASON_MCP_FAILED\x10\v\x12\x12\n" +
-	"\x0eREASON_NETWORK\x10\f\"\xb8\x01\n" +
+	"\x0eREASON_NETWORK\x10\f\x12\x16\n" +
+	"\x12REASON_CHOOSE_FILE\x10\r\"\xb8\x01\n" +
 	"\bSnapshot\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1c\n" +
 	"\tdirectory\x18\x02 \x01(\tR\tdirectory\x121\n" +
@@ -7281,12 +7309,11 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"write_file\x18\x05 \x01(\v2\x11.agx.v1.FileWriteH\x00R\twriteFile\x128\n" +
 	"\vadd_package\x18\x06 \x01(\v2\x15.agx.v1.PackageSourceH\x00R\n" +
 	"addPackageB\b\n" +
-	"\x06change\"Z\n" +
+	"\x06change\"R\n" +
 	"\fDefineChange\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12\x12\n" +
-	"\x04yaml\x18\x03 \x01(\tR\x04yaml\x12\x12\n" +
-	"\x04file\x18\x04 \x01(\tR\x04file\"4\n" +
+	"\x04yaml\x18\x03 \x01(\tR\x04yamlJ\x04\b\x04\x10\x05R\x04file\"4\n" +
 	"\x0eUndefineChange\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\"q\n" +
@@ -7302,18 +7329,20 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03git\x18\x02 \x01(\tR\x03git\x12\x10\n" +
 	"\x03ref\x18\x03 \x01(\tR\x03ref\x12\x16\n" +
-	"\x06subdir\x18\x04 \x01(\tR\x06subdir\"D\n" +
+	"\x06subdir\x18\x04 \x01(\tR\x06subdir\"X\n" +
 	"\x12PlanChangesRequest\x12.\n" +
-	"\achanges\x18\x01 \x03(\v2\x14.agx.v1.ConfigChangeR\achanges\"Z\n" +
+	"\achanges\x18\x01 \x03(\v2\x14.agx.v1.ConfigChangeR\achanges\x12\x12\n" +
+	"\x04file\x18\x02 \x01(\tR\x04file\"Z\n" +
 	"\vPlannedFile\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
 	"\x04diff\x18\x02 \x01(\tR\x04diff\x12#\n" +
 	"\rbefore_sha256\x18\x03 \x01(\tR\fbeforeSha256\"@\n" +
 	"\x13PlanChangesResponse\x12)\n" +
-	"\x05files\x18\x01 \x03(\v2\x13.agx.v1.PlannedFileR\x05files\"v\n" +
+	"\x05files\x18\x01 \x03(\v2\x13.agx.v1.PlannedFileR\x05files\"\x8a\x01\n" +
 	"\x13ApplyChangesRequest\x12.\n" +
 	"\achanges\x18\x01 \x03(\v2\x14.agx.v1.ConfigChangeR\achanges\x12/\n" +
-	"\bexpected\x18\x02 \x03(\v2\x13.agx.v1.PlannedFileR\bexpected\"0\n" +
+	"\bexpected\x18\x02 \x03(\v2\x13.agx.v1.PlannedFileR\bexpected\x12\x12\n" +
+	"\x04file\x18\x03 \x01(\tR\x04file\"0\n" +
 	"\x14ApplyChangesResponse\x12\x18\n" +
 	"\awritten\x18\x01 \x03(\tR\awritten\")\n" +
 	"\x15ListSourceRefsRequest\x12\x10\n" +

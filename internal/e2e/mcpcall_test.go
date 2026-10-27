@@ -16,7 +16,7 @@ func TestMCPCalls(t *testing.T) {
 	e := newEnv(t)
 	starts := filepath.Join(e.dir, "starts")
 	mcp := filepath.ToSlash(binaries.mcp)
-	e.write("config/agx.yaml", `mcp:
+	e.write("config/main.yaml", `mcp:
   echo:
     command: ['`+mcp+`']
     environment:

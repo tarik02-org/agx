@@ -186,6 +186,7 @@ var reasonCodes = map[v1.ErrorDetail_Reason]string{
 	v1.ErrorDetail_REASON_INTERNAL:        codeInternal,
 	v1.ErrorDetail_REASON_MCP_FAILED:      codeMCPFailed,
 	v1.ErrorDetail_REASON_NETWORK:         codeNetwork,
+	v1.ErrorDetail_REASON_CHOOSE_FILE:     string(configedit.ChooseFile),
 }
 
 // connectCode classifies a Connect error by the reason the daemon attached. An error without one

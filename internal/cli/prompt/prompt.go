@@ -229,6 +229,24 @@ func Confirm(ctx context.Context, question string, yes bool) (bool, error) {
 	return yes, err
 }
 
+// Choose asks for one of options and returns its index.
+func Choose(ctx context.Context, title string, options []string) (int, error) {
+	s := newStyles(ui.Stderr.Profile())
+	choices := []huh.Option[int]{}
+	for i, option := range options {
+		choices = append(choices, huh.NewOption(option, i))
+	}
+	chosen := 0
+	field := huh.NewSelect[int]().Title(title).Options(choices...).Value(&chosen)
+	err := run(ctx, s, field, false, model{final: func(err error) string {
+		if err != nil {
+			return ""
+		}
+		return s.render(s.question, title) + " " + s.render(s.answer, options[chosen]) + "\n"
+	}})
+	return chosen, err
+}
+
 // Item is one choice of a selection.
 type Item struct {
 	Label, Detail string

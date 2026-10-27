@@ -188,7 +188,7 @@ func skillAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 			}
 			source.Ref = cmp.Or(ref, source.Ref)
 			source.Subdir = cmp.Or(subdir, source.Subdir)
-			return s.addPackageSkills(source, packageID, file, choice, flags)
+			return s.addPackageSkills(source, packageID, choice, flags)
 		},
 	}
 	flags.register(cmd, true)
@@ -219,7 +219,7 @@ func (s *session) addLocalSkills(dir, file string, choice skillChoice, flags edi
 		if err := s.define(config.KindSkills, id, file, edit.Mapping("path", writtenPath(file, path))); err != nil {
 			return err
 		}
-		if err := s.enableAfterDefine(config.KindSkills, id, file, flags); err != nil {
+		if err := s.enableAfterDefine(config.KindSkills, id, flags); err != nil {
 			return err
 		}
 	}
@@ -233,7 +233,7 @@ func (s *session) addLocalSkills(dir, file string, choice skillChoice, flags edi
 // its skills, and enables the chosen ones by their package-qualified IDs.
 func (s *session) addPackageSkills(
 	source configedit.Source,
-	packageID, file string,
+	packageID string,
 	choice skillChoice,
 	flags editFlags,
 ) error {
@@ -244,7 +244,7 @@ func (s *session) addPackageSkills(
 	} else if err != nil {
 		return err
 	}
-	declared, err := s.DeclarePackage(id, source, file)
+	declared, err := s.DeclarePackage(id, source)
 	if err != nil {
 		return err
 	}
@@ -252,10 +252,10 @@ func (s *session) addPackageSkills(
 		s.result.Defined = append(s.result.Defined, definitionID{Kind: config.KindPackages, ID: string(id)})
 	}
 	progress("Fetching " + source.Git)
-	if err := s.Install(s.ctx, file); err != nil {
+	if err := s.Install(s.ctx); err != nil {
 		return err
 	}
-	c, err := s.Load(file)
+	c, err := s.Load()
 	if err != nil {
 		return codedf(codeConfigInvalid, "package %s: %w", id, err)
 	}
@@ -285,7 +285,7 @@ func (s *session) addPackageSkills(
 		return err
 	}
 	for _, skill := range chosen {
-		if err := s.enableAfterDefine(config.KindSkills, prefix+string(skill.ID), file, flags); err != nil {
+		if err := s.enableAfterDefine(config.KindSkills, prefix+string(skill.ID), flags); err != nil {
 			return err
 		}
 	}

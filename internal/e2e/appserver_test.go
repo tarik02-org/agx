@@ -63,7 +63,7 @@ func TestCodexAppServer(t *testing.T) {
 	e := newEnv(t)
 	other := filepath.Join(e.dir, "other")
 	e.write("other/.keep", "")
-	e.write("config/agx.yaml", `skills:
+	e.write("config/main.yaml", `skills:
   review: {path: ./skills/review}
 instructions:
   rules: {text: E2E instructions.}
@@ -94,8 +94,8 @@ scopes:
 harnesses:
   codex:
     executable: '`+filepath.ToSlash(binaries.harness)+`'
-daemon: {renew_seconds: 1}
 `)
+	e.write("config/agx.yaml", "imports: [main.yaml]\ndaemon: {renew_seconds: 1}\n")
 	e.ok("install")
 	e.ok("daemon", "start")
 	t.Cleanup(func() { e.stopDaemon(true) })

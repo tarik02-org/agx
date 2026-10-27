@@ -1,7 +1,9 @@
 package configedit
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -23,12 +25,18 @@ type Session struct {
 	Config *config.Config
 	// Root is the canonical root configuration.
 	Root string
+	// Dir is the directory the root's imports are relative to.
+	Dir string
 	// Locks holds lockfiles staged by package installation, by path.
 	Locks map[string][]byte
-	// Warn, when set, receives warnings planning finds.
-	Warn  func(format string, args ...any)
-	files map[string]*edit.File
-	order []string
+	// File, when set, is the fragment new definitions and rules go to.
+	File string
+	// Choose, when set, picks the fragment for new definitions and rules among several writable
+	// ones; it may return a new file. Without it, several fail the edit.
+	Choose func(candidates []string) (string, error)
+	target string
+	files  map[string]*edit.File
+	order  []string
 	// writes holds files of local resources replaced as a whole, by canonical path.
 	writes     map[string][]byte
 	writeOrder []string
@@ -40,19 +48,24 @@ func New(paths platform.Paths, builtins config.Builtins, c *config.Config) (*Ses
 	if err != nil {
 		return nil, err
 	}
+	dir, err := config.RootDir(paths.Config)
+	if err != nil {
+		return nil, err
+	}
 	return &Session{
 		Paths:    paths,
 		Builtins: builtins,
 		Config:   c,
 		Root:     root,
+		Dir:      dir,
 		Locks:    map[string][]byte{},
 		files:    map[string]*edit.File{},
 		writes:   map[string][]byte{},
 	}, nil
 }
 
-// File opens a fragment once per session; a missing root starts from the default configuration.
-func (s *Session) File(path string) (*edit.File, error) {
+// Open opens a fragment once per session; a missing root starts from the default configuration.
+func (s *Session) Open(path string) (*edit.File, error) {
 	path, err := config.Canonical(path)
 	if err != nil {
 		return nil, err
@@ -74,6 +87,73 @@ func (s *Session) File(path string) (*edit.File, error) {
 	s.files[path] = f
 	s.order = append(s.order, path)
 	return f, nil
+}
+
+// Target is the fragment new definitions and rules go to: File when set, else the only writable
+// fragment, else agx.d/main.yaml in Dir when there is none, else what Choose picks. It
+// must be a writable fragment the root imports, or a new file its imports match. A missing root
+// is created with the default configuration.
+func (s *Session) Target() (string, error) {
+	if s.target != "" {
+		return s.target, nil
+	}
+	file := s.File
+	if file == "" {
+		// Candidates are the writable fragments, including ones opened for the edit.
+		candidates := slices.DeleteFunc(s.Fragments(), func(path string) bool {
+			return path == s.Root || edit.Writable(path) != nil
+		})
+		switch {
+		case len(candidates) == 1:
+			file = candidates[0]
+		case len(candidates) == 0:
+			file = filepath.Join(s.Dir, "agx.d", "main.yaml")
+		case s.Choose == nil:
+			names := []string{}
+			for _, path := range candidates {
+				names = append(names, shortPath(path))
+			}
+			return "", &Error{
+				Code:  ChooseFile,
+				Err:   fmt.Errorf("choose the fragment to write to with --file: %s", strings.Join(names, ", ")),
+				Files: candidates,
+			}
+		default:
+			var err error
+			if file, err = s.Choose(candidates); err != nil {
+				return "", err
+			}
+		}
+	}
+	file, err := config.Canonical(file)
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case file == s.Root:
+		return "", errorf(
+			InvalidRequest,
+			"%s holds imports and daemon settings only; choose a fragment",
+			shortPath(file),
+		)
+	case !s.Config.Imports(file):
+		return "", errorf(
+			InvalidRequest,
+			"%s is not imported by %s; choose a fragment it imports",
+			shortPath(file),
+			shortPath(s.Root),
+		)
+	}
+	if err := edit.Writable(file); err != nil {
+		return "", coded(ReadOnly, err)
+	}
+	if _, err := os.Stat(s.Root); errors.Is(err, fs.ErrNotExist) {
+		if _, err := s.Open(s.Root); err != nil {
+			return "", err
+		}
+	}
+	s.target = file
+	return file, nil
 }
 
 // Fragments lists the configuration's fragments in load order, then files opened for the edit.
@@ -174,7 +254,7 @@ func (s *Session) matchingRules(target Scope, visit func(*edit.File, edit.Rule) 
 		if edit.Writable(path) != nil {
 			continue
 		}
-		f, err := s.File(path)
+		f, err := s.Open(path)
 		if err != nil {
 			return err
 		}
@@ -190,9 +270,9 @@ func (s *Session) matchingRules(target Scope, visit func(*edit.File, edit.Rule) 
 	return nil
 }
 
-// Enable selects id in the first rule matching target, or in a new rule in fallback, and drops it
-// from that rule's remove list. It returns whether anything changed.
-func (s *Session) Enable(kind config.Kind, id string, target Scope, fallback string) (bool, error) {
+// Enable selects id in the first rule matching target, or in a new rule in the target fragment,
+// and drops it from that rule's remove list. It returns whether anything changed.
+func (s *Session) Enable(kind config.Kind, id string, target Scope) (bool, error) {
 	changed := false
 	found := false
 	err := s.matchingRules(target, func(f *edit.File, r edit.Rule) (bool, error) {
@@ -203,7 +283,7 @@ func (s *Session) Enable(kind config.Kind, id string, target Scope, fallback str
 	if err != nil || found {
 		return changed, err
 	}
-	f, err := s.File(fallback)
+	f, err := s.newRuleFile()
 	if err != nil {
 		return false, err
 	}
@@ -277,9 +357,9 @@ func (s *Session) selection(target Scope) [][]config.Resource {
 }
 
 // Disable takes id out of the target scope: from the add list of a matching rule that selects it,
-// otherwise by appending it to the remove list of the first matching rule or a new rule in
-// fallback, since another rule selects it.
-func (s *Session) Disable(kind config.Kind, id string, target Scope, fallback string) (bool, error) {
+// otherwise by appending it to the remove list of the first matching rule or a new rule in the
+// target fragment, since another rule selects it.
+func (s *Session) Disable(kind config.Kind, id string, target Scope) (bool, error) {
 	changed := false
 	err := s.matchingRules(target, func(f *edit.File, r edit.Rule) (bool, error) {
 		add := f.List(edit.Get(r.Node, "add"), kind, false)
@@ -312,7 +392,7 @@ func (s *Session) Disable(kind config.Kind, id string, target Scope, fallback st
 		return false, err
 	}
 	if rule == nil {
-		if file, err = s.File(fallback); err != nil {
+		if file, err = s.newRuleFile(); err != nil {
 			return false, err
 		}
 		rule = file.AddRule(target.Written, target.Harnesses)
@@ -325,11 +405,19 @@ func (s *Session) Disable(kind config.Kind, id string, target Scope, fallback st
 	return true, nil
 }
 
+func (s *Session) newRuleFile() (*edit.File, error) {
+	path, err := s.Target()
+	if err != nil {
+		return nil, err
+	}
+	return s.Open(path)
+}
+
 // References lists the entries naming id in every fragment, as "file: where".
 func (s *Session) References(kind config.Kind, id string) ([]string, error) {
 	out := []string{}
 	for _, path := range s.Fragments() {
-		f, err := s.File(path)
+		f, err := s.Open(path)
 		if err != nil {
 			return nil, err
 		}
@@ -343,7 +431,7 @@ func (s *Session) References(kind config.Kind, id string) ([]string, error) {
 // RemoveReferences drops every entry naming id, refusing when a file holding one cannot be written.
 func (s *Session) RemoveReferences(kind config.Kind, id string) error {
 	for _, path := range s.Fragments() {
-		f, err := s.File(path)
+		f, err := s.Open(path)
 		if err != nil {
 			return err
 		}

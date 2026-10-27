@@ -92,7 +92,11 @@ func (o Overlay) glob(pattern string) ([]string, error) {
 }
 
 func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Config, error) {
-	root, err := Canonical(root)
+	dir, err := RootDir(root)
+	if err != nil {
+		return nil, err
+	}
+	root, err = Canonical(root)
 	if err != nil {
 		return nil, err
 	}
@@ -106,77 +110,92 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 		Bundles:       map[ID]Bundle{},
 		Harnesses:     map[string]HarnessDefinition{},
 		PackageHashes: map[ID]string{},
-		Daemon:        Daemon{LeaseSeconds: 60, RenewSeconds: 20},
 		builtins:      builtins,
 	}
-	active, seen := map[string]bool{}, map[string]bool{}
-	var load func(string) error
-	load = func(path string) error {
-		path, err := Canonical(path)
-		if err != nil {
-			return err
-		}
-		if active[path] {
-			return fmt.Errorf("import cycle at %s", path)
-		}
-		if seen[path] {
-			return nil
-		}
-		active[path] = true
-		defer delete(active, path)
-		inputs.file(path)
-		b, err := overlay.readFile(path)
-		if path == root && errors.Is(err, fs.ErrNotExist) {
-			b, err = []byte(DefaultConfig), nil
-		}
-		if err != nil {
-			return err
-		}
-		d, positions, err := decode(path, b, false, builtins)
-		if err != nil {
-			return err
-		}
-		for i, imp := range d.Imports {
-			at := positions.at("imports", strconv.Itoa(i))
-			p, err := ExpandHome(imp)
-			if err != nil {
-				return errorAt(at, "import %w", err)
-			}
-			p = relative(filepath.Dir(path), p)
-			if !isGlob(imp) {
-				if found, err := overlay.exists(p); err == nil && !found {
-					return errorAt(at, "import %s: %s does not exist", imp, p)
-				}
-				if err := load(p); err != nil {
-					return err
-				}
-				continue
-			}
-			files, err := overlay.glob(p)
-			if err != nil {
-				return errorAt(at, "import %s: %w", imp, err)
-			}
-			inputs.glob(p, files)
-			for _, match := range files {
-				if err := load(match); err != nil {
-					return err
-				}
-			}
-		}
-		if err := c.merge(d, positions, path, "", false); err != nil {
-			return err
-		}
-		c.Files = append(c.Files, path)
-		seen[path] = true
-		return nil
+	inputs.file(root)
+	b, err := overlay.readFile(root)
+	if errors.Is(err, fs.ErrNotExist) {
+		b, err = []byte(DefaultConfig), nil
 	}
-	if err := load(root); err != nil {
+	if err != nil {
 		return nil, err
 	}
+	r, positions, err := decode[RootFile](root, b, RootSchema, builtins)
+	if err != nil {
+		return nil, err
+	}
+	c.Daemon = Daemon{
+		LeaseSeconds: cmp.Or(r.Daemon.LeaseSeconds, 60),
+		RenewSeconds: cmp.Or(r.Daemon.RenewSeconds, 20),
+		Autostart:    r.Daemon.Autostart,
+	}
+	// A glob matching the root, or two imports matching one fragment, load it once.
+	seen := map[string]bool{root: true}
+	for i, imp := range r.Imports {
+		at := positions.at("imports", strconv.Itoa(i))
+		p, err := ExpandHome(imp)
+		if err != nil {
+			return nil, errorAt(at, "import %w", err)
+		}
+		p = relative(dir, p)
+		c.imports = append(c.imports, p)
+		files := []string{p}
+		if isGlob(imp) {
+			if files, err = overlay.glob(p); err != nil {
+				return nil, errorAt(at, "import %s: %w", imp, err)
+			}
+			inputs.glob(p, files)
+		} else if found, err := overlay.exists(p); err == nil && !found {
+			return nil, errorAt(at, "import %s: %s does not exist", imp, p)
+		}
+		for _, path := range files {
+			if path, err = Canonical(path); err != nil {
+				return nil, err
+			}
+			if seen[path] {
+				continue
+			}
+			seen[path] = true
+			inputs.file(path)
+			b, err := overlay.readFile(path)
+			if err != nil {
+				return nil, err
+			}
+			d, positions, err := decode[Document](path, b, FragmentSchema, builtins)
+			if err != nil {
+				return nil, err
+			}
+			if err := c.merge(d, positions, path, "", false); err != nil {
+				return nil, err
+			}
+			c.Files = append(c.Files, path)
+		}
+	}
+	c.Files = append(c.Files, root)
 	if err := c.validateHarnesses(); err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+// RootDir is the directory the root's imports are relative to: the root's own, before resolving
+// a link to the root, so a root linked from elsewhere, such as the Nix store, imports the
+// fragments beside the link.
+func RootDir(root string) (string, error) {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	return Canonical(filepath.Dir(abs))
+}
+
+// Imports reports whether the root imports path: one of its import paths, or a match of one of
+// its globs.
+func (c *Config) Imports(path string) bool {
+	return slices.ContainsFunc(c.imports, func(pattern string) bool {
+		matched, _ := filepath.Match(pattern, path)
+		return pattern == path || matched
+	})
 }
 
 // isGlob reports whether an import is a pattern rather than a literal path.
@@ -383,7 +402,7 @@ func (c *Config) AddPackage(id ID, dir string) (Document, error) {
 		if err != nil {
 			return Document{}, err
 		}
-		d, positions, err := decode(manifest, b, true, c.builtins)
+		d, positions, err := decode[Document](manifest, b, ManifestSchema, c.builtins)
 		if err != nil {
 			return d, err
 		}
@@ -642,41 +661,7 @@ func (c *Config) merge(d Document, at positions, path, ns string, manifest bool)
 			Directory: directory, Harnesses: s.Harnesses, Add: add, Remove: remove, Source: at,
 		})
 	}
-	if err := m.harnesses(d); err != nil {
-		return err
-	}
-	if c.daemonSet == nil {
-		c.daemonSet = map[string]string{}
-	}
-	for _, field := range []struct {
-		name string
-		set  bool
-	}{
-		{"lease_seconds", d.Daemon.LeaseSeconds != 0},
-		{"renew_seconds", d.Daemon.RenewSeconds != 0},
-		{"autostart", d.Daemon.Autostart != nil},
-	} {
-		if !field.set {
-			continue
-		}
-		if previous, ok := c.daemonSet[field.name]; ok {
-			return &SourceError{
-				Path: path,
-				Err:  fmt.Errorf("daemon.%s is already set in %s; set it in one fragment", field.name, previous),
-			}
-		}
-		c.daemonSet[field.name] = path
-	}
-	if d.Daemon.LeaseSeconds != 0 {
-		c.Daemon.LeaseSeconds = d.Daemon.LeaseSeconds
-	}
-	if d.Daemon.RenewSeconds != 0 {
-		c.Daemon.RenewSeconds = d.Daemon.RenewSeconds
-	}
-	if d.Daemon.Autostart != nil {
-		c.Daemon.Autostart = d.Daemon.Autostart
-	}
-	return nil
+	return m.harnesses(d)
 }
 
 // ScopeDirectory canonicalizes a scope directory as written in file.

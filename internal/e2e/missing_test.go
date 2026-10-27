@@ -15,7 +15,7 @@ import (
 func TestLaunchWithoutInstalledPackage(t *testing.T) {
 	e := newEnv(t)
 	e.write("tools/SKILL.md", "---\nname: tools\ndescription: d\n---\n")
-	e.write("config/agx.yaml", `packages:
+	e.write("config/main.yaml", `packages:
   team: {path: ../team}
 skills:
   tools: {path: ../tools}

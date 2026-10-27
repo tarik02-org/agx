@@ -302,7 +302,7 @@ func (s *Server) PlanChanges(
 ) (*connect.Response[v1.PlanChangesResponse], error) {
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
-	plan, err := s.plan(ctx, req.Msg.Changes)
+	plan, err := s.plan(ctx, req.Msg.Changes, req.Msg.File)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +326,7 @@ func (s *Server) ApplyChanges(
 	}
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
-	plan, err := s.plan(ctx, req.Msg.Changes)
+	plan, err := s.plan(ctx, req.Msg.Changes, req.Msg.File)
 	if err != nil {
 		return nil, err
 	}
@@ -349,8 +349,9 @@ func (s *Server) ApplyChanges(
 	return connect.NewResponse(&v1.ApplyChangesResponse{Written: written}), nil
 }
 
-// plan applies changes in order to a session over the current configuration and plans it.
-func (s *Server) plan(ctx context.Context, changes []*v1.ConfigChange) (*configedit.Plan, error) {
+// plan applies changes in order to a session over the current configuration and plans it; new
+// definitions and rules go to file.
+func (s *Server) plan(ctx context.Context, changes []*v1.ConfigChange, file string) (*configedit.Plan, error) {
 	c, err := s.reload()
 	if err != nil {
 		return nil, configError(err)
@@ -359,10 +360,13 @@ func (s *Server) plan(ctx context.Context, changes []*v1.ConfigChange) (*confige
 	if err != nil {
 		return nil, rpcError(connect.CodeInternal, err.Error())
 	}
-	// Definitions the changes create take their rules beside them, as the CLI's add commands do.
-	defined := map[string]string{}
+	if file != "" {
+		if session.File, err = absoluteFile(file); err != nil {
+			return nil, editError(err)
+		}
+	}
 	for i, change := range changes {
-		if err := s.change(ctx, session, change, defined); err != nil {
+		if err := s.change(ctx, session, change); err != nil {
 			return nil, editError(fmt.Errorf("change %d: %w", i+1, err))
 		}
 	}
@@ -377,7 +381,6 @@ func (s *Server) change(
 	ctx context.Context,
 	session *configedit.Session,
 	change *v1.ConfigChange,
-	defined map[string]string,
 ) error {
 	switch change := change.Change.(type) {
 	case *v1.ConfigChange_Define:
@@ -386,27 +389,13 @@ func (s *Server) change(
 		if err != nil {
 			return err
 		}
-		file := session.Root
-		if d.File != "" {
-			if file, err = absoluteFile(d.File); err != nil {
-				return err
-			}
-		}
-		kind := config.Kind(d.Kind)
-		if at, exists := configedit.Lookup(session.Config, kind, d.Id); exists {
-			file = at.Source.Path
-		}
-		if err := session.Define(kind, d.Id, value, file); err != nil {
-			return err
-		}
-		defined[d.Kind+"\x00"+d.Id] = file
-		return nil
+		return session.Define(config.Kind(d.Kind), d.Id, value)
 	case *v1.ConfigChange_Undefine:
 		return session.Undefine(config.Kind(change.Undefine.Kind), change.Undefine.Id)
 	case *v1.ConfigChange_Enable:
-		return selectionChange(session, change.Enable, true, defined)
+		return selectionChange(session, change.Enable, true)
 	case *v1.ConfigChange_Disable:
-		return selectionChange(session, change.Disable, false, defined)
+		return selectionChange(session, change.Disable, false)
 	case *v1.ConfigChange_WriteFile:
 		return session.WriteFile(change.WriteFile.Path, []byte(change.WriteFile.Content))
 	case *v1.ConfigChange_AddPackage:
@@ -419,10 +408,10 @@ func (s *Server) change(
 		if err != nil {
 			return err
 		}
-		if _, err := session.DeclarePackage(id, source, session.Root); err != nil {
+		if _, err := session.DeclarePackage(id, source); err != nil {
 			return err
 		}
-		return session.Install(ctx, session.Root)
+		return session.Install(ctx)
 	}
 	return invalidf("empty change")
 }
@@ -432,7 +421,7 @@ func invalidf(format string, args ...any) error {
 }
 
 // selectionChange enables or disables a resource as agx use and unuse do.
-func selectionChange(session *configedit.Session, c *v1.SelectionChange, enable bool, defined map[string]string) error {
+func selectionChange(session *configedit.Session, c *v1.SelectionChange, enable bool) error {
 	kind := config.Kind(c.Kind)
 	if !slices.Contains(config.SelectionKinds, kind) {
 		return invalidf("kind must be one of %s", config.JoinKinds(config.SelectionKinds))
@@ -466,15 +455,11 @@ func selectionChange(session *configedit.Session, c *v1.SelectionChange, enable 
 		}
 	}
 	target := configedit.NewScope(directory, c.Harnesses)
-	fallback, ok := defined[c.Kind+"\x00"+c.Id]
-	if !ok {
-		fallback = session.RuleFile(kind, c.Id)
-	}
 	var err error
 	if enable {
-		_, err = session.Enable(kind, c.Id, target, fallback)
+		_, err = session.Enable(kind, c.Id, target)
 	} else {
-		_, err = session.Disable(kind, c.Id, target, fallback)
+		_, err = session.Disable(kind, c.Id, target)
 	}
 	return err
 }
@@ -531,8 +516,9 @@ func editError(err error) error {
 	if errors.As(err, &connectErr) {
 		return connectErr
 	}
-	if code, ok := configedit.CodeOf(err); ok {
-		switch code {
+	var edited *configedit.Error
+	if errors.As(err, &edited) {
+		switch edited.Code {
 		case configedit.ConfigInvalid:
 			return configInvalid(err.Error(), err)
 		case configedit.ReadOnly:
@@ -543,6 +529,12 @@ func editError(err error) error {
 			return rpcError(connect.CodeNotFound, err.Error())
 		case configedit.InvalidRequest:
 			return rpcError(connect.CodeInvalidArgument, err.Error())
+		case configedit.ChooseFile:
+			return detailError(
+				connect.CodeFailedPrecondition,
+				&v1.ErrorDetail{Reason: v1.ErrorDetail_REASON_CHOOSE_FILE, Files: edited.Files},
+				err.Error(),
+			)
 		}
 	}
 	switch {
@@ -681,13 +673,15 @@ func (s *Server) PreviewSource(
 		}
 		id = config.ID(fmt.Sprintf("%s-%d", base, n))
 	}
-	if _, err := session.DeclarePackage(id, source, session.Root); err != nil {
+	// The preview is never written, so any writable fragment can hold the package.
+	session.Choose = func(candidates []string) (string, error) { return candidates[0], nil }
+	if _, err := session.DeclarePackage(id, source); err != nil {
 		return nil, editError(err)
 	}
-	if err := session.Install(ctx, session.Root); err != nil {
+	if err := session.Install(ctx); err != nil {
 		return nil, editError(err)
 	}
-	loaded, err := session.Load(session.Root)
+	loaded, err := session.Load()
 	if err != nil {
 		return nil, configInvalid(fmt.Sprintf("package %s: %v", id, err), err)
 	}

@@ -106,7 +106,10 @@ esac
 	}
 	executable := "'" + filepath.ToSlash(filepath.Join(dir, "codex")) + "'"
 	workHome := "'" + filepath.ToSlash(home) + "'"
-	if err := os.WriteFile(filepath.Join(dir, "agx.yaml"), []byte(`skills:
+	if err := os.WriteFile(filepath.Join(dir, "agx.yaml"), []byte("imports: [main.yaml]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.yaml"), []byte(`skills:
   review: {path: ./skills/review}
 scopes:
   - add: {skills: [review]}

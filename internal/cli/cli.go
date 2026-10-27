@@ -125,13 +125,22 @@ func run(osArgs []string, stdout io.Writer) int {
 		},
 	}
 	configCmd.AddCommand(validate)
-	schemaManifest := false
+	schemaRoot, schemaManifest := false, false
 	schemaCmd := &cobra.Command{
 		Use:   "schema",
 		Short: "Print the JSON Schema of configuration fragments",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			b, err := config.Schema(schemaManifest, builtins)
+			kind := config.FragmentSchema
+			switch {
+			case schemaRoot && schemaManifest:
+				return &usageError{errors.New("give --root or --package, not both")}
+			case schemaRoot:
+				kind = config.RootSchema
+			case schemaManifest:
+				kind = config.ManifestSchema
+			}
+			b, err := config.Schema(kind, builtins)
 			if err != nil {
 				return err
 			}
@@ -139,6 +148,7 @@ func run(osArgs []string, stdout io.Writer) int {
 			return err
 		},
 	}
+	schemaCmd.Flags().BoolVar(&schemaRoot, "root", false, "print the root configuration schema instead")
 	schemaCmd.Flags().BoolVar(&schemaManifest, "package", false, "print the package manifest schema instead")
 	configCmd.AddCommand(schemaCmd)
 	root.AddCommand(configCmd)

@@ -14,7 +14,7 @@ func TestSopsSecrets(t *testing.T) {
 		dir := t.TempDir()
 		local := write(t, filepath.Join(dir, "secrets", "app.yaml"), "x")
 		inHome := write(t, filepath.Join(home, "env.sops"), "x")
-		root := write(t, filepath.Join(dir, "agx.yaml"), `secrets:
+		root := fragment(t, dir, `secrets:
   dotted: {kind: sops, file: ./secrets/app.yaml, key: github.token}
   listed: {kind: sops, file: secrets/app.yaml, key: [a.b, c]}
   whole: {kind: sops, file: ~/env.sops}
@@ -44,7 +44,7 @@ mcp:
 	})
 
 	t.Run("package files stay inside the package", func(t *testing.T) {
-		root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), "{}\n")
+		root := fragment(t, t.TempDir(), "{}\n")
 		dir := mkdir(t, filepath.Join(t.TempDir(), "pkg"))
 		write(t, filepath.Join(dir, "agx.package.yaml"), "secrets:\n  s: {kind: sops, file: ../secrets.yaml}\n")
 		_, err := read(t, root).AddPackage("team", dir)
@@ -54,7 +54,7 @@ mcp:
 	t.Run("age keys are injected values", func(t *testing.T) {
 		dir := t.TempDir()
 		write(t, filepath.Join(dir, "secrets.yaml"), "x")
-		root := write(t, filepath.Join(dir, "agx.yaml"), `secrets:
+		root := fragment(t, dir, `secrets:
   age: {kind: sops, file: ./secrets.yaml, age_key: !env AGE_IDENTITY}
   github: {kind: sops, file: ./secrets.yaml, key: github.token, age_key: !secret age}
   nested: {kind: sops, file: ./secrets.yaml, age_key: !secret github}
@@ -109,7 +109,7 @@ mcp:
 		{"unsplittable segment", "secrets:\n  s: {kind: sops, file: ./agx.yaml, key: ['a][b']}\n", "cannot contain ]["},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			root := write(t, filepath.Join(t.TempDir(), "agx.yaml"), tt.content)
+			root := fragment(t, t.TempDir(), tt.content)
 			_, err := config.Load(root, config.Options{Builtins: builtins, Cache: t.TempDir()})
 			wantError(t, err, tt.want)
 		})
