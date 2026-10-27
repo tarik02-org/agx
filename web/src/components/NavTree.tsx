@@ -38,6 +38,10 @@ interface NavTreeProps {
   readonly icons?: ReadonlyMap<string, TreeIcon>;
   /** Top-level folders in the order to show them, such as the configuration's sections. */
   readonly order?: ReadonlyArray<string>;
+  /** Top-level folders to show after every other row, in this order. */
+  readonly last?: ReadonlyArray<string>;
+  /** Whether top-level rows are sections, drawn as headings; read once. */
+  readonly sections?: boolean;
   /** How many levels of folders start open. */
   readonly expansion?: number;
 }
@@ -89,16 +93,20 @@ const iconRules = (icons: ReadonlyMap<string, TreeIcon>): string =>
 // The tree reports folders with a trailing slash.
 const bare = (path: string) => (path.endsWith("/") ? path.slice(0, -1) : path);
 
-const rank = (order: ReadonlyArray<string>, name: string | undefined) => {
-  const index = name === undefined ? -1 : order.indexOf(name);
-  return index === -1 ? order.length : index;
+const rank = (order: ReadonlyArray<string>, last: ReadonlyArray<string>, name = "") => {
+  const first = order.indexOf(name);
+  if (first !== -1) {
+    return first;
+  }
+  const after = last.indexOf(name);
+  return after === -1 ? order.length : order.length + 1 + after;
 };
 
 /** Top-level folders in the given order; below them, folders first, then by name. */
 const compareIn =
-  (order: ReadonlyArray<string>) =>
+  (order: ReadonlyArray<string>, last: ReadonlyArray<string>) =>
   (left: FileTreeSortEntry, right: FileTreeSortEntry): number => {
-    const byOrder = rank(order, left.segments[0]) - rank(order, right.segments[0]);
+    const byOrder = rank(order, last, left.segments[0]) - rank(order, last, right.segments[0]);
     if (byOrder !== 0) {
       return byOrder;
     }
@@ -143,6 +151,8 @@ export function NavTree({
   query = "",
   icons = noIcons,
   order = noOrder,
+  last = noOrder,
+  sections = true,
   expansion = 1,
 }: NavTreeProps) {
   // Lazy folders are listed themselves, so one that loads empty stays.
@@ -167,8 +177,8 @@ export function NavTree({
     search: false,
     fileTreeSearchMode: "hide-non-matches",
     density: "compact",
-    unsafeCSS: rootRowsAsHeadings,
-    sort: compareIn(order),
+    ...(sections ? { unsafeCSS: rootRowsAsHeadings } : {}),
+    sort: compareIn(order, last),
     onSelectionChange: (chosen) => {
       const path = chosen.map(bare).find((p) => !p.endsWith(`/${placeholder}`));
       if (path !== undefined && path !== latest.current.selected) {

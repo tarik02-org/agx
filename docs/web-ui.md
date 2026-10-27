@@ -7,10 +7,10 @@ folders, and the harness launching there. It goes on with where the page is and
 every action it offers, **New**, and **Staged** while changes wait. `agx ui`
 scopes the UI to the directory it runs in, and the scope stays in the address,
 so a scoped page can be shared and reloaded. The sidebar holds the runtime page
-and the configuration as a tree, grouped by type, by bundle (each bundle with
-what it selects, then what no bundle selects), or by file (each fragment with
-what it defines). An empty kind offers to add one, and package skills sit under
-their package. Expanding a
+and the configuration as a tree: ungrouped, grouped by bundle (each bundle with
+what it selects, then what no bundle selects), or grouped by file (each fragment
+with what it defines), and split by type or not. An empty kind offers to add
+one, and package skills sit under their package. Expanding a
 skill lists its files, and expanding an MCP server starts it and lists its
 tools. Icons hint at what each item does,
 from its name and description. A skill draws the `interface.icon_small` and

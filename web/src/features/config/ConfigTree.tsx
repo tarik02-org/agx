@@ -5,6 +5,7 @@ import { type ReactNode, useState } from "react";
 
 import { NavTree, type TreeIcon } from "~/components/NavTree.tsx";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group.tsx";
+import { Switch } from "~/components/ui/switch.tsx";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { DaemonError } from "~/daemon/error.ts";
@@ -32,6 +33,14 @@ const scoped = new Set(["skills", "instructions", "mcp"]);
 
 const label = (kind: string) => kinds.find((k) => k.kind === kind)?.label ?? kind;
 
+/** One of a kind, in a sentence: lowercase, unless it is an acronym such as MCP. */
+const one = (kind: string) => {
+  const name = kinds.find((k) => k.kind === kind)?.one ?? kind;
+  return /^.[a-z]/.test(name) ? name.toLowerCase() : name;
+};
+
+const join = (...parts: ReadonlyArray<string>) => parts.filter((part) => part !== "").join("/");
+
 /** What the tree needs of a folder's query. */
 interface Loading<A> {
   readonly data: A | undefined;
@@ -46,22 +55,24 @@ type Target =
   | { readonly page: "new"; readonly kind: string };
 
 /**
- * What the top of the tree is: the configuration's kinds, its bundles with what each selects, or
- * its files with what each defines. Below bundles and files, definitions sit under their kind.
+ * What the top of the tree is: definitions themselves, the configuration's bundles with what each
+ * selects, or its files with what each defines. Within that, definitions can sit under their kind.
  */
-type Grouping = "type" | "bundle" | "file";
+type Grouping = "none" | "bundle" | "file";
 
 const groupings: ReadonlyArray<{ readonly value: Grouping; readonly label: string }> = [
-  { value: "type", label: "Type" },
+  { value: "none", label: "None" },
   { value: "bundle", label: "Bundle" },
   { value: "file", label: "File" },
 ];
 
 const groupingKey = "agx.tree.grouping";
+const byTypeKey = "agx.tree.byType";
 const savedGrouping = (): Grouping => {
   const saved = globalThis.localStorage?.getItem(groupingKey);
-  return saved === "bundle" || saved === "file" ? saved : "type";
+  return saved === "bundle" || saved === "file" ? saved : "none";
 };
+const savedByType = () => globalThis.localStorage?.getItem(byTypeKey) !== "false";
 
 const outsideBundles = "Not in a bundle";
 const filesFolder = "Files";
@@ -73,7 +84,7 @@ const bundleMembers = (bundle: Definition): ReadonlyArray<string> =>
   );
 
 /**
- * The configuration as one tree, grouped by type, bundle, or file, with IDs nesting at their
+ * The configuration as one tree, grouped by bundle or file and split by type, or not, with IDs nesting at their
  * slashes (a package's skills sit under the package's name). Skills hold their files and MCP
  * servers their tools, loaded when first expanded; a server starts only then.
  */
@@ -91,6 +102,7 @@ export function ConfigTree() {
   const enabledHere = useEnabledHere();
   const [onlyHere, setOnlyHere] = useState(false);
   const [grouping, setGrouping] = useState<Grouping>(savedGrouping);
+  const [byType, setByType] = useState(savedByType);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const navigate = useNavigate();
@@ -114,17 +126,16 @@ export function ConfigTree() {
       ? path.slice(rootDirectory.length)
       : shortPath(path, home).replace(/^\//, "");
 
-  // Where each definition shows: one place, or one per bundle selecting it.
-  const placesOf = (definition: Definition): ReadonlyArray<string> => {
-    const kindPath = `${label(definition.kind)}/${definition.id}`;
+  // The groups a definition shows in: none, its file, or each bundle selecting it.
+  const groupsOf = (definition: Definition): ReadonlyArray<string> => {
     switch (grouping) {
-      case "type":
-        return [kindPath];
+      case "none":
+        return [""];
       case "file":
         return [
           definition.package === ""
-            ? `${relative(definition.source?.path ?? "")}/${kindPath}`
-            : `package ${definition.package}/${kindPath}`,
+            ? relative(definition.source?.path ?? "")
+            : `package ${definition.package}`,
         ];
       case "bundle": {
         const key = `${definition.kind}/${definition.id}`;
@@ -133,12 +144,24 @@ export function ConfigTree() {
         if (definition.kind === "bundles" && holders.length === 0) {
           return [];
         }
-        return holders.length === 0
-          ? [`${outsideBundles}/${kindPath}`]
-          : holders.map((b) => `${b.id}/${kindPath}`);
+        return holders.length === 0 ? [outsideBundles] : holders.map((b) => b.id);
       }
     }
   };
+  // Without kinds' folders, an ID several kinds share says which one it is.
+  const shared = new Set(
+    all
+      .filter((d) => all.some((other) => other.id === d.id && other.kind !== d.kind))
+      .map((d) => d.id),
+  );
+  const nameOf = (definition: Definition) =>
+    !byType && shared.has(definition.id)
+      ? `${definition.id} (${one(definition.kind)})`
+      : definition.id;
+  const placesOf = (definition: Definition): ReadonlyArray<string> =>
+    groupsOf(definition).map((group) =>
+      join(group, byType ? label(definition.kind) : "", nameOf(definition)),
+    );
 
   // Every skill and server has its query, run once one of its folders is expanded; one a page
   // already read, under the same key, shows at once, with the icon its server declares.
@@ -194,14 +217,12 @@ export function ConfigTree() {
       icons.set(folder, icon);
     }
   };
-  if (grouping === "type") {
-    for (const { kind, one } of kinds) {
+  if (grouping === "none" && byType) {
+    for (const { kind } of kinds) {
       kindFolder(label(kind), kind);
       // An empty kind offers to add one, so the tree is also where things start.
       if (definitions.isSuccess && !filtering && !shown.some((d) => d.kind === kind)) {
-        // Lowercase, unless it is an acronym such as MCP.
-        const name = /^.[a-z]/.test(one) ? one.toLowerCase() : one;
-        targets.set(`${label(kind)}/Add ${name}…`, { page: "new", kind });
+        targets.set(`${label(kind)}/Add ${one(kind)}…`, { page: "new", kind });
       }
     }
   }
@@ -219,11 +240,14 @@ export function ConfigTree() {
         definition.color,
         definition.icon,
       );
-    for (const path of placesOf(definition)) {
-      const folder = path.slice(0, -definition.id.length - 1);
-      kindFolder(folder, definition.kind);
-      if (grouping === "bundle" && !folder.startsWith(outsideBundles) && bundleIcon !== undefined) {
-        icons.set(folder.slice(0, -label(definition.kind).length - 1), bundleIcon);
+    for (const group of groupsOf(definition)) {
+      const folder = join(group, byType ? label(definition.kind) : "");
+      const path = join(folder, nameOf(definition));
+      if (byType) {
+        kindFolder(folder, definition.kind);
+      }
+      if (grouping === "bundle" && group !== outsideBundles && bundleIcon !== undefined) {
+        icons.set(group, bundleIcon);
       }
       if (icon !== undefined) {
         icons.set(path, icon);
@@ -232,7 +256,7 @@ export function ConfigTree() {
       const segments = definition.id.split("/");
       for (let depth = 1; depth < segments.length; depth++) {
         const prefix = segments.slice(0, depth).join("/");
-        icons.set(`${folder}/${prefix}`, namespaceIcon(prefix === definition.package));
+        icons.set(join(folder, prefix), namespaceIcon(prefix === definition.package));
       }
       if (definition.readOnly && definition.package === "") {
         decorations.set(path, "read-only");
@@ -331,18 +355,21 @@ export function ConfigTree() {
           }`;
 
   const order =
-    grouping === "type"
-      ? [...kinds.map((k) => k.label), filesFolder]
+    grouping === "none"
+      ? byType
+        ? kinds.map((k) => k.label)
+        : []
       : grouping === "bundle"
-        ? [...all.filter((d) => d.kind === "bundles").map((d) => d.id), outsideBundles, filesFolder]
+        ? all.filter((d) => d.kind === "bundles").map((d) => d.id)
         : // The root first; it lists the others.
           [relative(configuration.data?.root ?? "")];
 
   return (
     <NavTree
-      // A remount starts the new grouping with its top level open.
-      key={grouping}
-      expansion={grouping === "type" ? 1 : 2}
+      // A remount starts the new grouping with its groups open, and only those: a server's
+      // folder opening starts the server.
+      key={`${grouping} ${byType}`}
+      expansion={Number(grouping !== "none") + Number(byType)}
       // Lazy folders hold what is loaded; everything else is a leaf.
       // A target that holds others, such as a file grouped by, is their folder rather than a row.
       paths={[...targets.keys()].filter(
@@ -352,6 +379,9 @@ export function ConfigTree() {
       lazy={lazy}
       onExpand={(folder) => setExpanded((current) => new Set([...current, folder]))}
       order={order}
+      last={grouping === "file" ? [] : [outsideBundles, filesFolder]}
+      // Files and definitions are rows to open, not sections.
+      sections={grouping === "bundle" || (grouping === "none" && byType)}
       icons={icons}
       selected={selected}
       decorations={decorations}
@@ -427,6 +457,17 @@ export function ConfigTree() {
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
+          </TreeOption>
+          <TreeOption label="Split by type">
+            <Switch
+              size="sm"
+              aria-label="Split by type"
+              checked={byType}
+              onCheckedChange={(checked) => {
+                globalThis.localStorage?.setItem(byTypeKey, String(checked));
+                setByType(checked);
+              }}
+            />
           </TreeOption>
           {directory !== "" && (
             <TreeOption label="Show">
