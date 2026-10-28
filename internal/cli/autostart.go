@@ -62,6 +62,9 @@ type daemonState struct {
 	discovery error
 	// reachable is whether the discovered daemon answered.
 	reachable bool
+	// slow is whether the discovered daemon took the connection but did not answer in time: it
+	// runs, but its launches are unknown.
+	slow bool
 	// sameConfig is whether the discovered daemon serves the command's root configuration.
 	sameConfig bool
 	// activeLaunches counts launches of a reachable daemon that still hold MCP access.
@@ -71,9 +74,14 @@ type daemonState struct {
 // action decides how to reach a daemon of this build. A daemon of another build is replaced; it
 // keeps its active launches for its successor. A daemon of this build serving another
 // configuration is replaced when it has no active launches; otherwise it stays, and the launch
-// check reports it.
+// check reports it. A slow daemon is never taken for a missing one: starting another would only
+// lose the startup lock to it.
 func (s daemonState) action() daemonAction {
 	switch {
+	case s.discovery == nil && s.slow:
+		return useDaemon
+	case errors.Is(s.discovery, daemon.ErrVersionMismatch) && s.slow:
+		return replaceDaemon
 	case s.discovery == nil && s.reachable:
 		if !s.sameConfig && s.activeLaunches == 0 {
 			return replaceDaemon
@@ -101,9 +109,12 @@ func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*cli
 		probe, cancel := context.WithTimeout(ctx, probeTimeout)
 		view, probeErr := current.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{}))
 		cancel()
-		if probeErr == nil {
+		switch {
+		case probeErr == nil:
 			state.reachable = true
 			state.activeLaunches = activeLaunches(view.Msg.GetRuntime())
+		case connect.CodeOf(probeErr) == connect.CodeDeadlineExceeded:
+			state.slow = true
 		}
 	}
 	switch state.action() {

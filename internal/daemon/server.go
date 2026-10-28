@@ -726,8 +726,9 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	e.ServeHTTP(w, r)
 }
 
+// runtime reports the last configuration load rather than reloading: commands probe the daemon
+// with it before every launch, and a reload can take seconds where reading files is slow.
 func (s *Server) runtime() *v1.RuntimeView {
-	_, _ = s.reload()
 	type server struct {
 		launchID string
 		id       config.ID

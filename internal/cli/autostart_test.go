@@ -21,6 +21,8 @@ func TestDaemonAction(t *testing.T) {
 		{"idle with another configuration", daemonState{reachable: true}, replaceDaemon},
 		// The configuration check happens later, with its own actionable error.
 		{"busy with another configuration", daemonState{reachable: true, activeLaunches: 1}, useDaemon},
+		{"slow to answer", daemonState{slow: true}, useDaemon},
+		{"other build slow to answer", daemonState{discovery: mismatch, slow: true}, replaceDaemon},
 		{"no discovery", daemonState{discovery: missing}, startNewDaemon},
 		{"stale discovery", daemonState{}, startNewDaemon},
 		{"stale discovery of another build", daemonState{discovery: mismatch, sameConfig: true}, startNewDaemon},
