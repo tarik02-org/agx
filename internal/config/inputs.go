@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 // Inputs records the state of every file and glob a load consulted.
@@ -65,5 +66,8 @@ func globFiles(pattern string) ([]string, error) {
 			files = append(files, match)
 		}
 	}
+	// Glob sorts each directory's names, not whole paths: agents/x sorts before agents-windows/x
+	// there, after it here. Loading sorts whole paths, and a different order would read as a change.
+	slices.Sort(files)
 	return files, nil
 }
