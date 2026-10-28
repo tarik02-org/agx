@@ -46,6 +46,26 @@ func TestFragmentsLoadInOrder(t *testing.T) {
 	}
 }
 
+// A load's inputs stay unchanged until a file changes, also when one directory's name starts
+// another's, which a glob orders differently from a sort of whole paths.
+func TestInputsUnchangedAfterLoad(t *testing.T) {
+	dir := t.TempDir()
+	root := write(t, filepath.Join(dir, "agx.yaml"), "fragments: [fragments/*/fragment.yaml]\n")
+	write(t, filepath.Join(dir, "fragments", "agents", "fragment.yaml"), "instructions:\n  a: {text: a}\n")
+	write(t, filepath.Join(dir, "fragments", "agents-windows", "fragment.yaml"), "instructions:\n  b: {text: b}\n")
+	inputs := &config.Inputs{}
+	if _, err := config.Load(root, config.Options{Builtins: builtins, Inputs: inputs}); err != nil {
+		t.Fatal(err)
+	}
+	if inputs.Changed() {
+		t.Fatal("inputs changed right after the load")
+	}
+	write(t, filepath.Join(dir, "fragments", "more", "fragment.yaml"), "instructions:\n  c: {text: c}\n")
+	if !inputs.Changed() {
+		t.Fatal("a new fragment did not change the inputs")
+	}
+}
+
 func TestMissingRootListsDropIns(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "agx.d", "10.yaml"), "instructions:\n  dropin: {text: hi}\n")
