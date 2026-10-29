@@ -7,5 +7,5 @@ plugins:
     out: .
     opt: module=github.com/tarik02-org/agx
   - remote: buf.build/bufbuild/es:v2.16.0
-    out: gen/typescript
+    out: web/src/gen
     opt: target=ts

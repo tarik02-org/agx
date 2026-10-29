@@ -27,7 +27,7 @@ type SchemaKind string
 const (
 	// RootSchema is the root configuration file, which holds fragments and daemon settings.
 	RootSchema SchemaKind = "root"
-	// FragmentSchema is an imported fragment, which holds definitions.
+	// FragmentSchema is a fragment the root lists, which holds definitions.
 	FragmentSchema SchemaKind = "fragment"
 	// ManifestSchema is a package manifest.
 	ManifestSchema SchemaKind = "manifest"

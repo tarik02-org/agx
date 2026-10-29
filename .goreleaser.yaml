@@ -12,6 +12,9 @@ before:
     - sh -c 'go run ./cmd/agx completion zsh >completions/_agx'
     - sh -c 'go run ./cmd/agx completion powershell >completions/agx.ps1'
     - sh -c 'go run ./cmd/agx man | gzip -9 >manpages/agx.1.gz'
+    # The binaries embed the web UI.
+    - pnpm --dir web install --frozen-lockfile
+    - pnpm --dir web build
 
 builds:
   - id: agx

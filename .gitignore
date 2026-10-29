@@ -5,3 +5,6 @@ result
 dist/
 completions/
 manpages/
+/internal/ui/dist/*
+!/internal/ui/dist/.keep
+/web/node_modules/

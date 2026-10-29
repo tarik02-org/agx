@@ -29,6 +29,10 @@ agx has not been released yet. What it does today:
 - `agx doctor`, `--json` on every command, shell completions, `agx man`, JSON Schemas for
   the root file, fragments, and package manifests, a Home Manager module, and a nightly
   prerelease per `master` build.
+- `agx ui`: a web UI the daemon serves, signed in with a one-time link and scoped to the
+  directory it ran in, that shows launches, MCP processes, secrets, and packages live, browses
+  and edits definitions with a form or YAML, applies staged changes after a diff, and adds
+  skills from Git. Release binaries and the Nix package embed it.
 
 ### Changed
 

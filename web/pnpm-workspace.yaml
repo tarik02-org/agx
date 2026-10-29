@@ -1,0 +1,11 @@
+# @pierre/diffs 1.6.0 pins a @pierre/theming that cannot resolve themes, so no diff renders;
+# 1.6.1 fixes it but is newer than pnpm's minimum release age.
+minimumReleaseAgeExclude:
+  - "@pierre/diffs@1.6.1"
+  - "@pierre/theming@1.0.2"
+# Vite+ bundles its own Vite, versioned as Vite+; libraries peering on vite get it.
+overrides:
+  vite: npm:@voidzero-dev/vite-plus-core@1.3.0
+peerDependencyRules:
+  allowedVersions:
+    vite: "1.3.0"

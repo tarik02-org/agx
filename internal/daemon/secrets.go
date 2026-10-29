@@ -183,7 +183,7 @@ func (s *Server) Login(
 	stream *connect.ServerStream[v1.LoginResponse],
 ) error {
 	// Streaming handlers bypass the unary management interceptor.
-	if !equalBearer(req.Header().Get("Authorization"), s.discovery.Token) {
+	if !s.managed(req.Header()) {
 		return rpcError(connect.CodeUnauthenticated, "management credential required")
 	}
 	if s.drain.draining() {

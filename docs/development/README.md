@@ -34,10 +34,40 @@ and the daemon compare:
 the first tag, the Nix package reports `0.0.0-dev+<commit>`.
 
 Go messages and Connect handlers live in `gen/agx/v1`; TypeScript Protobuf
-messages and service descriptors live in `gen/typescript`. Regenerate them with
+messages and service descriptors live in `web/src/gen`, used by the web UI. Regenerate them with
 `buf generate`; TypeScript consumers need `@bufbuild/protobuf` and can build
 Connect clients with `@connectrpc/connect`. Generator versions are pinned in
 [buf.gen.yaml](../../buf.gen.yaml).
+
+## Web UI
+
+The UI lives in `web/`: TypeScript, React, and Vite+, managed with pnpm (the
+development shell provides Node and pnpm). It builds into `internal/ui/dist`,
+which the Go binary embeds.
+
+```sh
+pnpm --dir web install
+pnpm --dir web build          # then go build embeds it
+pnpm --dir web check          # types, lint, format
+pnpm --dir web test
+AGX_DAEMON_URL=http://127.0.0.1:<port> pnpm --dir web dev
+```
+
+Components come from shadcn (Base UI primitives, the `mira` style, lucide
+icons; see `web/components.json`). Add them with its CLI, never by hand, and
+update them with `add --diff`:
+
+```sh
+cd web && pnpm dlx shadcn@latest add dialog
+```
+
+Theme tokens live in `web/src/styles.css`; agx adds `success` and `warning`
+next to shadcn's.
+
+`vp dev` serves the UI with hot reload and forwards RPCs to the running daemon
+at `AGX_DAEMON_URL`; sign in by opening the `agx ui --print` link with the dev
+server's origin. The Nix build fetches pnpm dependencies with a fixed hash
+(`nix/web.nix`): update it after changing `web/pnpm-lock.yaml`.
 
 ## Releasing
 

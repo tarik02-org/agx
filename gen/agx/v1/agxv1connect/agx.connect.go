@@ -29,6 +29,8 @@ const (
 	LaunchServiceName = "agx.v1.LaunchService"
 	// RuntimeServiceName is the fully-qualified name of the RuntimeService service.
 	RuntimeServiceName = "agx.v1.RuntimeService"
+	// UIServiceName is the fully-qualified name of the UIService service.
+	UIServiceName = "agx.v1.UIService"
 	// SecretServiceName is the fully-qualified name of the SecretService service.
 	SecretServiceName = "agx.v1.SecretService"
 )
@@ -125,6 +127,9 @@ const (
 	RuntimeServiceStopMcpProcessProcedure = "/agx.v1.RuntimeService/StopMcpProcess"
 	// RuntimeServiceStopProcedure is the fully-qualified name of the RuntimeService's Stop RPC.
 	RuntimeServiceStopProcedure = "/agx.v1.RuntimeService/Stop"
+	// UIServiceCreateLoginCodeProcedure is the fully-qualified name of the UIService's CreateLoginCode
+	// RPC.
+	UIServiceCreateLoginCodeProcedure = "/agx.v1.UIService/CreateLoginCode"
 	// SecretServiceLoginProcedure is the fully-qualified name of the SecretService's Login RPC.
 	SecretServiceLoginProcedure = "/agx.v1.SecretService/Login"
 	// SecretServiceSetSecretProcedure is the fully-qualified name of the SecretService's SetSecret RPC.
@@ -1131,6 +1136,76 @@ func (UnimplementedRuntimeServiceHandler) StopMcpProcess(context.Context, *conne
 
 func (UnimplementedRuntimeServiceHandler) Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.Stop is not implemented"))
+}
+
+// UIServiceClient is a client for the agx.v1.UIService service.
+type UIServiceClient interface {
+	CreateLoginCode(context.Context, *connect.Request[v1.CreateLoginCodeRequest]) (*connect.Response[v1.CreateLoginCodeResponse], error)
+}
+
+// NewUIServiceClient constructs a client for the agx.v1.UIService service. By default, it uses the
+// Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewUIServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) UIServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	uIServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("UIService").Methods()
+	return &uIServiceClient{
+		createLoginCode: connect.NewClient[v1.CreateLoginCodeRequest, v1.CreateLoginCodeResponse](
+			httpClient,
+			baseURL+UIServiceCreateLoginCodeProcedure,
+			connect.WithSchema(uIServiceMethods.ByName("CreateLoginCode")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// uIServiceClient implements UIServiceClient.
+type uIServiceClient struct {
+	createLoginCode *connect.Client[v1.CreateLoginCodeRequest, v1.CreateLoginCodeResponse]
+}
+
+// CreateLoginCode calls agx.v1.UIService.CreateLoginCode.
+func (c *uIServiceClient) CreateLoginCode(ctx context.Context, req *connect.Request[v1.CreateLoginCodeRequest]) (*connect.Response[v1.CreateLoginCodeResponse], error) {
+	return c.createLoginCode.CallUnary(ctx, req)
+}
+
+// UIServiceHandler is an implementation of the agx.v1.UIService service.
+type UIServiceHandler interface {
+	CreateLoginCode(context.Context, *connect.Request[v1.CreateLoginCodeRequest]) (*connect.Response[v1.CreateLoginCodeResponse], error)
+}
+
+// NewUIServiceHandler builds an HTTP handler from the service implementation. It returns the path
+// on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewUIServiceHandler(svc UIServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	uIServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("UIService").Methods()
+	uIServiceCreateLoginCodeHandler := connect.NewUnaryHandler(
+		UIServiceCreateLoginCodeProcedure,
+		svc.CreateLoginCode,
+		connect.WithSchema(uIServiceMethods.ByName("CreateLoginCode")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/agx.v1.UIService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case UIServiceCreateLoginCodeProcedure:
+			uIServiceCreateLoginCodeHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedUIServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedUIServiceHandler struct{}
+
+func (UnimplementedUIServiceHandler) CreateLoginCode(context.Context, *connect.Request[v1.CreateLoginCodeRequest]) (*connect.Response[v1.CreateLoginCodeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.UIService.CreateLoginCode is not implemented"))
 }
 
 // SecretServiceClient is a client for the agx.v1.SecretService service.

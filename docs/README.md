@@ -19,6 +19,7 @@ New to agx? Read [Getting started](getting-started.md) first.
   earlier conversations.
 - [Integrations](integrations.md): running agents through agx from other
   tools, such as T3 Code.
+- [Web UI](web-ui.md): `agx ui`, the runtime in a browser.
 - [The daemon](daemon.md): what runs in the background, and how to start, stop,
   and restart it.
 - [Troubleshooting](troubleshooting.md): `agx doctor` and common problems.

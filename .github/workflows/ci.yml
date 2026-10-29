@@ -85,6 +85,27 @@ jobs:
           git add --intent-to-add .
           git diff --exit-code
 
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 12.9.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Type check, lint, and format
+        run: pnpm check
+      - run: pnpm test --passWithNoTests
+      - run: pnpm build
+
   nix:
     strategy:
       fail-fast: false

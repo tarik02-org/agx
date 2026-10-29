@@ -15,7 +15,9 @@
     in
     {
       packages = forAllSystems (pkgs: rec {
+        web = pkgs.callPackage ./nix/web.nix { };
         agx = pkgs.callPackage ./package.nix {
+          inherit web;
           rev = self.shortRev or self.dirtyShortRev or null;
         };
         default = agx;
@@ -35,6 +37,8 @@
             pkgs.buf
             pkgs.golangci-lint
             pkgs.gopls
+            pkgs.nodejs_24
+            pkgs.pnpm_12
           ];
         };
       });
