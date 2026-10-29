@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 
 	"github.com/tarik02-org/agx/internal/adapters"
@@ -132,7 +133,12 @@ func printSessions(entries []sessions.Entry, directory string, all, searched boo
 	rows := [][]string{}
 	fixed := []int{len(headers[0]), len(headers[1]), len(headers[2]), len(headers[3])}
 	for _, e := range entries {
-		row := []string{e.Harness, ui.Ago(e.Updated, now), e.ID, ui.ShortPath(e.Directory, directory)}
+		row := []string{
+			e.Harness,
+			humanize.RelTime(e.Updated, now, "ago", "from now"),
+			e.ID,
+			ui.ShortPath(e.Directory, directory),
+		}
 		for i, cell := range row {
 			fixed[i] = max(fixed[i], ansi.StringWidth(cell))
 		}

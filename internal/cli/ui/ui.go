@@ -8,10 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/list"
@@ -221,27 +219,7 @@ func Note(text string) {
 	_, _ = fmt.Fprintln(Stderr, Stderr.Muted(text))
 }
 
-// Ago describes how long before now t was, in the largest whole unit: "now", "5m", "3h", "2d",
-// "6w", "1y". A time after now, as under clock skew, is "now".
-func Ago(t, now time.Time) string {
-	d := now.Sub(t)
-	switch {
-	case d < time.Minute:
-		return "now"
-	case d < time.Hour:
-		return strconv.Itoa(int(d/time.Minute)) + "m"
-	case d < 24*time.Hour:
-		return strconv.Itoa(int(d/time.Hour)) + "h"
-	case d < 14*24*time.Hour:
-		return strconv.Itoa(int(d/(24*time.Hour))) + "d"
-	case d < 365*24*time.Hour:
-		return strconv.Itoa(int(d/(7*24*time.Hour))) + "w"
-	}
-	return strconv.Itoa(int(d/(365*24*time.Hour))) + "y"
-}
-
-// ShortPath writes a directory relative to cwd when it is cwd (".") or below it ("./sub"), and
-// otherwise under the home directory as ~/rest.
+// ShortPath writes a directory relative to cwd or the home directory.
 func ShortPath(path, cwd string) string {
 	if rel, err := filepath.Rel(cwd, path); err == nil && cwd != "" {
 		if rel == "." {

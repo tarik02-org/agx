@@ -3,16 +3,17 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
-	"runtime"
 	"sync"
 	"syscall"
 	"time"
 
 	"connectrpc.com/connect"
+
+	"github.com/pkg/browser"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/cli/ui"
@@ -64,7 +65,7 @@ func login(ctx context.Context, paths platform.Paths, id string, browser, autost
 					return err
 				}
 				if browser {
-					openBrowser(ctx, event.Started.AuthorizationUrl)
+					openBrowser(event.Started.AuthorizationUrl)
 				}
 				wait = startWaiting("Waiting for login… (Ctrl-C to cancel)")
 			case *v1.LoginResponse_Finished:
@@ -122,36 +123,19 @@ func loginOutcome(id string, finished *v1.LoginFinished) error {
 	}
 }
 
-// openBrowser hands the URL to the platform's opener as a single argument, without a shell:
-// on Windows, url.dll does not interpret & and other metacharacters as cmd's start would.
-// Failing to open it only warns, since the printed URL still works.
-func openBrowser(ctx context.Context, target string) {
+func openBrowser(target string) {
 	u, err := url.Parse(target)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") {
+	if err != nil || u.Scheme != "http" && u.Scheme != "https" {
 		ui.Diagnose(ui.Warn, "not opening a browser for a non-HTTP authorization URL")
 		return
 	}
-	name, args := "xdg-open", []string{target}
-	switch runtime.GOOS {
-	case "darwin":
-		name = "open"
-	case "windows":
-		name, args = "rundll32", []string{"url.dll,FileProtocolHandler", target}
-	}
-	// The browser must survive the login command and its Ctrl-C.
-	cmd := exec.CommandContext(context.WithoutCancel(ctx), name, args...)
-	platform.Isolate(cmd)
-	if err := cmd.Start(); err != nil {
-		ui.Diagnose(ui.Warn, "cannot open a browser: %v; open the URL yourself", err)
-		return
-	}
+	browser.Stdout, browser.Stderr = io.Discard, io.Discard
 	exited := make(chan error, 1)
-	go func() { exited <- cmd.Wait() }()
-	// Openers usually exit at once; one still running has handed the URL over.
+	go func() { exited <- browser.OpenURL(target) }()
 	select {
 	case err := <-exited:
 		if err != nil {
-			ui.Diagnose(ui.Warn, "cannot open a browser: %s failed; open the URL yourself", name)
+			ui.Diagnose(ui.Warn, "cannot open a browser: %v; open the URL yourself", err)
 		}
 	case <-time.After(2 * time.Second):
 	}

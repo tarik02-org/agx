@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 // Target is the agx path shims run. Package managers expose agx through a stable link, such as
@@ -109,29 +111,21 @@ func Collisions(dir, target string, names []string) []Collision {
 	entries := filepath.SplitList(os.Getenv("PATH"))
 	index := pathIndex(entries, dir)
 	self, selfErr := os.Stat(target)
-	extensions := []string{""}
-	if runtime.GOOS == "windows" {
-		extensions = strings.Split(os.Getenv("PATHEXT"), ";")
-	}
 	collisions := []Collision{}
 	for _, name := range names {
-	search:
-		for i, entry := range entries {
-			if entry == "" || i == index {
+		for i, path := range platform.PathCandidates(name) {
+			if i == index {
 				continue
 			}
-			for _, ext := range extensions {
-				path := filepath.Join(entry, name+ext)
-				info, err := os.Stat(path)
-				if err != nil || info.IsDir() || selfErr == nil && os.SameFile(self, info) {
-					continue
-				}
-				if runtime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0 {
-					continue
-				}
-				collisions = append(collisions, Collision{Name: name, Path: path, First: index < 0 || i < index})
-				break search
+			info, err := os.Stat(path)
+			if err != nil || info.IsDir() || selfErr == nil && os.SameFile(self, info) {
+				continue
 			}
+			if runtime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0 {
+				continue
+			}
+			collisions = append(collisions, Collision{Name: name, Path: path, First: index < 0 || i < index})
+			break
 		}
 	}
 	return collisions

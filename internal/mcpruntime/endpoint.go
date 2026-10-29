@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -308,25 +307,8 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if r.Header.Get("Origin") != "" {
-		u, err := url.Parse(r.Header.Get("Origin"))
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "invalid origin", http.StatusForbidden)
-			return
-		}
-	}
 	r.Body = http.MaxBytesReader(w, r.Body, 16*1024*1024)
 	if r.Method == http.MethodPost {
-		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || mediaType != "application/json" {
-			http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
-			return
-		}
-		if !strings.Contains(r.Header.Get("Accept"), "application/json") ||
-			!strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
-			http.Error(w, "Accept must contain application/json and text/event-stream", http.StatusNotAcceptable)
-			return
-		}
 		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(10 * time.Second))
 		defer func() { _ = http.NewResponseController(w).SetReadDeadline(time.Time{}) }()
 	}

@@ -23,7 +23,7 @@ buildGoModule (finalAttrs: {
     ];
   };
 
-  vendorHash = "sha256-LeILHQ9c57X8Db0D30LIWgsWnIN7Zl5s4TTTxkPpk6s=";
+  vendorHash = "sha256-gau9+C0ZGCdtYxtWjV7iAptQayw8OprlGB1DqHdAFXE=";
 
   subPackages = [ "cmd/agx" ];
 

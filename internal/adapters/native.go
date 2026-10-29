@@ -28,17 +28,8 @@ func FindExecutable(name, configured string) (string, error) {
 	if configured != "" {
 		candidates = append(candidates, configured)
 	} else {
-		extensions := []string{""}
-		if runtime.GOOS == "windows" {
-			extensions = strings.Split(os.Getenv("PATHEXT"), ";")
-		}
-		for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
-			if dir == "" {
-				continue
-			}
-			for _, ext := range extensions {
-				candidates = append(candidates, filepath.Join(dir, name+ext))
-			}
+		for _, candidate := range platform.PathCandidates(name) {
+			candidates = append(candidates, candidate)
 		}
 	}
 	script := false

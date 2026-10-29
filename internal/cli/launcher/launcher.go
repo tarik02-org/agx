@@ -14,6 +14,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/dustin/go-humanize"
 	"github.com/sahilm/fuzzy"
 
 	"github.com/tarik02-org/agx/internal/cli/ui"
@@ -363,7 +364,7 @@ func (m model) sessionsHeading(count int) string {
 }
 
 func (m model) sessionRow(e sessions.Entry, harnessWidth int, selected bool) string {
-	ago := pad(ui.Ago(e.Updated, m.now), 3)
+	ago := pad(humanize.RelTime(e.Updated, m.now, "ago", "from now"), 3)
 	room := m.width - 4 - harnessWidth - 2 - len(ago) - 2
 	dir := ""
 	if e.Directory != m.opts.Directory && m.width >= 60 {

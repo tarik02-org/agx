@@ -4,8 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"iter"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"github.com/adrg/xdg"
 )
@@ -87,5 +90,25 @@ func Canonical(path string) (string, error) {
 		}
 		suffix = append(suffix, filepath.Base(abs))
 		abs = parent
+	}
+}
+
+// PathCandidates yields PATH positions and executable candidates in search order.
+func PathCandidates(name string) iter.Seq2[int, string] {
+	return func(yield func(int, string) bool) {
+		extensions := []string{""}
+		if runtime.GOOS == "windows" {
+			extensions = strings.Split(os.Getenv("PATHEXT"), ";")
+		}
+		for i, dir := range filepath.SplitList(os.Getenv("PATH")) {
+			if dir == "" {
+				continue
+			}
+			for _, ext := range extensions {
+				if !yield(i, filepath.Join(dir, name+ext)) {
+					return
+				}
+			}
+		}
 	}
 }

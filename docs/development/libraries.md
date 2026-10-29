@@ -14,4 +14,8 @@ non-obvious choices:
 | JSON Schema | `github.com/invopop/jsonschema` | Reflects configuration types into the published schemas. |
 | Keychain | `github.com/zalando/go-keyring` | Holds only the key of the encrypted secret store (ADR 0026); needs no cgo. |
 
+Browser opening uses `github.com/pkg/browser`; relative times use `go-humanize`.
+OAuth refreshes use `golang.org/x/oauth2`, and session parsing uses a limited
+`errgroup.Group`. PATH candidates share one platform iterator.
+
 Git sources use an installed `git` executable instead of a Git library.

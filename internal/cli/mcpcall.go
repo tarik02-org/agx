@@ -19,6 +19,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/dustin/go-humanize"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
@@ -435,23 +436,6 @@ func splitTool(c *config.Config, text string) (string, string, error) {
 	return server, tool, nil
 }
 
-// wireContent is an MCP content item as the daemon relays it.
-type wireContent struct {
-	Type        string `json:"type"`
-	Text        string `json:"text"`
-	MIMEType    string `json:"mimeType"`
-	Data        []byte `json:"data"`
-	URI         string `json:"uri"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Resource    *struct {
-		URI      string  `json:"uri"`
-		MIMEType string  `json:"mimeType"`
-		Text     *string `json:"text"`
-		Blob     []byte  `json:"blob"`
-	} `json:"resource"`
-}
-
 // contentFiles writes binary content into a directory created on first use.
 type contentFiles struct {
 	dir     string
@@ -493,33 +477,27 @@ func (f *contentFiles) write(data []byte, mimeType, uri string) (string, error) 
 	return filepath.Abs(file.Name())
 }
 
-var mimeExtensions = map[string]string{
-	"image/png":        ".png",
-	"image/jpeg":       ".jpg",
-	"image/gif":        ".gif",
-	"image/webp":       ".webp",
-	"image/svg+xml":    ".svg",
-	"audio/mpeg":       ".mp3",
-	"audio/wav":        ".wav",
-	"audio/x-wav":      ".wav",
-	"audio/ogg":        ".ogg",
-	"application/pdf":  ".pdf",
-	"application/json": ".json",
-	"application/zip":  ".zip",
-	"text/plain":       ".txt",
-}
-
 func extension(mimeType, uri string) string {
 	base, _, _ := strings.Cut(strings.ToLower(mimeType), ";")
-	if ext, ok := mimeExtensions[strings.TrimSpace(base)]; ok {
-		return ext
-	}
-	if ext := path.Ext(uri); ext != "" && len(ext) <= 8 && !strings.ContainsAny(ext, "/?#\\") {
-		return ext
+	base = strings.TrimSpace(base)
+	switch base {
+	case "image/jpeg":
+		return ".jpg"
+	case "audio/mpeg":
+		return ".mp3"
+	case "audio/wav", "audio/x-wav":
+		return ".wav"
+	case "audio/ogg":
+		return ".ogg"
+	case "text/plain":
+		return ".txt"
 	}
 	if exts, err := mime.ExtensionsByType(base); err == nil && len(exts) > 0 {
 		slices.Sort(exts)
 		return exts[0]
+	}
+	if ext := path.Ext(uri); ext != "" && len(ext) <= 8 && !strings.ContainsAny(ext, "/?#\\") {
+		return ext
 	}
 	return ".bin"
 }
@@ -528,8 +506,10 @@ func extension(mimeType, uri string) string {
 // items name by path and size in place of their data.
 func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir string) error {
 	var raws []json.RawMessage
+	var result mcp.CallToolResult
 	if msg.ContentJson != "" {
-		if err := json.Unmarshal([]byte(msg.ContentJson), &raws); err != nil {
+		if err := errors.Join(json.Unmarshal([]byte(msg.ContentJson), &raws),
+			json.Unmarshal([]byte(`{"content":`+msg.ContentJson+`}`), &result)); err != nil {
 			return fmt.Errorf("unreadable content from %s.%s: %w", server, tool, err)
 		}
 	}
@@ -543,33 +523,39 @@ func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir stri
 			human.WriteString("\n")
 		}
 	}
-	for _, raw := range raws {
-		var item wireContent
+	writeBinary := func(data []byte, mimeType string, fields map[string]any) error {
+		path, err := files.write(data, mimeType, "")
+		if err != nil {
+			return err
+		}
+		delete(fields, "data")
+		fields["path"], fields["size"] = path, len(data)
+		line(out.Muted(fmt.Sprintf("[%s, %s]", mimeType, humanize.IBytes(uint64(len(data))))) + " " + out.Path(path))
+		return nil
+	}
+	for i, raw := range raws {
 		var fields map[string]any
-		if err := errors.Join(json.Unmarshal(raw, &item), json.Unmarshal(raw, &fields)); err != nil {
+		if err := json.Unmarshal(raw, &fields); err != nil {
 			return fmt.Errorf("unreadable content from %s.%s: %w", server, tool, err)
 		}
 		content = append(content, fields)
-		switch item.Type {
-		case "text":
+		switch item := result.Content[i].(type) {
+		case *mcp.TextContent:
 			var indented bytes.Buffer
 			if err := json.Indent(&indented, []byte(item.Text), "", "  "); err == nil {
 				line(indented.String())
 			} else {
 				line(item.Text)
 			}
-		case "image", "audio":
-			path, err := files.write(item.Data, item.MIMEType, "")
-			if err != nil {
+		case *mcp.ImageContent:
+			if err := writeBinary(item.Data, item.MIMEType, fields); err != nil {
 				return err
 			}
-			size := int64(len(item.Data))
-			delete(fields, "data")
-			fields["path"], fields["size"] = path, size
-			line(
-				out.Muted(fmt.Sprintf("[%s, %s]", item.MIMEType, humanize.IBytes(uint64(size)))) + " " + out.Path(path),
-			)
-		case "resource_link":
+		case *mcp.AudioContent:
+			if err := writeBinary(item.Data, item.MIMEType, fields); err != nil {
+				return err
+			}
+		case *mcp.ResourceLink:
 			text := out.Muted("[link]") + " " + item.URI
 			if item.Name != "" {
 				text += "  " + item.Name
@@ -578,13 +564,13 @@ func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir stri
 				text += ": " + item.Description
 			}
 			line(text)
-		case "resource":
+		case *mcp.EmbeddedResource:
 			r := item.Resource
 			if r == nil {
 				continue
 			}
-			if r.Text != nil {
-				line(out.Muted("[resource "+r.URI+"]") + "\n" + *r.Text)
+			if r.Blob == nil {
+				line(out.Muted("[resource "+r.URI+"]") + "\n" + r.Text)
 				continue
 			}
 			path, err := files.write(r.Blob, r.MIMEType, r.URI)
@@ -605,7 +591,7 @@ func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir stri
 				),
 			)
 		default:
-			line(out.Muted("[" + item.Type + "]"))
+			line(out.Muted(fmt.Sprintf("[%v]", fields["type"])))
 		}
 	}
 	if len(raws) == 0 && msg.StructuredContentJson != "" {
