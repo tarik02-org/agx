@@ -510,7 +510,7 @@ func definitionValue(text string) (*yaml.Node, error) {
 	return value, nil
 }
 
-// editError maps an edit error to a Connect error whose reason the UI branches on.
+// editError maps edit failures to Connect codes and configuration diagnostics.
 func editError(err error) error {
 	var connectErr *connect.Error
 	if errors.As(err, &connectErr) {
@@ -532,7 +532,7 @@ func editError(err error) error {
 		case configedit.ChooseFile:
 			return detailError(
 				connect.CodeFailedPrecondition,
-				&v1.ErrorDetail{Reason: v1.ErrorDetail_REASON_CHOOSE_FILE, Files: edited.Files},
+				&v1.ErrorDetail{Files: edited.Files},
 				err.Error(),
 			)
 		}

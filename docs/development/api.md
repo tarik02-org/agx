@@ -50,8 +50,8 @@ text. `CallTool` returns the result's content items as a JSON array, binary data
 in base64, and its structured content as JSON. An unknown server is `NotFound`,
 one outside the scope `NotFound` naming the scope; an unknown tool, or arguments
 the server rejects as invalid params, `InvalidArgument` with the closest tool
-names; a server needing a login `REASON_NEEDS_LOGIN` with the `agx secret login`
-command; and other failures of the server `REASON_MCP_FAILED`. A request without
+names; a server needing a login `Unauthenticated` with the `agx secret login`
+command; and other failures of the server `FailedPrecondition`. A request without
 a deadline gets one: 45 seconds for listing, 10 minutes for a call.
 
 The daemon keeps one client session per launch, or per CLI scope, and server

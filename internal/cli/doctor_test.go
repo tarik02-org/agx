@@ -196,7 +196,7 @@ func TestMCPCheck(t *testing.T) {
 	if got.Status != checkPass || got.Detail != "2 tools from docs" {
 		t.Errorf("ready = %+v", got)
 	}
-	needsAuth := reasonError(t, connect.CodeFailedPrecondition, v1.ErrorDetail_REASON_NEEDS_LOGIN)
+	needsAuth := connect.NewError(connect.CodeUnauthenticated, errors.New("x"))
 	got = mcpCheck("github", server, nil, needsAuth)
 	if got.Status != checkWarn || got.Hint != "run agx secret login github" || got.Detail != "needs authorization: x" {
 		t.Errorf("needs auth = %+v", got)

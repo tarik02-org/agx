@@ -51,9 +51,9 @@ func TestRemoveSkillPackage(t *testing.T) {
 		t.Fatalf("lockfile after skill add: %v\n%s", err, lock)
 	}
 
-	d := failJSON(t, 1, codeReadOnly, "skill", "remove", "kit/alpha", "--json")
-	if !strings.Contains(d.Error.Message, "agx skill remove kit") {
-		t.Fatalf("removing a package skill: %s", d.Error.Message)
+	d := failJSON(t, 1, "skill", "remove", "kit/alpha", "--json")
+	if !strings.Contains(d.Message, "agx skill remove kit") {
+		t.Fatalf("removing a package skill: %s", d.Message)
 	}
 
 	// The rule entry skill add wrote goes with the package.
@@ -85,9 +85,9 @@ func TestRemoveSkillPackage(t *testing.T) {
 	if err := os.WriteFile(path, []byte(bundle), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	d = failJSON(t, 1, codeConflict, "skill", "remove", "kit", "--json")
-	if !strings.Contains(d.Error.Message, "bundle dev") || strings.Contains(d.Error.Message, "scope") {
-		t.Fatalf("removing a package referenced by a bundle: %s", d.Error.Message)
+	d = failJSON(t, 1, "skill", "remove", "kit", "--json")
+	if !strings.Contains(d.Message, "bundle dev") || strings.Contains(d.Message, "scope") {
+		t.Fatalf("removing a package referenced by a bundle: %s", d.Message)
 	}
 	removed = editDocument{}
 	okJSON(t, &removed, "skill", "remove", "kit", "--force")

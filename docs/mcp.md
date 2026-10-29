@@ -55,7 +55,7 @@ refreshed automatically: an expired access token is renewed when the server is
 next used, and one the server rejects early, with 401, is renewed and the request
 sent again. `agx secret status` shows such a token as "renews on next use". When
 the authorization server refuses the refresh token itself, the secret reports
-`needs_login` with the server's error code until you log in again.
+an error message with the server's error code until you log in again.
 
 Until you log in, the server reports `needs-auth`, and tool calls from the
 harness fail with an error telling you to run the login.
@@ -216,8 +216,8 @@ base64 data:
 
 `call` exits 0 on success, 1 when the call fails or the tool reports an error
 (the result still prints), and 2 for malformed arguments. Errors inside the
-server have the code `mcp_failed`; a server that needs a login fails with
-`needs_login` and the `agx secret login` command to run. `--timeout` (default
+server are reported as error messages; a server that needs a login names
+the `agx secret login` command to run. `--timeout` (default
 `60s`) bounds the wait.
 
 Which servers a call reaches:
@@ -357,8 +357,7 @@ await call("tracker", "add_comment", { key: open[0].key, body: "Investigating." 
 ```
 
 Each call resolves to `{isError, content, structuredContent, text}` and throws
-an `AgxError` with one of the JSON error codes (`invalid_request`,
-`mcp_failed`, `needs_login`, …) when it fails. A server whose ID is not a
+an `AgxError` with a diagnostic message when it fails. A server whose ID is not a
 JavaScript identifier is under `servers["team/docs"]`. Generated with `--all`,
 the client reaches every configured server, also inside a launch. Regenerate it
 when servers or their tools change.

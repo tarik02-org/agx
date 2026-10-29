@@ -77,7 +77,7 @@ func localSource(arg string) (configedit.Source, error) {
 	if info, err := os.Stat(abs); err != nil {
 		return configedit.Source{}, statError("skill directory", arg, err)
 	} else if !info.IsDir() {
-		return configedit.Source{}, codedf(codeInvalidRequest, "%s is not a directory", arg)
+		return configedit.Source{}, fmt.Errorf("%s is not a directory", arg)
 	}
 	return configedit.Source{Local: abs}, nil
 }
@@ -91,7 +91,7 @@ type skillChoice struct {
 // picker on a terminal.
 func (s *session) choose(found []config.FoundSkill, choice skillChoice, where string) ([]config.FoundSkill, error) {
 	if len(found) == 0 {
-		return nil, codedf(codeNotFound, "no SKILL.md found in %s", where)
+		return nil, fmt.Errorf("no SKILL.md found in %s", where)
 	}
 	names := []string{}
 	for _, f := range found {
@@ -105,9 +105,7 @@ func (s *session) choose(found []config.FoundSkill, choice skillChoice, where st
 		for _, name := range choice.names {
 			i := slices.Index(names, name)
 			if i < 0 {
-				return nil, codedf(
-					codeNotFound,
-					"%s has no skill %s; it has %s",
+				return nil, fmt.Errorf("%s has no skill %s; it has %s",
 					where,
 					name,
 					strings.Join(names, ", "),
@@ -257,7 +255,7 @@ func (s *session) addPackageSkills(
 	}
 	c, err := s.Load()
 	if err != nil {
-		return codedf(codeConfigInvalid, "package %s: %w", id, err)
+		return fmt.Errorf("package %s: %w", id, err)
 	}
 	found := []config.FoundSkill{}
 	prefix := string(id) + "/"

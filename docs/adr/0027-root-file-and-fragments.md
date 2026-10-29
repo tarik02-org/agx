@@ -33,7 +33,7 @@ fragments existed.
   fragment is often generated or read-only, and the target rule keeps one answer.
 - **API**: `PlanChangesRequest.file` and `ApplyChangesRequest.file` name the target for the
   whole request, replacing `DefineChange.file`. Without one and with several candidates the
-  plan fails with `FAILED_PRECONDITION`, reason `REASON_CHOOSE_FILE`, and the candidates in
+  plan fails with `FAILED_PRECONDITION` and the candidates in
   `ErrorDetail.files`.
 - **Home Manager** writes `programs.agx.settings` to its drop-in, and `settings.daemon` to a
   root file holding `fragments: [agx.d/*.yaml]` and those settings.

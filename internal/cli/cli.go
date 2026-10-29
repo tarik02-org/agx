@@ -112,7 +112,7 @@ func run(osArgs []string, stdout io.Writer) int {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
 			if err != nil {
-				return coded(codeConfigInvalid, err)
+				return err
 			}
 			for _, warning := range c.MissingWarnings(c.AllMissing()) {
 				ui.Diagnose(ui.Warn, "%s", warning)
@@ -165,15 +165,15 @@ func run(osArgs []string, stdout io.Writer) int {
 			}
 			c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
 			if err != nil {
-				return coded(codeConfigInvalid, err)
+				return err
 			}
 			if harness != "" && !slices.Contains(c.HarnessNames(), harness) {
-				return codedf(codeNotFound, "unknown harness %s", harness)
+				return fmt.Errorf("unknown harness %s", harness)
 			}
 			if info, err := os.Stat(directory); err != nil {
 				return statError("directory", directory, err)
 			} else if !info.IsDir() {
-				return codedf(codeInvalidRequest, "not a directory: %s", directory)
+				return fmt.Errorf("not a directory: %s", directory)
 			}
 			snapshot, err := c.Resolve(directory, harness)
 			if err != nil {
@@ -397,7 +397,7 @@ func exitCode(err error) int {
 	if errors.As(err, &exit) {
 		// Status 1 follows output that already reported the failure; higher ones are signals.
 		if scripting.enabled && exit.Code > 1 {
-			printError(codeInterrupted, fmt.Errorf("interrupted"))
+			printError(fmt.Errorf("interrupted"))
 		}
 		return exit.Code
 	}
@@ -407,7 +407,7 @@ func exitCode(err error) int {
 		status = 2
 	}
 	if scripting.enabled {
-		printError(errorCode(err), err)
+		printError(err)
 		return status
 	}
 	ui.Diagnose(ui.Error, "%s", errorMessage(err))
@@ -437,13 +437,12 @@ func checkExplicitConfig(root, cmd *cobra.Command, path string) error {
 	_, err := os.Stat(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return codedf(
-			codeConfigInvalid,
+		return fmt.Errorf(
 			"configuration file %s does not exist; create it, or omit --config to use the default location",
 			path,
 		)
 	case err != nil:
-		return codedf(codeConfigInvalid, "cannot read configuration file %s: %v", path, err)
+		return fmt.Errorf("cannot read configuration file %s: %w", path, err)
 	}
 	return nil
 }
@@ -455,7 +454,7 @@ func statError(what, path string, err error) error {
 		err = pathErr.Err
 	}
 	if errors.Is(err, fs.ErrNotExist) {
-		return codedf(codeNotFound, "%s %s does not exist", what, path)
+		return fmt.Errorf("%s %s does not exist", what, path)
 	}
 	return fmt.Errorf("cannot read %s %s: %w", what, path, err)
 }
@@ -483,15 +482,11 @@ func installPackages(
 		packages.Options{Frozen: frozen, Updates: ids, UpdateAll: all},
 	)
 	if err != nil {
-		// What the installer does not mark is the configuration's fault: cycles, invalid fragments.
-		if errorCode(err) == codeInternal {
-			err = coded(codeConfigInvalid, err)
-		}
 		return err
 	}
 	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
 	if err != nil {
-		return coded(codeConfigInvalid, err)
+		return err
 	}
 	if !frozen {
 		progress("Installing native harness plugins")
@@ -523,8 +518,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 				return state.discovery
 			case useDaemon:
 				if !state.sameConfig {
-					return codedf(
-						codeConflict,
+					return fmt.Errorf(
 						"daemon is already running with configuration %s, not %s, and has active launches; "+
 							"run agx daemon stop first, which ends their MCP access",
 						c.discovery.Config,
@@ -690,7 +684,7 @@ func launchCommand(paths *platform.Paths, builtins *config.Builtins, fragments *
 							return emit(l, func() error { return printLaunch(l, view.McpServers) })
 						}
 					}
-					return codedf(codeNotFound, "unknown launch %s", args[0])
+					return fmt.Errorf("unknown launch %s", args[0])
 				}
 				return emit(view, func() error { return printLaunches(view.Launches) })
 			},
@@ -726,7 +720,7 @@ func launchCommand(paths *platform.Paths, builtins *config.Builtins, fragments *
 // explainSecretTimeout names the likely cause of a secret call that times out: the daemon blocks
 // on the OS keychain while it is locked or shows an access prompt.
 func explainSecretTimeout(err error) error {
-	if err == nil || errorCode(err) != codeTimeout {
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) && connect.CodeOf(err) != connect.CodeDeadlineExceeded {
 		return err
 	}
 	return fmt.Errorf(
@@ -747,7 +741,7 @@ func readSecret(id string) ([]byte, error) {
 			return nil, err
 		}
 		if len(data) == 0 {
-			return nil, codedf(codeInvalidRequest, "no value entered")
+			return nil, fmt.Errorf("no value entered")
 		}
 		return data, nil
 	}
@@ -756,7 +750,7 @@ func readSecret(id string) ([]byte, error) {
 		return nil, err
 	}
 	if len(data) > 1024*1024 {
-		return nil, codedf(codeInvalidRequest, "secret too large")
+		return nil, fmt.Errorf("secret too large")
 	}
 	return data, nil
 }

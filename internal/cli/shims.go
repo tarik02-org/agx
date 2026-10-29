@@ -27,7 +27,7 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 	definitions := func() ([]string, error) {
 		c, err := config.Load(paths.Config, config.Options{Builtins: *builtins})
 		if err != nil {
-			return nil, coded(codeConfigInvalid, err)
+			return nil, err
 		}
 		names := []string{}
 		for _, name := range c.HarnessNames() {

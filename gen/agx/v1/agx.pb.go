@@ -72,101 +72,6 @@ func (Diagnostic_Severity) EnumDescriptor() ([]byte, []int) {
 	return file_agx_v1_agx_proto_rawDescGZIP(), []int{2, 0}
 }
 
-type ErrorDetail_Reason int32
-
-const (
-	ErrorDetail_REASON_UNSPECIFIED ErrorDetail_Reason = 0
-	// The request is malformed or names something it may not.
-	ErrorDetail_REASON_INVALID_REQUEST ErrorDetail_Reason = 1
-	ErrorDetail_REASON_NOT_FOUND       ErrorDetail_Reason = 2
-	// The target exists, changed, or is busy; retrying later or resolving again may succeed.
-	ErrorDetail_REASON_CONFLICT ErrorDetail_Reason = 3
-	// The target does not support the operation in its current state.
-	ErrorDetail_REASON_FAILED_PRECONDITION ErrorDetail_Reason = 4
-	// The operation needs an OAuth login first.
-	ErrorDetail_REASON_NEEDS_LOGIN ErrorDetail_Reason = 5
-	// The daemon's configuration does not load.
-	ErrorDetail_REASON_CONFIG_INVALID ErrorDetail_Reason = 6
-	// The daemon is stopping or cannot serve the request yet.
-	ErrorDetail_REASON_UNAVAILABLE ErrorDetail_Reason = 7
-	// The caller lacks this daemon's credential, as when another daemon replaced the one it knew.
-	ErrorDetail_REASON_UNAUTHENTICATED ErrorDetail_Reason = 8
-	// The daemon or an upstream did not answer in time.
-	ErrorDetail_REASON_TIMEOUT ErrorDetail_Reason = 9
-	// A defect.
-	ErrorDetail_REASON_INTERNAL ErrorDetail_Reason = 10
-	// An MCP server failed the request, or could not be reached or started.
-	ErrorDetail_REASON_MCP_FAILED ErrorDetail_Reason = 11
-	// A service the daemon depends on, such as an OAuth authorization server, could not be
-	// reached or failed; retrying later may succeed.
-	ErrorDetail_REASON_NETWORK ErrorDetail_Reason = 12
-	// Configuration changes could go to several fragments; the request must name one.
-	ErrorDetail_REASON_CHOOSE_FILE ErrorDetail_Reason = 13
-)
-
-// Enum value maps for ErrorDetail_Reason.
-var (
-	ErrorDetail_Reason_name = map[int32]string{
-		0:  "REASON_UNSPECIFIED",
-		1:  "REASON_INVALID_REQUEST",
-		2:  "REASON_NOT_FOUND",
-		3:  "REASON_CONFLICT",
-		4:  "REASON_FAILED_PRECONDITION",
-		5:  "REASON_NEEDS_LOGIN",
-		6:  "REASON_CONFIG_INVALID",
-		7:  "REASON_UNAVAILABLE",
-		8:  "REASON_UNAUTHENTICATED",
-		9:  "REASON_TIMEOUT",
-		10: "REASON_INTERNAL",
-		11: "REASON_MCP_FAILED",
-		12: "REASON_NETWORK",
-		13: "REASON_CHOOSE_FILE",
-	}
-	ErrorDetail_Reason_value = map[string]int32{
-		"REASON_UNSPECIFIED":         0,
-		"REASON_INVALID_REQUEST":     1,
-		"REASON_NOT_FOUND":           2,
-		"REASON_CONFLICT":            3,
-		"REASON_FAILED_PRECONDITION": 4,
-		"REASON_NEEDS_LOGIN":         5,
-		"REASON_CONFIG_INVALID":      6,
-		"REASON_UNAVAILABLE":         7,
-		"REASON_UNAUTHENTICATED":     8,
-		"REASON_TIMEOUT":             9,
-		"REASON_INTERNAL":            10,
-		"REASON_MCP_FAILED":          11,
-		"REASON_NETWORK":             12,
-		"REASON_CHOOSE_FILE":         13,
-	}
-)
-
-func (x ErrorDetail_Reason) Enum() *ErrorDetail_Reason {
-	p := new(ErrorDetail_Reason)
-	*p = x
-	return p
-}
-
-func (x ErrorDetail_Reason) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (ErrorDetail_Reason) Descriptor() protoreflect.EnumDescriptor {
-	return file_agx_v1_agx_proto_enumTypes[1].Descriptor()
-}
-
-func (ErrorDetail_Reason) Type() protoreflect.EnumType {
-	return &file_agx_v1_agx_proto_enumTypes[1]
-}
-
-func (x ErrorDetail_Reason) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use ErrorDetail_Reason.Descriptor instead.
-func (ErrorDetail_Reason) EnumDescriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{3, 0}
-}
-
 type ResolutionStep_Change int32
 
 const (
@@ -200,11 +105,11 @@ func (x ResolutionStep_Change) String() string {
 }
 
 func (ResolutionStep_Change) Descriptor() protoreflect.EnumDescriptor {
-	return file_agx_v1_agx_proto_enumTypes[2].Descriptor()
+	return file_agx_v1_agx_proto_enumTypes[1].Descriptor()
 }
 
 func (ResolutionStep_Change) Type() protoreflect.EnumType {
-	return &file_agx_v1_agx_proto_enumTypes[2]
+	return &file_agx_v1_agx_proto_enumTypes[1]
 }
 
 func (x ResolutionStep_Change) Number() protoreflect.EnumNumber {
@@ -258,11 +163,11 @@ func (x Launch_State) String() string {
 }
 
 func (Launch_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_agx_v1_agx_proto_enumTypes[3].Descriptor()
+	return file_agx_v1_agx_proto_enumTypes[2].Descriptor()
 }
 
 func (Launch_State) Type() protoreflect.EnumType {
-	return &file_agx_v1_agx_proto_enumTypes[3]
+	return &file_agx_v1_agx_proto_enumTypes[2]
 }
 
 func (x Launch_State) Number() protoreflect.EnumNumber {
@@ -313,11 +218,11 @@ func (x McpRuntime_State) String() string {
 }
 
 func (McpRuntime_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_agx_v1_agx_proto_enumTypes[4].Descriptor()
+	return file_agx_v1_agx_proto_enumTypes[3].Descriptor()
 }
 
 func (McpRuntime_State) Type() protoreflect.EnumType {
-	return &file_agx_v1_agx_proto_enumTypes[4]
+	return &file_agx_v1_agx_proto_enumTypes[3]
 }
 
 func (x McpRuntime_State) Number() protoreflect.EnumNumber {
@@ -362,11 +267,11 @@ func (x McpTools_Load) String() string {
 }
 
 func (McpTools_Load) Descriptor() protoreflect.EnumDescriptor {
-	return file_agx_v1_agx_proto_enumTypes[5].Descriptor()
+	return file_agx_v1_agx_proto_enumTypes[4].Descriptor()
 }
 
 func (McpTools_Load) Type() protoreflect.EnumType {
-	return &file_agx_v1_agx_proto_enumTypes[5]
+	return &file_agx_v1_agx_proto_enumTypes[4]
 }
 
 func (x McpTools_Load) Number() protoreflect.EnumNumber {
@@ -414,11 +319,11 @@ func (x LoginFinished_Outcome) String() string {
 }
 
 func (LoginFinished_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_agx_v1_agx_proto_enumTypes[6].Descriptor()
+	return file_agx_v1_agx_proto_enumTypes[5].Descriptor()
 }
 
 func (LoginFinished_Outcome) Type() protoreflect.EnumType {
-	return &file_agx_v1_agx_proto_enumTypes[6]
+	return &file_agx_v1_agx_proto_enumTypes[5]
 }
 
 func (x LoginFinished_Outcome) Number() protoreflect.EnumNumber {
@@ -472,11 +377,11 @@ func (x SecretStatus_State) String() string {
 }
 
 func (SecretStatus_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_agx_v1_agx_proto_enumTypes[7].Descriptor()
+	return file_agx_v1_agx_proto_enumTypes[6].Descriptor()
 }
 
 func (SecretStatus_State) Type() protoreflect.EnumType {
-	return &file_agx_v1_agx_proto_enumTypes[7]
+	return &file_agx_v1_agx_proto_enumTypes[6]
 }
 
 func (x SecretStatus_State) Number() protoreflect.EnumNumber {
@@ -714,14 +619,12 @@ func (x *Diagnostic) GetSource() *SourceLocation {
 	return nil
 }
 
-// Detail every daemon error carries, so clients branch on a closed set of reasons instead of the
-// Connect code or the message. A client treats a reason it does not know as unclassified.
+// Configuration diagnostics for clients that offer editing.
 type ErrorDetail struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	Reason ErrorDetail_Reason     `protobuf:"varint,1,opt,name=reason,proto3,enum=agx.v1.ErrorDetail_Reason" json:"reason,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
 	// Where a configuration that does not load has the problem, when known.
 	Source *SourceLocation `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
-	// With REASON_CHOOSE_FILE, the writable fragments to choose from.
+	// Writable fragments to choose from when a change needs a target.
 	Files         []string `protobuf:"bytes,3,rep,name=files,proto3" json:"files,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -755,13 +658,6 @@ func (x *ErrorDetail) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ErrorDetail.ProtoReflect.Descriptor instead.
 func (*ErrorDetail) Descriptor() ([]byte, []int) {
 	return file_agx_v1_agx_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *ErrorDetail) GetReason() ErrorDetail_Reason {
-	if x != nil {
-		return x.Reason
-	}
-	return ErrorDetail_REASON_UNSPECIFIED
 }
 
 func (x *ErrorDetail) GetSource() *SourceLocation {
@@ -5866,7 +5762,7 @@ type PlanChangesRequest struct {
 	// The fragment new definitions, rules, and packages go to: a writable fragment the root
 	// lists, or a new file its globs match. Empty chooses the only writable fragment, or
 	// agx.d/main.yaml when there is none; with several, the plan fails with
-	// REASON_CHOOSE_FILE listing them in ErrorDetail.files.
+	// FailedPrecondition listing them in ErrorDetail.files.
 	File          string `protobuf:"bytes,2,opt,name=file,proto3" json:"file,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -6728,27 +6624,10 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\bSeverity\x12\x18\n" +
 	"\x14SEVERITY_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10SEVERITY_WARNING\x10\x01\x12\x12\n" +
-	"\x0eSEVERITY_ERROR\x10\x02\"\xe4\x03\n" +
-	"\vErrorDetail\x122\n" +
-	"\x06reason\x18\x01 \x01(\x0e2\x1a.agx.v1.ErrorDetail.ReasonR\x06reason\x12.\n" +
+	"\x0eSEVERITY_ERROR\x10\x02\"S\n" +
+	"\vErrorDetail\x12.\n" +
 	"\x06source\x18\x02 \x01(\v2\x16.agx.v1.SourceLocationR\x06source\x12\x14\n" +
-	"\x05files\x18\x03 \x03(\tR\x05files\"\xda\x02\n" +
-	"\x06Reason\x12\x16\n" +
-	"\x12REASON_UNSPECIFIED\x10\x00\x12\x1a\n" +
-	"\x16REASON_INVALID_REQUEST\x10\x01\x12\x14\n" +
-	"\x10REASON_NOT_FOUND\x10\x02\x12\x13\n" +
-	"\x0fREASON_CONFLICT\x10\x03\x12\x1e\n" +
-	"\x1aREASON_FAILED_PRECONDITION\x10\x04\x12\x16\n" +
-	"\x12REASON_NEEDS_LOGIN\x10\x05\x12\x19\n" +
-	"\x15REASON_CONFIG_INVALID\x10\x06\x12\x16\n" +
-	"\x12REASON_UNAVAILABLE\x10\a\x12\x1a\n" +
-	"\x16REASON_UNAUTHENTICATED\x10\b\x12\x12\n" +
-	"\x0eREASON_TIMEOUT\x10\t\x12\x13\n" +
-	"\x0fREASON_INTERNAL\x10\n" +
-	"\x12\x15\n" +
-	"\x11REASON_MCP_FAILED\x10\v\x12\x12\n" +
-	"\x0eREASON_NETWORK\x10\f\x12\x16\n" +
-	"\x12REASON_CHOOSE_FILE\x10\r\"\xb8\x01\n" +
+	"\x05files\x18\x03 \x03(\tR\x05files\"\xb8\x01\n" +
 	"\bSnapshot\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1c\n" +
 	"\tdirectory\x18\x02 \x01(\tR\tdirectory\x121\n" +
@@ -7256,279 +7135,277 @@ func file_agx_v1_agx_proto_rawDescGZIP() []byte {
 	return file_agx_v1_agx_proto_rawDescData
 }
 
-var file_agx_v1_agx_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
+var file_agx_v1_agx_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
 var file_agx_v1_agx_proto_msgTypes = make([]protoimpl.MessageInfo, 107)
 var file_agx_v1_agx_proto_goTypes = []any{
 	(Diagnostic_Severity)(0),            // 0: agx.v1.Diagnostic.Severity
-	(ErrorDetail_Reason)(0),             // 1: agx.v1.ErrorDetail.Reason
-	(ResolutionStep_Change)(0),          // 2: agx.v1.ResolutionStep.Change
-	(Launch_State)(0),                   // 3: agx.v1.Launch.State
-	(McpRuntime_State)(0),               // 4: agx.v1.McpRuntime.State
-	(McpTools_Load)(0),                  // 5: agx.v1.McpTools.Load
-	(LoginFinished_Outcome)(0),          // 6: agx.v1.LoginFinished.Outcome
-	(SecretStatus_State)(0),             // 7: agx.v1.SecretStatus.State
-	(*ResourceRef)(nil),                 // 8: agx.v1.ResourceRef
-	(*SourceLocation)(nil),              // 9: agx.v1.SourceLocation
-	(*Diagnostic)(nil),                  // 10: agx.v1.Diagnostic
-	(*ErrorDetail)(nil),                 // 11: agx.v1.ErrorDetail
-	(*Snapshot)(nil),                    // 12: agx.v1.Snapshot
-	(*ResolutionStep)(nil),              // 13: agx.v1.ResolutionStep
-	(*ResourceTrace)(nil),               // 14: agx.v1.ResourceTrace
-	(*ValidateRequest)(nil),             // 15: agx.v1.ValidateRequest
-	(*ValidateResponse)(nil),            // 16: agx.v1.ValidateResponse
-	(*ResolveRequest)(nil),              // 17: agx.v1.ResolveRequest
-	(*ResolveResponse)(nil),             // 18: agx.v1.ResolveResponse
-	(*HarnessSetting)(nil),              // 19: agx.v1.HarnessSetting
-	(*GetConfigurationRequest)(nil),     // 20: agx.v1.GetConfigurationRequest
-	(*GetConfigurationResponse)(nil),    // 21: agx.v1.GetConfigurationResponse
-	(*ConfiguredHarness)(nil),           // 22: agx.v1.ConfiguredHarness
-	(*ConfigurationFile)(nil),           // 23: agx.v1.ConfigurationFile
-	(*CompleteDirectoryRequest)(nil),    // 24: agx.v1.CompleteDirectoryRequest
-	(*CompleteDirectoryResponse)(nil),   // 25: agx.v1.CompleteDirectoryResponse
-	(*InstallRequest)(nil),              // 26: agx.v1.InstallRequest
-	(*InstallResponse)(nil),             // 27: agx.v1.InstallResponse
-	(*PackageProgress)(nil),             // 28: agx.v1.PackageProgress
-	(*PackageResult)(nil),               // 29: agx.v1.PackageResult
-	(*PrepareLaunchRequest)(nil),        // 30: agx.v1.PrepareLaunchRequest
-	(*PrepareLaunchResponse)(nil),       // 31: agx.v1.PrepareLaunchResponse
-	(*SpawnPlan)(nil),                   // 32: agx.v1.SpawnPlan
-	(*Launch)(nil),                      // 33: agx.v1.Launch
-	(*ResolveThreadRequest)(nil),        // 34: agx.v1.ResolveThreadRequest
-	(*ResolveThreadResponse)(nil),       // 35: agx.v1.ResolveThreadResponse
-	(*PrepareThreadLaunchRequest)(nil),  // 36: agx.v1.PrepareThreadLaunchRequest
-	(*PrepareThreadLaunchResponse)(nil), // 37: agx.v1.PrepareThreadLaunchResponse
-	(*ThreadPlan)(nil),                  // 38: agx.v1.ThreadPlan
-	(*RenewLaunchRequest)(nil),          // 39: agx.v1.RenewLaunchRequest
-	(*RenewLaunchResponse)(nil),         // 40: agx.v1.RenewLaunchResponse
-	(*AttachLaunchRequest)(nil),         // 41: agx.v1.AttachLaunchRequest
-	(*AttachedThread)(nil),              // 42: agx.v1.AttachedThread
-	(*AttachLaunchResponse)(nil),        // 43: agx.v1.AttachLaunchResponse
-	(*FinishLaunchRequest)(nil),         // 44: agx.v1.FinishLaunchRequest
-	(*FinishLaunchResponse)(nil),        // 45: agx.v1.FinishLaunchResponse
-	(*RevokeLaunchRequest)(nil),         // 46: agx.v1.RevokeLaunchRequest
-	(*RevokeLaunchResponse)(nil),        // 47: agx.v1.RevokeLaunchResponse
-	(*McpRuntime)(nil),                  // 48: agx.v1.McpRuntime
-	(*RuntimeView)(nil),                 // 49: agx.v1.RuntimeView
-	(*GetRuntimeRequest)(nil),           // 50: agx.v1.GetRuntimeRequest
-	(*GetRuntimeResponse)(nil),          // 51: agx.v1.GetRuntimeResponse
-	(*WatchRuntimeRequest)(nil),         // 52: agx.v1.WatchRuntimeRequest
-	(*WatchRuntimeResponse)(nil),        // 53: agx.v1.WatchRuntimeResponse
-	(*McpCallScope)(nil),                // 54: agx.v1.McpCallScope
-	(*ListMcpProcessesRequest)(nil),     // 55: agx.v1.ListMcpProcessesRequest
-	(*ListMcpProcessesResponse)(nil),    // 56: agx.v1.ListMcpProcessesResponse
-	(*McpProcess)(nil),                  // 57: agx.v1.McpProcess
-	(*StopMcpProcessRequest)(nil),       // 58: agx.v1.StopMcpProcessRequest
-	(*StopMcpProcessResponse)(nil),      // 59: agx.v1.StopMcpProcessResponse
-	(*StopRequest)(nil),                 // 60: agx.v1.StopRequest
-	(*StopResponse)(nil),                // 61: agx.v1.StopResponse
-	(*ListToolsRequest)(nil),            // 62: agx.v1.ListToolsRequest
-	(*ListToolsResponse)(nil),           // 63: agx.v1.ListToolsResponse
-	(*McpTools)(nil),                    // 64: agx.v1.McpTools
-	(*McpTool)(nil),                     // 65: agx.v1.McpTool
-	(*CallToolRequest)(nil),             // 66: agx.v1.CallToolRequest
-	(*CallToolResponse)(nil),            // 67: agx.v1.CallToolResponse
-	(*LoginRequest)(nil),                // 68: agx.v1.LoginRequest
-	(*LoginResponse)(nil),               // 69: agx.v1.LoginResponse
-	(*LoginStarted)(nil),                // 70: agx.v1.LoginStarted
-	(*LoginFinished)(nil),               // 71: agx.v1.LoginFinished
-	(*SetSecretRequest)(nil),            // 72: agx.v1.SetSecretRequest
-	(*SetSecretResponse)(nil),           // 73: agx.v1.SetSecretResponse
-	(*GetSecretStatusRequest)(nil),      // 74: agx.v1.GetSecretStatusRequest
-	(*GetSecretStatusResponse)(nil),     // 75: agx.v1.GetSecretStatusResponse
-	(*SecretStatus)(nil),                // 76: agx.v1.SecretStatus
-	(*LogoutRequest)(nil),               // 77: agx.v1.LogoutRequest
-	(*LogoutResponse)(nil),              // 78: agx.v1.LogoutResponse
-	(*RotateSecretRequest)(nil),         // 79: agx.v1.RotateSecretRequest
-	(*RotateSecretResponse)(nil),        // 80: agx.v1.RotateSecretResponse
-	(*Definition)(nil),                  // 81: agx.v1.Definition
-	(*ListDefinitionsRequest)(nil),      // 82: agx.v1.ListDefinitionsRequest
-	(*ListDefinitionsResponse)(nil),     // 83: agx.v1.ListDefinitionsResponse
-	(*GetSkillRequest)(nil),             // 84: agx.v1.GetSkillRequest
-	(*GetSkillResponse)(nil),            // 85: agx.v1.GetSkillResponse
-	(*ReadFileRequest)(nil),             // 86: agx.v1.ReadFileRequest
-	(*ReadFileResponse)(nil),            // 87: agx.v1.ReadFileResponse
-	(*ConfigChange)(nil),                // 88: agx.v1.ConfigChange
-	(*DefineChange)(nil),                // 89: agx.v1.DefineChange
-	(*UndefineChange)(nil),              // 90: agx.v1.UndefineChange
-	(*SelectionChange)(nil),             // 91: agx.v1.SelectionChange
-	(*FileWrite)(nil),                   // 92: agx.v1.FileWrite
-	(*PackageSource)(nil),               // 93: agx.v1.PackageSource
-	(*PlanChangesRequest)(nil),          // 94: agx.v1.PlanChangesRequest
-	(*PlannedFile)(nil),                 // 95: agx.v1.PlannedFile
-	(*PlanChangesResponse)(nil),         // 96: agx.v1.PlanChangesResponse
-	(*ApplyChangesRequest)(nil),         // 97: agx.v1.ApplyChangesRequest
-	(*ApplyChangesResponse)(nil),        // 98: agx.v1.ApplyChangesResponse
-	(*ListSourceRefsRequest)(nil),       // 99: agx.v1.ListSourceRefsRequest
-	(*ListSourceRefsResponse)(nil),      // 100: agx.v1.ListSourceRefsResponse
-	(*SourceRef)(nil),                   // 101: agx.v1.SourceRef
-	(*InspectSourceRequest)(nil),        // 102: agx.v1.InspectSourceRequest
-	(*InspectSourceResponse)(nil),       // 103: agx.v1.InspectSourceResponse
-	(*PreviewSourceRequest)(nil),        // 104: agx.v1.PreviewSourceRequest
-	(*PreviewSourceResponse)(nil),       // 105: agx.v1.PreviewSourceResponse
-	(*PreviewSkill)(nil),                // 106: agx.v1.PreviewSkill
-	(*ReadPreviewFileRequest)(nil),      // 107: agx.v1.ReadPreviewFileRequest
-	(*ReadPreviewFileResponse)(nil),     // 108: agx.v1.ReadPreviewFileResponse
-	nil,                                 // 109: agx.v1.PrepareLaunchRequest.EnvironmentInputsEntry
-	nil,                                 // 110: agx.v1.SpawnPlan.EnvironmentOverridesEntry
-	nil,                                 // 111: agx.v1.PrepareThreadLaunchRequest.EnvironmentInputsEntry
-	nil,                                 // 112: agx.v1.AttachLaunchRequest.EnvironmentInputsEntry
-	nil,                                 // 113: agx.v1.AttachedThread.EnvironmentInputsEntry
-	nil,                                 // 114: agx.v1.McpCallScope.EnvironmentInputsEntry
-	(*timestamppb.Timestamp)(nil),       // 115: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),         // 116: google.protobuf.Duration
+	(ResolutionStep_Change)(0),          // 1: agx.v1.ResolutionStep.Change
+	(Launch_State)(0),                   // 2: agx.v1.Launch.State
+	(McpRuntime_State)(0),               // 3: agx.v1.McpRuntime.State
+	(McpTools_Load)(0),                  // 4: agx.v1.McpTools.Load
+	(LoginFinished_Outcome)(0),          // 5: agx.v1.LoginFinished.Outcome
+	(SecretStatus_State)(0),             // 6: agx.v1.SecretStatus.State
+	(*ResourceRef)(nil),                 // 7: agx.v1.ResourceRef
+	(*SourceLocation)(nil),              // 8: agx.v1.SourceLocation
+	(*Diagnostic)(nil),                  // 9: agx.v1.Diagnostic
+	(*ErrorDetail)(nil),                 // 10: agx.v1.ErrorDetail
+	(*Snapshot)(nil),                    // 11: agx.v1.Snapshot
+	(*ResolutionStep)(nil),              // 12: agx.v1.ResolutionStep
+	(*ResourceTrace)(nil),               // 13: agx.v1.ResourceTrace
+	(*ValidateRequest)(nil),             // 14: agx.v1.ValidateRequest
+	(*ValidateResponse)(nil),            // 15: agx.v1.ValidateResponse
+	(*ResolveRequest)(nil),              // 16: agx.v1.ResolveRequest
+	(*ResolveResponse)(nil),             // 17: agx.v1.ResolveResponse
+	(*HarnessSetting)(nil),              // 18: agx.v1.HarnessSetting
+	(*GetConfigurationRequest)(nil),     // 19: agx.v1.GetConfigurationRequest
+	(*GetConfigurationResponse)(nil),    // 20: agx.v1.GetConfigurationResponse
+	(*ConfiguredHarness)(nil),           // 21: agx.v1.ConfiguredHarness
+	(*ConfigurationFile)(nil),           // 22: agx.v1.ConfigurationFile
+	(*CompleteDirectoryRequest)(nil),    // 23: agx.v1.CompleteDirectoryRequest
+	(*CompleteDirectoryResponse)(nil),   // 24: agx.v1.CompleteDirectoryResponse
+	(*InstallRequest)(nil),              // 25: agx.v1.InstallRequest
+	(*InstallResponse)(nil),             // 26: agx.v1.InstallResponse
+	(*PackageProgress)(nil),             // 27: agx.v1.PackageProgress
+	(*PackageResult)(nil),               // 28: agx.v1.PackageResult
+	(*PrepareLaunchRequest)(nil),        // 29: agx.v1.PrepareLaunchRequest
+	(*PrepareLaunchResponse)(nil),       // 30: agx.v1.PrepareLaunchResponse
+	(*SpawnPlan)(nil),                   // 31: agx.v1.SpawnPlan
+	(*Launch)(nil),                      // 32: agx.v1.Launch
+	(*ResolveThreadRequest)(nil),        // 33: agx.v1.ResolveThreadRequest
+	(*ResolveThreadResponse)(nil),       // 34: agx.v1.ResolveThreadResponse
+	(*PrepareThreadLaunchRequest)(nil),  // 35: agx.v1.PrepareThreadLaunchRequest
+	(*PrepareThreadLaunchResponse)(nil), // 36: agx.v1.PrepareThreadLaunchResponse
+	(*ThreadPlan)(nil),                  // 37: agx.v1.ThreadPlan
+	(*RenewLaunchRequest)(nil),          // 38: agx.v1.RenewLaunchRequest
+	(*RenewLaunchResponse)(nil),         // 39: agx.v1.RenewLaunchResponse
+	(*AttachLaunchRequest)(nil),         // 40: agx.v1.AttachLaunchRequest
+	(*AttachedThread)(nil),              // 41: agx.v1.AttachedThread
+	(*AttachLaunchResponse)(nil),        // 42: agx.v1.AttachLaunchResponse
+	(*FinishLaunchRequest)(nil),         // 43: agx.v1.FinishLaunchRequest
+	(*FinishLaunchResponse)(nil),        // 44: agx.v1.FinishLaunchResponse
+	(*RevokeLaunchRequest)(nil),         // 45: agx.v1.RevokeLaunchRequest
+	(*RevokeLaunchResponse)(nil),        // 46: agx.v1.RevokeLaunchResponse
+	(*McpRuntime)(nil),                  // 47: agx.v1.McpRuntime
+	(*RuntimeView)(nil),                 // 48: agx.v1.RuntimeView
+	(*GetRuntimeRequest)(nil),           // 49: agx.v1.GetRuntimeRequest
+	(*GetRuntimeResponse)(nil),          // 50: agx.v1.GetRuntimeResponse
+	(*WatchRuntimeRequest)(nil),         // 51: agx.v1.WatchRuntimeRequest
+	(*WatchRuntimeResponse)(nil),        // 52: agx.v1.WatchRuntimeResponse
+	(*McpCallScope)(nil),                // 53: agx.v1.McpCallScope
+	(*ListMcpProcessesRequest)(nil),     // 54: agx.v1.ListMcpProcessesRequest
+	(*ListMcpProcessesResponse)(nil),    // 55: agx.v1.ListMcpProcessesResponse
+	(*McpProcess)(nil),                  // 56: agx.v1.McpProcess
+	(*StopMcpProcessRequest)(nil),       // 57: agx.v1.StopMcpProcessRequest
+	(*StopMcpProcessResponse)(nil),      // 58: agx.v1.StopMcpProcessResponse
+	(*StopRequest)(nil),                 // 59: agx.v1.StopRequest
+	(*StopResponse)(nil),                // 60: agx.v1.StopResponse
+	(*ListToolsRequest)(nil),            // 61: agx.v1.ListToolsRequest
+	(*ListToolsResponse)(nil),           // 62: agx.v1.ListToolsResponse
+	(*McpTools)(nil),                    // 63: agx.v1.McpTools
+	(*McpTool)(nil),                     // 64: agx.v1.McpTool
+	(*CallToolRequest)(nil),             // 65: agx.v1.CallToolRequest
+	(*CallToolResponse)(nil),            // 66: agx.v1.CallToolResponse
+	(*LoginRequest)(nil),                // 67: agx.v1.LoginRequest
+	(*LoginResponse)(nil),               // 68: agx.v1.LoginResponse
+	(*LoginStarted)(nil),                // 69: agx.v1.LoginStarted
+	(*LoginFinished)(nil),               // 70: agx.v1.LoginFinished
+	(*SetSecretRequest)(nil),            // 71: agx.v1.SetSecretRequest
+	(*SetSecretResponse)(nil),           // 72: agx.v1.SetSecretResponse
+	(*GetSecretStatusRequest)(nil),      // 73: agx.v1.GetSecretStatusRequest
+	(*GetSecretStatusResponse)(nil),     // 74: agx.v1.GetSecretStatusResponse
+	(*SecretStatus)(nil),                // 75: agx.v1.SecretStatus
+	(*LogoutRequest)(nil),               // 76: agx.v1.LogoutRequest
+	(*LogoutResponse)(nil),              // 77: agx.v1.LogoutResponse
+	(*RotateSecretRequest)(nil),         // 78: agx.v1.RotateSecretRequest
+	(*RotateSecretResponse)(nil),        // 79: agx.v1.RotateSecretResponse
+	(*Definition)(nil),                  // 80: agx.v1.Definition
+	(*ListDefinitionsRequest)(nil),      // 81: agx.v1.ListDefinitionsRequest
+	(*ListDefinitionsResponse)(nil),     // 82: agx.v1.ListDefinitionsResponse
+	(*GetSkillRequest)(nil),             // 83: agx.v1.GetSkillRequest
+	(*GetSkillResponse)(nil),            // 84: agx.v1.GetSkillResponse
+	(*ReadFileRequest)(nil),             // 85: agx.v1.ReadFileRequest
+	(*ReadFileResponse)(nil),            // 86: agx.v1.ReadFileResponse
+	(*ConfigChange)(nil),                // 87: agx.v1.ConfigChange
+	(*DefineChange)(nil),                // 88: agx.v1.DefineChange
+	(*UndefineChange)(nil),              // 89: agx.v1.UndefineChange
+	(*SelectionChange)(nil),             // 90: agx.v1.SelectionChange
+	(*FileWrite)(nil),                   // 91: agx.v1.FileWrite
+	(*PackageSource)(nil),               // 92: agx.v1.PackageSource
+	(*PlanChangesRequest)(nil),          // 93: agx.v1.PlanChangesRequest
+	(*PlannedFile)(nil),                 // 94: agx.v1.PlannedFile
+	(*PlanChangesResponse)(nil),         // 95: agx.v1.PlanChangesResponse
+	(*ApplyChangesRequest)(nil),         // 96: agx.v1.ApplyChangesRequest
+	(*ApplyChangesResponse)(nil),        // 97: agx.v1.ApplyChangesResponse
+	(*ListSourceRefsRequest)(nil),       // 98: agx.v1.ListSourceRefsRequest
+	(*ListSourceRefsResponse)(nil),      // 99: agx.v1.ListSourceRefsResponse
+	(*SourceRef)(nil),                   // 100: agx.v1.SourceRef
+	(*InspectSourceRequest)(nil),        // 101: agx.v1.InspectSourceRequest
+	(*InspectSourceResponse)(nil),       // 102: agx.v1.InspectSourceResponse
+	(*PreviewSourceRequest)(nil),        // 103: agx.v1.PreviewSourceRequest
+	(*PreviewSourceResponse)(nil),       // 104: agx.v1.PreviewSourceResponse
+	(*PreviewSkill)(nil),                // 105: agx.v1.PreviewSkill
+	(*ReadPreviewFileRequest)(nil),      // 106: agx.v1.ReadPreviewFileRequest
+	(*ReadPreviewFileResponse)(nil),     // 107: agx.v1.ReadPreviewFileResponse
+	nil,                                 // 108: agx.v1.PrepareLaunchRequest.EnvironmentInputsEntry
+	nil,                                 // 109: agx.v1.SpawnPlan.EnvironmentOverridesEntry
+	nil,                                 // 110: agx.v1.PrepareThreadLaunchRequest.EnvironmentInputsEntry
+	nil,                                 // 111: agx.v1.AttachLaunchRequest.EnvironmentInputsEntry
+	nil,                                 // 112: agx.v1.AttachedThread.EnvironmentInputsEntry
+	nil,                                 // 113: agx.v1.McpCallScope.EnvironmentInputsEntry
+	(*timestamppb.Timestamp)(nil),       // 114: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),         // 115: google.protobuf.Duration
 }
 var file_agx_v1_agx_proto_depIdxs = []int32{
 	0,   // 0: agx.v1.Diagnostic.severity:type_name -> agx.v1.Diagnostic.Severity
-	9,   // 1: agx.v1.Diagnostic.source:type_name -> agx.v1.SourceLocation
-	1,   // 2: agx.v1.ErrorDetail.reason:type_name -> agx.v1.ErrorDetail.Reason
-	9,   // 3: agx.v1.ErrorDetail.source:type_name -> agx.v1.SourceLocation
-	8,   // 4: agx.v1.Snapshot.resources:type_name -> agx.v1.ResourceRef
-	2,   // 5: agx.v1.ResolutionStep.change:type_name -> agx.v1.ResolutionStep.Change
-	9,   // 6: agx.v1.ResolutionStep.source:type_name -> agx.v1.SourceLocation
-	8,   // 7: agx.v1.ResourceTrace.resource:type_name -> agx.v1.ResourceRef
-	13,  // 8: agx.v1.ResourceTrace.steps:type_name -> agx.v1.ResolutionStep
-	10,  // 9: agx.v1.ValidateResponse.diagnostics:type_name -> agx.v1.Diagnostic
-	12,  // 10: agx.v1.ResolveResponse.snapshot:type_name -> agx.v1.Snapshot
-	14,  // 11: agx.v1.ResolveResponse.traces:type_name -> agx.v1.ResourceTrace
-	10,  // 12: agx.v1.ResolveResponse.diagnostics:type_name -> agx.v1.Diagnostic
-	19,  // 13: agx.v1.ResolveResponse.settings:type_name -> agx.v1.HarnessSetting
-	9,   // 14: agx.v1.HarnessSetting.source:type_name -> agx.v1.SourceLocation
-	22,  // 15: agx.v1.GetConfigurationResponse.harnesses:type_name -> agx.v1.ConfiguredHarness
-	23,  // 16: agx.v1.GetConfigurationResponse.files:type_name -> agx.v1.ConfigurationFile
-	28,  // 17: agx.v1.InstallResponse.progress:type_name -> agx.v1.PackageProgress
-	29,  // 18: agx.v1.InstallResponse.result:type_name -> agx.v1.PackageResult
-	10,  // 19: agx.v1.InstallResponse.failure:type_name -> agx.v1.Diagnostic
-	109, // 20: agx.v1.PrepareLaunchRequest.environment_inputs:type_name -> agx.v1.PrepareLaunchRequest.EnvironmentInputsEntry
-	33,  // 21: agx.v1.PrepareLaunchResponse.launch:type_name -> agx.v1.Launch
-	32,  // 22: agx.v1.PrepareLaunchResponse.spawn:type_name -> agx.v1.SpawnPlan
-	110, // 23: agx.v1.SpawnPlan.environment_overrides:type_name -> agx.v1.SpawnPlan.EnvironmentOverridesEntry
-	3,   // 24: agx.v1.Launch.state:type_name -> agx.v1.Launch.State
-	115, // 25: agx.v1.Launch.expires_at:type_name -> google.protobuf.Timestamp
-	12,  // 26: agx.v1.ResolveThreadResponse.snapshot:type_name -> agx.v1.Snapshot
-	111, // 27: agx.v1.PrepareThreadLaunchRequest.environment_inputs:type_name -> agx.v1.PrepareThreadLaunchRequest.EnvironmentInputsEntry
-	33,  // 28: agx.v1.PrepareThreadLaunchResponse.launch:type_name -> agx.v1.Launch
-	38,  // 29: agx.v1.PrepareThreadLaunchResponse.thread:type_name -> agx.v1.ThreadPlan
-	115, // 30: agx.v1.RenewLaunchResponse.expires_at:type_name -> google.protobuf.Timestamp
-	33,  // 31: agx.v1.AttachLaunchRequest.launch:type_name -> agx.v1.Launch
-	112, // 32: agx.v1.AttachLaunchRequest.environment_inputs:type_name -> agx.v1.AttachLaunchRequest.EnvironmentInputsEntry
-	42,  // 33: agx.v1.AttachLaunchRequest.threads:type_name -> agx.v1.AttachedThread
-	33,  // 34: agx.v1.AttachedThread.launch:type_name -> agx.v1.Launch
-	113, // 35: agx.v1.AttachedThread.environment_inputs:type_name -> agx.v1.AttachedThread.EnvironmentInputsEntry
-	115, // 36: agx.v1.AttachLaunchResponse.expires_at:type_name -> google.protobuf.Timestamp
-	4,   // 37: agx.v1.McpRuntime.state:type_name -> agx.v1.McpRuntime.State
-	10,  // 38: agx.v1.McpRuntime.diagnostics:type_name -> agx.v1.Diagnostic
-	33,  // 39: agx.v1.RuntimeView.launches:type_name -> agx.v1.Launch
-	48,  // 40: agx.v1.RuntimeView.mcp_servers:type_name -> agx.v1.McpRuntime
-	10,  // 41: agx.v1.RuntimeView.diagnostics:type_name -> agx.v1.Diagnostic
-	49,  // 42: agx.v1.GetRuntimeResponse.runtime:type_name -> agx.v1.RuntimeView
-	49,  // 43: agx.v1.WatchRuntimeResponse.runtime:type_name -> agx.v1.RuntimeView
-	114, // 44: agx.v1.McpCallScope.environment_inputs:type_name -> agx.v1.McpCallScope.EnvironmentInputsEntry
-	57,  // 45: agx.v1.ListMcpProcessesResponse.processes:type_name -> agx.v1.McpProcess
-	115, // 46: agx.v1.McpProcess.started_at:type_name -> google.protobuf.Timestamp
-	115, // 47: agx.v1.McpProcess.stops_at:type_name -> google.protobuf.Timestamp
-	116, // 48: agx.v1.StopRequest.grace:type_name -> google.protobuf.Duration
-	54,  // 49: agx.v1.ListToolsRequest.scope:type_name -> agx.v1.McpCallScope
-	64,  // 50: agx.v1.ListToolsResponse.servers:type_name -> agx.v1.McpTools
-	5,   // 51: agx.v1.McpTools.load:type_name -> agx.v1.McpTools.Load
-	4,   // 52: agx.v1.McpTools.state:type_name -> agx.v1.McpRuntime.State
-	65,  // 53: agx.v1.McpTools.tools:type_name -> agx.v1.McpTool
-	54,  // 54: agx.v1.CallToolRequest.scope:type_name -> agx.v1.McpCallScope
-	70,  // 55: agx.v1.LoginResponse.started:type_name -> agx.v1.LoginStarted
-	71,  // 56: agx.v1.LoginResponse.finished:type_name -> agx.v1.LoginFinished
-	115, // 57: agx.v1.LoginStarted.expires_at:type_name -> google.protobuf.Timestamp
-	6,   // 58: agx.v1.LoginFinished.outcome:type_name -> agx.v1.LoginFinished.Outcome
-	76,  // 59: agx.v1.GetSecretStatusResponse.statuses:type_name -> agx.v1.SecretStatus
-	7,   // 60: agx.v1.SecretStatus.state:type_name -> agx.v1.SecretStatus.State
-	115, // 61: agx.v1.SecretStatus.expires_at:type_name -> google.protobuf.Timestamp
-	10,  // 62: agx.v1.SecretStatus.diagnostics:type_name -> agx.v1.Diagnostic
-	115, // 63: agx.v1.RotateSecretResponse.expires_at:type_name -> google.protobuf.Timestamp
-	9,   // 64: agx.v1.Definition.source:type_name -> agx.v1.SourceLocation
-	81,  // 65: agx.v1.ListDefinitionsResponse.definitions:type_name -> agx.v1.Definition
-	81,  // 66: agx.v1.GetSkillResponse.definition:type_name -> agx.v1.Definition
-	89,  // 67: agx.v1.ConfigChange.define:type_name -> agx.v1.DefineChange
-	90,  // 68: agx.v1.ConfigChange.undefine:type_name -> agx.v1.UndefineChange
-	91,  // 69: agx.v1.ConfigChange.enable:type_name -> agx.v1.SelectionChange
-	91,  // 70: agx.v1.ConfigChange.disable:type_name -> agx.v1.SelectionChange
-	92,  // 71: agx.v1.ConfigChange.write_file:type_name -> agx.v1.FileWrite
-	93,  // 72: agx.v1.ConfigChange.add_package:type_name -> agx.v1.PackageSource
-	88,  // 73: agx.v1.PlanChangesRequest.changes:type_name -> agx.v1.ConfigChange
-	95,  // 74: agx.v1.PlanChangesResponse.files:type_name -> agx.v1.PlannedFile
-	88,  // 75: agx.v1.ApplyChangesRequest.changes:type_name -> agx.v1.ConfigChange
-	95,  // 76: agx.v1.ApplyChangesRequest.expected:type_name -> agx.v1.PlannedFile
-	101, // 77: agx.v1.ListSourceRefsResponse.refs:type_name -> agx.v1.SourceRef
-	93,  // 78: agx.v1.PreviewSourceResponse.package:type_name -> agx.v1.PackageSource
-	106, // 79: agx.v1.PreviewSourceResponse.skills:type_name -> agx.v1.PreviewSkill
-	15,  // 80: agx.v1.ConfigurationService.Validate:input_type -> agx.v1.ValidateRequest
-	17,  // 81: agx.v1.ConfigurationService.Resolve:input_type -> agx.v1.ResolveRequest
-	20,  // 82: agx.v1.ConfigurationService.GetConfiguration:input_type -> agx.v1.GetConfigurationRequest
-	24,  // 83: agx.v1.ConfigurationService.CompleteDirectory:input_type -> agx.v1.CompleteDirectoryRequest
-	82,  // 84: agx.v1.ConfigurationService.ListDefinitions:input_type -> agx.v1.ListDefinitionsRequest
-	84,  // 85: agx.v1.ConfigurationService.GetSkill:input_type -> agx.v1.GetSkillRequest
-	86,  // 86: agx.v1.ConfigurationService.ReadFile:input_type -> agx.v1.ReadFileRequest
-	94,  // 87: agx.v1.ConfigurationService.PlanChanges:input_type -> agx.v1.PlanChangesRequest
-	97,  // 88: agx.v1.ConfigurationService.ApplyChanges:input_type -> agx.v1.ApplyChangesRequest
-	26,  // 89: agx.v1.PackageService.Install:input_type -> agx.v1.InstallRequest
-	104, // 90: agx.v1.PackageService.PreviewSource:input_type -> agx.v1.PreviewSourceRequest
-	107, // 91: agx.v1.PackageService.ReadPreviewFile:input_type -> agx.v1.ReadPreviewFileRequest
-	99,  // 92: agx.v1.PackageService.ListSourceRefs:input_type -> agx.v1.ListSourceRefsRequest
-	102, // 93: agx.v1.PackageService.InspectSource:input_type -> agx.v1.InspectSourceRequest
-	30,  // 94: agx.v1.LaunchService.PrepareLaunch:input_type -> agx.v1.PrepareLaunchRequest
-	39,  // 95: agx.v1.LaunchService.RenewLaunch:input_type -> agx.v1.RenewLaunchRequest
-	44,  // 96: agx.v1.LaunchService.FinishLaunch:input_type -> agx.v1.FinishLaunchRequest
-	46,  // 97: agx.v1.LaunchService.RevokeLaunch:input_type -> agx.v1.RevokeLaunchRequest
-	34,  // 98: agx.v1.LaunchService.ResolveThread:input_type -> agx.v1.ResolveThreadRequest
-	36,  // 99: agx.v1.LaunchService.PrepareThreadLaunch:input_type -> agx.v1.PrepareThreadLaunchRequest
-	41,  // 100: agx.v1.LaunchService.AttachLaunch:input_type -> agx.v1.AttachLaunchRequest
-	50,  // 101: agx.v1.RuntimeService.GetRuntime:input_type -> agx.v1.GetRuntimeRequest
-	52,  // 102: agx.v1.RuntimeService.WatchRuntime:input_type -> agx.v1.WatchRuntimeRequest
-	62,  // 103: agx.v1.RuntimeService.ListTools:input_type -> agx.v1.ListToolsRequest
-	66,  // 104: agx.v1.RuntimeService.CallTool:input_type -> agx.v1.CallToolRequest
-	55,  // 105: agx.v1.RuntimeService.ListMcpProcesses:input_type -> agx.v1.ListMcpProcessesRequest
-	58,  // 106: agx.v1.RuntimeService.StopMcpProcess:input_type -> agx.v1.StopMcpProcessRequest
-	60,  // 107: agx.v1.RuntimeService.Stop:input_type -> agx.v1.StopRequest
-	68,  // 108: agx.v1.SecretService.Login:input_type -> agx.v1.LoginRequest
-	72,  // 109: agx.v1.SecretService.SetSecret:input_type -> agx.v1.SetSecretRequest
-	74,  // 110: agx.v1.SecretService.GetSecretStatus:input_type -> agx.v1.GetSecretStatusRequest
-	77,  // 111: agx.v1.SecretService.Logout:input_type -> agx.v1.LogoutRequest
-	79,  // 112: agx.v1.SecretService.RotateSecret:input_type -> agx.v1.RotateSecretRequest
-	16,  // 113: agx.v1.ConfigurationService.Validate:output_type -> agx.v1.ValidateResponse
-	18,  // 114: agx.v1.ConfigurationService.Resolve:output_type -> agx.v1.ResolveResponse
-	21,  // 115: agx.v1.ConfigurationService.GetConfiguration:output_type -> agx.v1.GetConfigurationResponse
-	25,  // 116: agx.v1.ConfigurationService.CompleteDirectory:output_type -> agx.v1.CompleteDirectoryResponse
-	83,  // 117: agx.v1.ConfigurationService.ListDefinitions:output_type -> agx.v1.ListDefinitionsResponse
-	85,  // 118: agx.v1.ConfigurationService.GetSkill:output_type -> agx.v1.GetSkillResponse
-	87,  // 119: agx.v1.ConfigurationService.ReadFile:output_type -> agx.v1.ReadFileResponse
-	96,  // 120: agx.v1.ConfigurationService.PlanChanges:output_type -> agx.v1.PlanChangesResponse
-	98,  // 121: agx.v1.ConfigurationService.ApplyChanges:output_type -> agx.v1.ApplyChangesResponse
-	27,  // 122: agx.v1.PackageService.Install:output_type -> agx.v1.InstallResponse
-	105, // 123: agx.v1.PackageService.PreviewSource:output_type -> agx.v1.PreviewSourceResponse
-	108, // 124: agx.v1.PackageService.ReadPreviewFile:output_type -> agx.v1.ReadPreviewFileResponse
-	100, // 125: agx.v1.PackageService.ListSourceRefs:output_type -> agx.v1.ListSourceRefsResponse
-	103, // 126: agx.v1.PackageService.InspectSource:output_type -> agx.v1.InspectSourceResponse
-	31,  // 127: agx.v1.LaunchService.PrepareLaunch:output_type -> agx.v1.PrepareLaunchResponse
-	40,  // 128: agx.v1.LaunchService.RenewLaunch:output_type -> agx.v1.RenewLaunchResponse
-	45,  // 129: agx.v1.LaunchService.FinishLaunch:output_type -> agx.v1.FinishLaunchResponse
-	47,  // 130: agx.v1.LaunchService.RevokeLaunch:output_type -> agx.v1.RevokeLaunchResponse
-	35,  // 131: agx.v1.LaunchService.ResolveThread:output_type -> agx.v1.ResolveThreadResponse
-	37,  // 132: agx.v1.LaunchService.PrepareThreadLaunch:output_type -> agx.v1.PrepareThreadLaunchResponse
-	43,  // 133: agx.v1.LaunchService.AttachLaunch:output_type -> agx.v1.AttachLaunchResponse
-	51,  // 134: agx.v1.RuntimeService.GetRuntime:output_type -> agx.v1.GetRuntimeResponse
-	53,  // 135: agx.v1.RuntimeService.WatchRuntime:output_type -> agx.v1.WatchRuntimeResponse
-	63,  // 136: agx.v1.RuntimeService.ListTools:output_type -> agx.v1.ListToolsResponse
-	67,  // 137: agx.v1.RuntimeService.CallTool:output_type -> agx.v1.CallToolResponse
-	56,  // 138: agx.v1.RuntimeService.ListMcpProcesses:output_type -> agx.v1.ListMcpProcessesResponse
-	59,  // 139: agx.v1.RuntimeService.StopMcpProcess:output_type -> agx.v1.StopMcpProcessResponse
-	61,  // 140: agx.v1.RuntimeService.Stop:output_type -> agx.v1.StopResponse
-	69,  // 141: agx.v1.SecretService.Login:output_type -> agx.v1.LoginResponse
-	73,  // 142: agx.v1.SecretService.SetSecret:output_type -> agx.v1.SetSecretResponse
-	75,  // 143: agx.v1.SecretService.GetSecretStatus:output_type -> agx.v1.GetSecretStatusResponse
-	78,  // 144: agx.v1.SecretService.Logout:output_type -> agx.v1.LogoutResponse
-	80,  // 145: agx.v1.SecretService.RotateSecret:output_type -> agx.v1.RotateSecretResponse
-	113, // [113:146] is the sub-list for method output_type
-	80,  // [80:113] is the sub-list for method input_type
-	80,  // [80:80] is the sub-list for extension type_name
-	80,  // [80:80] is the sub-list for extension extendee
-	0,   // [0:80] is the sub-list for field type_name
+	8,   // 1: agx.v1.Diagnostic.source:type_name -> agx.v1.SourceLocation
+	8,   // 2: agx.v1.ErrorDetail.source:type_name -> agx.v1.SourceLocation
+	7,   // 3: agx.v1.Snapshot.resources:type_name -> agx.v1.ResourceRef
+	1,   // 4: agx.v1.ResolutionStep.change:type_name -> agx.v1.ResolutionStep.Change
+	8,   // 5: agx.v1.ResolutionStep.source:type_name -> agx.v1.SourceLocation
+	7,   // 6: agx.v1.ResourceTrace.resource:type_name -> agx.v1.ResourceRef
+	12,  // 7: agx.v1.ResourceTrace.steps:type_name -> agx.v1.ResolutionStep
+	9,   // 8: agx.v1.ValidateResponse.diagnostics:type_name -> agx.v1.Diagnostic
+	11,  // 9: agx.v1.ResolveResponse.snapshot:type_name -> agx.v1.Snapshot
+	13,  // 10: agx.v1.ResolveResponse.traces:type_name -> agx.v1.ResourceTrace
+	9,   // 11: agx.v1.ResolveResponse.diagnostics:type_name -> agx.v1.Diagnostic
+	18,  // 12: agx.v1.ResolveResponse.settings:type_name -> agx.v1.HarnessSetting
+	8,   // 13: agx.v1.HarnessSetting.source:type_name -> agx.v1.SourceLocation
+	21,  // 14: agx.v1.GetConfigurationResponse.harnesses:type_name -> agx.v1.ConfiguredHarness
+	22,  // 15: agx.v1.GetConfigurationResponse.files:type_name -> agx.v1.ConfigurationFile
+	27,  // 16: agx.v1.InstallResponse.progress:type_name -> agx.v1.PackageProgress
+	28,  // 17: agx.v1.InstallResponse.result:type_name -> agx.v1.PackageResult
+	9,   // 18: agx.v1.InstallResponse.failure:type_name -> agx.v1.Diagnostic
+	108, // 19: agx.v1.PrepareLaunchRequest.environment_inputs:type_name -> agx.v1.PrepareLaunchRequest.EnvironmentInputsEntry
+	32,  // 20: agx.v1.PrepareLaunchResponse.launch:type_name -> agx.v1.Launch
+	31,  // 21: agx.v1.PrepareLaunchResponse.spawn:type_name -> agx.v1.SpawnPlan
+	109, // 22: agx.v1.SpawnPlan.environment_overrides:type_name -> agx.v1.SpawnPlan.EnvironmentOverridesEntry
+	2,   // 23: agx.v1.Launch.state:type_name -> agx.v1.Launch.State
+	114, // 24: agx.v1.Launch.expires_at:type_name -> google.protobuf.Timestamp
+	11,  // 25: agx.v1.ResolveThreadResponse.snapshot:type_name -> agx.v1.Snapshot
+	110, // 26: agx.v1.PrepareThreadLaunchRequest.environment_inputs:type_name -> agx.v1.PrepareThreadLaunchRequest.EnvironmentInputsEntry
+	32,  // 27: agx.v1.PrepareThreadLaunchResponse.launch:type_name -> agx.v1.Launch
+	37,  // 28: agx.v1.PrepareThreadLaunchResponse.thread:type_name -> agx.v1.ThreadPlan
+	114, // 29: agx.v1.RenewLaunchResponse.expires_at:type_name -> google.protobuf.Timestamp
+	32,  // 30: agx.v1.AttachLaunchRequest.launch:type_name -> agx.v1.Launch
+	111, // 31: agx.v1.AttachLaunchRequest.environment_inputs:type_name -> agx.v1.AttachLaunchRequest.EnvironmentInputsEntry
+	41,  // 32: agx.v1.AttachLaunchRequest.threads:type_name -> agx.v1.AttachedThread
+	32,  // 33: agx.v1.AttachedThread.launch:type_name -> agx.v1.Launch
+	112, // 34: agx.v1.AttachedThread.environment_inputs:type_name -> agx.v1.AttachedThread.EnvironmentInputsEntry
+	114, // 35: agx.v1.AttachLaunchResponse.expires_at:type_name -> google.protobuf.Timestamp
+	3,   // 36: agx.v1.McpRuntime.state:type_name -> agx.v1.McpRuntime.State
+	9,   // 37: agx.v1.McpRuntime.diagnostics:type_name -> agx.v1.Diagnostic
+	32,  // 38: agx.v1.RuntimeView.launches:type_name -> agx.v1.Launch
+	47,  // 39: agx.v1.RuntimeView.mcp_servers:type_name -> agx.v1.McpRuntime
+	9,   // 40: agx.v1.RuntimeView.diagnostics:type_name -> agx.v1.Diagnostic
+	48,  // 41: agx.v1.GetRuntimeResponse.runtime:type_name -> agx.v1.RuntimeView
+	48,  // 42: agx.v1.WatchRuntimeResponse.runtime:type_name -> agx.v1.RuntimeView
+	113, // 43: agx.v1.McpCallScope.environment_inputs:type_name -> agx.v1.McpCallScope.EnvironmentInputsEntry
+	56,  // 44: agx.v1.ListMcpProcessesResponse.processes:type_name -> agx.v1.McpProcess
+	114, // 45: agx.v1.McpProcess.started_at:type_name -> google.protobuf.Timestamp
+	114, // 46: agx.v1.McpProcess.stops_at:type_name -> google.protobuf.Timestamp
+	115, // 47: agx.v1.StopRequest.grace:type_name -> google.protobuf.Duration
+	53,  // 48: agx.v1.ListToolsRequest.scope:type_name -> agx.v1.McpCallScope
+	63,  // 49: agx.v1.ListToolsResponse.servers:type_name -> agx.v1.McpTools
+	4,   // 50: agx.v1.McpTools.load:type_name -> agx.v1.McpTools.Load
+	3,   // 51: agx.v1.McpTools.state:type_name -> agx.v1.McpRuntime.State
+	64,  // 52: agx.v1.McpTools.tools:type_name -> agx.v1.McpTool
+	53,  // 53: agx.v1.CallToolRequest.scope:type_name -> agx.v1.McpCallScope
+	69,  // 54: agx.v1.LoginResponse.started:type_name -> agx.v1.LoginStarted
+	70,  // 55: agx.v1.LoginResponse.finished:type_name -> agx.v1.LoginFinished
+	114, // 56: agx.v1.LoginStarted.expires_at:type_name -> google.protobuf.Timestamp
+	5,   // 57: agx.v1.LoginFinished.outcome:type_name -> agx.v1.LoginFinished.Outcome
+	75,  // 58: agx.v1.GetSecretStatusResponse.statuses:type_name -> agx.v1.SecretStatus
+	6,   // 59: agx.v1.SecretStatus.state:type_name -> agx.v1.SecretStatus.State
+	114, // 60: agx.v1.SecretStatus.expires_at:type_name -> google.protobuf.Timestamp
+	9,   // 61: agx.v1.SecretStatus.diagnostics:type_name -> agx.v1.Diagnostic
+	114, // 62: agx.v1.RotateSecretResponse.expires_at:type_name -> google.protobuf.Timestamp
+	8,   // 63: agx.v1.Definition.source:type_name -> agx.v1.SourceLocation
+	80,  // 64: agx.v1.ListDefinitionsResponse.definitions:type_name -> agx.v1.Definition
+	80,  // 65: agx.v1.GetSkillResponse.definition:type_name -> agx.v1.Definition
+	88,  // 66: agx.v1.ConfigChange.define:type_name -> agx.v1.DefineChange
+	89,  // 67: agx.v1.ConfigChange.undefine:type_name -> agx.v1.UndefineChange
+	90,  // 68: agx.v1.ConfigChange.enable:type_name -> agx.v1.SelectionChange
+	90,  // 69: agx.v1.ConfigChange.disable:type_name -> agx.v1.SelectionChange
+	91,  // 70: agx.v1.ConfigChange.write_file:type_name -> agx.v1.FileWrite
+	92,  // 71: agx.v1.ConfigChange.add_package:type_name -> agx.v1.PackageSource
+	87,  // 72: agx.v1.PlanChangesRequest.changes:type_name -> agx.v1.ConfigChange
+	94,  // 73: agx.v1.PlanChangesResponse.files:type_name -> agx.v1.PlannedFile
+	87,  // 74: agx.v1.ApplyChangesRequest.changes:type_name -> agx.v1.ConfigChange
+	94,  // 75: agx.v1.ApplyChangesRequest.expected:type_name -> agx.v1.PlannedFile
+	100, // 76: agx.v1.ListSourceRefsResponse.refs:type_name -> agx.v1.SourceRef
+	92,  // 77: agx.v1.PreviewSourceResponse.package:type_name -> agx.v1.PackageSource
+	105, // 78: agx.v1.PreviewSourceResponse.skills:type_name -> agx.v1.PreviewSkill
+	14,  // 79: agx.v1.ConfigurationService.Validate:input_type -> agx.v1.ValidateRequest
+	16,  // 80: agx.v1.ConfigurationService.Resolve:input_type -> agx.v1.ResolveRequest
+	19,  // 81: agx.v1.ConfigurationService.GetConfiguration:input_type -> agx.v1.GetConfigurationRequest
+	23,  // 82: agx.v1.ConfigurationService.CompleteDirectory:input_type -> agx.v1.CompleteDirectoryRequest
+	81,  // 83: agx.v1.ConfigurationService.ListDefinitions:input_type -> agx.v1.ListDefinitionsRequest
+	83,  // 84: agx.v1.ConfigurationService.GetSkill:input_type -> agx.v1.GetSkillRequest
+	85,  // 85: agx.v1.ConfigurationService.ReadFile:input_type -> agx.v1.ReadFileRequest
+	93,  // 86: agx.v1.ConfigurationService.PlanChanges:input_type -> agx.v1.PlanChangesRequest
+	96,  // 87: agx.v1.ConfigurationService.ApplyChanges:input_type -> agx.v1.ApplyChangesRequest
+	25,  // 88: agx.v1.PackageService.Install:input_type -> agx.v1.InstallRequest
+	103, // 89: agx.v1.PackageService.PreviewSource:input_type -> agx.v1.PreviewSourceRequest
+	106, // 90: agx.v1.PackageService.ReadPreviewFile:input_type -> agx.v1.ReadPreviewFileRequest
+	98,  // 91: agx.v1.PackageService.ListSourceRefs:input_type -> agx.v1.ListSourceRefsRequest
+	101, // 92: agx.v1.PackageService.InspectSource:input_type -> agx.v1.InspectSourceRequest
+	29,  // 93: agx.v1.LaunchService.PrepareLaunch:input_type -> agx.v1.PrepareLaunchRequest
+	38,  // 94: agx.v1.LaunchService.RenewLaunch:input_type -> agx.v1.RenewLaunchRequest
+	43,  // 95: agx.v1.LaunchService.FinishLaunch:input_type -> agx.v1.FinishLaunchRequest
+	45,  // 96: agx.v1.LaunchService.RevokeLaunch:input_type -> agx.v1.RevokeLaunchRequest
+	33,  // 97: agx.v1.LaunchService.ResolveThread:input_type -> agx.v1.ResolveThreadRequest
+	35,  // 98: agx.v1.LaunchService.PrepareThreadLaunch:input_type -> agx.v1.PrepareThreadLaunchRequest
+	40,  // 99: agx.v1.LaunchService.AttachLaunch:input_type -> agx.v1.AttachLaunchRequest
+	49,  // 100: agx.v1.RuntimeService.GetRuntime:input_type -> agx.v1.GetRuntimeRequest
+	51,  // 101: agx.v1.RuntimeService.WatchRuntime:input_type -> agx.v1.WatchRuntimeRequest
+	61,  // 102: agx.v1.RuntimeService.ListTools:input_type -> agx.v1.ListToolsRequest
+	65,  // 103: agx.v1.RuntimeService.CallTool:input_type -> agx.v1.CallToolRequest
+	54,  // 104: agx.v1.RuntimeService.ListMcpProcesses:input_type -> agx.v1.ListMcpProcessesRequest
+	57,  // 105: agx.v1.RuntimeService.StopMcpProcess:input_type -> agx.v1.StopMcpProcessRequest
+	59,  // 106: agx.v1.RuntimeService.Stop:input_type -> agx.v1.StopRequest
+	67,  // 107: agx.v1.SecretService.Login:input_type -> agx.v1.LoginRequest
+	71,  // 108: agx.v1.SecretService.SetSecret:input_type -> agx.v1.SetSecretRequest
+	73,  // 109: agx.v1.SecretService.GetSecretStatus:input_type -> agx.v1.GetSecretStatusRequest
+	76,  // 110: agx.v1.SecretService.Logout:input_type -> agx.v1.LogoutRequest
+	78,  // 111: agx.v1.SecretService.RotateSecret:input_type -> agx.v1.RotateSecretRequest
+	15,  // 112: agx.v1.ConfigurationService.Validate:output_type -> agx.v1.ValidateResponse
+	17,  // 113: agx.v1.ConfigurationService.Resolve:output_type -> agx.v1.ResolveResponse
+	20,  // 114: agx.v1.ConfigurationService.GetConfiguration:output_type -> agx.v1.GetConfigurationResponse
+	24,  // 115: agx.v1.ConfigurationService.CompleteDirectory:output_type -> agx.v1.CompleteDirectoryResponse
+	82,  // 116: agx.v1.ConfigurationService.ListDefinitions:output_type -> agx.v1.ListDefinitionsResponse
+	84,  // 117: agx.v1.ConfigurationService.GetSkill:output_type -> agx.v1.GetSkillResponse
+	86,  // 118: agx.v1.ConfigurationService.ReadFile:output_type -> agx.v1.ReadFileResponse
+	95,  // 119: agx.v1.ConfigurationService.PlanChanges:output_type -> agx.v1.PlanChangesResponse
+	97,  // 120: agx.v1.ConfigurationService.ApplyChanges:output_type -> agx.v1.ApplyChangesResponse
+	26,  // 121: agx.v1.PackageService.Install:output_type -> agx.v1.InstallResponse
+	104, // 122: agx.v1.PackageService.PreviewSource:output_type -> agx.v1.PreviewSourceResponse
+	107, // 123: agx.v1.PackageService.ReadPreviewFile:output_type -> agx.v1.ReadPreviewFileResponse
+	99,  // 124: agx.v1.PackageService.ListSourceRefs:output_type -> agx.v1.ListSourceRefsResponse
+	102, // 125: agx.v1.PackageService.InspectSource:output_type -> agx.v1.InspectSourceResponse
+	30,  // 126: agx.v1.LaunchService.PrepareLaunch:output_type -> agx.v1.PrepareLaunchResponse
+	39,  // 127: agx.v1.LaunchService.RenewLaunch:output_type -> agx.v1.RenewLaunchResponse
+	44,  // 128: agx.v1.LaunchService.FinishLaunch:output_type -> agx.v1.FinishLaunchResponse
+	46,  // 129: agx.v1.LaunchService.RevokeLaunch:output_type -> agx.v1.RevokeLaunchResponse
+	34,  // 130: agx.v1.LaunchService.ResolveThread:output_type -> agx.v1.ResolveThreadResponse
+	36,  // 131: agx.v1.LaunchService.PrepareThreadLaunch:output_type -> agx.v1.PrepareThreadLaunchResponse
+	42,  // 132: agx.v1.LaunchService.AttachLaunch:output_type -> agx.v1.AttachLaunchResponse
+	50,  // 133: agx.v1.RuntimeService.GetRuntime:output_type -> agx.v1.GetRuntimeResponse
+	52,  // 134: agx.v1.RuntimeService.WatchRuntime:output_type -> agx.v1.WatchRuntimeResponse
+	62,  // 135: agx.v1.RuntimeService.ListTools:output_type -> agx.v1.ListToolsResponse
+	66,  // 136: agx.v1.RuntimeService.CallTool:output_type -> agx.v1.CallToolResponse
+	55,  // 137: agx.v1.RuntimeService.ListMcpProcesses:output_type -> agx.v1.ListMcpProcessesResponse
+	58,  // 138: agx.v1.RuntimeService.StopMcpProcess:output_type -> agx.v1.StopMcpProcessResponse
+	60,  // 139: agx.v1.RuntimeService.Stop:output_type -> agx.v1.StopResponse
+	68,  // 140: agx.v1.SecretService.Login:output_type -> agx.v1.LoginResponse
+	72,  // 141: agx.v1.SecretService.SetSecret:output_type -> agx.v1.SetSecretResponse
+	74,  // 142: agx.v1.SecretService.GetSecretStatus:output_type -> agx.v1.GetSecretStatusResponse
+	77,  // 143: agx.v1.SecretService.Logout:output_type -> agx.v1.LogoutResponse
+	79,  // 144: agx.v1.SecretService.RotateSecret:output_type -> agx.v1.RotateSecretResponse
+	112, // [112:145] is the sub-list for method output_type
+	79,  // [79:112] is the sub-list for method input_type
+	79,  // [79:79] is the sub-list for extension type_name
+	79,  // [79:79] is the sub-list for extension extendee
+	0,   // [0:79] is the sub-list for field type_name
 }
 
 func init() { file_agx_v1_agx_proto_init() }
@@ -7569,7 +7446,7 @@ func file_agx_v1_agx_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agx_v1_agx_proto_rawDesc), len(file_agx_v1_agx_proto_rawDesc)),
-			NumEnums:      8,
+			NumEnums:      7,
 			NumMessages:   107,
 			NumExtensions: 0,
 			NumServices:   5,

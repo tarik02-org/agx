@@ -52,7 +52,7 @@ func launchScoped(all bool) bool {
 func toolConfig(paths platform.Paths, builtins config.Builtins, all bool) (*config.Config, error) {
 	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
 	if err != nil && !launchScoped(all) {
-		return nil, coded(codeConfigInvalid, err)
+		return nil, err
 	}
 	return c, nil
 }
@@ -199,7 +199,7 @@ func mcpToolsCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 
 // mcpError points at the secrets when a server needs a credential the daemon names no login for.
 func mcpError(err error) error {
-	if errorCode(err) == codeNeedsLogin && !strings.Contains(err.Error(), "agx secret login") {
+	if connect.CodeOf(err) == connect.CodeUnauthenticated && !strings.Contains(err.Error(), "agx secret login") {
 		hint("Run agx secret status to see which secret is missing.")
 	}
 	return err
@@ -366,7 +366,7 @@ func mcpCallCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 				}
 			}
 			if definition == nil {
-				return codedf(codeInvalidRequest, "MCP server %s has no tool %s%s", server, tool,
+				return fmt.Errorf("MCP server %s has no tool %s%s", server, tool,
 					mcptools.Suggest(tool, names))
 			}
 			schema, err := mcptools.ParseSchema(definition.InputSchemaJson)
@@ -380,7 +380,7 @@ func mcpCallCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 			case errors.As(err, &syntax):
 				return &usageError{err}
 			case errors.As(err, &invalid):
-				return codedf(codeInvalidRequest, "%s.%s: %v; expected %s", server, tool, err, signature(definition))
+				return fmt.Errorf("%s.%s: %w; expected %s", server, tool, err, signature(definition))
 			case err != nil:
 				return err
 			}
@@ -398,10 +398,7 @@ func mcpCallCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 				var rpc *connect.Error
 				if errors.As(err, &rpc) && rpc.Code() == connect.CodeDeadlineExceeded ||
 					errors.Is(err, context.DeadlineExceeded) {
-					return coded(
-						codeTimeout,
-						fmt.Errorf("%s.%s did not finish within %s; raise --timeout", server, tool, timeout),
-					)
+					return fmt.Errorf("%s.%s did not finish within %s; raise --timeout", server, tool, timeout)
 				}
 				return mcpError(err)
 			}

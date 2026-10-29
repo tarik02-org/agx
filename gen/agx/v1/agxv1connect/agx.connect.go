@@ -1113,8 +1113,8 @@ type SecretServiceClient interface {
 	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error)
 	// Renews an OAuth secret's access token with its refresh token now, whether or not it
 	// expired. A missing login, or a refresh token the authorization server refuses, fails with
-	// REASON_NEEDS_LOGIN; an authorization server that cannot be reached or fails with
-	// REASON_NETWORK.
+	// Unauthenticated; an authorization server that cannot be reached or fails with
+	// Unavailable.
 	RotateSecret(context.Context, *connect.Request[v1.RotateSecretRequest]) (*connect.Response[v1.RotateSecretResponse], error)
 }
 
@@ -1207,8 +1207,8 @@ type SecretServiceHandler interface {
 	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error)
 	// Renews an OAuth secret's access token with its refresh token now, whether or not it
 	// expired. A missing login, or a refresh token the authorization server refuses, fails with
-	// REASON_NEEDS_LOGIN; an authorization server that cannot be reached or fails with
-	// REASON_NETWORK.
+	// Unauthenticated; an authorization server that cannot be reached or fails with
+	// Unavailable.
 	RotateSecret(context.Context, *connect.Request[v1.RotateSecretRequest]) (*connect.Response[v1.RotateSecretResponse], error)
 }
 

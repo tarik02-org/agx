@@ -89,8 +89,8 @@ service SecretService {
   rpc Logout(LogoutRequest) returns (LogoutResponse);
   // Renews an OAuth secret's access token with its refresh token now, whether or not it
   // expired. A missing login, or a refresh token the authorization server refuses, fails with
-  // REASON_NEEDS_LOGIN; an authorization server that cannot be reached or fails with
-  // REASON_NETWORK.
+  // Unauthenticated; an authorization server that cannot be reached or fails with
+  // Unavailable.
   rpc RotateSecret(RotateSecretRequest) returns (RotateSecretResponse);
 }
 
@@ -120,42 +120,11 @@ message Diagnostic {
   SourceLocation source = 4;
 }
 
-// Detail every daemon error carries, so clients branch on a closed set of reasons instead of the
-// Connect code or the message. A client treats a reason it does not know as unclassified.
+// Configuration diagnostics for clients that offer editing.
 message ErrorDetail {
-  enum Reason {
-    REASON_UNSPECIFIED = 0;
-    // The request is malformed or names something it may not.
-    REASON_INVALID_REQUEST = 1;
-    REASON_NOT_FOUND = 2;
-    // The target exists, changed, or is busy; retrying later or resolving again may succeed.
-    REASON_CONFLICT = 3;
-    // The target does not support the operation in its current state.
-    REASON_FAILED_PRECONDITION = 4;
-    // The operation needs an OAuth login first.
-    REASON_NEEDS_LOGIN = 5;
-    // The daemon's configuration does not load.
-    REASON_CONFIG_INVALID = 6;
-    // The daemon is stopping or cannot serve the request yet.
-    REASON_UNAVAILABLE = 7;
-    // The caller lacks this daemon's credential, as when another daemon replaced the one it knew.
-    REASON_UNAUTHENTICATED = 8;
-    // The daemon or an upstream did not answer in time.
-    REASON_TIMEOUT = 9;
-    // A defect.
-    REASON_INTERNAL = 10;
-    // An MCP server failed the request, or could not be reached or started.
-    REASON_MCP_FAILED = 11;
-    // A service the daemon depends on, such as an OAuth authorization server, could not be
-    // reached or failed; retrying later may succeed.
-    REASON_NETWORK = 12;
-    // Configuration changes could go to several fragments; the request must name one.
-    REASON_CHOOSE_FILE = 13;
-  }
-  Reason reason = 1;
   // Where a configuration that does not load has the problem, when known.
   SourceLocation source = 2;
-  // With REASON_CHOOSE_FILE, the writable fragments to choose from.
+  // Writable fragments to choose from when a change needs a target.
   repeated string files = 3;
 }
 
@@ -750,7 +719,7 @@ message PlanChangesRequest {
   // The fragment new definitions, rules, and packages go to: a writable fragment the root
   // lists, or a new file its globs match. Empty chooses the only writable fragment, or
   // agx.d/main.yaml when there is none; with several, the plan fails with
-  // REASON_CHOOSE_FILE listing them in ErrorDetail.files.
+  // FailedPrecondition listing them in ErrorDetail.files.
   string file = 2;
 }
 message PlannedFile {

@@ -70,7 +70,7 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 				if info, err := os.Stat(abs); err != nil {
 					return statError("instructions file", path, err)
 				} else if info.IsDir() {
-					return codedf(codeInvalidRequest, "%s is a directory; instructions are a file", path)
+					return fmt.Errorf("%s is a directory; instructions are a file", path)
 				}
 				if id == "" {
 					base := filepath.Base(abs)
@@ -175,7 +175,7 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 				}
 			}
 			if slices.Contains(s.Config.HarnessNames(), name) {
-				return codedf(codeConflict, "harness %s already exists; edit its definition instead", name)
+				return fmt.Errorf("harness %s already exists; edit its definition instead", name)
 			}
 			definition := edit.Mapping("base", base)
 			if executable != "" {
@@ -363,9 +363,7 @@ func resourceKind(c *config.Config, id, only string) (config.Kind, error) {
 	case only != "" && !slices.Contains(config.SelectionKinds, config.Kind(only)):
 		return "", &usageError{fmt.Errorf("--kind must be skills, instructions, mcp, or bundles")}
 	case len(kinds) == 0:
-		return "", codedf(
-			codeNotFound,
-			"nothing named %s is defined; add it first, such as with agx skill add or agx mcp add",
+		return "", fmt.Errorf("nothing named %s is defined; add it first, such as with agx skill add or agx mcp add",
 			id,
 		)
 	case len(kinds) > 1:

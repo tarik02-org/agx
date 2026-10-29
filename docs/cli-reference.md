@@ -185,11 +185,11 @@ A successful command prints a `data` document:
 {"version":1,"data":{"running":true,"kept_launches":0}}
 ```
 
-and a failed one an `error` document, with the same exit code as without
-`--json`. A configuration error names its `source`:
+A failed command prints only a message, with the same exit status as without
+`--json`. Configuration errors include their location in the message:
 
 ```json
-{"version":1,"error":{"code":"config_invalid","message":"…","source":{"path":"/home/me/.config/agx/agx.yaml","line":4,"column":5}}}
+{"message":"/home/me/.config/agx/main.yaml:4: invalid configuration"}
 ```
 
 What `data` holds:
@@ -207,28 +207,6 @@ What `data` holds:
   resolved snapshot.
 - Field names are `snake_case`, except inside MCP content, which `mcp call`
   passes on as the server sent it. Empty values may be omitted or `null`.
-- `error.code` is a stable, machine-readable string; branch on it rather than
-  on `message`. It is one of:
-
-  | Code | Meaning |
-  | --- | --- |
-  | `usage` | invalid arguments or flags |
-  | `config_invalid` | the configuration doesn't load |
-  | `not_found` | the named thing doesn't exist |
-  | `conflict` | the change clashes with existing state |
-  | `read_only` | the target can't be edited |
-  | `invalid_request` | the request was rejected as invalid |
-  | `failed_precondition` | the command can't run in the current state |
-  | `choose_file` | new definitions could go to several fragments; pass `--file` |
-  | `needs_login` | a secret needs `agx secret login` first |
-  | `mcp_failed` | an MCP server failed the request, or could not be reached or started |
-  | `daemon_unavailable` | the daemon isn't running and couldn't start |
-  | `version_mismatch` | the daemon runs an agx this one cannot use |
-  | `network` | a network request failed |
-  | `timeout` | the command timed out |
-  | `interrupted` | the command was interrupted |
-  | `internal` | anything else; see `message` |
-
 With `--json`, `secret login` opens the browser only when stdout is a
 terminal, so a script can open the URL itself.
 

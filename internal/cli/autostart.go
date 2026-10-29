@@ -246,12 +246,12 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 	}()
 	// The log names why the daemon did not come up, for a person; scripts learn only that no
 	// daemon answers.
-	failed := func(code, reason string) error {
+	failed := func(reason string) error {
 		// The daemon's own diagnostics carry the agx: prefix this error is reported under again.
 		if line := strings.TrimPrefix(lastLine(logPath), "agx: "); line != "" {
-			return codedf(code, "daemon %s: %s; inspect %s", reason, line, logPath)
+			return fmt.Errorf("daemon %s: %s; inspect %s", reason, line, logPath)
 		}
-		return codedf(code, "daemon %s; inspect %s", reason, logPath)
+		return fmt.Errorf("daemon %s; inspect %s", reason, logPath)
 	}
 	deadline := time.NewTimer(startupTimeout)
 	defer deadline.Stop()
@@ -267,7 +267,7 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 			if errors.Is(lastErr, daemon.ErrVersionMismatch) {
 				return "", lastErr
 			}
-			return "", failed(codeTimeout, "startup timed out")
+			return "", failed("startup timed out")
 		case <-exited:
 			childExited = true
 			exited = nil
@@ -291,7 +291,7 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 				return "", err
 			}
 			if !held {
-				return "", failed(codeDaemonUnavailable, "startup failed")
+				return "", failed("startup failed")
 			}
 		}
 	}

@@ -331,7 +331,7 @@ func listCommand(paths *platform.Paths, builtins *config.Builtins, kind config.K
 				c, err = config.Load(paths.Config, config.Options{Builtins: *builtins, Cache: paths.Cache})
 			}
 			if err != nil {
-				return coded(codeConfigInvalid, err)
+				return err
 			}
 			var headers []string
 			var rows [][]string

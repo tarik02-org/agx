@@ -91,7 +91,7 @@ func doctorCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			if info, err := os.Stat(directory); err != nil {
 				return statError("directory", directory, err)
 			} else if !info.IsDir() {
-				return codedf(codeInvalidRequest, "not a directory: %s", directory)
+				return fmt.Errorf("not a directory: %s", directory)
 			}
 			// The report spells every path as configuration and launches do, symbolic links resolved.
 			directory, err := config.Canonical(directory)
@@ -529,14 +529,14 @@ func mcpCheck(id config.ID, server config.MCPServer, response *v1.McpTools, err 
 	if errors.As(err, &rpc) {
 		message = rpc.Message()
 	}
-	switch errorCode(err) {
-	case codeNeedsLogin:
+	switch connect.CodeOf(err) {
+	case connect.CodeUnauthenticated:
 		row.Status, row.Detail = checkWarn, "needs authorization: "+message
 		row.Hint = "run agx secret login " + string(cmp.Or(server.Auth.Secret, id))
 		if server.Auth.Env != "" || server.Auth.File != "" {
 			row.Hint = "check " + server.Auth.String()
 		}
-	case codeTimeout:
+	case connect.CodeDeadlineExceeded:
 		row.Status, row.Detail = checkFail, fmt.Sprintf("no answer within %s", doctorMCPTimeout)
 		row.Hint = "run agx mcp tools " + string(id) + " --all for details"
 	default:

@@ -96,9 +96,9 @@ func login(ctx context.Context, paths platform.Paths, id string, browser, autost
 	}
 	switch {
 	case err == nil:
-		return codedf(codeInternal, "daemon ended the login to %s without an outcome", id)
+		return fmt.Errorf("daemon ended the login to %s without an outcome", id)
 	case connect.CodeOf(err) == connect.CodeUnavailable:
-		return codedf(codeDaemonUnavailable, "daemon stopped during the login; run agx secret login %s again", id)
+		return fmt.Errorf("daemon stopped during the login; run agx secret login %s again", id)
 	}
 	return err
 }

@@ -96,7 +96,7 @@ func (f *editFlags) enableTarget() (scope, error) {
 	if info, err := os.Stat(target.Directory); err != nil {
 		return scope{}, statError("scope directory", target.Directory, err)
 	} else if !info.IsDir() {
-		return scope{}, codedf(codeInvalidRequest, "scope is not a directory: %s", target.Directory)
+		return scope{}, fmt.Errorf("scope is not a directory: %s", target.Directory)
 	}
 	return target, nil
 }
@@ -141,7 +141,7 @@ type definitionID struct {
 func newSession(ctx context.Context, paths platform.Paths, builtins config.Builtins, yes bool) (*session, error) {
 	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
 	if err != nil {
-		return nil, codedf(codeConfigInvalid, "configuration is invalid; fix it before editing: %w", err)
+		return nil, fmt.Errorf("configuration is invalid; fix it before editing: %w", err)
 	}
 	edits, err := configedit.New(paths, builtins, c)
 	if err != nil {
@@ -334,9 +334,7 @@ func (s *session) ask(label, placeholder string, validate func(string) error) (s
 // define adds a top-level definition to file, refusing an ID that is already defined.
 func (s *session) define(kind config.Kind, id, file string, value *yaml.Node) error {
 	if at, exists := configedit.Lookup(s.Config, kind, id); exists {
-		return codedf(
-			codeConflict,
-			"%s %s is already defined at %s:%d",
+		return fmt.Errorf("%s %s is already defined at %s:%d",
 			kind.Label(),
 			id,
 			at.Source.Path,
