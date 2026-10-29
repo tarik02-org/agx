@@ -96,7 +96,7 @@ with its parent however the parent ends.
 Launches outlive the daemon that prepared them
 ([ADR 0016](../adr/0016-launches-survive-daemon-restarts.md)). When renewal fails,
 the wrapper rereads discovery and renews with the daemon it names, whatever its
-build. When that daemon does not hold the launch, or let it expire, the wrapper
+version. When that daemon does not hold the launch, or let it expire, the wrapper
 sends `AttachLaunch` with management authorization: the launch, its grant and
 lifecycle token, the environment inputs, native arguments, and executable it was
 prepared with, and its active thread launches with their grants

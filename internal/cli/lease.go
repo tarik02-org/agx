@@ -49,7 +49,7 @@ func pause(ctx context.Context, d time.Duration) error {
 }
 
 // lease is a wrapper's connection to the daemon serving its launch. It follows the discovery
-// file to the daemon that replaced its own, of any build, and attaches the launch to a daemon
+// file to the daemon that replaced its own, of any version, and attaches the launch to a daemon
 // that does not hold it, sending everything a daemon needs to serve it: the launch, its grant,
 // environment inputs, native arguments, and thread launches.
 type lease struct {
@@ -68,25 +68,11 @@ type lease struct {
 // crashRestartInterval spaces the daemons a wrapper starts for a crashed one.
 const crashRestartInterval = 10 * time.Second
 
-// replaceCrashed starts a daemon when the one discovery names is gone without having stopped:
-// it does not answer, and no daemon holds the startup lock, which a stopping daemon keeps until
-// it exits, after it stopped listening. Nothing else would start a daemon for the harness, whose
-// MCP requests go straight to the port. It reports whether a daemon answers afterwards.
+// replaceCrashed starts a daemon when the one the lease uses is gone without having stopped.
+// Nothing else would start a daemon for the harness, whose MCP requests go straight to the port.
+// It reports whether a daemon answers afterwards.
 func (l *lease) replaceCrashed(ctx context.Context) bool {
-	if time.Since(l.started) < crashRestartInterval {
-		return false
-	}
-	c, err := newAnyVersionClient(l.paths)
-	if err != nil {
-		return false
-	}
-	probe, cancel := context.WithTimeout(ctx, time.Second)
-	_, err = c.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{}))
-	cancel()
-	if err == nil || connect.CodeOf(err) != connect.CodeUnavailable {
-		return false
-	}
-	if held, err := lockHeld(l.paths); err != nil || held {
+	if time.Since(l.started) < crashRestartInterval || !crashed(l.paths, l.current().discovery.InstanceID) {
 		return false
 	}
 	l.started = time.Now()
@@ -96,6 +82,22 @@ func (l *lease) replaceCrashed(ctx context.Context) bool {
 		return false
 	}
 	return l.reconnect(l.current())
+}
+
+// crashed reports whether daemon instance is gone without having stopped: no daemon holds the
+// startup lock, and discovery still names instance. A stopping daemon removes discovery before it
+// releases the lock, and a starting one takes the lock before it writes discovery, so discovery
+// read after the lock was found free names instance only when instance did not stop, and no
+// daemon replaced it.
+func crashed(paths platform.Paths, instance string) bool {
+	if held, err := lockHeld(paths); err != nil || held {
+		return false
+	}
+	d, err := daemon.ReadDiscovery(paths)
+	if err != nil && !errors.Is(err, daemon.ErrVersionMismatch) {
+		return false
+	}
+	return d.InstanceID == instance
 }
 
 func newLease(paths platform.Paths, c *client, launch *v1.AttachLaunchRequest) *lease {
@@ -149,7 +151,7 @@ func (l *lease) attach(ctx context.Context) error {
 }
 
 // reconnect switches to the daemon the discovery file names when it is another instance than
-// used's, and reports whether it did. A daemon of another build serves launches all the same.
+// used's, and reports whether it did. A daemon of another version serves launches all the same.
 func (l *lease) reconnect(used *client) bool {
 	d, err := daemon.ReadDiscovery(l.paths)
 	if err != nil && !errors.Is(err, daemon.ErrVersionMismatch) {

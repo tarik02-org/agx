@@ -280,7 +280,7 @@ func TestDaemonRestart(t *testing.T) {
 		}
 	})
 
-	t.Run("another build replaces a busy daemon", func(t *testing.T) {
+	t.Run("a newer agx replaces a busy daemon", func(t *testing.T) {
 		e := restartEnv(t)
 		t.Cleanup(func() { e.stopDaemon(true) })
 		// The old build starts the daemon, and its wrapper renews with it.
@@ -300,6 +300,14 @@ func TestDaemonRestart(t *testing.T) {
 		if tools["agx-echo"] != want || reinitialized != 1 {
 			t.Fatalf("echo after the upgrade = %q, sessions started again %d\n%s",
 				tools["agx-echo"], reinitialized, h.stderr.String())
+		}
+		// The older agx uses the newer daemon instead of replacing it back.
+		r = e.run(binaries.oldAgx, nil, "secret", "status")
+		if r.code != 0 || strings.Contains(r.stderr, "restarting") {
+			t.Fatalf("older agx: exit %d: %s", r.code, r.stderr)
+		}
+		if got := e.daemonVersion(); got != version {
+			t.Fatalf("daemon version after the older agx = %q, want %q", got, version)
 		}
 	})
 

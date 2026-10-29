@@ -524,20 +524,12 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			if foreground {
 				return serveDaemon(cmd.Context(), *paths, registry, *builtins)
 			}
-			if c, err := newAnyVersionClient(*paths); err == nil {
-				view, err := c.runtime.GetRuntime(cmd.Context(), connect.NewRequest(&v1.GetRuntimeRequest{}))
-				switch {
-				case err != nil:
-				case c.discovery.Version != daemon.Version:
-					return codedf(
-						codeVersionMismatch,
-						"daemon %s is already running (agx is %s); run agx daemon stop first",
-						c.discovery.Version,
-						daemon.Version,
-					)
-				case c.discovery.Config == paths.Config:
-					return printDaemonStarted(false, filepath.Join(paths.Runtime, "daemon.log"))
-				case activeLaunches(view.Msg.GetRuntime()) > 0:
+			_, c, state := probeDaemon(cmd.Context(), *paths)
+			switch state.action() {
+			case refuseDaemon:
+				return state.discovery
+			case useDaemon:
+				if !state.sameConfig {
 					return codedf(
 						codeConflict,
 						"daemon is already running with configuration %s, not %s, and has active launches; "+
@@ -545,20 +537,13 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 						c.discovery.Config,
 						paths.Config,
 					)
-				default:
-					// An idle daemon of another configuration costs nothing to replace.
-					ui.Diagnose(
-						ui.Info,
-						"stopping the daemon, which served configuration %s and had no active launches",
-						c.discovery.Config,
-					)
-					if _, err := stopDaemon(cmd.Context(), c, false, 0); err != nil {
-						return err
-					}
-					if err := awaitExit(cmd.Context(), *paths, replaceTimeout); err != nil {
-						return err
-					}
 				}
+				return printDaemonStarted(false, filepath.Join(paths.Runtime, "daemon.log"))
+			case replaceDaemon:
+				if err := replaceRunning(cmd.Context(), *paths, c, state); err != nil {
+					return err
+				}
+			case startNewDaemon:
 			}
 			logPath, err := startDaemon(cmd.Context(), *paths)
 			if err != nil {
@@ -588,15 +573,20 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 				return err
 			}
 			switch {
-			case c.discovery.Version != daemon.Version:
+			case c.discovery.Protocol != daemon.Protocol:
 				ui.Diagnose(
 					ui.Warn,
-					"the daemon runs agx %s, not this agx %s; run agx daemon restart to replace it",
+					"the daemon runs agx %s, which this agx %s cannot use; run agx daemon restart to replace it",
 					c.discovery.Version,
 					daemon.Version,
 				)
 			case c.discovery.Build != daemon.Build():
-				ui.Diagnose(ui.Warn, "the daemon runs another build of agx; run agx daemon restart to replace it")
+				ui.Diagnose(
+					ui.Info,
+					"the daemon runs agx %s, another build than this agx %s; agx daemon restart replaces it",
+					c.discovery.Version,
+					daemon.Version,
+				)
 			}
 			return emit(view.Msg.Runtime, func() error { return printDaemonStatus(view.Msg.Runtime) })
 		},

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -51,9 +52,21 @@ func init() {
 	}
 }
 
+// Protocol numbers the API between commands and the daemon. Commands use a daemon of the same
+// Protocol whatever its version or build; raise it with every change an older command or daemon
+// cannot handle.
+const Protocol = 1
+
 // ErrVersionMismatch is returned by ReadDiscovery together with the decoded
-// discovery when the running daemon has a different version.
+// discovery when the running daemon speaks another Protocol.
 var ErrVersionMismatch = errors.New("daemon version mismatch")
+
+// incompatible keeps a discovery error's own message while matching ErrVersionMismatch.
+type incompatible string
+
+func (i incompatible) Error() string { return string(i) }
+
+func (i incompatible) Is(target error) bool { return target == ErrVersionMismatch }
 
 // ErrUnavailable marks ReadDiscovery errors that leave no daemon to reach: it is not running,
 // or its discovery file is invalid.
@@ -78,6 +91,8 @@ type Discovery struct {
 	Config     string `json:"config"`
 	// PID is the daemon's process, for diagnosing one that stopped answering.
 	PID int `json:"pid,omitempty"`
+	// Protocol is missing from daemons older than it, which no command can use.
+	Protocol int `json:"protocol,omitempty"`
 }
 
 // verifier hashes a launch credential, so the daemon never holds one it could leak.
@@ -173,15 +188,29 @@ func Serve(
 		return err
 	}
 	lock := flock.New(filepath.Join(paths.Runtime, "daemon.lock"))
-	ok, err := lock.TryLock()
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("daemon is already running")
+	discoveryPath := filepath.Join(paths.Runtime, "daemon.json")
+	// Commands take the lock for a moment to learn whether a daemon holds it, so a held lock is
+	// tried again for a while. Discovery means a daemon holds it, serving or replacing a crashed
+	// one; waiting longer would only let this one take over once that daemon stops.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		ok, err := lock.TryLock()
+		if err != nil {
+			return err
+		}
+		if ok {
+			break
+		}
+		if _, err := os.Stat(discoveryPath); err == nil || time.Now().After(deadline) {
+			return fmt.Errorf("daemon is already running")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
 	}
 	defer func() { _ = lock.Unlock() }()
-	discoveryPath := filepath.Join(paths.Runtime, "daemon.json")
 	// Discovery left behind names the port of a daemon that was killed, which its launches'
 	// harnesses use; the state file names the port of one that stopped.
 	port := 0
@@ -192,7 +221,7 @@ func Serve(
 		slog.Warn("the previous daemon stopped without shutting down", "pid", previous.PID, "url", previous.URL)
 	}
 	// The startup lock makes stale discovery replacement safe.
-	if err := os.Remove(discoveryPath); err != nil && !os.IsNotExist(err) {
+	if err := removeDiscovery(discoveryPath); err != nil {
 		return err
 	}
 	inputs := &config.Inputs{}
@@ -219,6 +248,7 @@ func Serve(
 	defer cancel()
 	discovery := Discovery{
 		Version:    Version,
+		Protocol:   Protocol,
 		Build:      Build(),
 		InstanceID: securefs.Token(),
 		URL:        "http://" + listener.Addr().String(),
@@ -311,7 +341,11 @@ func Serve(
 	if err := securefs.WriteJSON(discoveryPath, discovery); err != nil {
 		return err
 	}
-	defer func() { _ = os.Remove(discoveryPath) }()
+	defer func() {
+		if err := removeDiscovery(discoveryPath); err != nil {
+			slog.Error("cannot remove the discovery file; commands take this daemon for a crashed one", "error", err)
+		}
+	}()
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.Serve(listener) }()
 	ticker := time.NewTicker(time.Second)
@@ -930,9 +964,9 @@ func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 	return out
 }
 
-// ReadDiscovery never returns credentials to inspection commands. On a version
-// mismatch it returns the valid discovery with an error wrapping
-// ErrVersionMismatch, so callers such as daemon stop can still reach the daemon.
+// ReadDiscovery never returns credentials to inspection commands. For a daemon of another
+// Protocol it returns the valid discovery with an error matching ErrVersionMismatch, so callers
+// such as daemon stop can still reach the daemon.
 func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 	var d Discovery
 	path := filepath.Join(paths.Runtime, "daemon.json")
@@ -955,17 +989,31 @@ func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 	if err != nil || port < 1 || port > 65535 {
 		return d, unavailable("invalid daemon port")
 	}
-	if d.Build != Build() {
-		return d, fmt.Errorf(
-			"%w: it runs a different agx build; run agx daemon stop, then retry",
-			ErrVersionMismatch,
-		)
+	if d.Protocol != Protocol {
+		return d, incompatible(fmt.Sprintf(
+			"the daemon runs agx %s, which this agx %s cannot use; update agx or run agx daemon restart",
+			d.Version,
+			Version,
+		))
 	}
 	return d, nil
 }
 
-// Build identifies the running executable by content, so a rebuilt binary with an unchanged
-// version string still notices a daemon started from the old one.
+// removeDiscovery deletes the discovery file. On Windows a command reading it at that moment
+// makes the removal fail, so it retries briefly.
+func removeDiscovery(path string) error {
+	var err error
+	for range 20 {
+		if err = os.Remove(path); err == nil || errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return err
+}
+
+// Build identifies the running executable by content, for telling apart daemons of the same
+// version in daemon status.
 var Build = sync.OnceValue(func() string {
 	path, err := os.Executable()
 	if err != nil {

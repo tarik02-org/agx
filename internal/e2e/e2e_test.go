@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	version    = "0.0.0-e2e"
-	oldVersion = "0.0.0-e2e-old"
+	version    = "0.0.0+nightly.2.e2e"
+	oldVersion = "0.0.0+nightly.1.e2e"
 	token      = "e2e-secret-token"
 	sealed     = "e2e-sops-value"
 )
@@ -732,7 +732,7 @@ func TestAutostart(t *testing.T) {
 		}
 	})
 
-	t.Run("idle daemon of another build is replaced", func(t *testing.T) {
+	t.Run("idle daemon of an older agx is replaced", func(t *testing.T) {
 		e := newEnv(t)
 		t.Cleanup(func() { e.stopDaemon(true) })
 		if r := e.run(binaries.oldAgx, nil, "daemon", "start"); r.code != 0 {

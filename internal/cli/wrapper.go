@@ -207,14 +207,14 @@ func runHarness(
 		return c.launches.PrepareLaunch(ctx, connect.NewRequest(prepare))
 	}
 	prepared, err := prepareLaunch()
-	// A restarting daemon refuses new launches; the next one, which the restart or this command
-	// starts, takes the same request.
+	// A restarting daemon refuses new launches; the next one, which whoever stopped it starts,
+	// takes the same request. Starting or replacing one here could race that start.
 	deadline := time.Now().Add(restartWait)
 	for attempt := 0; stopping(err) && time.Now().Before(deadline); attempt++ {
 		if err := pause(ctx, backoff(attempt)); err != nil {
 			return err
 		}
-		next, dialErr := daemonClient(ctx, paths, autostart(harnesses.config))
+		next, dialErr := newClient(paths)
 		if dialErr != nil {
 			continue
 		}

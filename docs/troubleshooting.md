@@ -74,9 +74,10 @@ plugins are not turned off (`features.plugins = false` in Codex's
 `config.toml`). `agx doctor` checks both. agx installs only skills that a rule
 selects, so check with `agx explain` that the skill is selected.
 
-**"daemon of another build" or "version mismatch".**
-A daemon from another agx build is running and the command could not replace
-it. Run `agx daemon stop`, then try again.
+**"the daemon runs agx X, which this agx Y cannot use".**
+A daemon of an agx with an incompatible protocol is running, and this agx is
+not newer, so it leaves the daemon alone. Use the newer agx, or run
+`agx daemon restart` to replace the daemon with one of this agx.
 
 **"upgrade agx".**
 A newer agx wrote one of agx's own files (package pins), and

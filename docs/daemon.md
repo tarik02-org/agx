@@ -31,10 +31,19 @@ MCP servers start fresh.
 `daemon stop --force` instead cuts off every running harness's MCP access. The
 harnesses themselves keep running.
 
-Upgrading agx works the same way: the first command of the new version stops
-the old daemon gracefully and starts its own, keeping running launches.
-`agx daemon status` does not replace it: it reports a daemon of another agx
-version or build with a warning to run `agx daemon restart`.
+Upgrading agx works the same way: the first command of a newer version stops
+the older daemon gracefully and starts its own, keeping running launches. Only
+a newer agx replaces a daemon. Releases are ordered by version, and nightlies
+by the number of commits since their release; development builds are not
+ordered, so they never replace a daemon on their own. An agx uses a daemon of
+another version as long as both speak the same protocol, which changes only
+with incompatible changes to agx itself. An agx that cannot use the running
+daemon, and is not newer than it, fails with "the daemon runs agx X, which
+this agx Y cannot use" and leaves the daemon running: update agx, or run
+`agx daemon restart` to replace the daemon with one of this agx. A daemon that
+is too busy to answer in time is never replaced. `agx daemon status` replaces
+nothing either: it reports a daemon of another protocol with a warning, and one
+of another build with a note.
 
 ## Its environment
 
@@ -79,6 +88,11 @@ start) only once it serves. Commands that start one at the same time may each
 spawn a daemon; the extras exit and every command connects to the winner. A
 command reports a failed start, with the log's last line, only once the lock is
 free and nothing answers.
+
+When a daemon dies without shutting down, the wrappers of running harnesses
+start a new one: a wrapper does so only when no daemon holds the lock and the
+discovery file still names the daemon it used, so it never races a daemon
+another command is starting.
 
 ## Launches
 
