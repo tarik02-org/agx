@@ -305,13 +305,11 @@ func styleDiff(out *ui.Printer, diff string) string {
 	return b.String()
 }
 
-// promptError turns Ctrl-C into exit status 130 and Esc into a cancellation.
+// promptError maps an aborted form to exit status 130.
 func promptError(err error) error {
 	switch {
-	case errors.Is(err, prompt.ErrInterrupted):
+	case errors.Is(err, prompt.ErrInterrupted), errors.Is(err, context.Canceled):
 		return &ExitError{Code: 130}
-	case errors.Is(err, prompt.ErrCancelled):
-		return errDeclined
 	}
 	return err
 }
