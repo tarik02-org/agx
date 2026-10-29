@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"io/fs"
 	"maps"
@@ -264,13 +265,7 @@ func Load(root string, opts Options) (*Config, error) {
 		} else if err != nil {
 			return "", fmt.Errorf("package %s cache: %w", id, err)
 		}
-		cached, err := TreeHash(dir)
-		if err != nil {
-			return "", fmt.Errorf("package %s cache: %w", id, err)
-		}
-		if cached != hash {
-			return "", fmt.Errorf("package %s cache content does not match its lock", id)
-		}
+		// Installation renames a hashed copy into place, so an entry that exists is complete.
 		c.PackageHashes[id] = hash
 		return dir, nil
 	}
@@ -287,6 +282,15 @@ func Load(root string, opts Options) (*Config, error) {
 	for name, s := range c.Skills {
 		if _, ok := c.Missing[s.Package]; ok && s.Package != "" {
 			delete(c.Skills, name)
+			continue
+		}
+		for _, hash := range c.PackageHashes {
+			rel, err := filepath.Rel(filepath.Join(cache, "packages", hash), s.Path)
+			if !s.Generated() && err == nil && filepath.IsLocal(rel) {
+				s.installed = Digest([]string{hash, filepath.ToSlash(rel)})
+				c.Skills[name] = s
+				break
+			}
 		}
 	}
 	for name, i := range c.Instructions {
@@ -1035,9 +1039,12 @@ func (c *Config) Validate() error {
 	}
 	for _, id := range sortedKeys(c.Skills) {
 		r := c.Skills[id]
-		// Apply the same symlink rules as hashing and copying, so a valid skill can always be launched.
-		if _, err := r.TreeHash(); err != nil {
-			return errorAt(r.Source, "skill %s: %w", id, err)
+		// Apply the same symlink rules as hashing and copying, so a valid skill can always be
+		// launched. Installation applied them to package content already.
+		if r.installed == "" {
+			if err := r.tree(func(string, int64, fs.FileMode, io.Reader) error { return nil }); err != nil {
+				return errorAt(r.Source, "skill %s: %w", id, err)
+			}
 		}
 		if !r.Generated() {
 			if _, err := os.ReadFile(filepath.Join(r.Path, "SKILL.md")); err != nil {
@@ -1321,21 +1328,49 @@ func ReadLock(path string, overlay Overlay) (Lock, error) {
 // identically. Executable bits are excluded because Windows checkouts and umasks cannot
 // reproduce them.
 func TreeHash(src string) (string, error) {
-	h := sha256.New()
+	h := newTreeHash()
 	err := securefs.Walk(src, func(rel string, info fs.FileInfo, content io.Reader) error {
-		if content == nil {
-			// Directory sizes vary across filesystems; only file bytes matter.
-			_, _ = fmt.Fprintf(h, "%s\x00dir\x000\x00", rel)
-			return nil
-		}
-		_, _ = fmt.Fprintf(h, "%s\x00file\x00%d\x00", rel, info.Size())
-		_, err := io.Copy(h, content)
-		return err
+		return h.add(rel, info.Size(), content)
 	})
 	if err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return h.sum(), nil
+}
+
+type treeHash struct{ hash.Hash }
+
+func newTreeHash() treeHash { return treeHash{sha256.New()} }
+
+// add hashes one entry of a walk; content is nil for a directory.
+func (h treeHash) add(rel string, size int64, content io.Reader) error {
+	if content == nil {
+		// Directory sizes vary across filesystems; only file bytes matter.
+		_, _ = fmt.Fprintf(h, "%s\x00dir\x000\x00", rel)
+		return nil
+	}
+	_, _ = fmt.Fprintf(h, "%s\x00file\x00%d\x00", rel, size)
+	_, err := io.Copy(h, content)
+	return err
+}
+
+func (h treeHash) sum() string { return hex.EncodeToString(h.Sum(nil)) }
+
+// VerifyPackages hashes the installed content of every loaded package again. Loading trusts the
+// cache, whose entries installation creates from content it hashed.
+func (c *Config) VerifyPackages(cache string) error {
+	for _, id := range sortedKeys(c.PackageHashes) {
+		hash := c.PackageHashes[id]
+		dir := filepath.Join(cache, "packages", hash)
+		cached, err := TreeHash(dir)
+		if err != nil {
+			return fmt.Errorf("package %s cache: %w", id, err)
+		}
+		if cached != hash {
+			return fmt.Errorf("package %s: cache entry %s does not match its content hash", id, dir)
+		}
+	}
+	return nil
 }
 
 var contentHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)

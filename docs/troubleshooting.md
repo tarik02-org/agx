@@ -12,7 +12,7 @@ agx doctor --all      # test every MCP server, not only the ones selected here
 for every problem. It checks:
 
 - that the configuration loads, and from which files;
-- that packages are installed and lockfiles are current;
+- that packages are installed, unchanged in the cache, and lockfiles are current;
 - each harness: found, and new enough;
 - Codex skill plugins, per Codex-based harness definition;
 - the daemon: running, the same agx version, serving this configuration;
@@ -36,6 +36,11 @@ A package or Git skill is not installed yet, or changed since it was installed
 goes on without that package's skills, instructions, and MCP servers; run
 `agx install` to get them. Launches never download anything themselves.
 `agx config validate` and `agx doctor` list every missing package.
+
+**`agx doctor` says "cache entry … does not match its content hash".**
+Something changed the files of an installed package in the cache. Launches
+use them as they are. Delete the directory the message names and run
+`agx install` to install the package again.
 
 **`agx install` says "git is not on PATH".**
 Git packages and Git skills are fetched with `git`. Install it, or add it to

@@ -2,10 +2,15 @@ package config
 
 import (
 	"fmt"
+	"io"
+	"io/fs"
+	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 
 	"go.yaml.in/yaml/v4"
@@ -36,23 +41,17 @@ type SkillFile struct {
 // Generated reports whether the skill is written in configuration rather than read from a directory.
 func (s Skill) Generated() bool { return s.Content != "" }
 
-// TreeHash hashes the skill directory as harnesses receive it. Executable bits of generated
-// files are part of their definition, so they are hashed too.
-func (s Skill) TreeHash() (string, error) {
-	if !s.Generated() {
-		return TreeHash(s.Path)
+// ContentHash hashes the skill directory as harnesses receive it, or for a skill inside an
+// installed package, its place in the package's content. Executable bits of generated files are
+// part of their definition, so they are hashed too.
+func (s Skill) ContentHash() (string, error) {
+	if s.installed != "" {
+		return s.installed, nil
 	}
-	tmp, err := os.MkdirTemp("", "agx-skill-*")
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = os.RemoveAll(tmp) }()
-	dir := filepath.Join(tmp, "skill")
-	if err := s.Materialize(dir); err != nil {
-		return "", err
-	}
-	hash, err := TreeHash(dir)
-	if err != nil {
+	h := newTreeHash()
+	if err := s.tree(func(rel string, size int64, _ fs.FileMode, content io.Reader) error {
+		return h.add(rel, size, content)
+	}); err != nil {
 		return "", err
 	}
 	executable := []string{}
@@ -62,9 +61,9 @@ func (s Skill) TreeHash() (string, error) {
 		}
 	}
 	if len(executable) == 0 {
-		return hash, nil
+		return h.sum(), nil
 	}
-	return Digest([]any{hash, executable}), nil
+	return Digest([]any{h.sum(), executable}), nil
 }
 
 // NativeName is the name harnesses show for the skill: the configured name of a generated skill,
@@ -118,51 +117,85 @@ func frontmatterName(document string) string {
 
 // Materialize writes the skill directory to dest, which must not exist yet.
 func (s Skill) Materialize(dest string) error {
-	if !s.Generated() {
-		return securefs.CopyTree(s.Path, dest)
+	return s.tree(func(rel string, _ int64, mode fs.FileMode, content io.Reader) error {
+		target := filepath.Join(dest, filepath.FromSlash(rel))
+		if content == nil {
+			return os.MkdirAll(target, 0o700)
+		}
+		return writeNew(target, content, mode)
+	})
+}
+
+// tree visits the skill directory as Materialize writes it and in the order TreeHash walks a
+// directory, without reading file content the visitor does not read: rel is slash-separated,
+// mode holds the file's permissions, and content is nil for directories.
+func (s Skill) tree(visit func(rel string, size int64, mode fs.FileMode, content io.Reader) error) error {
+	walk := func(src, prefix string) error {
+		return securefs.Walk(src, func(rel string, info fs.FileInfo, content io.Reader) error {
+			return visit(path.Join(prefix, rel), info.Size(), 0o600|info.Mode().Perm()&0o111, content)
+		})
 	}
-	if err := os.MkdirAll(dest, 0o700); err != nil {
-		return err
+	if !s.Generated() {
+		return walk(s.Path, ".")
 	}
 	document, err := s.document()
 	if err != nil {
 		return err
 	}
-	if err := writeNew(filepath.Join(dest, "SKILL.md"), []byte(document), 0o600); err != nil {
+	// keys maps each path to the files key it holds; SKILL.md and parent directories hold none.
+	keys := map[string]string{"SKILL.md": ""}
+	for key := range s.Files {
+		rel := strings.TrimSuffix(key, "/")
+		keys[rel] = key
+		for dir := path.Dir(rel); dir != "."; dir = path.Dir(dir) {
+			if _, ok := keys[dir]; !ok {
+				keys[dir] = ""
+			}
+		}
+	}
+	if err := visit(".", 0, 0, nil); err != nil {
 		return err
 	}
-	for _, key := range sortedKeys(s.Files) {
+	// Comparing segments orders the paths as a walk of the written directory meets them.
+	rels := slices.SortedFunc(maps.Keys(keys), func(a, b string) int {
+		return slices.Compare(strings.Split(a, "/"), strings.Split(b, "/"))
+	})
+	for _, rel := range rels {
+		key := keys[rel]
 		f := s.Files[key]
-		target := filepath.Join(dest, filepath.FromSlash(strings.TrimSuffix(key, "/")))
-		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-			return err
-		}
-		if f.Path == "" {
-			mode := os.FileMode(0o600)
+		switch {
+		case rel == "SKILL.md":
+			err = visit(rel, int64(len(document)), 0o600, strings.NewReader(document))
+		case key == "":
+			err = visit(rel, 0, 0, nil)
+		case f.Path == "":
+			mode := fs.FileMode(0o600)
 			if f.Executable {
 				mode = 0o700
 			}
-			if err := writeNew(target, []byte(f.Content), mode); err != nil {
-				return fmt.Errorf("files %s: %w", key, err)
+			err = visit(rel, int64(len(f.Content)), mode, strings.NewReader(f.Content))
+		default:
+			var info fs.FileInfo
+			if info, err = os.Stat(f.Path); err != nil {
+				break
 			}
-			continue
+			switch {
+			case info.IsDir() && !f.Directory:
+				return fmt.Errorf(
+					"files %s: %s is a directory; end both the key and the path with / to copy it",
+					key,
+					f.Path,
+				)
+			case !info.IsDir() && f.Directory:
+				return fmt.Errorf("files %s: %s is not a directory", key, f.Path)
+			}
+			err = walk(f.Path, rel)
 		}
-		info, err := os.Stat(f.Path)
+		if err != nil && key != "" {
+			return fmt.Errorf("files %s: %w", key, err)
+		}
 		if err != nil {
-			return fmt.Errorf("files %s: %w", key, err)
-		}
-		switch {
-		case info.IsDir() && !f.Directory:
-			return fmt.Errorf(
-				"files %s: %s is a directory; end both the key and the path with / to copy it",
-				key,
-				f.Path,
-			)
-		case !info.IsDir() && f.Directory:
-			return fmt.Errorf("files %s: %s is not a directory", key, f.Path)
-		}
-		if err := securefs.CopyTree(f.Path, target); err != nil {
-			return fmt.Errorf("files %s: %w", key, err)
+			return err
 		}
 	}
 	return nil
@@ -196,12 +229,12 @@ func (s Skill) document() (string, error) {
 	return b.String(), nil
 }
 
-func writeNew(path string, data []byte, mode os.FileMode) error {
+func writeNew(path string, content io.Reader, mode os.FileMode) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
 		return err
 	}
-	_, err = f.Write(data)
+	_, err = io.Copy(f, content)
 	closeErr := f.Close()
 	if err != nil {
 		return err

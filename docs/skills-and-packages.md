@@ -174,6 +174,9 @@ agx update team        # just one
 - `install` fetches packages and Git skills and instructions, then records the
   exact commit or content hash in `agx.lock.json` next to the configuration
   file that declares them. Commit lockfiles along with the configuration.
+- `install` hashes what it copies into the cache, and other commands trust an
+  installed package without reading it again. `agx doctor` hashes installed
+  packages again and names any cache entry that changed since.
 - Launching never fetches or updates anything. A missing package makes the
   launch fail with a hint to run `agx install`.
 - `update` is the only command that moves a package to a newer commit. A Git

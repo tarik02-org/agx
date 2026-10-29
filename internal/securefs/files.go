@@ -100,11 +100,12 @@ func Walk(src string, visit func(rel string, info fs.FileInfo, content io.Reader
 			if !info.Mode().IsRegular() {
 				return fmt.Errorf("unsupported package file: %s", rel)
 			}
-			f, err := fsys.Open(name)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = f.Close() }()
+			f := &lazyFile{fsys: fsys, name: name}
+			defer func() {
+				if f.file != nil {
+					_ = f.file.Close()
+				}
+			}()
 			return visit(rel, info, f)
 		}
 		for _, a := range active {
@@ -132,6 +133,38 @@ func Walk(src string, visit func(rel string, info fs.FileInfo, content io.Reader
 		return nil
 	}
 	return walk(start, ".")
+}
+
+// lazyFile opens a file on its first read, so a walk that checks only the structure of a tree
+// opens no file.
+type lazyFile struct {
+	fsys fs.FS
+	name string
+	file fs.File
+}
+
+func (f *lazyFile) open() error {
+	if f.file != nil {
+		return nil
+	}
+	var err error
+	f.file, err = f.fsys.Open(f.name)
+	return err
+}
+
+func (f *lazyFile) Read(p []byte) (int, error) {
+	if err := f.open(); err != nil {
+		return 0, err
+	}
+	return f.file.Read(p)
+}
+
+// WriteTo keeps the copy fast paths of the opened file.
+func (f *lazyFile) WriteTo(w io.Writer) (int64, error) {
+	if err := f.open(); err != nil {
+		return 0, err
+	}
+	return io.Copy(w, f.file)
 }
 
 // CopyTree dereferences internal symlinks so cached content cannot change later.

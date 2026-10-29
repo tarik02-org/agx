@@ -130,12 +130,14 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 		hash, revision, dest := "", "", ""
 		reuse := func(candidateHash, candidateRevision string) {
 			candidate := filepath.Join(cache, "packages", candidateHash)
-			if config.ValidHash(candidateHash) {
-				if cached, err := config.TreeHash(candidate); err == nil && cached == candidateHash {
-					hash = candidateHash
-					revision = candidateRevision
-					dest = candidate
-				}
+			if !config.ValidHash(candidateHash) {
+				return
+			}
+			// Entries appear only by renaming content hashed under that name into place.
+			if _, err := os.Stat(candidate); err == nil {
+				hash = candidateHash
+				revision = candidateRevision
+				dest = candidate
 			}
 		}
 		pin := config.PinPath(cache, p)

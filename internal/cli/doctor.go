@@ -209,7 +209,20 @@ func configChecks(paths platform.Paths, builtins config.Builtins) (*config.Confi
 		}}
 	}
 	c, loadErr := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
-	return packageChecks(read, c, loadErr, filesDetail(read))
+	c, loaded, checks := packageChecks(read, c, loadErr, filesDetail(read))
+	// Loading trusts installed content; a damaged cache entry stays until it is removed.
+	if loaded {
+		if err := c.VerifyPackages(paths.Cache); err != nil {
+			checks[len(checks)-1] = check{
+				Group:  "config",
+				Name:   "packages",
+				Status: checkFail,
+				Detail: err.Error(),
+				Hint:   "delete that cache entry and run agx install",
+			}
+		}
+	}
+	return c, loaded, checks
 }
 
 // filesDetail describes the files configuration was read from. A root file that does not exist
@@ -254,8 +267,7 @@ func packageChecks(read, c *config.Config, loadErr error, files string) (*config
 		}
 		return c, true, []check{configRow, {Group: "config", Name: "packages", Status: checkPass, Detail: detail}}
 	case strings.Contains(loadErr.Error(), "run agx install") ||
-		strings.Contains(loadErr.Error(), "stale dependency lock") ||
-		strings.Contains(loadErr.Error(), "cache content does not match"):
+		strings.Contains(loadErr.Error(), "stale dependency lock"):
 		return read, false, []check{configRow, {
 			Group:  "config",
 			Name:   "packages",

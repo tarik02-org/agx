@@ -101,7 +101,7 @@ func supersede(native, name string, now time.Time) (time.Time, error) {
 // pluginName leads with the skill's native name, which Codex shows as the skill's namespace, and
 // ends with its content hash, so each version of a skill is its own plugin.
 func pluginName(skill config.Skill) (string, error) {
-	hash, err := skill.TreeHash()
+	hash, err := skill.ContentHash()
 	if err != nil {
 		return "", err
 	}

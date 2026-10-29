@@ -233,7 +233,7 @@ func TestBuildPi(t *testing.T) {
 
 func TestBuildCodex(t *testing.T) {
 	f := newFixture(t)
-	hash, err := f.config.Skills["review"].TreeHash()
+	hash, err := f.config.Skills["review"].ContentHash()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +281,7 @@ func TestBuildCodex(t *testing.T) {
 
 func TestBuildCodexAppServer(t *testing.T) {
 	f := newFixture(t)
-	hash, err := f.config.Skills["review"].TreeHash()
+	hash, err := f.config.Skills["review"].ContentHash()
 	if err != nil {
 		t.Fatal(err)
 	}

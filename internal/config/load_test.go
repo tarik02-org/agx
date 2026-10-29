@@ -503,6 +503,62 @@ func TestPinnedSources(t *testing.T) {
 	})
 }
 
+func TestInstalledPackagesAreTrusted(t *testing.T) {
+	dir := t.TempDir()
+	src := mkdir(t, filepath.Join(dir, "src"))
+	skill(t, filepath.Join(src, "review"), "review")
+	hash, err := config.TreeHash(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := fragment(t, dir, "packages:\n  p: {path: ./src, hash: "+hash+"}\n")
+	cache := filepath.Join(dir, "cache")
+	if err := securefs.CopyTree(src, filepath.Join(cache, "packages", hash)); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(cache, "packages", hash, "review", "added.md"), "changed after installation")
+
+	c, err := config.Load(root, config.Options{Builtins: builtins, Cache: cache})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := c.Skills["p/review"].ContentHash(); err != nil || got != config.Digest([]string{hash, "review"}) {
+		t.Fatalf("ContentHash() = %q, %v", got, err)
+	}
+	wantError(t, c.VerifyPackages(cache), "package p: cache entry", "does not match its content hash")
+}
+
+func TestGeneratedSkillHash(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "refs", "z.md"), "z")
+	write(t, filepath.Join(dir, "refs", "deep", "a.md"), "a")
+	write(t, filepath.Join(dir, "one.txt"), "one")
+	root := fragment(t, dir, `skills:
+  g:
+    description: d
+    content: body
+    files:
+      a-b: {content: x, executable: true}
+      a/b: {content: y}
+      -lead: {content: lead}
+      refs/: {path: ./refs/}
+      nested/one.txt: {path: ./one.txt}
+`)
+	s := load(t, root).Skills["g"]
+	written := filepath.Join(t.TempDir(), "g")
+	if err := s.Materialize(written); err != nil {
+		t.Fatal(err)
+	}
+	tree, err := config.TreeHash(written)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Hashing in memory matches hashing the written skill.
+	if got, err := s.ContentHash(); err != nil || got != config.Digest([]any{tree, []string{"a-b"}}) {
+		t.Fatalf("ContentHash() = %q, %v", got, err)
+	}
+}
+
 func TestMissingPackagesAreSkipped(t *testing.T) {
 	dir := t.TempDir()
 	mkdir(t, filepath.Join(dir, "a"))

@@ -35,7 +35,9 @@ installed packages, so several bundles share one copy. Skills keep their whole
 directory so relative scripts and references work.
 
 Lockfiles (JSON) record resolved revisions, dependencies, and content hashes.
-Contents install into a shared immutable cache. Locks change only through
+Contents install into a shared immutable cache. Installation hashes content
+before renaming it into place under its hash, so loading trusts an entry that
+exists and only `agx doctor` hashes it again. Locks change only through
 explicit installation commands; resolution and launches never fetch. Each launch resolves a
 snapshot first, so updates affect later launches, not running ones.
 

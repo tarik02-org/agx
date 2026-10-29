@@ -135,6 +135,9 @@ type Skill struct {
 	// Inline marks definitions written in a selection list, whose IDs may not be reused.
 	Inline bool   `yaml:"-" json:"-"`
 	Source Source `yaml:"-" json:"source"`
+	// installed is the content hash of a skill inside an installed package, which follows from
+	// the package's content hash without reading the files.
+	installed string
 }
 
 // Instructions is guidance text: a file, a file from a Git source, or text in configuration.
@@ -597,7 +600,7 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 	for _, r := range s.Resources {
 		switch r.Kind {
 		case "skill":
-			h, err := c.Skills[r.ID].TreeHash()
+			h, err := c.Skills[r.ID].ContentHash()
 			if err != nil {
 				return nil, fmt.Errorf("skill %s: %w", r.ID, err)
 			}
