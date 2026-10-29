@@ -547,7 +547,6 @@ func TestRemoveUnusedArtifacts(t *testing.T) {
 	used := dir("v3-used", old)
 	unused := dir("v3-unused", old)
 	recent := dir("v3-recent", now.Add(-time.Hour))
-	legacy := dir("v2-legacy", old)
 	build := dir(".build-1", now.Add(-2*time.Hour))
 	building := dir(".build-2", now)
 	write(t, filepath.Join(cache, "launches", "A", "artifacts"), "v3-used")
@@ -558,12 +557,12 @@ func TestRemoveUnusedArtifacts(t *testing.T) {
 
 	// A launch whose directory names no artifacts keeps them all.
 	adapters.RemoveUnusedArtifacts(cache, []string{"A", "B"}, now)
-	if !exists(unused) || !exists(legacy) {
+	if !exists(unused) {
 		t.Fatal("removed artifacts while a launch's are unknown")
 	}
 	adapters.RemoveUnusedArtifacts(cache, []string{"A"}, now)
 	for path, want := range map[string]bool{
-		used: true, unused: false, recent: true, legacy: false, build: false, building: true,
+		used: true, unused: false, recent: true, build: false, building: true,
 	} {
 		if exists(path) != want {
 			t.Errorf("%s exists = %v, want %v", filepath.Base(path), !want, want)

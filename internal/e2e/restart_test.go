@@ -190,7 +190,7 @@ func awaitServing(t *testing.T, endpoint, authorization string) {
 // revoked reports whether the daemon's state file refuses attaching launch id.
 func (e *env) revoked(id string) bool {
 	e.t.Helper()
-	b, err := os.ReadFile(filepath.Join(e.dir, "state", "daemon-state.json"))
+	b, err := os.ReadFile(filepath.Join(e.runtimeDir(), "daemon-state.json"))
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -335,7 +335,7 @@ func TestDaemonRestart(t *testing.T) {
 		id := launchID(h.endpoint())
 		// The daemon dies without saving, as when the job of the process that started it closes.
 		killDaemon(t, e)
-		if err := os.Remove(filepath.Join(e.dir, "state", "daemon-state.json")); err != nil {
+		if err := os.Remove(filepath.Join(e.runtimeDir(), "daemon-state.json")); err != nil {
 			t.Fatal(err)
 		}
 		// No command runs: the wrapper starts the next daemon, which takes the launch back.
@@ -350,7 +350,7 @@ func TestDaemonRestart(t *testing.T) {
 		if !strings.Contains(h.stderr.String(), "starting a new one") {
 			t.Errorf("the wrapper did not say it replaced the daemon:\n%s", h.stderr.String())
 		}
-		log, err := os.ReadFile(filepath.Join(e.dir, "cache", "runtime", "daemon.log"))
+		log, err := os.ReadFile(filepath.Join(e.runtimeDir(), "daemon.log"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -430,7 +430,7 @@ func (e *env) daemonVersionOf(binary string) string {
 // daemonURL is the address in the daemon's discovery file.
 func daemonURL(t *testing.T, e *env) *url.URL {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(e.dir, "cache", "runtime", "daemon.json"))
+	b, err := os.ReadFile(filepath.Join(e.runtimeDir(), "daemon.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +450,7 @@ func daemonURL(t *testing.T, e *env) *url.URL {
 // killDaemon ends the daemon at once, without letting it shut down.
 func killDaemon(t *testing.T, e *env) {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(e.dir, "cache", "runtime", "daemon.json"))
+	b, err := os.ReadFile(filepath.Join(e.runtimeDir(), "daemon.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/securefs"
 )
 
@@ -97,7 +98,7 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 	if err != nil {
 		return nil, err
 	}
-	root, err = Canonical(root)
+	root, err = platform.Canonical(root)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +151,7 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 			return nil, errorAt(at, "fragment %s: %s does not exist", entry, p)
 		}
 		for _, path := range files {
-			if path, err = Canonical(path); err != nil {
+			if path, err = platform.Canonical(path); err != nil {
 				return nil, err
 			}
 			if seen[path] {
@@ -187,7 +188,7 @@ func RootDir(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return Canonical(filepath.Dir(abs))
+	return platform.Canonical(filepath.Dir(abs))
 }
 
 // Lists reports whether the root lists path: one of its fragment paths, or a match of one of
@@ -674,7 +675,7 @@ func ScopeDirectory(file, written string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return Canonical(relative(filepath.Dir(file), directory))
+	return platform.Canonical(relative(filepath.Dir(file), directory))
 }
 
 // conflict decides whether a definition applies. Configuration fragments merge before package

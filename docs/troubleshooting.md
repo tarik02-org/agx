@@ -59,7 +59,7 @@ Run `agx secret login <id>` for an OAuth server, or store a new token with
 `needs-auth`.
 
 **An MCP server does not start or answer.**
-Run `agx mcp test <id>`: it connects outside any harness and shows the server's
+Run `agx mcp tools <id> --all`: it connects outside any harness and shows the server's
 error. For local servers, check that the command is on the daemon's `PATH` (or
 use an absolute path), and look at the [daemon log](#logs).
 
@@ -97,13 +97,6 @@ of the real binary (see [Harnesses](harnesses.md#which-executable-runs)).
 Automatic starting is off (`daemon.autostart: false` or `AGX_NO_AUTOSTART=1`).
 Run `agx daemon start`, or check the [log](#logs) if it does not stay up.
 
-**The daemon serves another configuration.**
-You used a different `AGX_CONFIG` or `--config` with the same cache while a
-harness launched with the other configuration still runs. agx replaces a daemon
-of another configuration only when it has no active launches (`agx launch
-list`), so their MCP servers keep working. Exit those harnesses, rerun with the
-configuration the message names, or give the other setup its own `AGX_CACHE`.
-
 **A shim is not found.**
 Add `~/.local/share/agx/shims` to your `PATH`, and run `agx shims install`
 after adding harness definitions.
@@ -114,13 +107,13 @@ added: `xattr -d com.apple.quarantine /path/to/agx`.
 
 ## Logs
 
-The daemon writes `daemon.log` in the `runtime` directory of the cache:
+The daemon writes `daemon.log` in its configuration's hashed runtime directory:
 
 | Platform | Default log location |
 | --- | --- |
-| Linux | `~/.cache/agx/runtime/daemon.log` |
-| macOS | `~/Library/Caches/agx/runtime/daemon.log` |
-| Windows | `%LOCALAPPDATA%\cache\agx\runtime\daemon.log` |
+| Linux | `~/.cache/agx/runtime/<root-hash>/daemon.log` |
+| macOS | `~/Library/Caches/agx/runtime/<root-hash>/daemon.log` |
+| Windows | `%LOCALAPPDATA%\cache\agx\runtime\<root-hash>\daemon.log` |
 
 `agx daemon start` prints the path.
 

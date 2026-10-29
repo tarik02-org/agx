@@ -145,7 +145,7 @@ func TestJSONShapes(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &document); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := shape(document), "{error:{code:string,message:string},version:number}"; got != want {
+	if got, want := shape(document), "{message:string}"; got != want {
 		t.Errorf("error document:\n got %s\nwant %s", got, want)
 	}
 }
@@ -175,7 +175,7 @@ harnesses:
 	for _, args := range [][]string{{"mcp", "list"}, {"harness", "list"}} {
 		_, docs := runJSON(t, append([]string{"--json"}, args...)...)
 		if len(docs) != 1 || docs[0].Data == nil {
-			t.Fatalf("agx %q: %+v", args, docs[0].Error)
+			t.Fatalf("agx %q: %+v", args, docs[0].Message)
 		}
 		if data := string(docs[0].Data); strings.Contains(data, "literal-") {
 			t.Errorf("agx %q --json shows a literal value: %s", args, data)

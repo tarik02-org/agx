@@ -16,7 +16,7 @@ ran into three problems:
 
 ## Decision
 
-Values live in `secrets.json` in the state directory. The file is versioned JSON written
+Values live in `secrets.json` in the state directory. The file is JSON written
 atomically with mode 0600 (a private ACL on Windows), and every read-modify-write holds
 `secrets.json.lock`. Each record is sealed with AES-256-GCM under one 256-bit key, with the
 record's key as additional data, so a record cannot be moved under another key. The OS keychain

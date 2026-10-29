@@ -182,8 +182,9 @@ agx update team        # just one
   directory that selects the same; Codex gets skills from its native plugins
   and copies only instructions. The daemon deletes copies no launch used for 7
   days.
-- Launching never fetches or updates anything. A missing package makes the
-  launch fail with a hint to run `agx install`.
+- Launching never fetches or updates anything. A missing package produces a
+  warning with a hint to run `agx install`; the launch continues without that
+  package's resources.
 - `update` is the only command that moves a package to a newer commit. A Git
   skill or instructions file updates by kind and ID: `agx update
   skill:strict-review`.

@@ -32,7 +32,7 @@ type workspace struct {
 
 func newWorkspace(t *testing.T, configuration string) *workspace {
 	t.Helper()
-	dir, err := config.Canonical(t.TempDir())
+	dir, err := platform.Canonical(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +422,7 @@ func TestTarget(t *testing.T) {
 		}
 	})
 	t.Run("none creates agx.d/main.yaml and the missing root", func(t *testing.T) {
-		dir, err := config.Canonical(t.TempDir())
+		dir, err := platform.Canonical(t.TempDir())
 		if err != nil {
 			t.Fatal(err)
 		}

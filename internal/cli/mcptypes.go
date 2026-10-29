@@ -16,10 +16,9 @@ import (
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/mcptools"
-	"github.com/tarik02-org/agx/internal/platform"
 )
 
-func mcpTypesCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func mcpTypesCommand(a *app) *cobra.Command {
 	out, all := "", false
 	cmd := &cobra.Command{
 		Use:   "types [<server> ...]",
@@ -37,11 +36,11 @@ func mcpTypesCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 				server = args[0]
 			}
 			// Inside a launch, configuration only names the variables each server reads.
-			c, err := toolConfig(*paths, *builtins, all)
+			c, err := a.toolConfig(all)
 			if err != nil {
 				return err
 			}
-			target, err := newToolTarget(cmd.Context(), *paths, c, all, server)
+			target, err := a.newToolTarget(cmd.Context(), c, all, server)
 			if err != nil {
 				return err
 			}
@@ -74,11 +73,7 @@ func mcpTypesCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 			for _, s := range listed {
 				server := mcptools.Server{ID: s.McpId, Description: s.Description}
 				if target.config != nil {
-					snapshot := &config.Snapshot{
-						Config:    target.config,
-						Resources: []config.Resource{{Kind: "mcp", ID: config.ID(s.McpId)}},
-					}
-					server.Environment = snapshot.MCPEnvironment()
+					server.Environment = mcpEnvironment(target.config, config.ID(s.McpId))
 				}
 				for _, t := range s.Tools {
 					input, err := mcptools.ParseSchema(t.InputSchemaJson)
@@ -101,7 +96,7 @@ func mcpTypesCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 			if err := os.MkdirAll(out, 0o755); err != nil {
 				return err
 			}
-			discovery, err := filepath.Abs(filepath.Join(paths.Runtime, "daemon.json"))
+			discovery, err := filepath.Abs(filepath.Join(a.paths.Runtime, "daemon.json"))
 			if err != nil {
 				return err
 			}

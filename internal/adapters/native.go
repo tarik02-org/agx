@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/shims"
 )
 
@@ -28,17 +28,8 @@ func FindExecutable(name, configured string) (string, error) {
 	if configured != "" {
 		candidates = append(candidates, configured)
 	} else {
-		extensions := []string{""}
-		if runtime.GOOS == "windows" {
-			extensions = strings.Split(os.Getenv("PATHEXT"), ";")
-		}
-		for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
-			if dir == "" {
-				continue
-			}
-			for _, ext := range extensions {
-				candidates = append(candidates, filepath.Join(dir, name+ext))
-			}
+		for _, candidate := range platform.PathCandidates(name) {
+			candidates = append(candidates, candidate)
 		}
 	}
 	script := false
@@ -90,7 +81,7 @@ func ResolveDirectory(args []string, cwd, dir string, flags []DirectoryFlag) (st
 	if !filepath.IsAbs(dir) {
 		dir = filepath.Join(cwd, dir)
 	}
-	dir, err := config.Canonical(dir)
+	dir, err := platform.Canonical(dir)
 	if err != nil {
 		return "", nil, err
 	}

@@ -165,10 +165,10 @@ func (s *Server) RotateSecret(
 	expires, err := s.manager.Rotate(ctx, config.ID(req.Msg.SecretId), secret)
 	switch {
 	case errors.Is(err, auth.ErrRefreshFailed):
-		return nil, reasonError(connect.CodeUnavailable, v1.ErrorDetail_REASON_NETWORK, err.Error())
+		return nil, rpcError(connect.CodeUnavailable, err.Error())
 	case err != nil:
 		// Without a login, or with a refresh token the server refused, only a new login helps.
-		return nil, reasonError(connect.CodeFailedPrecondition, v1.ErrorDetail_REASON_NEEDS_LOGIN, err.Error())
+		return nil, rpcError(connect.CodeUnauthenticated, err.Error())
 	}
 	out := &v1.RotateSecretResponse{}
 	if !expires.IsZero() {
@@ -237,7 +237,7 @@ func (s *Server) Login(
 		}
 		return rpcError(connect.CodeFailedPrecondition, err.Error())
 	}
-	defer s.manager.Release(attempt)
+	defer s.manager.Cancel(attempt)
 	err = stream.Send(&v1.LoginResponse{Event: &v1.LoginResponse_Started{Started: &v1.LoginStarted{
 		AuthorizationUrl: attempt.URL,
 		ExpiresAt:        timestamppb.New(attempt.Expires),

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 
 	"github.com/tarik02-org/agx/internal/adapters"
@@ -24,7 +25,7 @@ import (
 	"github.com/tarik02-org/agx/internal/sessions"
 )
 
-func sessionsCommand(paths *platform.Paths, registry adapters.Registry, harnesses *harnessConfig) *cobra.Command {
+func sessionsCommand(a *app) *cobra.Command {
 	all := false
 	cmd := &cobra.Command{
 		Use:     "sessions [query]",
@@ -35,7 +36,7 @@ func sessionsCommand(paths *platform.Paths, registry adapters.Registry, harnesse
 			if err != nil {
 				return err
 			}
-			listing, err := listSessions(cmd.Context(), *paths, registry, *harnesses)
+			listing, err := listSessions(cmd.Context(), a.paths, a.registry, a.harnesses)
 			if err != nil {
 				return err
 			}
@@ -70,7 +71,7 @@ func workingDirectory() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return config.Canonical(cwd)
+	return platform.Canonical(cwd)
 }
 
 // listSessions lists every store and resumes recorded sessions with their definition while it
@@ -132,7 +133,12 @@ func printSessions(entries []sessions.Entry, directory string, all, searched boo
 	rows := [][]string{}
 	fixed := []int{len(headers[0]), len(headers[1]), len(headers[2]), len(headers[3])}
 	for _, e := range entries {
-		row := []string{e.Harness, ui.Ago(e.Updated, now), e.ID, ui.ShortPath(e.Directory, directory)}
+		row := []string{
+			e.Harness,
+			humanize.RelTime(e.Updated, now, "ago", "from now"),
+			e.ID,
+			ui.ShortPath(e.Directory, directory),
+		}
 		for i, cell := range row {
 			fixed[i] = max(fixed[i], ansi.StringWidth(cell))
 		}

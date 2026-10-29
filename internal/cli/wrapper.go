@@ -149,31 +149,11 @@ func runHarness(
 	if info, err := os.Stat(directory); err != nil {
 		return statError("directory", directory, err)
 	} else if !info.IsDir() {
-		return codedf(codeInvalidRequest, "not a directory: %s", directory)
+		return fmt.Errorf("not a directory: %s", directory)
 	}
 	c, err := daemonClient(ctx, paths, autostart(harnesses.config))
 	if err != nil {
 		return err
-	}
-	if paths.Config != c.discovery.Config {
-		if !autostart(harnesses.config) {
-			return fmt.Errorf(
-				"the daemon serves configuration %s, not %s; rerun with --config %s, "+
-					"or run agx daemon stop and then agx --config %s daemon start",
-				c.discovery.Config,
-				paths.Config,
-				shellQuote(c.discovery.Config),
-				shellQuote(paths.Config),
-			)
-		}
-		// daemonClient replaced an idle daemon; this one still serves launches.
-		return fmt.Errorf(
-			"the daemon serves configuration %s, not %s, and keeps its launches' MCP servers; "+
-				"rerun with --config %s, or retry once its launches end (agx launch list)",
-			c.discovery.Config,
-			paths.Config,
-			shellQuote(c.discovery.Config),
-		)
 	}
 	resolved, err := c.config.Resolve(
 		ctx,

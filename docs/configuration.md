@@ -12,7 +12,7 @@ layout.
 | --- | --- | --- |
 | Configuration: the root file, with fragments beside it in `agx.d/` | `agx/agx.yaml` in your config directory | `AGX_CONFIG` or `--config` |
 | Cache: installed packages, generated files, daemon log | `agx` in your cache directory | `AGX_CACHE` or `--cache` |
-| State: launch records, the daemon's saved launches | `agx` in your state directory | `AGX_STATE` |
+| State: launch records and encrypted secrets | `agx` in your state directory | `AGX_STATE` |
 
 The base directories follow the XDG variables (`XDG_CONFIG_HOME`,
 `XDG_CACHE_HOME`, `XDG_STATE_HOME`) and otherwise default to:
@@ -85,7 +85,8 @@ Check what a directory ends up with:
 agx explain ~/work/legacy
 ```
 
-`explain` lists every selected and removed resource with the file and line that
+`explain` uses one compact row per selected or removed resource, with shortened
+paths and the file and line that
 decided it, and marks on-demand MCP servers. `agx config validate` checks the
 whole configuration.
 

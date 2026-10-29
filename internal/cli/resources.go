@@ -15,10 +15,9 @@ import (
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/configedit"
-	"github.com/tarik02-org/agx/internal/platform"
 )
 
-func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func instructionsCommand(a *app) *cobra.Command {
 	command := &cobra.Command{Use: "instructions", Short: "Add, list, and remove instructions", GroupID: "config"}
 	var flags editFlags
 	id, text := "", ""
@@ -30,7 +29,7 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 			"  agx instructions add --id pnpm --text 'Use pnpm, not npm.'",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := newSession(cmd.Context(), *paths, *builtins, flags.yes)
+			s, err := a.newSession(cmd.Context(), flags.yes)
 			if err != nil {
 				return err
 			}
@@ -70,7 +69,7 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 				if info, err := os.Stat(abs); err != nil {
 					return statError("instructions file", path, err)
 				} else if info.IsDir() {
-					return codedf(codeInvalidRequest, "%s is a directory; instructions are a file", path)
+					return fmt.Errorf("%s is a directory; instructions are a file", path)
 				}
 				if id == "" {
 					base := filepath.Base(abs)
@@ -95,8 +94,8 @@ func instructionsCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 	add.Flags().StringVar(&text, "text", "", "instructions text instead of a file")
 	command.AddCommand(
 		add,
-		listCommand(paths, builtins, config.KindInstructions),
-		removeCommand(paths, builtins, config.KindInstructions),
+		listCommand(a, config.KindInstructions),
+		removeCommand(a, config.KindInstructions),
 	)
 	return command
 }
@@ -132,7 +131,7 @@ func excerpt(text string, limit int) string {
 	return text
 }
 
-func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func harnessCommand(a *app) *cobra.Command {
 	command := &cobra.Command{Use: "harness", Short: "Add, list, and remove harness definitions", GroupID: "config"}
 	var flags editFlags
 	var env []string
@@ -151,7 +150,7 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := newSession(cmd.Context(), *paths, *builtins, flags.yes)
+			s, err := a.newSession(cmd.Context(), flags.yes)
 			if err != nil {
 				return err
 			}
@@ -175,7 +174,7 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 				}
 			}
 			if slices.Contains(s.Config.HarnessNames(), name) {
-				return codedf(codeConflict, "harness %s already exists; edit its definition instead", name)
+				return fmt.Errorf("harness %s already exists; edit its definition instead", name)
 			}
 			definition := edit.Mapping("base", base)
 			if executable != "" {
@@ -223,8 +222,8 @@ func harnessCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 		StringArrayVar(&env, "env", nil, "environment KEY=VALUE; VALUE may be '!secret id', '!env NAME', or '!file path'")
 	command.AddCommand(
 		add,
-		listCommand(paths, builtins, config.KindHarnesses),
-		removeCommand(paths, builtins, config.KindHarnesses),
+		listCommand(a, config.KindHarnesses),
+		removeCommand(a, config.KindHarnesses),
 	)
 	return command
 }
@@ -265,7 +264,7 @@ func (s *session) removeHarness(name string, force bool) error {
 	return nil
 }
 
-func useCommands(paths *platform.Paths, builtins *config.Builtins) []*cobra.Command {
+func useCommands(a *app) []*cobra.Command {
 	out := []*cobra.Command{}
 	for _, use := range []bool{true, false} {
 		var flags editFlags
@@ -280,7 +279,7 @@ func useCommands(paths *platform.Paths, builtins *config.Builtins) []*cobra.Comm
 			GroupID: "config",
 			Args:    cobra.MaximumNArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				s, err := newSession(cmd.Context(), *paths, *builtins, flags.yes)
+				s, err := a.newSession(cmd.Context(), flags.yes)
 				if err != nil {
 					return err
 				}
@@ -363,9 +362,7 @@ func resourceKind(c *config.Config, id, only string) (config.Kind, error) {
 	case only != "" && !slices.Contains(config.SelectionKinds, config.Kind(only)):
 		return "", &usageError{fmt.Errorf("--kind must be skills, instructions, mcp, or bundles")}
 	case len(kinds) == 0:
-		return "", codedf(
-			codeNotFound,
-			"nothing named %s is defined; add it first, such as with agx skill add or agx mcp add",
+		return "", fmt.Errorf("nothing named %s is defined; add it first, such as with agx skill add or agx mcp add",
 			id,
 		)
 	case len(kinds) > 1:

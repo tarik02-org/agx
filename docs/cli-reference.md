@@ -50,7 +50,7 @@ go before it.
 | --- | --- |
 | `agx config validate` | load and check the whole configuration |
 | `agx config schema [--root\|--package]` | print the JSON Schema for fragments, the root file, or package manifests |
-| `agx explain [dir] [--harness <name>] [--verbose]` | show why each resource is selected or removed |
+| `agx explain [dir] [--harness <name>]` | show why each resource is selected or removed |
 | `agx install [--frozen]` | install packages and write lockfiles; register Codex skill plugins |
 | `agx update [package-id...]` | move packages to their newest commit (all when none given) |
 
@@ -62,7 +62,6 @@ go before it.
 | `agx mcp add <id> -- <command> [args...]` | define a local MCP server and enable it |
 | `agx mcp list` | list MCP servers |
 | `agx mcp remove <id>` | remove an MCP server definition |
-| `agx mcp test <id>` | connect to an MCP server and list its tools |
 | `agx skill add <source>` | add skills from a folder, Git URL, or `owner/repo[@ref][/path]` |
 | `agx skill list` | list skills |
 | `agx skill remove <id \| package-id>` | remove a skill definition, or a Git package `skill add` declared with the rule entries enabling its skills |
@@ -186,17 +185,17 @@ A successful command prints a `data` document:
 {"version":1,"data":{"running":true,"kept_launches":0}}
 ```
 
-and a failed one an `error` document, with the same exit code as without
-`--json`. A configuration error names its `source`:
+A failed command prints only a message, with the same exit status as without
+`--json`. Configuration errors include their location in the message:
 
 ```json
-{"version":1,"error":{"code":"config_invalid","message":"…","source":{"path":"/home/me/.config/agx/agx.yaml","line":4,"column":5}}}
+{"message":"/home/me/.config/agx/main.yaml:4: invalid configuration"}
 ```
 
 What `data` holds:
 
 - Commands that ask the daemon (`daemon status`, `launch`, `secret`,
-  `mcp test`, `mcp tools`, `mcp ps`, `mcp stop`) print its API message as
+  `mcp tools`, `mcp ps`, `mcp stop`) print its API message as
   [protobuf JSON](https://protobuf.dev/programming-guides/json/) with the
   field names of `api/agx/v1/agx.proto`: every field present, enum values by
   name (`"STATE_RUNNING"`), 64-bit integers as strings, and times in RFC 3339.
@@ -208,28 +207,6 @@ What `data` holds:
   resolved snapshot.
 - Field names are `snake_case`, except inside MCP content, which `mcp call`
   passes on as the server sent it. Empty values may be omitted or `null`.
-- `error.code` is a stable, machine-readable string; branch on it rather than
-  on `message`. It is one of:
-
-  | Code | Meaning |
-  | --- | --- |
-  | `usage` | invalid arguments or flags |
-  | `config_invalid` | the configuration doesn't load |
-  | `not_found` | the named thing doesn't exist |
-  | `conflict` | the change clashes with existing state |
-  | `read_only` | the target can't be edited |
-  | `invalid_request` | the request was rejected as invalid |
-  | `failed_precondition` | the command can't run in the current state |
-  | `choose_file` | new definitions could go to several fragments; pass `--file` |
-  | `needs_login` | a secret needs `agx secret login` first |
-  | `mcp_failed` | an MCP server failed the request, or could not be reached or started |
-  | `daemon_unavailable` | the daemon isn't running and couldn't start |
-  | `version_mismatch` | the daemon runs an agx this one cannot use |
-  | `network` | a network request failed |
-  | `timeout` | the command timed out |
-  | `interrupted` | the command was interrupted |
-  | `internal` | anything else; see `message` |
-
 With `--json`, `secret login` opens the browser only when stdout is a
 terminal, so a script can open the URL itself.
 

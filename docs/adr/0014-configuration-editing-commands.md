@@ -80,8 +80,8 @@ reason.
 - **Login and test.** The probe is the unauthenticated request on-demand OAuth
   already uses: a 401 that leads to protected resource metadata. Logging in
   needs the daemon, which owns credentials; without it agx names the commands to
-  run later. `mcp test` is a daemon RPC (`TestMcpServer`) serving the server
-  through a launch-less endpoint on a private loopback listener, so credentials,
+  run later. `mcp tools <server>` uses the daemon RPC `ListTools` serving the server
+  through a launch-less endpoint over in-memory connections, so credentials,
   tags, and diagnostics behave as in a launch and no value leaves the daemon.
 - **Skills from Git.** The source becomes a package, not anonymous Git skills,
   so one checkout and one lock entry serve every chosen skill. A package root

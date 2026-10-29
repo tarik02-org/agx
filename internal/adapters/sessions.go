@@ -11,9 +11,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // Session is one conversation in a harness's own store, reduced to what a listing shows. Title
@@ -47,27 +48,22 @@ const (
 // ParseAll parses paths concurrently and returns the listable sessions.
 func ParseAll(ctx context.Context, files SessionFiles, paths []string, parse ParseFunc) []Session {
 	results := make([]*Session, len(paths))
-	next := make(chan int)
-	var wg sync.WaitGroup
-	for range min(len(paths), runtime.GOMAXPROCS(0)) {
-		wg.Go(func() {
-			for i := range next {
-				if s, ok := files.Parse(paths[i], parse); ok {
-					results[i] = &s
+	var group errgroup.Group
+	group.SetLimit(runtime.GOMAXPROCS(0))
+	for i, path := range paths {
+		if ctx.Err() != nil {
+			break
+		}
+		group.Go(func() error {
+			if ctx.Err() == nil {
+				if session, ok := files.Parse(path, parse); ok {
+					results[i] = &session
 				}
 			}
+			return nil
 		})
 	}
-feed:
-	for i := range paths {
-		select {
-		case next <- i:
-		case <-ctx.Done():
-			break feed
-		}
-	}
-	close(next)
-	wg.Wait()
+	_ = group.Wait()
 	sessions := []Session{}
 	for _, s := range results {
 		if s != nil {

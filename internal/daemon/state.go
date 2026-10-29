@@ -18,7 +18,7 @@ import (
 const revokedRetention = 7 * 24 * time.Hour
 
 // StatePath is the file in which the daemon keeps what the next one needs.
-func StatePath(paths platform.Paths) string { return filepath.Join(paths.State, "daemon-state.json") }
+func StatePath(paths platform.Paths) string { return filepath.Join(paths.Runtime, "daemon-state.json") }
 
 // savedState is what a daemon keeps for the next one. Launches are not in it: their wrappers
 // attach them again (AttachLaunch).

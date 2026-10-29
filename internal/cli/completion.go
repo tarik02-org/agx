@@ -14,7 +14,6 @@ import (
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/platform"
 )
 
 // Completion asks only a daemon that already runs, and gives up quickly so a shell never stalls.
@@ -23,34 +22,17 @@ const completionDaemonTimeout = 300 * time.Millisecond
 // completer offers shell completion candidates from the configuration and, for launches, from a
 // running daemon. Completion never reports errors: a configuration that does not load offers
 // nothing.
-type completer struct {
-	paths    *platform.Paths
-	builtins *config.Builtins
-	loaded   bool
-	config   *config.Config
-}
+type completer struct{ app *app }
 
-// load reads the configuration once per completion request. Packages missing from the cache
-// make a full load fail, so the fragments alone still offer their IDs then.
 func (k *completer) load() *config.Config {
-	if k.loaded {
-		return k.config
+	c, err := k.app.config()
+	if err != nil {
+		c, err = k.app.fragmentConfig()
 	}
-	k.loaded = true
-	root, err := filepath.Abs(k.paths.Config)
 	if err != nil {
 		return nil
 	}
-	cache, err := filepath.Abs(k.paths.Cache)
-	if err != nil {
-		return nil
-	}
-	if c, err := config.Load(root, config.Options{Builtins: *k.builtins, Cache: cache}); err == nil {
-		k.config = c
-	} else if c, err := config.Load(root, config.Options{Builtins: *k.builtins}); err == nil {
-		k.config = c
-	}
-	return k.config
+	return c
 }
 
 type candidate struct{ value, description string }
@@ -293,7 +275,7 @@ func (k *completer) packages(
 
 // launches asks a daemon that already runs for its launches; completion never starts one.
 func (k *completer) launches() []candidate {
-	paths := *k.paths
+	paths := k.app.paths
 	var err error
 	if paths.Cache, err = filepath.Abs(paths.Cache); err != nil {
 		return nil
@@ -373,7 +355,6 @@ func (k *completer) registerCompletions(root *cobra.Command) {
 		find(path...).ValidArgsFunction = complete
 	}
 	set(firstArg(func() []candidate { return k.definitions(config.KindMCPServers, true) }), "mcp", "remove")
-	set(firstArg(func() []candidate { return k.definitions(config.KindMCPServers, false) }), "mcp", "test")
 	set(firstArg(func() []candidate { return k.definitions(config.KindMCPServers, false) }), "mcp", "tools")
 	set(k.toolServers, "mcp", "call")
 	set(func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {

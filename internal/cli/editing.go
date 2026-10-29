@@ -78,7 +78,7 @@ func (f *editFlags) target() (scope, error) {
 	if err != nil {
 		return scope{}, err
 	}
-	directory, err := config.Canonical(abs)
+	directory, err := platform.Canonical(abs)
 	if err != nil {
 		return scope{}, err
 	}
@@ -96,7 +96,7 @@ func (f *editFlags) enableTarget() (scope, error) {
 	if info, err := os.Stat(target.Directory); err != nil {
 		return scope{}, statError("scope directory", target.Directory, err)
 	} else if !info.IsDir() {
-		return scope{}, codedf(codeInvalidRequest, "scope is not a directory: %s", target.Directory)
+		return scope{}, fmt.Errorf("scope is not a directory: %s", target.Directory)
 	}
 	return target, nil
 }
@@ -138,12 +138,12 @@ type definitionID struct {
 	ID   string      `json:"id"`
 }
 
-func newSession(ctx context.Context, paths platform.Paths, builtins config.Builtins, yes bool) (*session, error) {
-	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
+func (a *app) newSession(ctx context.Context, yes bool) (*session, error) {
+	c, err := a.config()
 	if err != nil {
-		return nil, codedf(codeConfigInvalid, "configuration is invalid; fix it before editing: %w", err)
+		return nil, fmt.Errorf("configuration is invalid; fix it before editing: %w", err)
 	}
-	edits, err := configedit.New(paths, builtins, c)
+	edits, err := configedit.New(a.paths, a.builtins, c)
 	if err != nil {
 		return nil, err
 	}
@@ -305,13 +305,11 @@ func styleDiff(out *ui.Printer, diff string) string {
 	return b.String()
 }
 
-// promptError turns Ctrl-C into exit status 130 and Esc into a cancellation.
+// promptError maps an aborted form to exit status 130.
 func promptError(err error) error {
 	switch {
-	case errors.Is(err, prompt.ErrInterrupted):
+	case errors.Is(err, prompt.ErrInterrupted), errors.Is(err, context.Canceled):
 		return &ExitError{Code: 130}
-	case errors.Is(err, prompt.ErrCancelled):
-		return errDeclined
 	}
 	return err
 }
@@ -336,9 +334,7 @@ func (s *session) ask(label, placeholder string, validate func(string) error) (s
 // define adds a top-level definition to file, refusing an ID that is already defined.
 func (s *session) define(kind config.Kind, id, file string, value *yaml.Node) error {
 	if at, exists := configedit.Lookup(s.Config, kind, id); exists {
-		return codedf(
-			codeConflict,
-			"%s %s is already defined at %s:%d",
+		return fmt.Errorf("%s %s is already defined at %s:%d",
 			kind.Label(),
 			id,
 			at.Source.Path,

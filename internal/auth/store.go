@@ -19,9 +19,6 @@ import (
 	"github.com/tarik02-org/agx/internal/securefs"
 )
 
-// storeVersion is the format version of the secret store file.
-const storeVersion = 1
-
 // masterKeyItem names the OS keychain item holding the secret store's key.
 const masterKeyItem = "master-key"
 
@@ -41,7 +38,6 @@ type Store struct {
 }
 
 type storeFile struct {
-	Version int `json:"version"`
 	// Records maps a key to base64 of an AES-256-GCM nonce and ciphertext, sealed with the key as
 	// additional data, so a record cannot be moved under another key.
 	Records map[string]string `json:"records"`
@@ -152,7 +148,7 @@ func (s *Store) masterKey(f *storeFile) ([]byte, error) {
 }
 
 func (s *Store) read() (*storeFile, error) {
-	f := &storeFile{Version: storeVersion, Records: map[string]string{}}
+	f := &storeFile{Records: map[string]string{}}
 	b, err := os.ReadFile(s.path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return f, nil
@@ -160,10 +156,7 @@ func (s *Store) read() (*storeFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := securefs.CheckFormat(s.path, b, storeVersion); err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal(b, f); err != nil || f.Version != storeVersion {
+	if err := json.Unmarshal(b, f); err != nil {
 		return nil, fmt.Errorf("%s does not decode", s.path)
 	}
 	if f.Records == nil {

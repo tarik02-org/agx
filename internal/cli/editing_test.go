@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 // Undoing unuse with use restores the configuration text exactly, whether unuse wrote a remove
@@ -53,7 +53,7 @@ scopes:
 			path := isolate(t, "")
 			here, err := os.Getwd()
 			if err == nil {
-				here, err = config.Canonical(here)
+				here, err = platform.Canonical(here)
 			}
 			if err != nil {
 				t.Fatal(err)

@@ -19,19 +19,18 @@ import (
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/configedit"
-	"github.com/tarik02-org/agx/internal/platform"
 )
 
-func skillCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func skillCommand(a *app) *cobra.Command {
 	command := &cobra.Command{Use: "skill", Short: "Add, list, and remove skills", GroupID: "config"}
-	remove := removeCommand(paths, builtins, config.KindSkills)
+	remove := removeCommand(a, config.KindSkills)
 	remove.Use = "remove <id | package-id>"
 	remove.Short = "Remove a skill definition, or a package that skill add declared with its skills"
 	remove.Example = "  agx skill remove deploy\n" +
 		"  agx skill remove anthropics      # the package agx skill add anthropics/skills declared"
 	command.AddCommand(
-		skillAddCommand(paths, builtins),
-		listCommand(paths, builtins, config.KindSkills),
+		skillAddCommand(a),
+		listCommand(a, config.KindSkills),
 		remove,
 	)
 	return command
@@ -77,7 +76,7 @@ func localSource(arg string) (configedit.Source, error) {
 	if info, err := os.Stat(abs); err != nil {
 		return configedit.Source{}, statError("skill directory", arg, err)
 	} else if !info.IsDir() {
-		return configedit.Source{}, codedf(codeInvalidRequest, "%s is not a directory", arg)
+		return configedit.Source{}, fmt.Errorf("%s is not a directory", arg)
 	}
 	return configedit.Source{Local: abs}, nil
 }
@@ -91,7 +90,7 @@ type skillChoice struct {
 // picker on a terminal.
 func (s *session) choose(found []config.FoundSkill, choice skillChoice, where string) ([]config.FoundSkill, error) {
 	if len(found) == 0 {
-		return nil, codedf(codeNotFound, "no SKILL.md found in %s", where)
+		return nil, fmt.Errorf("no SKILL.md found in %s", where)
 	}
 	names := []string{}
 	for _, f := range found {
@@ -105,9 +104,7 @@ func (s *session) choose(found []config.FoundSkill, choice skillChoice, where st
 		for _, name := range choice.names {
 			i := slices.Index(names, name)
 			if i < 0 {
-				return nil, codedf(
-					codeNotFound,
-					"%s has no skill %s; it has %s",
+				return nil, fmt.Errorf("%s has no skill %s; it has %s",
 					where,
 					name,
 					strings.Join(names, ", "),
@@ -146,7 +143,7 @@ func writtenPath(file, path string) string {
 	return configedit.HomeRelative(path)
 }
 
-func skillAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func skillAddCommand(a *app) *cobra.Command {
 	var flags editFlags
 	var choice skillChoice
 	var ref, subdir, packageID, githubBase string
@@ -159,7 +156,7 @@ func skillAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 			"  agx skill add anthropics/skills --skill pdf --skill docx",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := newSession(cmd.Context(), *paths, *builtins, flags.yes)
+			s, err := a.newSession(cmd.Context(), flags.yes)
 			if err != nil {
 				return err
 			}
@@ -257,7 +254,7 @@ func (s *session) addPackageSkills(
 	}
 	c, err := s.Load()
 	if err != nil {
-		return codedf(codeConfigInvalid, "package %s: %w", id, err)
+		return fmt.Errorf("package %s: %w", id, err)
 	}
 	found := []config.FoundSkill{}
 	prefix := string(id) + "/"

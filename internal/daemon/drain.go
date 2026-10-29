@@ -10,7 +10,6 @@ import (
 
 	"connectrpc.com/connect"
 
-	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/gen/agx/v1/agxv1connect"
 )
 
@@ -113,7 +112,7 @@ func (d *drain) track(next http.Handler) http.Handler {
 
 // refusal is the error for new work while the daemon stops.
 func refusal() error {
-	err := reasonError(connect.CodeUnavailable, v1.ErrorDetail_REASON_UNAVAILABLE, errStopping.Error())
+	err := rpcError(connect.CodeUnavailable, errStopping.Error())
 	err.Meta().Set(StoppingHeader, "1")
 	return err
 }

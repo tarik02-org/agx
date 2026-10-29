@@ -65,26 +65,24 @@ type daemonRestarted struct {
 }
 
 // restartDaemon stops the running daemon, if any, of any version, waits until it exited, and
-// starts one of this agx with the same root, unless keepRoot is false and paths names another. grace replaces the
-// daemon's shutdown grace period when positive.
+// starts one of this agx for the selected configuration. grace replaces the daemon's
+// shutdown grace period when positive.
 func restartDaemon(
 	ctx context.Context,
 	paths platform.Paths,
 	builtins config.Builtins,
-	keepRoot, force bool,
+	force bool,
 	grace time.Duration,
 ) (daemonRestarted, error) {
 	result := daemonRestarted{Version: daemon.Version}
-	c, err := newAnyVersionClient(paths)
+	c, err := newClient(paths)
 	if err == nil {
 		result.KeptLaunches, err = stopDaemon(ctx, c, force, grace)
 	}
 	switch {
 	case err == nil:
 		result.Stopped = true
-		if keepRoot && c.discovery.Config != "" {
-			paths.Config = c.discovery.Config
-		}
+
 	case !daemonGone(err):
 		return result, err
 	}

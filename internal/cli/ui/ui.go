@@ -8,10 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/list"
@@ -181,34 +179,6 @@ func (p *Printer) Value(text string) string {
 	return p.render(lipgloss.NewStyle().Foreground(magenta), text)
 }
 
-// Syntax is the role of a token in highlighted code: tool signatures and JSON.
-type Syntax int
-
-const (
-	SyntaxName Syntax = iota
-	SyntaxKey
-	SyntaxType
-	SyntaxString
-	SyntaxNumber
-	SyntaxLiteral
-	SyntaxPunctuation
-)
-
-var syntaxStyles = map[Syntax]lipgloss.Style{
-	SyntaxName:        lipgloss.NewStyle().Bold(true).Foreground(cyan),
-	SyntaxKey:         lipgloss.NewStyle().Foreground(blue),
-	SyntaxType:        lipgloss.NewStyle().Foreground(yellow),
-	SyntaxString:      lipgloss.NewStyle().Foreground(green),
-	SyntaxNumber:      lipgloss.NewStyle().Foreground(magenta),
-	SyntaxLiteral:     lipgloss.NewStyle().Foreground(magenta),
-	SyntaxPunctuation: lipgloss.NewStyle().Faint(true),
-}
-
-// Code styles one token of highlighted code.
-func (p *Printer) Code(role Syntax, text string) string {
-	return p.render(syntaxStyles[role], text)
-}
-
 // Link makes a URL stand out and clickable; it stays one unwrapped line so it can be copied.
 func (p *Printer) Link(url string) string {
 	return p.render(lipgloss.NewStyle().Bold(true).Foreground(cyan).Hyperlink(url), url)
@@ -249,27 +219,7 @@ func Note(text string) {
 	_, _ = fmt.Fprintln(Stderr, Stderr.Muted(text))
 }
 
-// Ago describes how long before now t was, in the largest whole unit: "now", "5m", "3h", "2d",
-// "6w", "1y". A time after now, as under clock skew, is "now".
-func Ago(t, now time.Time) string {
-	d := now.Sub(t)
-	switch {
-	case d < time.Minute:
-		return "now"
-	case d < time.Hour:
-		return strconv.Itoa(int(d/time.Minute)) + "m"
-	case d < 24*time.Hour:
-		return strconv.Itoa(int(d/time.Hour)) + "h"
-	case d < 14*24*time.Hour:
-		return strconv.Itoa(int(d/(24*time.Hour))) + "d"
-	case d < 365*24*time.Hour:
-		return strconv.Itoa(int(d/(7*24*time.Hour))) + "w"
-	}
-	return strconv.Itoa(int(d/(365*24*time.Hour))) + "y"
-}
-
-// ShortPath writes a directory relative to cwd when it is cwd (".") or below it ("./sub"), and
-// otherwise under the home directory as ~/rest.
+// ShortPath writes a directory relative to cwd or the home directory.
 func ShortPath(path, cwd string) string {
 	if rel, err := filepath.Rel(cwd, path); err == nil && cwd != "" {
 		if rel == "." {

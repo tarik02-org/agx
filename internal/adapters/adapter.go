@@ -418,6 +418,19 @@ func Build(
 	grant string,
 	args []string,
 ) (Plan, error) {
+	if l.ID != "" {
+		if err := os.MkdirAll(l.LaunchDirectory(), 0o700); err != nil {
+			return Plan{}, err
+		}
+		if err := os.WriteFile(
+			filepath.Join(l.LaunchDirectory(), "configuration"),
+			[]byte(l.Snapshot.Config.Root),
+			0o600,
+		); err != nil {
+			return Plan{}, err
+		}
+	}
+
 	plan := Plan{
 		Directory:   l.Snapshot.Directory,
 		Environment: map[string]string{},

@@ -199,8 +199,7 @@ Settings therefore never hold secrets and can be shown in full anywhere.
   validate the agx side only.
 - **`agx harness list --json`** shows each harness's resolved settings and
   the source of every leaf; **`explain --harness <name>`** shows the resolved map with the
-  source of every leaf and, with `--verbose`, the delivered form (the `-c`
-  arguments, or the path and contents of the Claude settings file).
+  source of every leaf.
   **`resolve`** is about resources and does not show them.
 - **`agx doctor`** reports validation errors (Pi, reserved Codex paths,
   `--settings` in `args`) and, for Codex definitions with settings, runs
@@ -278,5 +277,5 @@ About two and a half days:
   `registerProvider` in the generated extension, filling the fields it
   requires). The first keeps "native schema, harness validates"; the second
   makes agx own part of Pi's schema.
-- Whether OpenCode definitions ([ADR 0023](0023-opencode-plugin.md)) get
+- Whether OpenCode definitions get
   settings through `OPENCODE_CONFIG_CONTENT` under `--standalone`.

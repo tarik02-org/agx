@@ -24,7 +24,7 @@ var (
 	ErrLoginCancelled = errors.New("login cancelled")
 )
 
-// Attempt is a pending OAuth authorization shared by every login waiting for the same secret.
+// Attempt is one pending OAuth authorization.
 type Attempt struct {
 	ID         string
 	SecretID   config.ID
@@ -38,26 +38,13 @@ type Attempt struct {
 	resource   string
 	issuer     string
 	requireIss bool
-	// done closes once the attempt finishes with err; waiters counts logins that still wait
-	// for it. All three are guarded by Manager.mu.
-	done    chan struct{}
-	err     error
-	waiters int
+	done       chan struct{}
+	err        error
+	cancel     context.CancelFunc
+	exchanging bool
 }
 
-type beginCall struct {
-	key     string
-	origin  string
-	done    chan struct{}
-	attempt *Attempt
-	err     error
-	// waiters counts callers that joined while discovery ran; guarded by Manager.mu.
-	waiters int
-}
-
-// Begin starts an OAuth login, or joins the one already pending for the secret, including
-// while its discovery still runs. Every successful call must be paired with Release; the
-// attempt is cancelled when its last waiter releases it before it finishes.
+// Begin starts a login and cancels the previous attempt for the same secret.
 func (m *Manager) Begin(ctx context.Context, id config.ID, a config.Secret, serverURL string) (*Attempt, error) {
 	if a.Kind != "oauth" {
 		return nil, fmt.Errorf("secret %s uses %s, not OAuth", id, a.Kind)
@@ -66,72 +53,39 @@ func (m *Manager) Begin(ctx context.Context, id config.ID, a config.Secret, serv
 	if err != nil {
 		return nil, err
 	}
-	k := key(id, a)
+	beginCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	p := &Attempt{
+		ID: securefs.Token(), SecretID: id, state: securefs.Token(), definition: a,
+		origin: origin, Expires: time.Now().Add(5 * time.Minute), done: make(chan struct{}), cancel: cancel,
+	}
 	m.mu.Lock()
 	m.expireLocked(time.Now())
-	for _, p := range m.pending {
-		if p.SecretID != id {
-			continue
-		}
-		if key(id, p.definition) != k {
-			m.finishLocked(p, errors.New("the secret's configuration changed; run the login again"))
-			continue
-		}
-		if p.origin != origin {
-			m.mu.Unlock()
-			return nil, fmt.Errorf("OAuth login already pending for another server")
-		}
-		p.waiters++
-		m.mu.Unlock()
-		return p, nil
-	}
-	if call := m.begins[id]; call != nil {
-		if call.key != k || call.origin != origin {
-			m.mu.Unlock()
-			return nil, fmt.Errorf("OAuth login already pending for another server")
-		}
-		call.waiters++
-		m.mu.Unlock()
-		select {
-		case <-call.done:
-			return call.attempt, call.err
-		case <-ctx.Done():
-			m.mu.Lock()
-			select {
-			case <-call.done:
-				m.mu.Unlock()
-				if call.err == nil {
-					m.Release(call.attempt)
-				}
-			default:
-				call.waiters--
-				m.mu.Unlock()
-			}
-			return nil, ctx.Err()
+	for _, old := range m.pending {
+		if old.SecretID == id {
+			m.finishLocked(old, ErrLoginCancelled)
 		}
 	}
-	call := &beginCall{key: k, origin: origin, done: make(chan struct{})}
-	m.begins[id] = call
+	m.pending[p.state] = p
 	m.mu.Unlock()
-
-	// Waiters share this attempt, so one caller cancelling must not fail the rest.
-	beginCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
-	defer cancel()
-	p, err := m.begin(beginCtx, id, a, serverURL, origin)
+	prepared, err := m.begin(beginCtx, id, a, serverURL, origin)
 	m.mu.Lock()
-	delete(m.begins, id)
-	if err == nil {
-		p.waiters += call.waiters
-		m.pending[p.state] = p
+	defer m.mu.Unlock()
+	if m.pending[p.state] != p {
+		return nil, p.err
 	}
-	call.attempt, call.err = p, err
-	close(call.done)
-	m.mu.Unlock()
-	if err == nil && ctx.Err() != nil {
-		m.Release(p)
-		return nil, ctx.Err()
+	if err != nil {
+		m.finishLocked(p, err)
+		return nil, err
 	}
-	return p, err
+	prepared.ID, prepared.state, prepared.done, prepared.cancel = p.ID, p.state, p.done, cancel
+	prepared.URL = prepared.oauth.AuthCodeURL(
+		p.state,
+		oauth2.S256ChallengeOption(prepared.verifier),
+		oauth2.SetAuthURLParam("resource", prepared.resource),
+	)
+	*p = *prepared
+	return p, nil
 }
 
 // Wait blocks until the attempt finishes, expires, or ctx ends, and returns its outcome.
@@ -152,15 +106,11 @@ func (m *Manager) Wait(ctx context.Context, p *Attempt) error {
 	return p.err
 }
 
-// Release ends one caller's interest in an attempt; the last one cancels it, so its callback
-// is then rejected and its pending state freed.
-func (m *Manager) Release(p *Attempt) {
+// Cancel ends the attempt and rejects later callbacks.
+func (m *Manager) Cancel(p *Attempt) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	p.waiters--
-	if p.waiters <= 0 {
-		m.finishLocked(p, ErrLoginCancelled)
-	}
+	m.finishLocked(p, ErrLoginCancelled)
 }
 
 // finishLocked must be called with m.mu held; later outcomes of a finished attempt are ignored.
@@ -174,6 +124,9 @@ func (m *Manager) finishLocked(p *Attempt, err error) {
 		delete(m.pending, p.state)
 	}
 	p.err = err
+	if p.cancel != nil {
+		p.cancel()
+	}
 	close(p.done)
 }
 
@@ -395,7 +348,6 @@ func (m *Manager) begin(
 		SecretID:   id,
 		state:      state,
 		done:       make(chan struct{}),
-		waiters:    1,
 		Expires:    time.Now().Add(5 * time.Minute),
 		definition: a,
 		oauth:      cfg,
@@ -489,7 +441,7 @@ func (m *Manager) Callback(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	m.expireLocked(time.Now())
 	p := m.pending[state]
-	if p == nil {
+	if p == nil || p.exchanging {
 		m.mu.Unlock()
 		http.Error(
 			w,
@@ -498,10 +450,9 @@ func (m *Manager) Callback(w http.ResponseWriter, r *http.Request) {
 		)
 		return
 	}
-	// The state is single-use, even when the exchange below fails.
-	delete(m.pending, state)
+	// Keep it pending while exchanging so a newer login or logout can cancel it.
+	p.exchanging = true
 	k := key(p.SecretID, p.definition)
-	generation := m.generation[k]
 	m.mu.Unlock()
 	fail := func(status int, err error) {
 		m.mu.Lock()
@@ -535,7 +486,6 @@ func (m *Manager) Callback(w http.ResponseWriter, r *http.Request) {
 			Endpoint: p.oauth.Endpoint,
 			ClientID: p.oauth.ClientID,
 			Origin:   p.origin,
-			Resource: p.resource,
 		},
 	)
 	if err != nil {
@@ -546,28 +496,22 @@ func (m *Manager) Callback(w http.ResponseWriter, r *http.Request) {
 	lock.Lock()
 	defer lock.Unlock()
 	m.mu.Lock()
-	loggedOut := m.generation[k] != generation
 	cancelled := false
 	select {
 	case <-p.done:
 		cancelled = true
 	default:
 	}
-	m.mu.Unlock()
 	if cancelled {
+		m.mu.Unlock()
 		http.Error(w, "Login was cancelled; the credential was not stored.", http.StatusConflict)
 		return
 	}
-	if loggedOut {
-		fail(http.StatusConflict, errors.New("logged out while authorizing; run the login again"))
-		return
-	}
 	if err := m.store.Set(k, string(data)); err != nil {
+		m.mu.Unlock()
 		fail(http.StatusServiceUnavailable, fmt.Errorf("the credential was not stored: %w", err))
 		return
 	}
-	m.mu.Lock()
-	delete(m.unpersisted, k)
 	delete(m.required, k)
 	delete(m.refused, k)
 	m.finishLocked(p, nil)

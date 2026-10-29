@@ -64,8 +64,7 @@ lock file held only for the append, so recording costs the same however many
 records there are and concurrent launches barely wait for each other. Appends
 are not synced: losing the last line in a crash only makes a session resume with
 its built-in. A listing folds the log into one line per record and rewrites it,
-pruned; the whole-file `launch-records.json` of earlier versions is read until
-then and removed by that rewrite. `<state>` is the XDG state directory
+pruned. The lock is `launch-records.jsonl.lock`. `<state>` is the XDG state directory
 (`$XDG_STATE_HOME/agx`, by default `~/.local/state/agx`, `~/Library/Application Support/agx` on macOS, and
 `%LOCALAPPDATA%\agx` on Windows), not the cache, because records cannot be
 rebuilt and a cache wipe must not lose them; `AGX_STATE` overrides it, and a

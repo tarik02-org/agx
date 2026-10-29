@@ -17,7 +17,7 @@ import (
 var flagName = regexp.MustCompile(`(^|[ ,])(--?[A-Za-z0-9][\w-]*)`)
 
 // help prints a command's help in the styles of agx's other output: headings bold, command
-// names cyan like identifiers, flags blue like keys of highlighted code.
+// names cyan like identifiers, flags blue.
 func help(cmd *cobra.Command, _ []string) {
 	out := ui.Stdout
 	var b strings.Builder
@@ -64,9 +64,9 @@ func help(cmd *cobra.Command, _ []string) {
 		for i, line := range lines {
 			lines[i] = flagName.ReplaceAllStringFunc(line, func(m string) string {
 				if m[0] != '-' {
-					return m[:1] + out.Code(ui.SyntaxKey, m[1:])
+					return m[:1] + out.Path(m[1:])
 				}
-				return out.Code(ui.SyntaxKey, m)
+				return out.Path(m)
 			})
 		}
 		section(title, lines...)

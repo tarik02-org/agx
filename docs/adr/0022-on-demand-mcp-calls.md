@@ -42,7 +42,7 @@ agx mcp types [<server> ...] [--out <dir>] [--all]
   document still prints), 2 on usage errors. An unknown tool or invalid
   arguments fail with `invalid_request` and the closest tool or argument names;
   a server needing a login hints `agx secret login <id>`. Failures inside the
-  server use a new `mcp_failed` code in the closed JSON error-code set.
+  server produce a message and a nonzero exit status.
 - `types` emits TypeScript declarations with a typed function per tool, plus a
   small dependency-free ESM client (see Code mode).
 
@@ -60,7 +60,7 @@ and grant as they do for native MCP traffic.
 
 Outside a launch, the CLI uses the management token and resolves the current
 directory's scopes, as a launch there would. Environment inputs are forwarded as
-for `agx mcp test`: only the variables the servers' values read.
+for `agx mcp tools`: only the variables the servers' values read.
 
 `--all` reaches every configured server, inside a launch too, through the
 management token. agx serves a single user, and any process of that user can
@@ -70,11 +70,10 @@ inside a launch would not stop anything; it only keeps the default list short.
 ## RPCs
 
 `RuntimeService` gains `ListTools` and `CallTool(launch_id?, directory, all,
-mcp_id, tool, arguments_json, environment_inputs)`, built on the client flow of
-`TestMcpServer`. Both accept either the management token, scoped by directory or
-`all`, or a launch grant with its launch ID, scoped to that launch. Errors carry
-the usual `ErrorDetail` reasons, plus a new `REASON_MCP_FAILED` for failures
-inside the server. Tool execution and credentials stay inside the daemon; the
+mcp_id, tool, arguments_json, environment_inputs)`, using the same endpoint
+client flow as launches. Both accept either the management token, scoped by directory or
+`all`, or a launch grant with its launch ID, scoped to that launch. Errors use standard Connect codes, including `Unauthenticated` when a login
+is needed and `FailedPrecondition` for server failures. Tool execution and credentials stay inside the daemon; the
 CLI receives only results. This replaces the API rule that there is no
 client-facing `CallTool`, which existed to keep credentials out of clients, and
 that property holds.
@@ -129,7 +128,7 @@ it prints the declarations.
 
 ## Phases
 
-1. `ListTools`, `CallTool`, `agx mcp tools`, `agx mcp call`, and `mcp_failed`.
+1. `ListTools`, `CallTool`, `agx mcp tools`, `agx mcp call`,.
 2. `load`, `description`, launch identity in the harness environment, and
    adapters skipping on-demand servers.
 3. Pooled sessions, schema-driven coercion, `@file` arguments, binary content in

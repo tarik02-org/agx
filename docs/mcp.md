@@ -55,7 +55,7 @@ refreshed automatically: an expired access token is renewed when the server is
 next used, and one the server rejects early, with 401, is renewed and the request
 sent again. `agx secret status` shows such a token as "renews on next use". When
 the authorization server refuses the refresh token itself, the secret reports
-`needs_login` with the server's error code until you log in again.
+an error message with the server's error code until you log in again.
 
 Until you log in, the server reports `needs-auth`, and tool calls from the
 harness fail with an error telling you to run the login.
@@ -144,11 +144,11 @@ The secret of an inline `auth` takes the server's ID: `agx secret set github`,
 ## Testing a server
 
 ```sh
-agx mcp test tracker
+agx mcp tools tracker --all
 ```
 
-`test` connects to the server through the daemon, with its credentials, and
-lists its tools. When it fails, it says why: unreachable, needs a login, or the
+`tools <server> --all` connects to any configured server through the daemon,
+with its credentials, and lists its tools. When it fails, it says why: unreachable, needs a login, or the
 server's error. `agx doctor` tests every server selected for the current
 directory (`--all` for every server).
 
@@ -216,8 +216,8 @@ base64 data:
 
 `call` exits 0 on success, 1 when the call fails or the tool reports an error
 (the result still prints), and 2 for malformed arguments. Errors inside the
-server have the code `mcp_failed`; a server that needs a login fails with
-`needs_login` and the `agx secret login` command to run. `--timeout` (default
+server are reported as error messages; a server that needs a login names
+the `agx secret login` command to run. `--timeout` (default
 `60s`) bounds the wait.
 
 Which servers a call reaches:
@@ -227,7 +227,7 @@ Which servers a call reaches:
   `AGX_LAUNCH_ID` and the launch grant `AGX_MCP_GRANT`, so values and
   environment inputs are the launch's.
 - Outside a launch, the servers selected for the current directory, with the
-  variables their values read taken from your shell, as `agx mcp test` does.
+  variables their values read taken from your shell, as `agx mcp tools` does.
 - With `--all`, every configured server, also inside a launch.
 
 The daemon keeps its client session to each server for about five idle
@@ -357,8 +357,7 @@ await call("tracker", "add_comment", { key: open[0].key, body: "Investigating." 
 ```
 
 Each call resolves to `{isError, content, structuredContent, text}` and throws
-an `AgxError` with one of the JSON error codes (`invalid_request`,
-`mcp_failed`, `needs_login`, …) when it fails. A server whose ID is not a
+an `AgxError` with a diagnostic message when it fails. A server whose ID is not a
 JavaScript identifier is under `servers["team/docs"]`. Generated with `--all`,
 the client reaches every configured server, also inside a launch. Regenerate it
 when servers or their tools change.

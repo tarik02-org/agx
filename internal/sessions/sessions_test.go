@@ -3,7 +3,6 @@ package sessions
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -15,7 +14,7 @@ import (
 	"time"
 
 	"github.com/tarik02-org/agx/internal/adapters"
-	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 var start = time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
@@ -274,37 +273,6 @@ func TestRecordsKeepConcurrentLaunches(t *testing.T) {
 	}
 }
 
-func TestRecordsFoldTheLegacyFile(t *testing.T) {
-	state := t.TempDir()
-	legacy := filepath.Join(state, "launch-records.json")
-	if err := os.WriteFile(legacy, []byte(`{"version":1,"records":[
-		{"launch":"old","harness":"codex-x","builtin":"codex","directory":"/work","started":"2026-10-01T12:00:00Z"}
-	]}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	records := NewRecords(state)
-	if err := records.Finish("old", at(5)); err != nil {
-		t.Fatal(err)
-	}
-	if err := records.Start(Record{Launch: "new", Builtin: "codex", Started: at(10)}); err != nil {
-		t.Fatal(err)
-	}
-	if err := records.update(func([]Record) []Record { return nil }); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(legacy); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("the legacy file was not removed: %v", err)
-	}
-	loaded, folded, err := records.load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(loaded) != 2 || loaded[0].Launch != "old" || loaded[0].Harness != "codex-x" ||
-		loaded[0].Finished == nil || !loaded[0].Finished.Equal(at(5)) || loaded[1].Launch != "new" || !folded {
-		t.Fatalf("records = %+v, folded %v", loaded, folded)
-	}
-}
-
 func TestIndexReusesUnchangedFiles(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "session.jsonl")
@@ -380,7 +348,7 @@ func TestList(t *testing.T) {
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	canonicalWork, err := config.Canonical(work)
+	canonicalWork, err := platform.Canonical(work)
 	if err != nil {
 		t.Fatal(err)
 	}

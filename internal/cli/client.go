@@ -2,15 +2,12 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/spf13/cobra"
 
 	"github.com/tarik02-org/agx/gen/agx/v1/agxv1connect"
-	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/daemon"
 	"github.com/tarik02-org/agx/internal/platform"
 )
@@ -32,15 +29,6 @@ type client struct {
 func newClient(paths platform.Paths) (*client, error) {
 	d, err := daemon.ReadDiscovery(paths)
 	if err != nil {
-		return nil, err
-	}
-	return dial(d), nil
-}
-
-// newAnyVersionClient reaches a daemon of another version so it can still be detected and stopped.
-func newAnyVersionClient(paths platform.Paths) (*client, error) {
-	d, err := daemon.ReadDiscovery(paths)
-	if err != nil && !errors.Is(err, daemon.ErrVersionMismatch) {
 		return nil, err
 	}
 	return dial(d), nil
@@ -100,15 +88,4 @@ func (i daemonInterceptor) WrapStreamingClient(next connect.StreamingClientFunc)
 
 func (daemonInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
 	return next
-}
-
-// commandClient connects a command to the daemon, starting one unless the configuration turns
-// autostart off.
-func commandClient(
-	cmd *cobra.Command,
-	paths *platform.Paths,
-	builtins *config.Builtins,
-	fragments *harnessConfig,
-) (*client, error) {
-	return daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins, *fragments))
 }

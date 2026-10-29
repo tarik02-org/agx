@@ -41,25 +41,51 @@ func StartDetached(build func() *exec.Cmd) (*exec.Cmd, error) {
 type group struct{ job windows.Handle }
 
 func (g *Group) start() error {
-	g.cmd.SysProcAttr = &windows.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_SUSPENDED}
-	if err := g.cmd.Start(); err != nil {
-		return err
-	}
-	pid := uint32(g.cmd.Process.Pid)
-	job, err := windows.CreateJobObject(nil, nil)
-	if err == nil {
-		g.job = job
-		if err = assign(job, pid, windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE); err == nil {
-			err = resume(pid)
-		}
-	}
+	g.cmd.SysProcAttr = &windows.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP}
+	var err error
+	g.job, err = startInJob(g.cmd, windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)
 	if err != nil {
 		g.kill()
-		_ = g.cmd.Process.Kill()
-		_ = g.cmd.Wait()
+		if g.cmd.Process != nil && g.cmd.ProcessState == nil {
+			_ = g.cmd.Process.Kill()
+			_ = g.cmd.Wait()
+		}
 		return fmt.Errorf("cannot supervise process: %w", err)
 	}
 	return nil
+}
+
+func startInJob(cmd *exec.Cmd, flags uint32) (windows.Handle, error) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &windows.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CreationFlags |= windows.CREATE_SUSPENDED
+	if err := cmd.Start(); err != nil {
+		return 0, err
+	}
+	pid := uint32(cmd.Process.Pid)
+	job, err := windows.CreateJobObject(nil, nil)
+	if err == nil {
+		if err = assign(job, pid, flags); err != nil {
+			_ = windows.CloseHandle(job)
+			job = 0
+		}
+	}
+	// A supervised group must never run outside its job; tied harnesses may continue.
+	if err != nil && flags&windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK == 0 {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return 0, err
+	}
+	if resumeErr := resume(pid); resumeErr != nil {
+		if job != 0 {
+			_ = windows.CloseHandle(job)
+		}
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return 0, fmt.Errorf("cannot start process: %w", resumeErr)
+	}
+	return job, err
 }
 
 func (g *Group) kill() {
@@ -79,29 +105,9 @@ func (g *Group) release() { g.kill() }
 // outlive this process, as they would without the job; they may also break away from it. When the
 // job cannot be set up, cmd runs untied, and StartTied returns the error with a no-op untie.
 func StartTied(cmd *exec.Cmd) (untie func(), err error) {
-	if cmd.SysProcAttr == nil {
-		cmd.SysProcAttr = &windows.SysProcAttr{}
-	}
-	cmd.SysProcAttr.CreationFlags |= windows.CREATE_SUSPENDED
-	if err := cmd.Start(); err != nil {
+	job, err := startInJob(cmd, windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE|windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK)
+	if cmd.Process == nil || cmd.ProcessState != nil {
 		return nil, err
-	}
-	pid := uint32(cmd.Process.Pid)
-	job, err := windows.CreateJobObject(nil, nil)
-	if err == nil {
-		flags := uint32(windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK)
-		if err = assign(job, pid, flags); err != nil {
-			_ = windows.CloseHandle(job)
-			job = 0
-		}
-	}
-	if resumeErr := resume(pid); resumeErr != nil {
-		if job != 0 {
-			_ = windows.CloseHandle(job)
-		}
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		return nil, fmt.Errorf("cannot start process: %w", resumeErr)
 	}
 	if job == 0 {
 		return func() {}, err

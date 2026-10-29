@@ -18,7 +18,11 @@ func stateServer(t *testing.T) *Server {
 	t.Helper()
 	dir := t.TempDir()
 	return &Server{
-		paths:    platform.Paths{Cache: dir, State: filepath.Join(dir, "state")},
+		paths: platform.Paths{
+			Runtime: filepath.Join(dir, "runtime"),
+			Cache:   dir,
+			State:   filepath.Join(dir, "state"),
+		},
 		launches: map[string]*launch{},
 		revoked:  map[string]time.Time{},
 		port:     4242,
@@ -83,11 +87,16 @@ func TestSweepKeepsHeldAndNewLaunchFiles(t *testing.T) {
 	s := stateServer(t)
 	s.launches["held"] = &launch{view: &v1.Launch{Id: "held"}}
 	old := time.Now().Add(-time.Hour)
-	for _, id := range []string{"held", "gone", "new"} {
+	for _, id := range []string{"held", "gone", "new", "other"} {
 		dir := filepath.Join(s.paths.Cache, "launches", id)
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
+		owner := s.paths.Config
+		if id == "other" {
+			owner += "/other"
+		}
+		writeFile(t, filepath.Join(dir, "configuration"), owner)
 		if id != "new" {
 			if err := os.Chtimes(dir, old, old); err != nil {
 				t.Fatal(err)
@@ -95,7 +104,7 @@ func TestSweepKeepsHeldAndNewLaunchFiles(t *testing.T) {
 		}
 	}
 	s.sweep(time.Now().Add(-time.Minute))
-	for id, kept := range map[string]bool{"held": true, "gone": false, "new": true} {
+	for id, kept := range map[string]bool{"held": true, "gone": false, "new": true, "other": true} {
 		_, err := os.Stat(filepath.Join(s.paths.Cache, "launches", id))
 		if (err == nil) != kept {
 			t.Errorf("%s: kept %v, want %v", id, err == nil, kept)

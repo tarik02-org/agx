@@ -258,7 +258,7 @@ func mcpFailure(
 		if definition.Auth.Secret != "" {
 			message += "; run agx secret login " + string(definition.Auth.Secret)
 		}
-		return reasonError(connect.CodeFailedPrecondition, v1.ErrorDetail_REASON_NEEDS_LOGIN, message)
+		return rpcError(connect.CodeUnauthenticated, message)
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		return rpcError(connect.CodeDeadlineExceeded, fmt.Sprintf("MCP server %s did not answer in time", id))
 	case errors.Is(ctx.Err(), context.Canceled):
@@ -266,23 +266,11 @@ func mcpFailure(
 	case answered && errors.As(err, &wire) && wire.Code == jsonrpc.CodeInvalidParams:
 		return rpcError(connect.CodeInvalidArgument, fmt.Sprintf("MCP server %s: %s", id, wire.Message))
 	case answered && errors.As(err, &wire):
-		return reasonError(
-			connect.CodeFailedPrecondition,
-			v1.ErrorDetail_REASON_MCP_FAILED,
-			fmt.Sprintf("MCP server %s: %s", id, wire.Message),
-		)
+		return rpcError(connect.CodeFailedPrecondition, fmt.Sprintf("MCP server %s: %s", id, wire.Message))
 	case problem != "":
-		return reasonError(
-			connect.CodeFailedPrecondition,
-			v1.ErrorDetail_REASON_MCP_FAILED,
-			fmt.Sprintf("MCP server %s: %s", id, problem),
-		)
+		return rpcError(connect.CodeFailedPrecondition, fmt.Sprintf("MCP server %s: %s", id, problem))
 	}
-	return reasonError(
-		connect.CodeFailedPrecondition,
-		v1.ErrorDetail_REASON_MCP_FAILED,
-		fmt.Sprintf("MCP server %s: %v", id, err),
-	)
+	return rpcError(connect.CodeFailedPrecondition, fmt.Sprintf("MCP server %s: %v", id, err))
 }
 
 // serverAnswered reports whether err is a JSON-RPC error the server sent, rather than one the
@@ -380,7 +368,7 @@ func (s *Server) listTools(ctx context.Context, scope *callScope, id config.ID) 
 		var rpc *connect.Error
 		if errors.As(err, &rpc) {
 			out.Message = rpc.Message()
-			if connectReason(rpc) == v1.ErrorDetail_REASON_NEEDS_LOGIN {
+			if rpc.Code() == connect.CodeUnauthenticated {
 				out.State = v1.McpRuntime_STATE_NEEDS_AUTH
 			}
 		} else {
@@ -388,17 +376,6 @@ func (s *Server) listTools(ctx context.Context, scope *callScope, id config.ID) 
 		}
 	}
 	return out, err
-}
-
-func connectReason(err *connect.Error) v1.ErrorDetail_Reason {
-	for _, d := range err.Details() {
-		if value, decodeErr := d.Value(); decodeErr == nil {
-			if detail, ok := value.(*v1.ErrorDetail); ok {
-				return detail.Reason
-			}
-		}
-	}
-	return v1.ErrorDetail_REASON_UNSPECIFIED
 }
 
 func schemaJSON(schema any) string {

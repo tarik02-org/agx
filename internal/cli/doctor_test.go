@@ -150,21 +150,8 @@ harnesses:
 	}
 }
 
-func TestConfigHintIsQuoted(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX quoting")
-	}
-	row := daemonCheck(daemonFacts{config: "/c", wantConfig: "/home/me/my config/it's.yaml"})
-	if want := `agx --config '/home/me/my config/it'\''s.yaml' daemon start`; !strings.Contains(row.Hint, want) {
-		t.Errorf("hint = %s, want %s", row.Hint, want)
-	}
-	if got := shellQuote("/plain/agx.yaml"); got != "/plain/agx.yaml" {
-		t.Errorf("plain path quoted as %s", got)
-	}
-}
-
 func TestDaemonCheck(t *testing.T) {
-	base := daemonFacts{version: "1", config: "/c", wantConfig: "/c", instance: "a", previous: "a"}
+	base := daemonFacts{version: "1", instance: "a", previous: "a"}
 	if got := daemonCheck(base); got.Status != checkPass || !strings.Contains(got.Detail, "running") {
 		t.Errorf("running = %+v", got)
 	}
@@ -174,24 +161,24 @@ func TestDaemonCheck(t *testing.T) {
 		t.Errorf("started = %+v", got)
 	}
 	replaced := base
-	replaced.mayHaveStarted, replaced.previous, replaced.otherBuild = true, "old", true
+	replaced.mayHaveStarted, replaced.previous = true, "old"
 	if got := daemonCheck(replaced); !strings.HasPrefix(got.Detail, "replaced") {
 		t.Errorf("replaced = %+v", got)
-	}
-	other := base
-	other.config = "/other"
-	if got := daemonCheck(other); got.Status != checkFail || !strings.Contains(got.Hint, "daemon stop") {
-		t.Errorf("other configuration = %+v", got)
 	}
 }
 
 func TestMCPCheck(t *testing.T) {
 	server := config.MCPServer{Auth: config.MCPAuth{Value: config.Value{Secret: "github"}}}
-	got := mcpCheck("docs", server, &v1.TestMcpServerResponse{Tools: []string{"a", "b"}, ServerName: "docs"}, nil)
+	got := mcpCheck(
+		"docs",
+		server,
+		&v1.McpTools{Tools: []*v1.McpTool{{Name: "a"}, {Name: "b"}}, ServerName: "docs"},
+		nil,
+	)
 	if got.Status != checkPass || got.Detail != "2 tools from docs" {
 		t.Errorf("ready = %+v", got)
 	}
-	needsAuth := reasonError(t, connect.CodeFailedPrecondition, v1.ErrorDetail_REASON_NEEDS_LOGIN)
+	needsAuth := connect.NewError(connect.CodeUnauthenticated, errors.New("x"))
 	got = mcpCheck("github", server, nil, needsAuth)
 	if got.Status != checkWarn || got.Hint != "run agx secret login github" || got.Detail != "needs authorization: x" {
 		t.Errorf("needs auth = %+v", got)

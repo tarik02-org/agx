@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 // WriteFile replaces a file of a local skill or instructions definition: one inside the
@@ -15,7 +16,7 @@ func (s *Session) WriteFile(path string, content []byte) error {
 	if !filepath.IsAbs(path) {
 		return errorf(InvalidRequest, "%s: the path must be absolute", path)
 	}
-	canonical, err := config.Canonical(filepath.Clean(path))
+	canonical, err := platform.Canonical(filepath.Clean(path))
 	if err != nil {
 		return err
 	}
@@ -43,7 +44,7 @@ func (s *Session) WriteFile(path string, content []byte) error {
 // whether that definition is local: defined in a configuration fragment, from a local path, and
 // outside the cache and the Nix store.
 func ContentFile(c *config.Config, cache, path string) (local, found bool) {
-	if canonical, err := config.Canonical(cache); err == nil {
+	if canonical, err := platform.Canonical(cache); err == nil {
 		cache = canonical
 	}
 	editable := func(source config.Source, dir string, git bool) bool {
@@ -54,7 +55,7 @@ func ContentFile(c *config.Config, cache, path string) (local, found bool) {
 		if skill.Path == "" || skill.Generated() {
 			continue
 		}
-		dir, err := config.Canonical(skill.Path)
+		dir, err := platform.Canonical(skill.Path)
 		if err != nil || path == dir || !config.Contains(dir, path) {
 			continue
 		}
@@ -67,7 +68,7 @@ func ContentFile(c *config.Config, cache, path string) (local, found bool) {
 		if instructions.Path == "" {
 			continue
 		}
-		file, err := config.Canonical(instructions.Path)
+		file, err := platform.Canonical(instructions.Path)
 		if err != nil || file != path {
 			continue
 		}

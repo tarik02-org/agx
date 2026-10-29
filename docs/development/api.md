@@ -10,21 +10,23 @@ The Go module path is `github.com/tarik02-org/agx`.
 
 - `ConfigurationService`: validate the daemon's configured root and resolve a
   directory for an optional harness, including provenance and required
-  environment names.
-- `PackageService`: install packages, streaming progress and then the result.
-  The CLI installs in-process instead; both paths share the installer lock.
+  environment names. Its web-UI APIs browse configuration, definitions, skill
+  files, and directories, and plan and apply validated configuration edits.
+- `PackageService`: web-UI APIs to install packages, streaming progress and then
+  the result, and to preview and inspect Git sources, read preview files, and
+  list source refs. The CLI installs in-process instead; both paths share the
+  installer lock.
 - `LaunchService`: prepare, renew, finish, and administratively revoke a launch;
   resolve and prepare thread launches of a process serving many threads; attach
   a launch, with its thread launches, to a daemon that does not hold it.
-- `RuntimeService`: inspect/watch redacted daemon, launch, and MCP server state;
-  `TestMcpServer`, which connects to one MCP server outside any launch and
-  lists its tools with their descriptions (`agx mcp test`), accepting only the
-  environment variables the server's values name and reporting failures with the
-  endpoint's diagnostics; and `ListTools` and `CallTool`, which list and call the
+- `RuntimeService`: inspect redacted daemon, launch, and MCP server state, with
+  `WatchRuntime` supplying live views for the web UI;
+  `ListTools` and `CallTool`, which list and call the
   tools of the MCP servers in a call scope (`agx mcp tools`, `agx mcp call`, and
-  the client of `agx mcp types`); and `Stop`, which stops the daemon.
+  the client of `agx mcp types`); list and stop MCP server processes; and `Stop`,
+  which stops the daemon.
 - `SecretService`: log in with OAuth, set a keychain secret, inspect secret
-  state, and log out.
+  state, rotate a credential, and log out.
 
 There is deliberately no client-facing `GetCredential` RPC. Upstream
 credentials and tool execution remain inside the daemon: `CallTool` returns only
@@ -48,8 +50,8 @@ text. `CallTool` returns the result's content items as a JSON array, binary data
 in base64, and its structured content as JSON. An unknown server is `NotFound`,
 one outside the scope `NotFound` naming the scope; an unknown tool, or arguments
 the server rejects as invalid params, `InvalidArgument` with the closest tool
-names; a server needing a login `REASON_NEEDS_LOGIN` with the `agx secret login`
-command; and other failures of the server `REASON_MCP_FAILED`. A request without
+names; a server needing a login `Unauthenticated` with the `agx secret login`
+command; and other failures of the server `FailedPrecondition`. A request without
 a deadline gets one: 45 seconds for listing, 10 minutes for a call.
 
 The daemon keeps one client session per launch, or per CLI scope, and server
@@ -126,9 +128,9 @@ MCP server with inline or on-demand OAuth. Its first message, `started`, carries
 the authorization URL, its expiry, and the MCP server whose URL is authorized;
 its last, `finished`, reports success, failure with a redacted reason, or expiry.
 Clients open the URL and keep the stream open; the daemon receives the callback.
-Concurrent logins for the same secret share one attempt. Ending the stream early
-withdraws the caller, and the daemon cancels the attempt once no caller waits,
-freeing its state; a later callback gets an error page and changes nothing. A
+A new login for the same secret cancels the previous attempt. Ending the stream
+early cancels its attempt, freeing its state; a later callback gets an error
+page and changes nothing. A
 stopping daemon ends the stream with `Unavailable`. Like `WatchRuntime`, it
 requires management authorization. Redact authorization URLs from logs.
 

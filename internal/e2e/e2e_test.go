@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 const (
@@ -261,7 +263,7 @@ func (e *env) stopDaemon(force bool) {
 		}
 		e.t.Fatalf("daemon stop exited %d: %s", r.code, r.stderr)
 	}
-	runtimeDir := filepath.Join(e.dir, "cache", "runtime")
+	runtimeDir := e.runtimeDir()
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		_, err := os.Stat(filepath.Join(runtimeDir, "daemon.json"))
@@ -277,9 +279,17 @@ func (e *env) stopDaemon(force bool) {
 	e.t.Fatal("daemon did not exit")
 }
 
+func (e *env) runtimeDir() string {
+	paths := platform.Paths{Config: filepath.Join(e.dir, "config", "agx.yaml"), Cache: filepath.Join(e.dir, "cache")}
+	if err := paths.Derive(); err != nil {
+		e.t.Fatal(err)
+	}
+	return paths.Runtime
+}
+
 // daemonRunning reports whether a daemon published its discovery file.
 func (e *env) daemonRunning() bool {
-	_, err := os.Stat(filepath.Join(e.dir, "cache", "runtime", "daemon.json"))
+	_, err := os.Stat(filepath.Join(e.runtimeDir(), "daemon.json"))
 	return err == nil
 }
 
@@ -302,10 +312,7 @@ func (e *env) daemonVersion() string {
 type envelope struct {
 	Version int             `json:"version"`
 	Data    json.RawMessage `json:"data"`
-	Error   *struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	} `json:"error"`
+	Message string          `json:"message"`
 }
 
 // jsonRun runs agx with --json and checks that stdout is exactly one versioned document, with
@@ -314,10 +321,11 @@ func (e *env) jsonRun(args ...string) (int, envelope) {
 	e.t.Helper()
 	r := e.agx(nil, append(args, "--json")...)
 	var doc envelope
-	if strings.Count(r.stdout, "\n") != 1 || json.Unmarshal([]byte(r.stdout), &doc) != nil || doc.Version != 1 {
+	if strings.Count(r.stdout, "\n") != 1 || json.Unmarshal([]byte(r.stdout), &doc) != nil {
 		e.t.Fatalf("agx %q --json printed %q (stderr %q)", args, r.stdout, r.stderr)
 	}
-	if (r.code == 0) != (doc.Data != nil) || (r.code == 0) == (doc.Error != nil) {
+	if (r.code == 0) != (doc.Data != nil) || (r.code == 0) == (doc.Message != "") || r.code == 0 && doc.Version != 1 ||
+		r.code != 0 && doc.Version != 0 {
 		e.t.Fatalf("agx %q --json exited %d with %s", args, r.code, r.stdout)
 	}
 	return r.code, doc
@@ -327,7 +335,7 @@ func (e *env) jsonRun(args ...string) (int, envelope) {
 func (e *env) jsonOK(into any, args ...string) {
 	e.t.Helper()
 	if code, doc := e.jsonRun(args...); code != 0 {
-		e.t.Fatalf("agx %q --json exited %d: %+v", args, code, doc.Error)
+		e.t.Fatalf("agx %q --json exited %d: %+v", args, code, doc.Message)
 	} else if into == nil {
 		return
 	} else if err := json.Unmarshal(doc.Data, into); err != nil {
@@ -335,11 +343,11 @@ func (e *env) jsonOK(into any, args ...string) {
 	}
 }
 
-// jsonFail runs agx with --json and requires exit status 1 with the error code given.
-func (e *env) jsonFail(code string, args ...string) {
+// jsonFail requires exit status 1 and a nonempty error message.
+func (e *env) jsonFail(args ...string) {
 	e.t.Helper()
-	if got, doc := e.jsonRun(args...); got != 1 || doc.Error.Code != code {
-		e.t.Fatalf("agx %q --json exited %d with %+v, want error %s", args, got, doc.Error, code)
+	if got, doc := e.jsonRun(args...); got != 1 || doc.Message == "" {
+		e.t.Fatalf("agx %q --json exited %d with %+v", args, got, doc)
 	}
 }
 
@@ -557,22 +565,8 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("launches = %+v", view.Launches)
 		}
 		e.jsonOK(nil, "launch", "revoke", view.Launches[0].ID)
-		e.jsonFail("not_found", "launch", "revoke", "missing")
-		e.jsonFail("not_found", "launch", "show", "missing")
-
-		var tested struct {
-			ServerName string `json:"server_name"`
-			Tools      []struct {
-				Name        string `json:"name"`
-				Description string `json:"description"`
-			} `json:"tool_details"`
-		}
-		e.jsonOK(&tested, "mcp", "test", "echo")
-		if tested.ServerName != "fakemcp" ||
-			len(tested.Tools) != 5 || tested.Tools[0].Name != "echo" || tested.Tools[0].Description != "Echo text." {
-			t.Fatalf("mcp test = %+v", tested)
-		}
-		e.jsonFail("not_found", "mcp", "test", "missing")
+		e.jsonFail("launch", "revoke", "missing")
+		e.jsonFail("launch", "show", "missing")
 
 		var secrets struct {
 			Secrets []struct {
@@ -584,7 +578,7 @@ func TestEndToEnd(t *testing.T) {
 		if len(secrets.Secrets) != 1 || secrets.Secrets[0].ID == "" || secrets.Secrets[0].State == "" {
 			t.Fatalf("secret status = %+v", secrets)
 		}
-		e.jsonFail("failed_precondition", "secret", "set", "sealed")
+		e.jsonFail("secret", "set", "sealed")
 	})
 
 	t.Run("agent sdk initialize", func(t *testing.T) {
@@ -744,8 +738,8 @@ func TestAutostart(t *testing.T) {
 		if r := e.run(binaries.oldAgx, nil, "daemon", "start"); r.code != 0 {
 			t.Fatalf("old daemon start: exit %d: %s", r.code, r.stderr)
 		}
-		if r := e.agx(nil, "daemon", "status"); r.code != 0 || !strings.Contains(r.stderr, "runs agx "+oldVersion) {
-			t.Fatalf("status of another build: exit %d, %q", r.code, r.stderr)
+		if got := e.daemonVersion(); got != oldVersion {
+			t.Fatalf("daemon status version = %s, want %s", got, oldVersion)
 		}
 		_, r := e.harness("claude", "-p", "hello")
 		if r.code != 0 {
@@ -845,7 +839,7 @@ func TestDoctor(t *testing.T) {
 
 	human := e.agx(nil, "doctor", "--all")
 	if human.code != 1 || !strings.Contains(human.stdout, "CHECK") || !strings.Contains(human.stdout, "mcp broken") ||
-		!strings.Contains(human.stdout, "agx mcp test broken") {
+		!strings.Contains(human.stdout, "agx mcp tools broken") {
 		t.Fatalf("doctor --all printed (exit %d):\n%s", human.code, human.stdout)
 	}
 }

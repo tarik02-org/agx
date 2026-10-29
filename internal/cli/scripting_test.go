@@ -3,22 +3,16 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
-
-	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/daemon"
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 const scriptingConfig = `
@@ -40,11 +34,7 @@ harnesses:
 type document struct {
 	Version int             `json:"version"`
 	Data    json.RawMessage `json:"data"`
-	Error   *struct {
-		Code    string         `json:"code"`
-		Message string         `json:"message"`
-		Source  *config.Source `json:"source"`
-	} `json:"error"`
+	Message string          `json:"message"`
 }
 
 // runJSON runs agx with args and checks that stdout holds JSON documents only, each versioned
@@ -64,7 +54,8 @@ func runJSON(t *testing.T, args ...string) (int, []document) {
 		if err := decoder.Decode(&d); err != nil {
 			t.Fatalf("agx %q wrote a line that is not a document: %v\n%s", args, err, line)
 		}
-		if d.Version != 1 || (d.Data != nil) == (d.Error != nil) {
+		if (d.Data != nil) == (d.Message != "") || d.Data != nil && d.Version != 1 ||
+			d.Message != "" && d.Version != 0 {
 			t.Fatalf("agx %q wrote a malformed document: %s", args, line)
 		}
 		docs = append(docs, d)
@@ -87,15 +78,12 @@ func okJSON(t *testing.T, into any, args ...string) {
 }
 
 // failJSON runs agx in JSON mode and checks its error document and exit status.
-func failJSON(t *testing.T, status int, code string, args ...string) document {
+func failJSON(t *testing.T, status int, args ...string) document {
 	t.Helper()
 	got, docs := runJSON(t, args...)
-	if got != status || len(docs) != 1 || docs[0].Error == nil || docs[0].Error.Code != code {
+	if got != status || len(docs) != 1 || docs[0].Message == "" {
 		b, _ := json.Marshal(docs)
-		t.Fatalf("agx %q exited %d with %s, want exit %d and error %s", args, got, b, status, code)
-	}
-	if docs[0].Error.Message == "" {
-		t.Fatalf("agx %q: error without a message", args)
+		t.Fatalf("agx %q exited %d with %s, want exit %d and a message", args, got, b, status)
 	}
 	return docs[0]
 }
@@ -180,7 +168,7 @@ func TestJSONEdits(t *testing.T) {
 		okJSON(t, nil, kind, "list")
 	}
 
-	failJSON(t, 1, codeConflict, "mcp", "remove", "local", "--json")
+	failJSON(t, 1, "mcp", "remove", "local", "--json")
 	var removed editDocument
 	okJSON(t, &removed, "mcp", "remove", "local", "--force")
 	if len(removed.Removed) != 1 || len(removed.Files) != 1 {
@@ -190,13 +178,13 @@ func TestJSONEdits(t *testing.T) {
 	okJSON(t, nil, "instructions", "remove", "style", "--force")
 	okJSON(t, nil, "harness", "remove", "claude-work")
 
-	failJSON(t, 1, codeNotFound, "mcp", "remove", "missing", "--json")
-	failJSON(t, 1, codeConflict, "mcp", "add", "docs", "https://other.example/mcp", "--json")
-	failJSON(t, 1, codeNotFound, "use", "missing", "--json")
-	failJSON(t, 1, codeConflict, "harness", "remove", "codex", "--json")
-	failJSON(t, 1, codeReadOnly, "harness", "remove", "pi", "--json")
+	failJSON(t, 1, "mcp", "remove", "missing", "--json")
+	failJSON(t, 1, "mcp", "add", "docs", "https://other.example/mcp", "--json")
+	failJSON(t, 1, "use", "missing", "--json")
+	failJSON(t, 1, "harness", "remove", "codex", "--json")
+	failJSON(t, 1, "harness", "remove", "pi", "--json")
 	// --json implies --yes and never prompts: a missing argument is a usage error.
-	failJSON(t, 2, codeUsage, "mcp", "remove", "--json")
+	failJSON(t, 2, "mcp", "remove", "--json")
 
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -229,27 +217,31 @@ func TestJSONValidate(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	d := failJSON(t, 1, codeConfigInvalid, "config", "validate", "--json")
-	if d.Error.Source == nil || d.Error.Source.Line != 4 || !strings.HasSuffix(d.Error.Source.Path, "main.yaml") {
-		t.Fatalf("invalid validate = %+v", d.Error)
+	d := failJSON(t, 1, "config", "validate", "--json")
+	if !strings.Contains(d.Message, "main.yaml:4") {
+		t.Fatalf("invalid validate = %+v", d.Message)
 	}
 	// --json before the command works as after it.
-	failJSON(t, 1, codeConfigInvalid, "--json", "explain")
+	failJSON(t, 1, "--json", "explain")
 
-	d = failJSON(t, 1, codeConfigInvalid, "explain", "--json")
-	if d.Error.Source == nil || d.Error.Source.Line != 4 {
-		t.Fatalf("config error without its source: %+v", d.Error)
+	d = failJSON(t, 1, "explain", "--json")
+	if !strings.Contains(d.Message, "main.yaml:4") {
+		t.Fatalf("config error without its source: %+v", d.Message)
 	}
-	failJSON(t, 1, codeConfigInvalid, "mcp", "add", "x", "--json", "--", "y")
+	failJSON(t, 1, "mcp", "add", "x", "--json", "--", "y")
 }
 
 func TestMissingPaths(t *testing.T) {
 	isolate(t, scriptingConfig)
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "missing.yaml")
-	d := failJSON(t, 1, codeConfigInvalid, "--config", missing, "config", "validate", "--json")
-	if !strings.Contains(d.Error.Message, missing+" does not exist") {
-		t.Fatalf("missing --config: %s", d.Error.Message)
+	canonical, err := platform.Canonical(missing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := failJSON(t, 1, "--config", missing, "config", "validate", "--json")
+	if !strings.Contains(d.Message, canonical+" does not exist") {
+		t.Fatalf("missing --config: %s", d.Message)
 	}
 	// Adding a definition creates the named root, importing the fragment it writes.
 	created := filepath.Join(dir, "created.yaml")
@@ -263,9 +255,9 @@ func TestMissingPaths(t *testing.T) {
 		!strings.Contains(string(b), "x:") {
 		t.Fatalf("created fragment: %v\n%s", err, b)
 	}
-	d = failJSON(t, 1, codeNotFound, "explain", filepath.Join(dir, "nope"), "--json")
-	if !strings.Contains(d.Error.Message, "does not exist") {
-		t.Fatalf("missing directory: %s", d.Error.Message)
+	d = failJSON(t, 1, "explain", filepath.Join(dir, "nope"), "--json")
+	if !strings.Contains(d.Message, "does not exist") {
+		t.Fatalf("missing directory: %s", d.Message)
 	}
 }
 
@@ -276,9 +268,9 @@ func TestChooseFile(t *testing.T) {
 	if err := os.WriteFile(second, []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	d := failJSON(t, 1, "choose_file", "instructions", "add", "--id", "x", "--text", "hi", "--json")
-	if !strings.Contains(d.Error.Message, "main.yaml") || !strings.Contains(d.Error.Message, "other.yaml") {
-		t.Fatalf("choose_file error: %s", d.Error.Message)
+	d := failJSON(t, 1, "instructions", "add", "--id", "x", "--text", "hi", "--json")
+	if !strings.Contains(d.Message, "main.yaml") || !strings.Contains(d.Message, "other.yaml") {
+		t.Fatalf("choose_file error: %s", d.Message)
 	}
 	t.Chdir(t.TempDir())
 	var added editDocument
@@ -286,11 +278,7 @@ func TestChooseFile(t *testing.T) {
 	if len(added.Files) != 1 || !strings.HasSuffix(added.Files[0].Path, "other.yaml") {
 		t.Fatalf("instructions add --file = %+v", added.Files)
 	}
-	failJSON(
-		t,
-		1,
-		codeInvalidRequest,
-		"instructions",
+	failJSON(t, 1, "instructions",
 		"add",
 		"--id",
 		"y",
@@ -320,7 +308,7 @@ func TestConfigSchema(t *testing.T) {
 	if err != nil || code != 0 || !strings.Contains(string(b), `"title": "agx root configuration"`) {
 		t.Fatalf("config schema --root exited %d: %v\n%s", code, err, b)
 	}
-	failJSON(t, 2, codeUsage, "config", "schema", "--root", "--package", "--json")
+	failJSON(t, 2, "config", "schema", "--root", "--package", "--json")
 }
 
 func TestJSONCommands(t *testing.T) {
@@ -340,11 +328,11 @@ func TestJSONCommands(t *testing.T) {
 	})
 
 	okJSON(t, nil, "explain", "--harness", "codex-work")
-	failJSON(t, 1, codeNotFound, "explain", "--harness", "missing", "--json")
+	failJSON(t, 1, "explain", "--harness", "missing", "--json")
 
 	okJSON(t, nil, "install", "--frozen")
 	okJSON(t, nil, "update")
-	failJSON(t, 1, codeNotFound, "update", "missing", "--json")
+	failJSON(t, 1, "update", "missing", "--json")
 
 	var shims struct {
 		Directory string `json:"directory"`
@@ -372,9 +360,9 @@ func TestJSONCommands(t *testing.T) {
 		{"secret", "set", "token"},
 		{"secret", "logout", "token"},
 		{"secret", "login", "token"},
-		{"mcp", "test", "fs"},
+		{"mcp", "tools", "fs"},
 	} {
-		failJSON(t, 1, codeDaemonUnavailable, append(args, "--json")...)
+		failJSON(t, 1, append(args, "--json")...)
 	}
 	var status any = "unset"
 	okJSON(t, &status, "daemon", "status")
@@ -390,7 +378,6 @@ func TestJSONCommands(t *testing.T) {
 			t.Fatalf("%q without a daemon = %+v", args, stopped)
 		}
 	}
-	failJSON(t, 1, codeNotFound, "mcp", "test", "missing", "--json")
 }
 
 func TestJSONUsageErrors(t *testing.T) {
@@ -405,68 +392,12 @@ func TestJSONUsageErrors(t *testing.T) {
 		{"--json", "codex", "exec"},
 		{"--json"},
 	} {
-		failJSON(t, 2, codeUsage, args...)
+		failJSON(t, 2, args...)
 	}
 	// A harness's native --json is not agx's.
 	if !wantsJSON([]string{"mcp", "list", "--json"}) || wantsJSON([]string{"x", "--", "--json"}) {
 		t.Fatal("wantsJSON misreads the command line")
 	}
-}
-
-func TestErrorCodes(t *testing.T) {
-	for _, test := range []struct {
-		err  error
-		want string
-	}{
-		{&usageError{errors.New("x")}, codeUsage},
-		{coded(codeConflict, &usageError{errors.New("x")}), codeUsage},
-		{coded(codeConflict, coded(codeNotFound, errors.New("x"))), codeConflict},
-		{daemon.ErrVersionMismatch, codeVersionMismatch},
-		{daemon.ErrUnavailable, codeDaemonUnavailable},
-		{reasonError(t, connect.CodeNotFound, v1.ErrorDetail_REASON_NOT_FOUND), codeNotFound},
-		{reasonError(t, connect.CodeFailedPrecondition, v1.ErrorDetail_REASON_NEEDS_LOGIN), codeNeedsLogin},
-		{reasonError(t, connect.CodeFailedPrecondition, v1.ErrorDetail_REASON_CONFIG_INVALID), codeConfigInvalid},
-		{reasonError(t, connect.CodeUnavailable, v1.ErrorDetail_REASON_CONFIG_INVALID), codeConfigInvalid},
-		{reasonError(t, connect.CodeUnauthenticated, v1.ErrorDetail_REASON_UNAUTHENTICATED), codeDaemonUnavailable},
-		// The reason decides, never the message.
-		{connect.NewError(connect.CodeFailedPrecondition, errors.New("needs-auth: x")), codeInternal},
-		{reasonError(t, connect.CodeInternal, v1.ErrorDetail_Reason(999)), codeInternal},
-		{reasonError(t, connect.CodeNotFound, v1.ErrorDetail_REASON_UNSPECIFIED), codeInternal},
-		// Errors without a reason come from the transport.
-		{connect.NewError(connect.CodeUnavailable, errors.New("x")), codeDaemonUnavailable},
-		{connect.NewError(connect.CodeDeadlineExceeded, errors.New("x")), codeTimeout},
-		{connect.NewError(connect.CodeNotFound, errors.New("x")), codeInternal},
-		{os.ErrNotExist, codeNotFound},
-		{errors.New("unclassified"), codeInternal},
-	} {
-		if got := errorCode(test.err); got != test.want {
-			t.Errorf("errorCode(%v) = %s, want %s", test.err, got, test.want)
-		}
-	}
-	located := &config.SourceError{Path: "/etc/agx.yaml", Line: 12, Err: errors.New("bad")}
-	for err, want := range map[error]*config.Source{
-		located: {Path: "/etc/agx.yaml", Line: 12},
-		fmt.Errorf("configuration is invalid: %w", &config.SourceError{Path: "/etc/agx.yaml", Err: errors.New("bad")}): {
-			Path: "/etc/agx.yaml",
-		},
-		errors.New("package x is not installed; run agx install"): nil,
-	} {
-		if got := errorSource(err); !reflect.DeepEqual(got, want) {
-			t.Errorf("errorSource(%v) = %+v, want %+v", err, got, want)
-		}
-	}
-}
-
-// reasonError is an error as the daemon reports it, with its reason in the details.
-func reasonError(t *testing.T, code connect.Code, reason v1.ErrorDetail_Reason) error {
-	t.Helper()
-	err := connect.NewError(code, errors.New("x"))
-	detail, detailErr := connect.NewErrorDetail(&v1.ErrorDetail{Reason: reason})
-	if detailErr != nil {
-		t.Fatal(detailErr)
-	}
-	err.AddDetail(detail)
-	return err
 }
 
 func TestDefinitionLinkWithBrokenConfiguration(t *testing.T) {

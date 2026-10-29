@@ -42,7 +42,7 @@ bundles:
 // in main.yaml beside the root, which also lists agx.d/*.yaml.
 func editorServer(t *testing.T, configuration string) (*Server, string) {
 	t.Helper()
-	dir, err := config.Canonical(t.TempDir())
+	dir, err := platform.Canonical(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,31 +75,10 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
-// reason returns the ErrorDetail reason and code of an RPC error.
-func reason(t *testing.T, err error) (connect.Code, v1.ErrorDetail_Reason) {
+func wantCode(t *testing.T, err error, want connect.Code) {
 	t.Helper()
-	var rpc *connect.Error
-	if !errors.As(err, &rpc) {
-		t.Fatalf("not an RPC error: %v", err)
-	}
-	for _, d := range rpc.Details() {
-		if value, err := d.Value(); err == nil {
-			if detail, ok := value.(*v1.ErrorDetail); ok {
-				return rpc.Code(), detail.Reason
-			}
-		}
-	}
-	t.Fatalf("no reason: %v", err)
-	return 0, 0
-}
-
-func wantReason(t *testing.T, err error, want v1.ErrorDetail_Reason) {
-	t.Helper()
-	if err == nil {
-		t.Fatalf("no error, want %v", want)
-	}
-	if _, got := reason(t, err); got != want {
-		t.Fatalf("%v: reason %v, want %v", err, got, want)
+	if got := connect.CodeOf(err); got != want {
+		t.Fatalf("%v: code %v, want %v", err, got, want)
 	}
 }
 
@@ -151,7 +130,7 @@ func TestListDefinitions(t *testing.T) {
 		t.Fatalf("skill = %+v", skill.Msg)
 	}
 	_, err = s.GetSkill(t.Context(), connect.NewRequest(&v1.GetSkillRequest{SkillId: "missing"}))
-	wantReason(t, err, v1.ErrorDetail_REASON_NOT_FOUND)
+	wantCode(t, err, connect.CodeNotFound)
 }
 
 func TestReadFileRestrictions(t *testing.T) {
@@ -199,10 +178,10 @@ func TestReadFileRestrictions(t *testing.T) {
 		"skills/alpha/SKILL.md",
 	} {
 		_, err := read(path)
-		wantReason(t, err, v1.ErrorDetail_REASON_INVALID_REQUEST)
+		wantCode(t, err, connect.CodeInvalidArgument)
 	}
 	_, err := read(filepath.Join(dir, "skills", "alpha", "missing.md"))
-	wantReason(t, err, v1.ErrorDetail_REASON_NOT_FOUND)
+	wantCode(t, err, connect.CodeNotFound)
 }
 
 func define(kind, id, yaml string) *v1.ConfigChange {
@@ -242,7 +221,7 @@ func TestPlanAndApplyChanges(t *testing.T) {
 	// A file changed since the plan fails the apply.
 	stale := []*v1.PlannedFile{{Path: files[0].Path, BeforeSha256: strings.Repeat("0", 64)}, files[1]}
 	_, err = s.ApplyChanges(t.Context(), connect.NewRequest(&v1.ApplyChangesRequest{Changes: changes, Expected: stale}))
-	wantReason(t, err, v1.ErrorDetail_REASON_CONFLICT)
+	wantCode(t, err, connect.CodeAborted)
 
 	applied, err := s.ApplyChanges(
 		t.Context(),
@@ -264,7 +243,7 @@ func TestPlanAndApplyChanges(t *testing.T) {
 
 	// Replaying the applied plan finds the files changed.
 	_, err = s.ApplyChanges(t.Context(), connect.NewRequest(&v1.ApplyChangesRequest{Changes: changes, Expected: files}))
-	wantReason(t, err, v1.ErrorDetail_REASON_CONFLICT)
+	wantCode(t, err, connect.CodeAborted)
 
 	undefine := &v1.ConfigChange{
 		Change: &v1.ConfigChange_Undefine{Undefine: &v1.UndefineChange{Kind: "skills", Id: "alpha"}},
@@ -282,16 +261,16 @@ func TestPlanAndApplyChanges(t *testing.T) {
 
 	for name, test := range map[string]struct {
 		change *v1.ConfigChange
-		want   v1.ErrorDetail_Reason
+		want   connect.Code
 	}{
-		"invalid":     {define("mcp", "bad", "url: 5\ncommand: [x]\n"), v1.ErrorDetail_REASON_CONFIG_INVALID},
-		"unknown tag": {define("mcp", "bad", "url: !shell whoami\n"), v1.ErrorDetail_REASON_INVALID_REQUEST},
-		"sequence":    {define("mcp", "bad", "[a, b]\n"), v1.ErrorDetail_REASON_INVALID_REQUEST},
-		"unknown":     {enable("skills", "missing"), v1.ErrorDetail_REASON_CONFIG_INVALID},
+		"invalid":     {define("mcp", "bad", "url: 5\ncommand: [x]\n"), connect.CodeFailedPrecondition},
+		"unknown tag": {define("mcp", "bad", "url: !shell whoami\n"), connect.CodeInvalidArgument},
+		"sequence":    {define("mcp", "bad", "[a, b]\n"), connect.CodeInvalidArgument},
+		"unknown":     {enable("skills", "missing"), connect.CodeFailedPrecondition},
 		"outside": {&v1.ConfigChange{Change: &v1.ConfigChange_WriteFile{WriteFile: &v1.FileWrite{
 			Path: filepath.Join(dir, "elsewhere.md"),
-		}}}, v1.ErrorDetail_REASON_INVALID_REQUEST},
-		"empty": {&v1.ConfigChange{}, v1.ErrorDetail_REASON_INVALID_REQUEST},
+		}}}, connect.CodeInvalidArgument},
+		"empty": {&v1.ConfigChange{}, connect.CodeInvalidArgument},
 	} {
 		_, err := s.PlanChanges(
 			t.Context(),
@@ -300,7 +279,7 @@ func TestPlanAndApplyChanges(t *testing.T) {
 		if err == nil {
 			t.Fatalf("%s: planned", name)
 		}
-		if _, got := reason(t, err); got != test.want {
+		if got := connect.CodeOf(err); got != test.want {
 			t.Errorf("%s: %v: reason %v, want %v", name, err, got, test.want)
 		}
 	}
@@ -316,7 +295,7 @@ func TestPlanChangesChoosesFile(t *testing.T) {
 	if !errors.As(err, &rpc) || rpc.Code() != connect.CodeFailedPrecondition {
 		t.Fatalf("error = %v", err)
 	}
-	wantReason(t, err, v1.ErrorDetail_REASON_CHOOSE_FILE)
+	wantCode(t, err, connect.CodeFailedPrecondition)
 	value, _ := rpc.Details()[0].Value()
 	if files := value.(*v1.ErrorDetail).Files; !slices.Equal(files, []string{filepath.Join(dir, "main.yaml"), other}) {
 		t.Fatalf("files = %q", files)
@@ -397,12 +376,12 @@ func TestPreviewSource(t *testing.T) {
 	}
 	for _, path := range []string{"../beta/SKILL.md", "/etc/passwd", ""} {
 		_, err := readPreview("alpha", path)
-		wantReason(t, err, v1.ErrorDetail_REASON_INVALID_REQUEST)
+		wantCode(t, err, connect.CodeInvalidArgument)
 	}
 	_, err = readPreview("gamma", "SKILL.md")
-	wantReason(t, err, v1.ErrorDetail_REASON_NOT_FOUND)
+	wantCode(t, err, connect.CodeNotFound)
 	_, err = s.ReadPreviewFile(t.Context(), connect.NewRequest(&v1.ReadPreviewFileRequest{PreviewId: "expired"}))
-	wantReason(t, err, v1.ErrorDetail_REASON_NOT_FOUND)
+	wantCode(t, err, connect.CodeNotFound)
 
 	// Adding the previewed package with one of its skills declares, locks, and enables it.
 	changes := []*v1.ConfigChange{
