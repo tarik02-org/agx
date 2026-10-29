@@ -172,7 +172,7 @@ func TestRemoteRefreshesRejectedToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { manager.Release(attempt) })
+	t.Cleanup(func() { manager.Cancel(attempt) })
 	authorize, err := url.Parse(attempt.URL)
 	if err != nil {
 		t.Fatal(err)

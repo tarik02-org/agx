@@ -1104,9 +1104,8 @@ func (UnimplementedRuntimeServiceHandler) Stop(context.Context, *connect.Request
 
 // SecretServiceClient is a client for the agx.v1.SecretService service.
 type SecretServiceClient interface {
-	// Starts an OAuth login, or joins the one pending for the secret, and reports it until it
-	// finishes. Ending the stream early withdraws this caller; the attempt is cancelled once no
-	// caller waits for it.
+	// Starts an OAuth login, cancelling the previous attempt for the secret, and reports it
+	// until it finishes. Ending the stream early cancels the attempt.
 	Login(context.Context, *connect.Request[v1.LoginRequest]) (*connect.ServerStreamForClient[v1.LoginResponse], error)
 	SetSecret(context.Context, *connect.Request[v1.SetSecretRequest]) (*connect.Response[v1.SetSecretResponse], error)
 	GetSecretStatus(context.Context, *connect.Request[v1.GetSecretStatusRequest]) (*connect.Response[v1.GetSecretStatusResponse], error)
@@ -1198,9 +1197,8 @@ func (c *secretServiceClient) RotateSecret(ctx context.Context, req *connect.Req
 
 // SecretServiceHandler is an implementation of the agx.v1.SecretService service.
 type SecretServiceHandler interface {
-	// Starts an OAuth login, or joins the one pending for the secret, and reports it until it
-	// finishes. Ending the stream early withdraws this caller; the attempt is cancelled once no
-	// caller waits for it.
+	// Starts an OAuth login, cancelling the previous attempt for the secret, and reports it
+	// until it finishes. Ending the stream early cancels the attempt.
 	Login(context.Context, *connect.Request[v1.LoginRequest], *connect.ServerStream[v1.LoginResponse]) error
 	SetSecret(context.Context, *connect.Request[v1.SetSecretRequest]) (*connect.Response[v1.SetSecretResponse], error)
 	GetSecretStatus(context.Context, *connect.Request[v1.GetSecretStatusRequest]) (*connect.Response[v1.GetSecretStatusResponse], error)

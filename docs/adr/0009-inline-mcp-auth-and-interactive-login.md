@@ -51,8 +51,8 @@ with a credential-less GET before falling back to the well-known location.
 `agx secret login` blocks until the flow finishes. One server-streaming RPC,
 `Login`, starts the login and reports its outcome: a first event with the
 authorization URL and expiry, then success, failure, or expiry. Concurrent logins
-for one secret share the attempt; the daemon cancels it, freeing its state, when
-the last waiting stream ends early, so Ctrl-C or closing the terminal aborts the
+for one secret replace the previous attempt; the daemon cancels an attempt, freeing
+its state, when its waiting stream ends early, so Ctrl-C or closing the terminal aborts the
 login and a late callback only shows an error page. A daemon restart ends the
 stream; the user logs in again. The CLI opens the authorization URL in the default
 browser (`open`, `xdg-open`, or `rundll32 url.dll,FileProtocolHandler`, which

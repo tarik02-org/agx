@@ -128,9 +128,9 @@ MCP server with inline or on-demand OAuth. Its first message, `started`, carries
 the authorization URL, its expiry, and the MCP server whose URL is authorized;
 its last, `finished`, reports success, failure with a redacted reason, or expiry.
 Clients open the URL and keep the stream open; the daemon receives the callback.
-Concurrent logins for the same secret share one attempt. Ending the stream early
-withdraws the caller, and the daemon cancels the attempt once no caller waits,
-freeing its state; a later callback gets an error page and changes nothing. A
+A new login for the same secret cancels the previous attempt. Ending the stream
+early cancels its attempt, freeing its state; a later callback gets an error
+page and changes nothing. A
 stopping daemon ends the stream with `Unavailable`. Like `WatchRuntime`, it
 requires management authorization. Redact authorization URLs from logs.
 

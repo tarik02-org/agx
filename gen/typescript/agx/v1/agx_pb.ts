@@ -3472,9 +3472,8 @@ export const RuntimeService: GenService<{
  */
 export const SecretService: GenService<{
   /**
-   * Starts an OAuth login, or joins the one pending for the secret, and reports it until it
-   * finishes. Ending the stream early withdraws this caller; the attempt is cancelled once no
-   * caller waits for it.
+   * Starts an OAuth login, cancelling the previous attempt for the secret, and reports it
+   * until it finishes. Ending the stream early cancels the attempt.
    *
    * @generated from rpc agx.v1.SecretService.Login
    */

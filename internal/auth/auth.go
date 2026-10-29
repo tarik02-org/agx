@@ -26,14 +26,10 @@ import (
 
 type Manager struct {
 	mu sync.Mutex
-	// pending maps OAuth state to attempts; begins holds in-flight discovery per secret ID.
+	// pending maps OAuth state to the current attempts.
 	pending map[string]*Attempt
-	begins  map[config.ID]*beginCall
 	// locks serialize refresh, login storage and logout per credential key.
 	locks map[string]*sync.Mutex
-	// unpersisted holds refreshed credentials the OS keychain refused to store.
-	unpersisted map[string]credential
-	generation  map[string]uint64
 	// required marks credential keys whose server asked for login; hints maps a normalized
 	// server URL to the protected resource metadata URL its 401 challenge named.
 	required map[string]bool
@@ -69,7 +65,6 @@ type credential struct {
 	Endpoint oauth2.Endpoint `json:"endpoint"`
 	ClientID string          `json:"client_id"`
 	Origin   string          `json:"origin"`
-	Resource string          `json:"resource"`
 }
 
 type Status struct {
@@ -88,17 +83,14 @@ type Status struct {
 // store.
 func New(callback string, store *Store) *Manager {
 	return &Manager{
-		store:       store,
-		pending:     map[string]*Attempt{},
-		begins:      map[config.ID]*beginCall{},
-		locks:       map[string]*sync.Mutex{},
-		unpersisted: map[string]credential{},
-		generation:  map[string]uint64{},
-		required:    map[string]bool{},
-		hints:       map[string]string{},
-		refused:     map[string]string{},
-		helpers:     map[string]helperValue{},
-		callback:    callback,
+		store:    store,
+		pending:  map[string]*Attempt{},
+		locks:    map[string]*sync.Mutex{},
+		required: map[string]bool{},
+		hints:    map[string]string{},
+		refused:  map[string]string{},
+		helpers:  map[string]helperValue{},
+		callback: callback,
 	}
 }
 
@@ -376,15 +368,9 @@ func (m *Manager) Rotate(ctx context.Context, id config.ID, a config.Secret) (ti
 	return token.Expiry, nil
 }
 
-// stored returns the OAuth credential under key k, a refreshed one the keychain refused first;
-// callers hold the credential's lock.
+// stored reads the OAuth credential under key k; callers hold its lock.
 func (m *Manager) stored(k string, id config.ID) (credential, error) {
-	m.mu.Lock()
-	saved, cached := m.unpersisted[k]
-	m.mu.Unlock()
-	if cached {
-		return saved, nil
-	}
+	var saved credential
 	data, err := m.store.Get(k)
 	if errors.Is(err, errNotStored) {
 		return credential{}, fmt.Errorf("secret %s needs login; run agx secret login %s: %w", id, id, ErrNoCredential)
@@ -410,19 +396,6 @@ func (m *Manager) renew(ctx context.Context, k string, id config.ID, saved crede
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
 	defer cancel()
 	token, refusal, err := m.refresh(ctx, saved)
-	if err != nil && refusal {
-		// Another agx daemon, such as one of another build that ran meanwhile, may have refreshed
-		// with the same token and stored the one the server rotated to.
-		if current, readErr := m.stored(
-			k,
-			id,
-		); readErr == nil &&
-			current.Token.RefreshToken != saved.Token.RefreshToken {
-			slog.Info("OAuth refresh token was rotated elsewhere; using the stored one", "secret", id)
-			token, refusal, err = m.refresh(ctx, current)
-			saved = current
-		}
-	}
 	if err != nil {
 		slog.Warn("OAuth refresh failed", "secret", id, "refused", refusal, "error", err)
 		if refusal {
@@ -442,101 +415,34 @@ func (m *Manager) renew(ctx context.Context, k string, id config.ID, saved crede
 	delete(m.refused, k)
 	m.mu.Unlock()
 	if err := m.store.Set(k, string(data)); err != nil {
-		// The refresh token may have rotated; dropping it would force a new login.
-		m.mu.Lock()
-		m.unpersisted[k] = saved
-		m.mu.Unlock()
-		slog.Warn(
-			"cannot persist refreshed OAuth credential; keeping it in memory until the daemon stops",
-			"secret",
-			id,
-			"error",
-			err,
-		)
-		return token, nil
+		return nil, fmt.Errorf("cannot persist refreshed OAuth credential for %s: %w", id, err)
 	}
-	m.mu.Lock()
-	delete(m.unpersisted, k)
-	m.mu.Unlock()
 	return token, nil
 }
 
-// refresh is done by hand because oauth2.TokenSource cannot send the RFC 8707
-// resource parameter. refused reports that the authorization server rejected the refresh token
-// or the client (RFC 6749 section 5.2), so only a new login helps; other failures may pass.
-func (m *Manager) refresh(ctx context.Context, saved credential) (token *oauth2.Token, refused bool, err error) {
+func (m *Manager) refresh(ctx context.Context, saved credential) (*oauth2.Token, bool, error) {
 	if err := secureURL(saved.Endpoint.TokenURL); err != nil {
 		return nil, true, err
 	}
-	form := url.Values{
-		"grant_type":    {"refresh_token"},
-		"refresh_token": {saved.Token.RefreshToken},
-		"client_id":     {saved.ClientID},
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, client)
+	cfg := oauth2.Config{ClientID: saved.ClientID, Endpoint: saved.Endpoint}
+	// Rotate and early server rejection force a refresh even before the saved expiry.
+	token := *saved.Token
+	token.Expiry = time.Now().Add(-time.Hour)
+	refreshed, err := cfg.TokenSource(ctx, &token).Token()
+	if err == nil {
+		return refreshed, false, nil
 	}
-	if saved.Resource != "" {
-		form.Set("resource", saved.Resource)
-	}
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		saved.Endpoint.TokenURL,
-		strings.NewReader(form.Encode()),
-	)
-	if err != nil {
-		return nil, true, err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, false, fmt.Errorf("cannot reach the token endpoint: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		// Only the error code is kept: the description is free text from the server.
-		var failure struct {
-			Error string `json:"error"`
+	var failure *oauth2.RetrieveError
+	if errors.As(err, &failure) {
+		status := failure.Response.StatusCode
+		message := fmt.Sprintf("token endpoint returned HTTP %d", status)
+		if failure.ErrorCode != "" {
+			message += fmt.Sprintf(" (%q)", failure.ErrorCode)
 		}
-		_ = json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&failure)
-		err := fmt.Errorf("token endpoint returned HTTP %d", resp.StatusCode)
-		if code := failure.Error; code != "" && isErrorCode(code) {
-			err = fmt.Errorf("token endpoint returned HTTP %d (%s)", resp.StatusCode, code)
-		}
-		refused := resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnauthorized
-		return nil, refused, err
+		return nil, status == http.StatusBadRequest || status == http.StatusUnauthorized, errors.New(message)
 	}
-	var body struct {
-		AccessToken  string `json:"access_token"`
-		TokenType    string `json:"token_type"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresIn    int64  `json:"expires_in"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1024*1024)).
-		Decode(&body); err != nil ||
-		body.AccessToken == "" {
-		return nil, false, fmt.Errorf("invalid token response")
-	}
-	token = &oauth2.Token{AccessToken: body.AccessToken, TokenType: body.TokenType, RefreshToken: body.RefreshToken}
-	if token.RefreshToken == "" {
-		token.RefreshToken = saved.Token.RefreshToken
-	}
-	if body.ExpiresIn > 0 {
-		token.Expiry = time.Now().Add(time.Duration(body.ExpiresIn) * time.Second)
-	}
-	return token, false, nil
-}
-
-// isErrorCode reports whether code has the RFC 6749 error code syntax, so it is safe to show.
-func isErrorCode(code string) bool {
-	if len(code) > 64 {
-		return false
-	}
-	for _, c := range code {
-		if c < 0x20 || c > 0x7e || c == '"' || c == '\\' {
-			return false
-		}
-	}
-	return true
+	return nil, false, fmt.Errorf("cannot reach the token endpoint: %w", err)
 }
 
 func (m *Manager) Set(id config.ID, a config.Secret, secret []byte) error {
@@ -572,8 +478,6 @@ func (m *Manager) Logout(id config.ID, a config.Secret) error {
 	lock.Lock()
 	defer lock.Unlock()
 	m.mu.Lock()
-	m.generation[k]++
-	delete(m.unpersisted, k)
 	delete(m.refused, k)
 	for _, p := range m.pending {
 		if p.SecretID == id {
@@ -608,7 +512,6 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 		return s
 	}
 	required := m.required[k]
-	memory, inMemory := m.unpersisted[k]
 	refused, wasRefused := m.refused[k]
 	m.mu.Unlock()
 	switch a.Kind {
@@ -633,12 +536,6 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 		if wasRefused {
 			s.State = "needs_login"
 			s.Problem = "secret " + string(id) + " cannot be refreshed: " + refused
-			break
-		}
-		if inMemory {
-			s.State = "ready"
-			s.Expires = memory.Token.Expiry
-			s.Refreshable = memory.Token.RefreshToken != ""
 			break
 		}
 		data, err := m.store.Get(k)

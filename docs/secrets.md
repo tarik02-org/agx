@@ -169,3 +169,7 @@ have sops run a command for the key instead, leave `age_key` out and set
 
 When decryption fails, `agx secret status` shows the secret as `unavailable`
 with sops's error, and MCP servers using it report `needs-auth`.
+
+A new OAuth login for a secret cancels its previous pending attempt. Refreshes
+use the standard OAuth client without the optional `resource` parameter; an
+issued token is bound to its resource during the authorization-code exchange.

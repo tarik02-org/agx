@@ -80,9 +80,8 @@ service RuntimeService {
 }
 
 service SecretService {
-  // Starts an OAuth login, or joins the one pending for the secret, and reports it until it
-  // finishes. Ending the stream early withdraws this caller; the attempt is cancelled once no
-  // caller waits for it.
+  // Starts an OAuth login, cancelling the previous attempt for the secret, and reports it
+  // until it finishes. Ending the stream early cancels the attempt.
   rpc Login(LoginRequest) returns (stream LoginResponse);
   rpc SetSecret(SetSecretRequest) returns (SetSecretResponse);
   rpc GetSecretStatus(GetSecretStatusRequest) returns (GetSecretStatusResponse);

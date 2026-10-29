@@ -147,14 +147,20 @@ func TestLoginAndRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	joined, err := manager.Begin(ctx, "fixture", secret, p.URL+"/mcp")
-	if err != nil || joined.ID != attempt.ID {
-		t.Fatalf("a second login did not join the pending one: %v", err)
+	replacement, err := manager.Begin(ctx, "fixture", secret, p.URL+"/mcp")
+	if err != nil || replacement.ID == attempt.ID {
+		t.Fatalf("second login did not replace the first: %v", err)
 	}
-	manager.Release(joined)
-	if state := manager.Status("fixture", secret, nil).State; state != "pending" {
-		t.Fatalf("releasing one waiter ended the shared login: %s", state)
+	if err := manager.Wait(ctx, attempt); !errors.Is(err, auth.ErrLoginCancelled) {
+		t.Fatalf("old login: %v", err)
 	}
+	if code := get(
+		t,
+		callback+"?state="+query(t, attempt).Get("state")+"&code=fixture",
+	); code != http.StatusBadRequest {
+		t.Fatalf("old callback accepted: %d", code)
+	}
+	attempt = replacement
 
 	q := query(t, attempt)
 	if q.Get("code_challenge_method") != "S256" || q.Get("resource") != p.URL+"/mcp" {
@@ -174,13 +180,12 @@ func TestLoginAndRefresh(t *testing.T) {
 	if err := <-outcome; err != nil {
 		t.Fatalf("login outcome: %v", err)
 	}
-	manager.Release(attempt)
+	manager.Cancel(attempt)
 	if code := get(t, target); code != http.StatusBadRequest {
 		t.Fatalf("callback replay accepted: %d", code)
 	}
 
 	// The initial token expires within a second; concurrent requests share one refresh.
-	time.Sleep(1100 * time.Millisecond)
 	var wg sync.WaitGroup
 	values := make([]string, 12)
 	for i := range values {
@@ -343,7 +348,7 @@ func TestOnDemandLogin(t *testing.T) {
 	if err := manager.Wait(cancelled, attempt); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Wait ignored cancellation: %v", err)
 	}
-	manager.Release(attempt)
+	manager.Cancel(attempt)
 	if code := get(t, callback+"?state="+query(t, attempt).Get("state")+"&code=x"); code != http.StatusBadRequest {
 		t.Fatalf("callback after cancellation = %d", code)
 	}
@@ -356,7 +361,7 @@ func TestOnDemandLogin(t *testing.T) {
 	if err := manager.Wait(ctx, attempt); !errors.Is(err, auth.ErrLoginExpired) {
 		t.Fatalf("expiry: %v", err)
 	}
-	manager.Release(attempt)
+	manager.Cancel(attempt)
 
 	attempt, err = manager.Begin(ctx, "site", implicit, mcpURL)
 	if err != nil {
@@ -370,7 +375,7 @@ func TestOnDemandLogin(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	manager.Release(attempt)
+	manager.Cancel(attempt)
 	if value, err := manager.Value(
 		ctx,
 		"site",
@@ -476,7 +481,7 @@ func TestOpenIDDiscoveryWithPathInsertion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager.Release(attempt)
+	manager.Cancel(attempt)
 }
 
 func TestLoginRequiresHTTPS(t *testing.T) {
@@ -506,7 +511,7 @@ func login(t *testing.T, manager *auth.Manager, callback string, p *provider, se
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer manager.Release(attempt)
+	defer manager.Cancel(attempt)
 	q := query(t, attempt)
 	p.challenge = q.Get("code_challenge")
 	if code := get(t, callback+"?state="+q.Get("state")+"&code=fixture"); code != http.StatusOK {
@@ -548,10 +553,9 @@ func TestRefusedRefresh(t *testing.T) {
 	}
 
 	p.refuse.Store(true)
-	time.Sleep(1100 * time.Millisecond)
 	_, err := manager.Value(t.Context(), "fixture", secret, nil, nil, p.URL)
 	if err == nil || errors.Is(err, auth.ErrRefreshFailed) ||
-		!strings.Contains(err.Error(), "HTTP 400 (invalid_grant)") ||
+		!strings.Contains(err.Error(), "HTTP 400 (\"invalid_grant\")") ||
 		!strings.Contains(err.Error(), "agx secret login fixture") ||
 		strings.Contains(err.Error(), "revoked") {
 		t.Fatalf("refused refresh: %v", err)
@@ -582,7 +586,6 @@ func TestUnreachableRefresh(t *testing.T) {
 
 	origin := p.URL
 	p.Close()
-	time.Sleep(1100 * time.Millisecond)
 	_, err := manager.Value(t.Context(), "fixture", secret, nil, nil, origin)
 	if !errors.Is(err, auth.ErrRefreshFailed) || !strings.Contains(err.Error(), "cannot reach the token endpoint") {
 		t.Fatalf("unreachable token endpoint: %v", err)
@@ -651,7 +654,6 @@ func TestCancelledRefreshKeepsRotatedToken(t *testing.T) {
 	manager, callback := newManager(t)
 	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
 	login(t, manager, callback, p, secret)
-	time.Sleep(1100 * time.Millisecond)
 
 	// The provider takes 50 ms to answer a refresh; the caller gives up after 10.
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)

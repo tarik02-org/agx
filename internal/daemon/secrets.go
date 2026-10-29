@@ -237,7 +237,7 @@ func (s *Server) Login(
 		}
 		return rpcError(connect.CodeFailedPrecondition, err.Error())
 	}
-	defer s.manager.Release(attempt)
+	defer s.manager.Cancel(attempt)
 	err = stream.Send(&v1.LoginResponse{Event: &v1.LoginResponse_Started{Started: &v1.LoginStarted{
 		AuthorizationUrl: attempt.URL,
 		ExpiresAt:        timestamppb.New(attempt.Expires),
