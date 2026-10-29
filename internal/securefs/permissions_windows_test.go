@@ -5,6 +5,8 @@ import (
 	"os/user"
 	"path/filepath"
 	"testing"
+
+	"golang.org/x/sys/windows"
 )
 
 // Private leaves a private directory be only when it recognizes its own DACL; otherwise every
@@ -25,6 +27,7 @@ func TestPrivateRecognizesItsDACL(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !isPrivate(dir, current.Uid) {
-		t.Fatal("Private's own DACL does not read as private")
+		sd, _ := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+		t.Fatalf("Private's own DACL does not read as private: %v", sd)
 	}
 }

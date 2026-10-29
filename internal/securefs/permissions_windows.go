@@ -2,6 +2,7 @@ package securefs
 
 import (
 	"os/user"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -35,14 +36,31 @@ func Private(path string) error {
 	)
 }
 
-// isPrivate reports whether path's DACL is the one Private sets. Windows reads it back with the
-// auto-inherited flag (AI) once it has propagated it.
+// isPrivate reports whether path's DACL is the one Private sets: protected, with a single entry
+// granting uid full access, inherited by files and directories below. Its text form varies, as
+// Windows adds the auto-inherited flag once it has propagated it.
 func isPrivate(path, uid string) bool {
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
 		return false
 	}
-	ace := "(A;OICI;FA;;;" + uid + ")"
-	got := sd.String()
-	return got == "D:P"+ace || got == "D:PAI"+ace
+	control, _, err := sd.Control()
+	if err != nil || control&windows.SE_DACL_PROTECTED == 0 {
+		return false
+	}
+	acl, _, err := sd.DACL()
+	if err != nil || acl == nil || acl.AceCount != 1 {
+		return false
+	}
+	var ace *windows.ACCESS_ALLOWED_ACE
+	if err := windows.GetAce(acl, 0, &ace); err != nil {
+		return false
+	}
+	const inherit = windows.OBJECT_INHERIT_ACE | windows.CONTAINER_INHERIT_ACE
+	const fullAccess = windows.STANDARD_RIGHTS_ALL | 0x1ff
+	sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+	return ace.Header.AceType == windows.ACCESS_ALLOWED_ACE_TYPE &&
+		ace.Header.AceFlags&inherit == inherit &&
+		ace.Mask&fullAccess == fullAccess &&
+		sid.String() == uid
 }
