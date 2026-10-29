@@ -32,9 +32,10 @@ Release builds set the version that `agx --version` reports and that commands
 compare to decide whether they replace an older daemon:
 `-ldflags "-X github.com/tarik02-org/agx/internal/daemon.Version=1.2.3"`. Until
 the first tag, the Nix package reports `0.0.0-dev+<commit>`, which is not
-ordered against any version. Raise `daemon.Protocol` with every change to the
-daemon API or its files that an older agx or daemon cannot handle; commands use
-any daemon of their own protocol.
+ordered against the unknown `dev` version. Version comparison uses semver, with
+nightly commit counts in build metadata compared separately. Each canonical root
+configuration path gets a daemon in its own hashed runtime directory; protocol
+numbers and executable-content fingerprints are unnecessary before the first release.
 
 Go messages and Connect handlers live in `gen/agx/v1`; TypeScript Protobuf
 messages and service descriptors live in `gen/typescript`. Regenerate them with

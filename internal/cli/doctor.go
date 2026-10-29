@@ -94,7 +94,7 @@ func doctorCommand(a *app) *cobra.Command {
 				return fmt.Errorf("not a directory: %s", directory)
 			}
 			// The report spells every path as configuration and launches do, symbolic links resolved.
-			directory, err := config.Canonical(directory)
+			directory, err := platform.Canonical(directory)
 			if err != nil {
 				return err
 			}
@@ -400,11 +400,7 @@ func connectDaemon(ctx context.Context, paths platform.Paths, c *config.Config) 
 	client, err := daemonClient(ctx, paths, true)
 	if err != nil {
 		row.Status, row.Detail = checkFail, errorMessage(err)
-		if errors.Is(err, daemon.ErrVersionMismatch) {
-			row.Hint = "update agx, or run agx daemon restart, then agx doctor again"
-		} else {
-			row.Hint = "inspect " + shownPath(filepath.Join(paths.Runtime, "daemon.log"))
-		}
+		row.Hint = "inspect " + shownPath(filepath.Join(paths.Runtime, "daemon.log"))
 		return nil, row
 	}
 	return daemonClientCheck(ctx, paths, client, before, true)
@@ -426,34 +422,25 @@ func daemonClientCheck(
 	}
 	return c, daemonCheck(daemonFacts{
 		version:        c.discovery.Version,
-		config:         c.discovery.Config,
-		wantConfig:     paths.Config,
 		instance:       c.discovery.InstanceID,
 		previous:       before.InstanceID,
-		otherBuild:     before.InstanceID != "" && before.Build != c.discovery.Build,
 		mayHaveStarted: started,
 		launches:       len(view.Msg.GetRuntime().GetLaunches()),
 	})
 }
 
 type daemonFacts struct {
-	version, config, wantConfig string
-	instance, previous          string
-	otherBuild, mayHaveStarted  bool
-	launches                    int
+	version            string
+	instance, previous string
+	mayHaveStarted     bool
+	launches           int
 }
 
 func daemonCheck(f daemonFacts) check {
 	row := check{Group: "daemon", Name: "daemon", Status: checkPass}
-	if f.config != f.wantConfig {
-		row.Status = checkFail
-		row.Detail = "serves configuration " + f.config
-		row.Hint = "run agx daemon stop, then agx --config " + shellQuote(f.wantConfig) + " daemon start"
-		return row
-	}
 	switch {
-	case f.mayHaveStarted && f.instance != f.previous && f.otherBuild:
-		row.Detail = "replaced another build; now version " + f.version
+	case f.mayHaveStarted && f.instance != f.previous && f.previous != "":
+		row.Detail = "replaced daemon; now version " + f.version
 	case f.mayHaveStarted && f.instance != f.previous:
 		row.Detail = "started, version " + f.version
 	default:
@@ -766,7 +753,7 @@ func printDoctor(report doctorReport) error {
 // shownPath spells path in a report as configuration and launches do, symbolic links resolved;
 // the files themselves are still reached by the path given.
 func shownPath(path string) string {
-	if canonical, err := config.Canonical(path); err == nil {
+	if canonical, err := platform.Canonical(path); err == nil {
 		return canonical
 	}
 	return path

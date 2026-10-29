@@ -18,6 +18,7 @@ import (
 	"go.yaml.in/yaml/v4"
 
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 // File is one configuration fragment being edited.
@@ -38,7 +39,7 @@ type File struct {
 // Open reads a fragment; a missing file starts from seed, such as the default root
 // configuration, or from an empty mapping.
 func Open(path string, seed string) (*File, error) {
-	path, err := config.Canonical(path)
+	path, err := platform.Canonical(path)
 	if err != nil {
 		return nil, err
 	}

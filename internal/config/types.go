@@ -415,35 +415,6 @@ type Snapshot struct {
 	Config      *Config       `json:"-"`
 }
 
-func Canonical(path string) (string, error) {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	// Resolve the existing prefix as scopes may name directories not created yet, or
-	// ones this process may not read, such as a home directory seen from a build sandbox.
-	suffix := []string{}
-	for {
-		real, err := filepath.EvalSymlinks(abs)
-		if err == nil {
-			real = platform.ActualCase(real)
-			for i := len(suffix) - 1; i >= 0; i-- {
-				real = filepath.Join(real, suffix[i])
-			}
-			return filepath.Clean(real), nil
-		}
-		if !os.IsNotExist(err) && !os.IsPermission(err) {
-			return "", err
-		}
-		parent := filepath.Dir(abs)
-		if parent == abs {
-			return "", err
-		}
-		suffix = append(suffix, filepath.Base(abs))
-		abs = parent
-	}
-}
-
 func Digest(v any) string {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -456,7 +427,7 @@ func Digest(v any) string {
 // Resolve selects resources for a directory and harness. An empty harness applies only rules
 // without a harness filter and no harness's own add/remove.
 func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
-	dir, err := Canonical(directory)
+	dir, err := platform.Canonical(directory)
 	if err != nil {
 		return nil, err
 	}

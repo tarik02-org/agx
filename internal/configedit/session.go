@@ -44,7 +44,7 @@ type Session struct {
 
 // New starts a session from a loaded configuration.
 func New(paths platform.Paths, builtins config.Builtins, c *config.Config) (*Session, error) {
-	root, err := config.Canonical(paths.Config)
+	root, err := platform.Canonical(paths.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func New(paths platform.Paths, builtins config.Builtins, c *config.Config) (*Ses
 
 // Open opens a fragment once per session; a missing root starts from the default configuration.
 func (s *Session) Open(path string) (*edit.File, error) {
-	path, err := config.Canonical(path)
+	path, err := platform.Canonical(path)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (s *Session) Target() (string, error) {
 			}
 		}
 	}
-	file, err := config.Canonical(file)
+	file, err := platform.Canonical(file)
 	if err != nil {
 		return "", err
 	}
@@ -220,7 +220,7 @@ func HomeRelative(path string) string {
 	if err != nil {
 		return path
 	}
-	if canonical, err := config.Canonical(home); err == nil {
+	if canonical, err := platform.Canonical(home); err == nil {
 		home = canonical
 	}
 	if path == home {

@@ -11,7 +11,7 @@ import (
 	"github.com/sahilm/fuzzy"
 
 	"github.com/tarik02-org/agx/internal/adapters"
-	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/securefs"
 )
 
@@ -50,7 +50,7 @@ func List(ctx context.Context, registry adapters.Registry, cache, state string) 
 			if !ok {
 				// A deleted directory canonicalizes through its nearest existing parent.
 				dir = filepath.Clean(s.Directory)
-				if c, err := config.Canonical(s.Directory); err == nil {
+				if c, err := platform.Canonical(s.Directory); err == nil {
 					dir = c
 				}
 				canonical[s.Directory] = dir

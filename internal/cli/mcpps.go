@@ -11,7 +11,7 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/cli/ui"
-	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 func mcpProcessesCommand(a *app) *cobra.Command {
@@ -33,7 +33,7 @@ func mcpProcessesCommand(a *app) *cobra.Command {
 				if f.value == "" {
 					continue
 				}
-				directory, err := config.Canonical(f.value)
+				directory, err := platform.Canonical(f.value)
 				if err != nil {
 					return err
 				}

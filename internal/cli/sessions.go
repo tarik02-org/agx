@@ -70,7 +70,7 @@ func workingDirectory() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return config.Canonical(cwd)
+	return platform.Canonical(cwd)
 }
 
 // listSessions lists every store and resumes recorded sessions with their definition while it

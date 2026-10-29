@@ -317,7 +317,7 @@ func run(osArgs []string, stdout io.Writer) int {
 		return exitCode(&usageError{err})
 	}
 	ui.Configure(color)
-	configPath, err := filepath.Abs(a.paths.Config)
+	configPath, err := platform.Canonical(a.paths.Config)
 	if err != nil {
 		return exitCode(err)
 	}
@@ -511,20 +511,10 @@ func daemonCommand(a *app) *cobra.Command {
 			}
 			_, c, state := probeDaemon(cmd.Context(), a.paths)
 			switch state.action() {
-			case refuseDaemon:
-				return state.discovery
 			case useDaemon:
-				if !state.sameConfig {
-					return fmt.Errorf(
-						"daemon is already running with configuration %s, not %s, and has active launches; "+
-							"run agx daemon stop first, which ends their MCP access",
-						c.discovery.Config,
-						a.paths.Config,
-					)
-				}
 				return printDaemonStarted(false, filepath.Join(a.paths.Runtime, "daemon.log"))
 			case replaceDaemon:
-				if err := replaceRunning(cmd.Context(), a.paths, c, state); err != nil {
+				if err := replaceRunning(cmd.Context(), a.paths, c); err != nil {
 					return err
 				}
 			case startNewDaemon:
@@ -544,7 +534,7 @@ func daemonCommand(a *app) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// A daemon of another build, such as one started before agx was upgraded, still reports.
-			c, err := newAnyVersionClient(a.paths)
+			c, err := newClient(a.paths)
 			var view *connect.Response[v1.GetRuntimeResponse]
 			if err == nil {
 				view, err = c.runtime.GetRuntime(cmd.Context(), connect.NewRequest(&v1.GetRuntimeRequest{}))
@@ -555,22 +545,6 @@ func daemonCommand(a *app) *cobra.Command {
 			}
 			if err != nil {
 				return err
-			}
-			switch {
-			case c.discovery.Protocol != daemon.Protocol:
-				ui.Diagnose(
-					ui.Warn,
-					"the daemon runs agx %s, which this agx %s cannot use; run agx daemon restart to replace it",
-					c.discovery.Version,
-					daemon.Version,
-				)
-			case c.discovery.Build != daemon.Build():
-				ui.Diagnose(
-					ui.Info,
-					"the daemon runs agx %s, another build than this agx %s; agx daemon restart replaces it",
-					c.discovery.Version,
-					daemon.Version,
-				)
 			}
 			return emit(view.Msg.Runtime, func() error { return printDaemonStatus(view.Msg.Runtime) })
 		},
@@ -583,7 +557,7 @@ func daemonCommand(a *app) *cobra.Command {
 		Short: "Stop the daemon",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := newAnyVersionClient(a.paths)
+			c, err := newClient(a.paths)
 			kept := 0
 			if err == nil {
 				kept, err = stopDaemon(cmd.Context(), c, force, grace)
@@ -614,8 +588,7 @@ func daemonCommand(a *app) *cobra.Command {
 		Short: "Stop the daemon and start one of this build",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			keepRoot := !cmd.Flags().Changed("config")
-			result, err := restartDaemon(cmd.Context(), a.paths, a.builtins, keepRoot, force, grace)
+			result, err := restartDaemon(cmd.Context(), a.paths, a.builtins, force, grace)
 			if err != nil {
 				return err
 			}

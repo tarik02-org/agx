@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,40 +15,16 @@ import (
 )
 
 func TestDaemonAction(t *testing.T) {
-	incompatible := fmt.Errorf("%w: another protocol", daemon.ErrVersionMismatch)
-	missing := errors.New("daemon unavailable")
 	for _, test := range []struct {
 		name  string
 		state daemonState
 		want  daemonAction
 	}{
-		{"running", daemonState{reachable: true, sameConfig: true}, useDaemon},
-		{"idle with another configuration", daemonState{reachable: true}, replaceDaemon},
-		// The configuration check happens later, with its own actionable error.
-		{"busy with another configuration", daemonState{reachable: true, activeLaunches: 1}, useDaemon},
-		{"slow to answer", daemonState{slow: true}, useDaemon},
-		{"older and slow to answer", daemonState{slow: true, newer: true, sameConfig: true}, useDaemon},
-		{"no discovery", daemonState{discovery: missing}, startNewDaemon},
-		{"no discovery, newer", daemonState{discovery: missing, newer: true}, startNewDaemon},
-		{"stale discovery", daemonState{}, startNewDaemon},
-		{"stale incompatible discovery", daemonState{discovery: incompatible, sameConfig: true}, startNewDaemon},
-		{
-			"older compatible",
-			daemonState{reachable: true, newer: true, sameConfig: true, activeLaunches: 1},
-			replaceDaemon,
-		},
-		{
-			"older incompatible",
-			daemonState{discovery: incompatible, reachable: true, newer: true, sameConfig: true, activeLaunches: 1},
-			replaceDaemon,
-		},
-		{
-			"older incompatible slow to answer",
-			daemonState{discovery: incompatible, slow: true, newer: true, sameConfig: true},
-			refuseDaemon,
-		},
-		{"incompatible, not older", daemonState{discovery: incompatible, reachable: true, sameConfig: true}, refuseDaemon},
-		{"incompatible, not older, with another configuration", daemonState{discovery: incompatible, reachable: true}, refuseDaemon},
+		{"running", daemonState{reachable: true}, useDaemon},
+		{"newer client", daemonState{reachable: true, newer: true}, replaceDaemon},
+		{"slow", daemonState{slow: true, newer: true}, useDaemon},
+		{"missing", daemonState{discovery: errors.New("missing")}, startNewDaemon},
+		{"stale", daemonState{}, startNewDaemon},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if got := test.state.action(); got != test.want {
@@ -86,10 +61,9 @@ func TestNewerVersion(t *testing.T) {
 
 func TestCrashed(t *testing.T) {
 	paths := platform.Paths{Runtime: t.TempDir()}
-	discovery := func(instance string, protocol int) {
+	discovery := func(instance string) {
 		t.Helper()
 		b, err := json.Marshal(daemon.Discovery{
-			Protocol:   protocol,
 			InstanceID: instance,
 			URL:        "http://127.0.0.1:4000",
 			Token:      "token",
@@ -104,19 +78,15 @@ func TestCrashed(t *testing.T) {
 	if crashed(paths, "used") {
 		t.Fatal("crashed without discovery, as after a daemon stopped")
 	}
-	discovery("used", daemon.Protocol)
+	discovery("used")
 	if !crashed(paths, "used") {
 		t.Fatal("not crashed with discovery left behind and the lock free")
 	}
-	discovery("used", 0)
-	if !crashed(paths, "used") {
-		t.Fatal("not crashed with incompatible discovery left behind and the lock free")
-	}
-	discovery("next", daemon.Protocol)
+	discovery("next")
 	if crashed(paths, "used") {
 		t.Fatal("crashed although another daemon replaced the one in use")
 	}
-	discovery("used", daemon.Protocol)
+	discovery("used")
 	lock := flock.New(filepath.Join(paths.Runtime, "daemon.lock"))
 	if ok, err := lock.TryLock(); err != nil || !ok {
 		t.Fatalf("lock: %v %v", ok, err)

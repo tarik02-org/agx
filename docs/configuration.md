@@ -12,7 +12,7 @@ layout.
 | --- | --- | --- |
 | Configuration: the root file, with fragments beside it in `agx.d/` | `agx/agx.yaml` in your config directory | `AGX_CONFIG` or `--config` |
 | Cache: installed packages, generated files, daemon log | `agx` in your cache directory | `AGX_CACHE` or `--cache` |
-| State: launch records, the daemon's saved launches | `agx` in your state directory | `AGX_STATE` |
+| State: launch records and encrypted secrets | `agx` in your state directory | `AGX_STATE` |
 
 The base directories follow the XDG variables (`XDG_CONFIG_HOME`,
 `XDG_CACHE_HOME`, `XDG_STATE_HOME`) and otherwise default to:

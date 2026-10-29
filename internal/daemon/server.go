@@ -4,11 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -53,22 +51,6 @@ func init() {
 	}
 }
 
-// Protocol numbers the API between commands and the daemon. Commands use a daemon of the same
-// Protocol whatever its version or build; raise it with every change an older command or daemon
-// cannot handle.
-const Protocol = 1
-
-// ErrVersionMismatch is returned by ReadDiscovery together with the decoded
-// discovery when the running daemon speaks another Protocol.
-var ErrVersionMismatch = errors.New("daemon version mismatch")
-
-// incompatible keeps a discovery error's own message while matching ErrVersionMismatch.
-type incompatible string
-
-func (i incompatible) Error() string { return string(i) }
-
-func (i incompatible) Is(target error) bool { return target == ErrVersionMismatch }
-
 // ErrUnavailable marks ReadDiscovery errors that leave no daemon to reach: it is not running,
 // or its discovery file is invalid.
 var ErrUnavailable = errors.New("daemon unavailable")
@@ -85,15 +67,12 @@ const historyRetention = time.Hour
 
 type Discovery struct {
 	Version    string `json:"version"`
-	Build      string `json:"build"`
 	InstanceID string `json:"instance_id"`
 	URL        string `json:"url"`
 	Token      string `json:"token"`
 	Config     string `json:"config"`
 	// PID is the daemon's process, for diagnosing one that stopped answering.
 	PID int `json:"pid,omitempty"`
-	// Protocol is missing from daemons older than it, which no command can use.
-	Protocol int `json:"protocol,omitempty"`
 }
 
 // verifier hashes a launch credential, so the daemon never holds one it could leak.
@@ -221,7 +200,7 @@ func Serve(
 	// Discovery left behind names the port of a daemon that was killed, which its launches'
 	// harnesses use; the state file names the port of one that stopped.
 	port := 0
-	if previous, err := ReadDiscovery(paths); err == nil || errors.Is(err, ErrVersionMismatch) {
+	if previous, err := ReadDiscovery(paths); err == nil {
 		if u, err := url.Parse(previous.URL); err == nil {
 			port, _ = strconv.Atoi(u.Port())
 		}
@@ -255,8 +234,6 @@ func Serve(
 	defer cancel()
 	discovery := Discovery{
 		Version:    Version,
-		Protocol:   Protocol,
-		Build:      Build(),
 		InstanceID: securefs.Token(),
 		URL:        "http://" + listener.Addr().String(),
 		Token:      securefs.Token(),
@@ -303,7 +280,7 @@ func Serve(
 		s.cleanCache(time.Now())
 	})
 	defer sweep.Stop()
-	slog.Info("daemon started", "version", Version, "build", Build(), "pid", os.Getpid(), "url", discovery.URL)
+	slog.Info("daemon started", "version", Version, "pid", os.Getpid(), "url", discovery.URL)
 	s.manager = auth.New(discovery.URL+"/oauth/callback", auth.OpenStore(paths.State))
 	mux := http.NewServeMux()
 	interceptor := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
@@ -672,6 +649,10 @@ func (s *Server) sweep(started time.Time) {
 		return
 	}
 	for _, entry := range entries {
+		owner, err := os.ReadFile(filepath.Join(root, entry.Name(), "configuration"))
+		if err != nil || string(owner) != s.paths.Config {
+			continue
+		}
 		s.mu.Lock()
 		held := s.launches[entry.Name()] != nil
 		s.mu.Unlock()
@@ -1039,9 +1020,7 @@ func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 	return out
 }
 
-// ReadDiscovery never returns credentials to inspection commands. For a daemon of another
-// Protocol it returns the valid discovery with an error matching ErrVersionMismatch, so callers
-// such as daemon stop can still reach the daemon.
+// ReadDiscovery reads the authenticated endpoint for this configuration.
 func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 	var d Discovery
 	path := filepath.Join(paths.Runtime, "daemon.json")
@@ -1064,13 +1043,6 @@ func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 	if err != nil || port < 1 || port > 65535 {
 		return d, unavailable("invalid daemon port")
 	}
-	if d.Protocol != Protocol {
-		return d, incompatible(fmt.Sprintf(
-			"the daemon runs agx %s, which this agx %s cannot use; update agx or run agx daemon restart",
-			d.Version,
-			Version,
-		))
-	}
 	return d, nil
 }
 
@@ -1087,27 +1059,6 @@ func removeDiscovery(path string) error {
 	return err
 }
 
-// Build identifies the running executable by content, for telling apart daemons of the same
-// version in daemon status.
-var Build = sync.OnceValue(func() string {
-	path, err := os.Executable()
-	if err != nil {
-		return ""
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return ""
-	}
-	defer func() { _ = f.Close() }()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return ""
-	}
-	return hex.EncodeToString(h.Sum(nil))[:16]
-})
-
-// configError reports why the daemon's configuration failed to load. Validation messages name
-// files, lines, and IDs, never resolved values.
 func configError(err error) error {
 	return configInvalid("daemon configuration invalid: "+err.Error(), err)
 }

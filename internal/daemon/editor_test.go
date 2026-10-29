@@ -42,7 +42,7 @@ bundles:
 // in main.yaml beside the root, which also lists agx.d/*.yaml.
 func editorServer(t *testing.T, configuration string) (*Server, string) {
 	t.Helper()
-	dir, err := config.Canonical(t.TempDir())
+	dir, err := platform.Canonical(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

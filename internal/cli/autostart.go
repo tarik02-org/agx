@@ -3,20 +3,18 @@ package cli
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/gofrs/flock"
+	"golang.org/x/mod/semver"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
@@ -47,7 +45,6 @@ const (
 	useDaemon daemonAction = iota
 	startNewDaemon
 	replaceDaemon
-	refuseDaemon
 )
 
 // daemonState is what a command found about the running daemon before using it.
@@ -61,55 +58,37 @@ type daemonState struct {
 	slow bool
 	// newer is whether this agx is ordered strictly after the discovered daemon's version.
 	newer bool
-	// sameConfig is whether the discovered daemon serves the command's root configuration.
-	sameConfig bool
-	// activeLaunches counts launches of a reachable daemon that still hold MCP access.
-	activeLaunches int
 }
 
-// action decides how to reach a daemon this agx can use. Only a newer agx replaces a running
-// daemon, which keeps its active launches for its successor; anything else replacing it would
-// let an older and a newer agx replace each other's daemons without end. A daemon serving another
-// configuration is replaced when it has no active launches; otherwise it stays, and the launch
-// check reports it. A slow daemon is never replaced, nor taken for a missing one: starting
-// another would only lose the startup lock to it.
+// action replaces a running daemon only for a strictly newer client. Slow daemons keep
+// their startup lock and are left running.
 func (s daemonState) action() daemonAction {
-	compatible := s.discovery == nil
-	running := s.reachable || s.slow
-	switch {
-	case !compatible && !errors.Is(s.discovery, daemon.ErrVersionMismatch), !running:
-		// Missing, invalid, or stale discovery: the startup lock lets a new daemon replace it.
+	if s.discovery != nil || !s.reachable && !s.slow {
 		return startNewDaemon
-	case s.slow && compatible:
-		return useDaemon
-	case s.slow, !compatible && !s.newer:
-		return refuseDaemon
-	case s.newer, !s.sameConfig && s.activeLaunches == 0:
-		return replaceDaemon
-	default:
-		return useDaemon
 	}
+	if s.newer && !s.slow {
+		return replaceDaemon
+	}
+	return useDaemon
 }
 
 // probeDaemon reads discovery and asks the daemon it names how it is.
 func probeDaemon(ctx context.Context, paths platform.Paths) (daemon.Discovery, *client, daemonState) {
 	d, err := daemon.ReadDiscovery(paths)
 	state := daemonState{
-		discovery:  err,
-		newer:      newerVersion(daemon.Version, d.Version),
-		sameConfig: d.Config == paths.Config,
+		discovery: err,
+		newer:     newerVersion(daemon.Version, d.Version),
 	}
-	if err != nil && !errors.Is(err, daemon.ErrVersionMismatch) {
+	if err != nil {
 		return d, nil, state
 	}
 	c := dial(d)
 	probe, cancel := context.WithTimeout(ctx, probeTimeout)
-	view, err := c.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{}))
+	_, err = c.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{}))
 	cancel()
 	switch {
 	case err == nil:
 		state.reachable = true
-		state.activeLaunches = activeLaunches(view.Msg.GetRuntime())
 	case connect.CodeOf(err) == connect.CodeDeadlineExceeded:
 		state.slow = true
 	}
@@ -118,16 +97,8 @@ func probeDaemon(ctx context.Context, paths platform.Paths) (daemon.Discovery, *
 
 // replaceRunning stops the daemon c reaches, which state found replaceable, and waits until it
 // exited.
-func replaceRunning(ctx context.Context, paths platform.Paths, c *client, state daemonState) error {
-	if state.newer {
-		ui.Diagnose(ui.Info, "restarting daemon %s, which runs an older agx", c.discovery.Version)
-	} else {
-		ui.Diagnose(
-			ui.Info,
-			"restarting the daemon, which served configuration %s and had no active launches",
-			c.discovery.Config,
-		)
-	}
+func replaceRunning(ctx context.Context, paths platform.Paths, c *client) error {
+	ui.Diagnose(ui.Info, "restarting daemon %s, which runs an older agx", c.discovery.Version)
 	if _, err := stopDaemon(ctx, c, false, 0); err != nil {
 		return fmt.Errorf("cannot replace daemon %s: %w", c.discovery.Version, err)
 	}
@@ -144,10 +115,8 @@ func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*cli
 	switch state.action() {
 	case useDaemon:
 		return current, nil
-	case refuseDaemon:
-		return nil, state.discovery
 	case replaceDaemon:
-		if err := replaceRunning(ctx, paths, current, state); err != nil {
+		if err := replaceRunning(ctx, paths, current); err != nil {
 			return nil, err
 		}
 	case startNewDaemon:
@@ -159,26 +128,25 @@ func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*cli
 	return newClient(paths)
 }
 
-// releaseVersion matches the versions agx orders: releases, and nightlies, which count the
-// commits since their base release.
-var releaseVersion = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)(?:\+nightly\.(\d+)\.[0-9A-Za-z]+)?$`)
-
-// newerVersion reports whether agx version a is ordered strictly after b. Development builds and
-// other versions are not ordered against any.
+// newerVersion uses semantic version ordering, then the commit count of nightlies,
+// which live in build metadata and are therefore ignored by semver.Compare.
 func newerVersion(a, b string) bool {
-	parse := func(v string) []int {
-		m := releaseVersion.FindStringSubmatch(v)
-		if m == nil {
-			return nil
-		}
-		parts := make([]int, 4)
-		for i, part := range m[1:] {
-			parts[i], _ = strconv.Atoi(part)
-		}
-		return parts
+	a, b = "v"+strings.TrimPrefix(a, "v"), "v"+strings.TrimPrefix(b, "v")
+	if !semver.IsValid(a) || !semver.IsValid(b) {
+		return false
 	}
-	x, y := parse(a), parse(b)
-	return x != nil && y != nil && slices.Compare(x, y) > 0
+	if order := semver.Compare(a, b); order != 0 {
+		return order > 0
+	}
+	count := func(version string) int {
+		parts := strings.Split(strings.TrimPrefix(semver.Build(version), "+"), ".")
+		if len(parts) != 3 || parts[0] != "nightly" {
+			return 0
+		}
+		value, _ := strconv.Atoi(parts[1])
+		return value
+	}
+	return count(a) > count(b)
 }
 
 // maxDaemonLog is the size past which a starting daemon moves its log aside.
@@ -244,15 +212,11 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	childExited := false
-	var lastErr error
 	for {
 		select {
 		case <-ctx.Done():
 			return "", ctx.Err()
 		case <-deadline.C:
-			if errors.Is(lastErr, daemon.ErrVersionMismatch) {
-				return "", lastErr
-			}
 			return "", failed("startup timed out")
 		case <-exited:
 			childExited = true
@@ -260,7 +224,6 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 		case <-ticker.C:
 		}
 		c, err := newClient(paths)
-		lastErr = err
 		if err == nil {
 			probe, cancel := context.WithTimeout(ctx, time.Second)
 			_, err = c.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{}))
@@ -362,15 +325,4 @@ func lastLine(path string) string {
 		}
 	}
 	return last
-}
-
-// activeLaunches counts the launches of view that still hold MCP access.
-func activeLaunches(view *v1.RuntimeView) int {
-	n := 0
-	for _, l := range view.GetLaunches() {
-		if l.State == v1.Launch_STATE_PREPARED || l.State == v1.Launch_STATE_RUNNING {
-			n++
-		}
-	}
-	return n
 }

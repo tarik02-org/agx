@@ -8,6 +8,7 @@ import (
 
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 var builtins = builtin.Registry().Builtins([]string{"agx", "help", "install", "run"})
@@ -53,7 +54,7 @@ func skill(t *testing.T, dir, name string) string {
 
 func canonical(t *testing.T, path string) string {
 	t.Helper()
-	c, err := config.Canonical(path)
+	c, err := platform.Canonical(path)
 	if err != nil {
 		t.Fatal(err)
 	}

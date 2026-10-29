@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/tarik02-org/agx/internal/adapters"
-	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 var start = time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
@@ -348,7 +348,7 @@ func TestList(t *testing.T) {
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	canonicalWork, err := config.Canonical(work)
+	canonicalWork, err := platform.Canonical(work)
 	if err != nil {
 		t.Fatal(err)
 	}

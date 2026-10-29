@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 const (
@@ -261,7 +263,7 @@ func (e *env) stopDaemon(force bool) {
 		}
 		e.t.Fatalf("daemon stop exited %d: %s", r.code, r.stderr)
 	}
-	runtimeDir := filepath.Join(e.dir, "cache", "runtime")
+	runtimeDir := e.runtimeDir()
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		_, err := os.Stat(filepath.Join(runtimeDir, "daemon.json"))
@@ -277,9 +279,17 @@ func (e *env) stopDaemon(force bool) {
 	e.t.Fatal("daemon did not exit")
 }
 
+func (e *env) runtimeDir() string {
+	paths := platform.Paths{Config: filepath.Join(e.dir, "config", "agx.yaml"), Cache: filepath.Join(e.dir, "cache")}
+	if err := paths.Derive(); err != nil {
+		e.t.Fatal(err)
+	}
+	return paths.Runtime
+}
+
 // daemonRunning reports whether a daemon published its discovery file.
 func (e *env) daemonRunning() bool {
-	_, err := os.Stat(filepath.Join(e.dir, "cache", "runtime", "daemon.json"))
+	_, err := os.Stat(filepath.Join(e.runtimeDir(), "daemon.json"))
 	return err == nil
 }
 
@@ -728,8 +738,8 @@ func TestAutostart(t *testing.T) {
 		if r := e.run(binaries.oldAgx, nil, "daemon", "start"); r.code != 0 {
 			t.Fatalf("old daemon start: exit %d: %s", r.code, r.stderr)
 		}
-		if r := e.agx(nil, "daemon", "status"); r.code != 0 || !strings.Contains(r.stderr, "runs agx "+oldVersion) {
-			t.Fatalf("status of another build: exit %d, %q", r.code, r.stderr)
+		if got := e.daemonVersion(); got != oldVersion {
+			t.Fatalf("daemon status version = %s, want %s", got, oldVersion)
 		}
 		_, r := e.harness("claude", "-p", "hello")
 		if r.code != 0 {

@@ -150,21 +150,8 @@ harnesses:
 	}
 }
 
-func TestConfigHintIsQuoted(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX quoting")
-	}
-	row := daemonCheck(daemonFacts{config: "/c", wantConfig: "/home/me/my config/it's.yaml"})
-	if want := `agx --config '/home/me/my config/it'\''s.yaml' daemon start`; !strings.Contains(row.Hint, want) {
-		t.Errorf("hint = %s, want %s", row.Hint, want)
-	}
-	if got := shellQuote("/plain/agx.yaml"); got != "/plain/agx.yaml" {
-		t.Errorf("plain path quoted as %s", got)
-	}
-}
-
 func TestDaemonCheck(t *testing.T) {
-	base := daemonFacts{version: "1", config: "/c", wantConfig: "/c", instance: "a", previous: "a"}
+	base := daemonFacts{version: "1", instance: "a", previous: "a"}
 	if got := daemonCheck(base); got.Status != checkPass || !strings.Contains(got.Detail, "running") {
 		t.Errorf("running = %+v", got)
 	}
@@ -174,14 +161,9 @@ func TestDaemonCheck(t *testing.T) {
 		t.Errorf("started = %+v", got)
 	}
 	replaced := base
-	replaced.mayHaveStarted, replaced.previous, replaced.otherBuild = true, "old", true
+	replaced.mayHaveStarted, replaced.previous = true, "old"
 	if got := daemonCheck(replaced); !strings.HasPrefix(got.Detail, "replaced") {
 		t.Errorf("replaced = %+v", got)
-	}
-	other := base
-	other.config = "/other"
-	if got := daemonCheck(other); got.Status != checkFail || !strings.Contains(got.Hint, "daemon stop") {
-		t.Errorf("other configuration = %+v", got)
 	}
 }
 

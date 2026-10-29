@@ -155,26 +155,6 @@ func runHarness(
 	if err != nil {
 		return err
 	}
-	if paths.Config != c.discovery.Config {
-		if !autostart(harnesses.config) {
-			return fmt.Errorf(
-				"the daemon serves configuration %s, not %s; rerun with --config %s, "+
-					"or run agx daemon stop and then agx --config %s daemon start",
-				c.discovery.Config,
-				paths.Config,
-				shellQuote(c.discovery.Config),
-				shellQuote(paths.Config),
-			)
-		}
-		// daemonClient replaced an idle daemon; this one still serves launches.
-		return fmt.Errorf(
-			"the daemon serves configuration %s, not %s, and keeps its launches' MCP servers; "+
-				"rerun with --config %s, or retry once its launches end (agx launch list)",
-			c.discovery.Config,
-			paths.Config,
-			shellQuote(c.discovery.Config),
-		)
-	}
 	resolved, err := c.config.Resolve(
 		ctx,
 		connect.NewRequest(&v1.ResolveRequest{Directory: directory, Harness: name}),

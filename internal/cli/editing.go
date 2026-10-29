@@ -21,6 +21,7 @@ import (
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/configedit"
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 // interactive reports whether a person can answer prompts: stdin and stderr are terminals.
@@ -77,7 +78,7 @@ func (f *editFlags) target() (scope, error) {
 	if err != nil {
 		return scope{}, err
 	}
-	directory, err := config.Canonical(abs)
+	directory, err := platform.Canonical(abs)
 	if err != nil {
 		return scope{}, err
 	}

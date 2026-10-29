@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -30,15 +29,6 @@ type client struct {
 func newClient(paths platform.Paths) (*client, error) {
 	d, err := daemon.ReadDiscovery(paths)
 	if err != nil {
-		return nil, err
-	}
-	return dial(d), nil
-}
-
-// newAnyVersionClient reaches a daemon of another version so it can still be detected and stopped.
-func newAnyVersionClient(paths platform.Paths) (*client, error) {
-	d, err := daemon.ReadDiscovery(paths)
-	if err != nil && !errors.Is(err, daemon.ErrVersionMismatch) {
 		return nil, err
 	}
 	return dial(d), nil

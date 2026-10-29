@@ -23,6 +23,7 @@ import (
 	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/configedit"
 	"github.com/tarik02-org/agx/internal/packages"
+	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/securefs"
 )
 
@@ -244,7 +245,7 @@ func (s *Server) ReadFile(
 		return nil, rpcError(connect.CodeInvalidArgument, "path must be absolute or start with ~/")
 	}
 	requested = filepath.Clean(requested)
-	path, err := config.Canonical(requested)
+	path, err := platform.Canonical(requested)
 	if err != nil {
 		return nil, rpcError(connect.CodeInvalidArgument, err.Error())
 	}
@@ -435,7 +436,7 @@ func selectionChange(session *configedit.Session, c *v1.SelectionChange, enable 
 		if err != nil || !filepath.IsAbs(expanded) {
 			return invalidf("directory must be absolute or start with ~/")
 		}
-		if directory, err = config.Canonical(expanded); err != nil {
+		if directory, err = platform.Canonical(expanded); err != nil {
 			return err
 		}
 		// Only a rule that enables needs its directory, so a mistyped one writes no dead rule.
@@ -470,7 +471,7 @@ func absoluteFile(path string) (string, error) {
 	if err != nil || !filepath.IsAbs(expanded) {
 		return "", invalidf("file must be absolute or start with ~/: %s", path)
 	}
-	return config.Canonical(expanded)
+	return platform.Canonical(expanded)
 }
 
 // allowedTags are the tags a definition may use besides YAML's own.
@@ -729,11 +730,11 @@ func (s *Server) ReadPreviewFile(
 	if !filepath.IsLocal(rel) {
 		return nil, rpcError(connect.CodeInvalidArgument, "path must be relative to the skill, without ..")
 	}
-	root, err := config.Canonical(dir)
+	root, err := platform.Canonical(dir)
 	if err != nil {
 		return nil, rpcError(connect.CodeInternal, err.Error())
 	}
-	path, err := config.Canonical(filepath.Join(root, rel))
+	path, err := platform.Canonical(filepath.Join(root, rel))
 	if err != nil || path == root || !config.Contains(root, path) {
 		return nil, rpcError(connect.CodeInvalidArgument, req.Msg.Path+" is outside the skill")
 	}

@@ -135,7 +135,7 @@ func crashed(paths platform.Paths, instance string) bool {
 		return false
 	}
 	d, err := daemon.ReadDiscovery(paths)
-	if err != nil && !errors.Is(err, daemon.ErrVersionMismatch) {
+	if err != nil {
 		return false
 	}
 	return d.InstanceID == instance
@@ -195,7 +195,7 @@ func (l *lease) attach(ctx context.Context) error {
 // used's, and reports whether it did. A daemon of another version serves launches all the same.
 func (l *lease) reconnect(used *client) bool {
 	d, err := daemon.ReadDiscovery(l.paths)
-	if err != nil && !errors.Is(err, daemon.ErrVersionMismatch) {
+	if err != nil {
 		return false
 	}
 	l.mu.Lock()

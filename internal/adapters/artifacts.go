@@ -5,9 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
+
+	"github.com/gofrs/flock"
 
 	"github.com/tarik02-org/agx/internal/config"
 )
@@ -47,9 +48,6 @@ const (
 	abandonedBuild = time.Hour
 )
 
-// artifactsMu keeps RemoveUnusedArtifacts from removing a directory a launch is about to use.
-var artifactsMu sync.RWMutex
-
 // artifacts returns the artifact directory of the launch's skills, unless skills is false, and
 // instructions, building it unless an earlier launch did, and records in the launch directory
 // that the launch uses it.
@@ -83,8 +81,14 @@ func artifacts(l Launch, skills bool) (string, error) {
 	}{selected, text.String()})
 	parent := filepath.Join(l.Cache, "artifacts")
 	dest := filepath.Join(parent, name)
-	artifactsMu.RLock()
-	defer artifactsMu.RUnlock()
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return "", err
+	}
+	lock := flock.New(filepath.Join(l.Cache, "artifacts.lock"))
+	if err := lock.Lock(); err != nil {
+		return "", err
+	}
+	defer func() { _ = lock.Unlock() }()
 	if l.ID != "" {
 		if err := os.MkdirAll(l.LaunchDirectory(), 0o700); err != nil {
 			return "", err
@@ -144,7 +148,8 @@ func artifacts(l Launch, skills bool) (string, error) {
 // directories must name them: while one does not, as for a launch of an earlier agx, every
 // artifact directory is kept. Directories in use get their use recorded at now.
 func RemoveUnusedArtifacts(cache string, active []string, now time.Time) {
-	if !artifactsMu.TryLock() {
+	lock := flock.New(filepath.Join(cache, "artifacts.lock"))
+	if ok, err := lock.TryLock(); err != nil || !ok {
 		return
 	}
 	trash := []string{}
@@ -153,7 +158,7 @@ func RemoveUnusedArtifacts(cache string, active []string, now time.Time) {
 			_ = os.RemoveAll(dir)
 		}
 	}()
-	defer artifactsMu.Unlock()
+	defer func() { _ = lock.Unlock() }()
 	used := map[string]bool{}
 	launches := filepath.Join(cache, "launches")
 	if entries, err := os.ReadDir(launches); err == nil {

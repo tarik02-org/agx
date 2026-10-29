@@ -33,17 +33,10 @@ harnesses themselves keep running.
 
 Upgrading agx works the same way: the first command of a newer version stops
 the older daemon gracefully and starts its own, keeping running launches. Only
-a newer agx replaces a daemon. Releases are ordered by version, and nightlies
-by the number of commits since their release; development builds are not
-ordered, so they never replace a daemon on their own. An agx uses a daemon of
-another version as long as both speak the same protocol, which changes only
-with incompatible changes to agx itself. An agx that cannot use the running
-daemon, and is not newer than it, fails with "the daemon runs agx X, which
-this agx Y cannot use" and leaves the daemon running: update agx, or run
-`agx daemon restart` to replace the daemon with one of this agx. A daemon that
-is too busy to answer in time is never replaced. `agx daemon status` replaces
-nothing either: it reports a daemon of another protocol with a warning, and one
-of another build with a note.
+a newer agx replaces a daemon. Versions follow semantic version ordering, with
+nightly commit counts compared when the base versions are equal. Unknown
+versions such as `dev` are unordered. A daemon that is too busy to answer in
+time is left running. `agx daemon status` only reports its state.
 
 ## Its environment
 
@@ -75,14 +68,12 @@ daemon:
 
 `AGX_NO_AUTOSTART=1` in the environment does the same for one shell.
 
-There is one daemon per cache directory, and it serves the configuration it was
-started with. Commands find it through files in the cache directory. A command
-using another configuration replaces the daemon when it has no active launches;
-while it has some, harness launches with the other configuration are refused, so
-the running harnesses keep their MCP servers. For a separate setup with another
-configuration used at the same time, also use another cache.
+Each canonical root configuration path gets its own daemon within a cache.
+Discovery, the lock, log, and saved port and revocations live in
+`<cache>/runtime/<root-hash>/`, where `root-hash` is a short hash of that path.
+Configurations can run at the same time and share the package and artifact cache.
 
-Starting is safe to race. A starting daemon takes a per-user lock before it
+Starting is safe to race. A starting daemon takes its runtime directory's lock before it
 binds a loopback port, and writes `daemon.json` (with an ID that changes on every
 start) only once it serves. Commands that start one at the same time may each
 spawn a daemon; the extras exit and every command connects to the winner. A
@@ -153,7 +144,7 @@ A second Ctrl-C or SIGTERM skips the wait.
 
 | File | Location |
 | --- | --- |
-| Log | `daemon.log` in `runtime/` in the [cache directory](configuration.md#where-files-live) |
-| Port and revoked launches | `daemon-state.json` in the state directory |
+| Log | `daemon.log` in `runtime/<root-hash>/` in the [cache directory](configuration.md#where-files-live) |
+| Port and revoked launches | `daemon-state.json` beside the log |
 
 Both are readable only by you.

@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/shims"
 )
 
@@ -90,7 +90,7 @@ func ResolveDirectory(args []string, cwd, dir string, flags []DirectoryFlag) (st
 	if !filepath.IsAbs(dir) {
 		dir = filepath.Join(cwd, dir)
 	}
-	dir, err := config.Canonical(dir)
+	dir, err := platform.Canonical(dir)
 	if err != nil {
 		return "", nil, err
 	}
