@@ -146,7 +146,7 @@ func errorCode(err error) string {
 		return codeDaemonUnavailable
 	case errors.Is(err, packages.ErrFetch):
 		return codeNetwork
-	case errors.Is(err, packages.ErrStaleLock), errors.Is(err, packages.ErrBusy):
+	case errors.Is(err, packages.ErrStaleLock):
 		return codeConflict
 	case errors.Is(err, packages.ErrUnknown):
 		return codeNotFound

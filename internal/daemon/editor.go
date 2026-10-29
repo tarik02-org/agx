@@ -538,7 +538,7 @@ func editError(err error) error {
 		}
 	}
 	switch {
-	case errors.Is(err, packages.ErrBusy), errors.Is(err, packages.ErrStaleLock):
+	case errors.Is(err, packages.ErrStaleLock):
 		return rpcError(connect.CodeAborted, err.Error())
 	case errors.Is(err, packages.ErrUnknown):
 		return rpcError(connect.CodeNotFound, err.Error())

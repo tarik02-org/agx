@@ -25,7 +25,6 @@ var (
 	ErrFetch     = errors.New("package fetch failed")
 	ErrStaleLock = errors.New("lockfile does not match")
 	ErrUnknown   = errors.New("unknown package")
-	ErrBusy      = errors.New("package installer is busy")
 )
 
 type marked struct {
@@ -72,12 +71,9 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 		return result, err
 	}
 	lock := flock.New(filepath.Join(cache, "install.lock"))
-	ok, err := lock.TryLockContext(ctx, lockRetry)
+	_, err := lock.TryLockContext(ctx, lockRetry)
 	if err != nil {
 		return result, err
-	}
-	if !ok {
-		return result, mark(ErrBusy, fmt.Errorf("package installer is busy"))
 	}
 	defer func() { _ = lock.Unlock() }()
 	c, err := config.Load(root, config.Options{Builtins: builtins, Overlay: opts.Overlay})
