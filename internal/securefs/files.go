@@ -37,6 +37,30 @@ func WritePrivateJSON(path string, value any) error {
 	return WritePrivate(path, b)
 }
 
+// AppendPrivate appends data to path, creating it private, with directories as WritePrivate does.
+// It does not sync, so it suits state whose last write a crash may lose.
+func AppendPrivate(path string, data []byte) error {
+	if err := createPrivate(filepath.Dir(path)); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE|os.O_EXCL, 0o600)
+	if err == nil {
+		err = makePrivate(path)
+	} else if errors.Is(err, fs.ErrExist) {
+		f, err = os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	}
+	if f == nil {
+		return err
+	}
+	if err == nil {
+		_, err = f.Write(data)
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	return err
+}
+
 // Staged is data written to a temporary file beside the file it is to replace.
 type Staged struct {
 	path, temp string

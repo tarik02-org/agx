@@ -69,3 +69,6 @@ agx has not been released yet. What it does today:
   of one per directory and configuration; Codex launches copy no skills. The daemon removes
   copies no launch used for 7 days, and what interrupted writes and installations left in the
   cache.
+- Launch records are an append-only `launch-records.jsonl` that a listing folds and prunes, so a
+  launch appends two lines instead of rewriting every record; an existing `launch-records.json`
+  is folded in and removed. Session listings open only session files that changed.

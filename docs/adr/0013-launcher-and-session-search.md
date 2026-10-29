@@ -53,14 +53,20 @@ are only read.
 
 The index is cached in `<cache>/sessions/index.json`, keyed by path
 and valid while a file's size and modification time are unchanged; files are
-parsed concurrently. On real stores of 72 session files (51 listed, 320 MB) a
-listing takes 0.1 s with an empty cache and 0.03 s with a current one.
+parsed concurrently, and one the cache still holds is not even opened. On real
+stores of 72 session files (51 listed, 320 MB) a listing takes 0.1 s with an empty cache and 0.03 s with a current one.
 
 ## Launch records
 
-The wrapper records each managed launch in `<state>/launch-records.json`, under
-a lock file. `<state>` is the XDG state directory (`$XDG_STATE_HOME/agx`, by
-default `~/.local/state/agx`, `~/Library/Application Support/agx` on macOS, and
+The wrapper records each managed launch in `<state>/launch-records.jsonl`, a log
+it appends one line to when the launch starts and one when it finishes, under a
+lock file held only for the append, so recording costs the same however many
+records there are and concurrent launches barely wait for each other. Appends
+are not synced: losing the last line in a crash only makes a session resume with
+its built-in. A listing folds the log into one line per record and rewrites it,
+pruned; the whole-file `launch-records.json` of earlier versions is read until
+then and removed by that rewrite. `<state>` is the XDG state directory
+(`$XDG_STATE_HOME/agx`, by default `~/.local/state/agx`, `~/Library/Application Support/agx` on macOS, and
 `%LOCALAPPDATA%\agx` on Windows), not the cache, because records cannot be
 rebuilt and a cache wipe must not lose them; `AGX_STATE` overrides it, and a
 non-default `AGX_CACHE` or `--cache` keeps state in `<cache>/state` so isolated
