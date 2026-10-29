@@ -441,7 +441,6 @@ var startsWork = map[string]bool{
 	agxv1connect.PackageServicePreviewSourceProcedure:      true,
 	agxv1connect.ConfigurationServicePlanChangesProcedure:  true,
 	agxv1connect.ConfigurationServiceApplyChangesProcedure: true,
-	agxv1connect.RuntimeServiceTestMcpServerProcedure:      true,
 	agxv1connect.RuntimeServiceListToolsProcedure:          true,
 	agxv1connect.RuntimeServiceCallToolProcedure:           true,
 }

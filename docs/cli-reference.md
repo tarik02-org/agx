@@ -62,7 +62,6 @@ go before it.
 | `agx mcp add <id> -- <command> [args...]` | define a local MCP server and enable it |
 | `agx mcp list` | list MCP servers |
 | `agx mcp remove <id>` | remove an MCP server definition |
-| `agx mcp test <id>` | connect to an MCP server and list its tools |
 | `agx skill add <source>` | add skills from a folder, Git URL, or `owner/repo[@ref][/path]` |
 | `agx skill list` | list skills |
 | `agx skill remove <id \| package-id>` | remove a skill definition, or a Git package `skill add` declared with the rule entries enabling its skills |
@@ -196,7 +195,7 @@ and a failed one an `error` document, with the same exit code as without
 What `data` holds:
 
 - Commands that ask the daemon (`daemon status`, `launch`, `secret`,
-  `mcp test`, `mcp tools`, `mcp ps`, `mcp stop`) print its API message as
+  `mcp tools`, `mcp ps`, `mcp stop`) print its API message as
   [protobuf JSON](https://protobuf.dev/programming-guides/json/) with the
   field names of `api/agx/v1/agx.proto`: every field present, enum values by
   name (`"STATE_RUNNING"`), 64-bit integers as strings, and times in RFC 3339.

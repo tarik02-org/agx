@@ -144,11 +144,11 @@ The secret of an inline `auth` takes the server's ID: `agx secret set github`,
 ## Testing a server
 
 ```sh
-agx mcp test tracker
+agx mcp tools tracker --all
 ```
 
-`test` connects to the server through the daemon, with its credentials, and
-lists its tools. When it fails, it says why: unreachable, needs a login, or the
+`tools <server> --all` connects to any configured server through the daemon,
+with its credentials, and lists its tools. When it fails, it says why: unreachable, needs a login, or the
 server's error. `agx doctor` tests every server selected for the current
 directory (`--all` for every server).
 
@@ -227,7 +227,7 @@ Which servers a call reaches:
   `AGX_LAUNCH_ID` and the launch grant `AGX_MCP_GRANT`, so values and
   environment inputs are the launch's.
 - Outside a launch, the servers selected for the current directory, with the
-  variables their values read taken from your shell, as `agx mcp test` does.
+  variables their values read taken from your shell, as `agx mcp tools` does.
 - With `--all`, every configured server, also inside a launch.
 
 The daemon keeps its client session to each server for about five idle

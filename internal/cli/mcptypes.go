@@ -74,11 +74,7 @@ func mcpTypesCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 			for _, s := range listed {
 				server := mcptools.Server{ID: s.McpId, Description: s.Description}
 				if target.config != nil {
-					snapshot := &config.Snapshot{
-						Config:    target.config,
-						Resources: []config.Resource{{Kind: "mcp", ID: config.ID(s.McpId)}},
-					}
-					server.Environment = snapshot.MCPEnvironment()
+					server.Environment = mcpEnvironment(target.config, config.ID(s.McpId))
 				}
 				for _, t := range s.Tools {
 					input, err := mcptools.ParseSchema(t.InputSchemaJson)

@@ -495,24 +495,17 @@ func mcpChecks(ctx context.Context, c *client, cfg *config.Config, directory str
 	rows := make([]check, len(ids))
 	var wg sync.WaitGroup
 	for i, id := range ids {
-		snapshot := &config.Snapshot{Config: cfg, Resources: []config.Resource{{Kind: "mcp", ID: id}}}
-		inputs := map[string]string{}
-		for _, name := range snapshot.MCPEnvironment() {
-			if value, ok := os.LookupEnv(name); ok {
-				inputs[name] = value
-			}
-		}
+		inputs := environmentInputs(mcpEnvironment(cfg, id))
 		wg.Go(func() {
 			call, cancel := context.WithTimeout(ctx, doctorMCPTimeout)
 			defer cancel()
-			response, err := c.runtime.TestMcpServer(call, connect.NewRequest(&v1.TestMcpServerRequest{
-				McpId:             string(id),
-				Directory:         directory,
-				EnvironmentInputs: inputs,
+			response, err := c.runtime.ListTools(call, connect.NewRequest(&v1.ListToolsRequest{
+				McpId: string(id),
+				Scope: &v1.McpCallScope{Directory: directory, All: true, EnvironmentInputs: inputs},
 			}))
-			var msg *v1.TestMcpServerResponse
+			var msg *v1.McpTools
 			if err == nil {
-				msg = response.Msg
+				msg = response.Msg.Servers[0]
 			}
 			rows[i] = mcpCheck(id, cfg.MCP[id], msg, err)
 		})
@@ -521,7 +514,7 @@ func mcpChecks(ctx context.Context, c *client, cfg *config.Config, directory str
 	return rows
 }
 
-func mcpCheck(id config.ID, server config.MCPServer, response *v1.TestMcpServerResponse, err error) check {
+func mcpCheck(id config.ID, server config.MCPServer, response *v1.McpTools, err error) check {
 	row := check{Group: "mcp", Name: string(id)}
 	if err == nil {
 		row.Status = checkPass
@@ -545,10 +538,10 @@ func mcpCheck(id config.ID, server config.MCPServer, response *v1.TestMcpServerR
 		}
 	case codeTimeout:
 		row.Status, row.Detail = checkFail, fmt.Sprintf("no answer within %s", doctorMCPTimeout)
-		row.Hint = "run agx mcp test " + string(id) + " for details"
+		row.Hint = "run agx mcp tools " + string(id) + " --all for details"
 	default:
 		row.Status, row.Detail = checkFail, message
-		row.Hint = "run agx mcp test " + string(id) + " for details"
+		row.Hint = "run agx mcp tools " + string(id) + " --all for details"
 	}
 	return row
 }

@@ -9,7 +9,7 @@ agx keeps a small background process, the daemon, running as you. It:
 - receives OAuth logins in your browser.
 
 You rarely need to think about it. Any command that needs it (launching a
-harness, `agx mcp test`, `agx secret …`, `agx doctor`) starts
+harness, `agx mcp tools`, `agx secret …`, `agx doctor`) starts
 it in the background if it is not running. Help, version, and login commands of
 harnesses, and commands that only read or edit configuration, work without it.
 

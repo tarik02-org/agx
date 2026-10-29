@@ -559,20 +559,6 @@ func TestEndToEnd(t *testing.T) {
 		e.jsonFail("not_found", "launch", "revoke", "missing")
 		e.jsonFail("not_found", "launch", "show", "missing")
 
-		var tested struct {
-			ServerName string `json:"server_name"`
-			Tools      []struct {
-				Name        string `json:"name"`
-				Description string `json:"description"`
-			} `json:"tool_details"`
-		}
-		e.jsonOK(&tested, "mcp", "test", "echo")
-		if tested.ServerName != "fakemcp" ||
-			len(tested.Tools) != 5 || tested.Tools[0].Name != "echo" || tested.Tools[0].Description != "Echo text." {
-			t.Fatalf("mcp test = %+v", tested)
-		}
-		e.jsonFail("not_found", "mcp", "test", "missing")
-
 		var secrets struct {
 			Secrets []struct {
 				ID    string `json:"secret_id"`
@@ -844,7 +830,7 @@ func TestDoctor(t *testing.T) {
 
 	human := e.agx(nil, "doctor", "--all")
 	if human.code != 1 || !strings.Contains(human.stdout, "CHECK") || !strings.Contains(human.stdout, "mcp broken") ||
-		!strings.Contains(human.stdout, "agx mcp test broken") {
+		!strings.Contains(human.stdout, "agx mcp tools broken") {
 		t.Fatalf("doctor --all printed (exit %d):\n%s", human.code, human.stdout)
 	}
 }

@@ -187,7 +187,12 @@ func TestDaemonCheck(t *testing.T) {
 
 func TestMCPCheck(t *testing.T) {
 	server := config.MCPServer{Auth: config.MCPAuth{Value: config.Value{Secret: "github"}}}
-	got := mcpCheck("docs", server, &v1.TestMcpServerResponse{Tools: []string{"a", "b"}, ServerName: "docs"}, nil)
+	got := mcpCheck(
+		"docs",
+		server,
+		&v1.McpTools{Tools: []*v1.McpTool{{Name: "a"}, {Name: "b"}}, ServerName: "docs"},
+		nil,
+	)
 	if got.Status != checkPass || got.Detail != "2 tools from docs" {
 		t.Errorf("ready = %+v", got)
 	}

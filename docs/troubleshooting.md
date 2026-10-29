@@ -59,7 +59,7 @@ Run `agx secret login <id>` for an OAuth server, or store a new token with
 `needs-auth`.
 
 **An MCP server does not start or answer.**
-Run `agx mcp test <id>`: it connects outside any harness and shows the server's
+Run `agx mcp tools <id> --all`: it connects outside any harness and shows the server's
 error. For local servers, check that the command is on the daemon's `PATH` (or
 use an absolute path), and look at the [daemon log](#logs).
 

@@ -103,19 +103,7 @@ func newToolTarget(
 			}
 		}
 	}
-	// Only the variables the servers' values read are forwarded, as for mcp test.
-	snapshot := &config.Snapshot{Config: c}
-	for _, id := range ids {
-		if _, ok := c.MCP[id]; ok {
-			snapshot.Resources = append(snapshot.Resources, config.Resource{Kind: "mcp", ID: id})
-		}
-	}
-	inputs := map[string]string{}
-	for _, name := range snapshot.MCPEnvironment() {
-		if value, ok := os.LookupEnv(name); ok {
-			inputs[name] = value
-		}
-	}
+	inputs := environmentInputs(mcpEnvironment(c, ids...))
 	client, err := daemonClient(ctx, paths, autostart(c))
 	if err != nil {
 		return nil, err
@@ -126,6 +114,26 @@ func newToolTarget(
 		scope:  &v1.McpCallScope{Directory: directory, All: all, EnvironmentInputs: inputs},
 		config: c,
 	}, nil
+}
+
+func mcpEnvironment(c *config.Config, ids ...config.ID) []string {
+	snapshot := &config.Snapshot{Config: c}
+	for _, id := range ids {
+		if _, ok := c.MCP[id]; ok {
+			snapshot.Resources = append(snapshot.Resources, config.Resource{Kind: "mcp", ID: id})
+		}
+	}
+	return snapshot.MCPEnvironment()
+}
+
+func environmentInputs(names []string) map[string]string {
+	inputs := map[string]string{}
+	for _, name := range names {
+		if value, ok := os.LookupEnv(name); ok {
+			inputs[name] = value
+		}
+	}
+	return inputs
 }
 
 func (t *toolTarget) listTools(ctx context.Context, server string) ([]*v1.McpTools, error) {

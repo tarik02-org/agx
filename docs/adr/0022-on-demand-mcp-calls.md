@@ -60,7 +60,7 @@ and grant as they do for native MCP traffic.
 
 Outside a launch, the CLI uses the management token and resolves the current
 directory's scopes, as a launch there would. Environment inputs are forwarded as
-for `agx mcp test`: only the variables the servers' values read.
+for `agx mcp tools`: only the variables the servers' values read.
 
 `--all` reaches every configured server, inside a launch too, through the
 management token. agx serves a single user, and any process of that user can
@@ -70,8 +70,8 @@ inside a launch would not stop anything; it only keeps the default list short.
 ## RPCs
 
 `RuntimeService` gains `ListTools` and `CallTool(launch_id?, directory, all,
-mcp_id, tool, arguments_json, environment_inputs)`, built on the client flow of
-`TestMcpServer`. Both accept either the management token, scoped by directory or
+mcp_id, tool, arguments_json, environment_inputs)`, using the same endpoint
+client flow as launches. Both accept either the management token, scoped by directory or
 `all`, or a launch grant with its launch ID, scoped to that launch. Errors carry
 the usual `ErrorDetail` reasons, plus a new `REASON_MCP_FAILED` for failures
 inside the server. Tool execution and credentials stay inside the daemon; the

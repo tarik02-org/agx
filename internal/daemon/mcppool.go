@@ -64,7 +64,7 @@ func (p *clientPool) acquire(
 		c = &pooledClient{key: key, launchID: launchID, ready: make(chan struct{})}
 		p.clients[key] = c
 		go func() {
-			openCtx, cancel := context.WithTimeout(base, mcpTestTimeout)
+			openCtx, cancel := context.WithTimeout(base, 30*time.Second)
 			defer cancel()
 			session, endpoint, closer, err := open(openCtx)
 			p.mu.Lock()

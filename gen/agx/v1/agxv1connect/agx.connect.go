@@ -109,9 +109,6 @@ const (
 	// RuntimeServiceWatchRuntimeProcedure is the fully-qualified name of the RuntimeService's
 	// WatchRuntime RPC.
 	RuntimeServiceWatchRuntimeProcedure = "/agx.v1.RuntimeService/WatchRuntime"
-	// RuntimeServiceTestMcpServerProcedure is the fully-qualified name of the RuntimeService's
-	// TestMcpServer RPC.
-	RuntimeServiceTestMcpServerProcedure = "/agx.v1.RuntimeService/TestMcpServer"
 	// RuntimeServiceListToolsProcedure is the fully-qualified name of the RuntimeService's ListTools
 	// RPC.
 	RuntimeServiceListToolsProcedure = "/agx.v1.RuntimeService/ListTools"
@@ -863,8 +860,6 @@ func (UnimplementedLaunchServiceHandler) AttachLaunch(context.Context, *connect.
 type RuntimeServiceClient interface {
 	GetRuntime(context.Context, *connect.Request[v1.GetRuntimeRequest]) (*connect.Response[v1.GetRuntimeResponse], error)
 	WatchRuntime(context.Context, *connect.Request[v1.WatchRuntimeRequest]) (*connect.ServerStreamForClient[v1.WatchRuntimeResponse], error)
-	// Connects to one MCP server outside any launch and lists its tools.
-	TestMcpServer(context.Context, *connect.Request[v1.TestMcpServerRequest]) (*connect.Response[v1.TestMcpServerResponse], error)
 	// Lists the tools of the MCP servers in a call scope. Takes a launch grant for a launch's
 	// scope, or management authorization.
 	ListTools(context.Context, *connect.Request[v1.ListToolsRequest]) (*connect.Response[v1.ListToolsResponse], error)
@@ -905,12 +900,6 @@ func NewRuntimeServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(runtimeServiceMethods.ByName("WatchRuntime")),
 			connect.WithClientOptions(opts...),
 		),
-		testMcpServer: connect.NewClient[v1.TestMcpServerRequest, v1.TestMcpServerResponse](
-			httpClient,
-			baseURL+RuntimeServiceTestMcpServerProcedure,
-			connect.WithSchema(runtimeServiceMethods.ByName("TestMcpServer")),
-			connect.WithClientOptions(opts...),
-		),
 		listTools: connect.NewClient[v1.ListToolsRequest, v1.ListToolsResponse](
 			httpClient,
 			baseURL+RuntimeServiceListToolsProcedure,
@@ -948,7 +937,6 @@ func NewRuntimeServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 type runtimeServiceClient struct {
 	getRuntime       *connect.Client[v1.GetRuntimeRequest, v1.GetRuntimeResponse]
 	watchRuntime     *connect.Client[v1.WatchRuntimeRequest, v1.WatchRuntimeResponse]
-	testMcpServer    *connect.Client[v1.TestMcpServerRequest, v1.TestMcpServerResponse]
 	listTools        *connect.Client[v1.ListToolsRequest, v1.ListToolsResponse]
 	callTool         *connect.Client[v1.CallToolRequest, v1.CallToolResponse]
 	listMcpProcesses *connect.Client[v1.ListMcpProcessesRequest, v1.ListMcpProcessesResponse]
@@ -964,11 +952,6 @@ func (c *runtimeServiceClient) GetRuntime(ctx context.Context, req *connect.Requ
 // WatchRuntime calls agx.v1.RuntimeService.WatchRuntime.
 func (c *runtimeServiceClient) WatchRuntime(ctx context.Context, req *connect.Request[v1.WatchRuntimeRequest]) (*connect.ServerStreamForClient[v1.WatchRuntimeResponse], error) {
 	return c.watchRuntime.CallServerStream(ctx, req)
-}
-
-// TestMcpServer calls agx.v1.RuntimeService.TestMcpServer.
-func (c *runtimeServiceClient) TestMcpServer(ctx context.Context, req *connect.Request[v1.TestMcpServerRequest]) (*connect.Response[v1.TestMcpServerResponse], error) {
-	return c.testMcpServer.CallUnary(ctx, req)
 }
 
 // ListTools calls agx.v1.RuntimeService.ListTools.
@@ -1000,8 +983,6 @@ func (c *runtimeServiceClient) Stop(ctx context.Context, req *connect.Request[v1
 type RuntimeServiceHandler interface {
 	GetRuntime(context.Context, *connect.Request[v1.GetRuntimeRequest]) (*connect.Response[v1.GetRuntimeResponse], error)
 	WatchRuntime(context.Context, *connect.Request[v1.WatchRuntimeRequest], *connect.ServerStream[v1.WatchRuntimeResponse]) error
-	// Connects to one MCP server outside any launch and lists its tools.
-	TestMcpServer(context.Context, *connect.Request[v1.TestMcpServerRequest]) (*connect.Response[v1.TestMcpServerResponse], error)
 	// Lists the tools of the MCP servers in a call scope. Takes a launch grant for a launch's
 	// scope, or management authorization.
 	ListTools(context.Context, *connect.Request[v1.ListToolsRequest]) (*connect.Response[v1.ListToolsResponse], error)
@@ -1036,12 +1017,6 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 		RuntimeServiceWatchRuntimeProcedure,
 		svc.WatchRuntime,
 		connect.WithSchema(runtimeServiceMethods.ByName("WatchRuntime")),
-		connect.WithHandlerOptions(opts...),
-	)
-	runtimeServiceTestMcpServerHandler := connect.NewUnaryHandler(
-		RuntimeServiceTestMcpServerProcedure,
-		svc.TestMcpServer,
-		connect.WithSchema(runtimeServiceMethods.ByName("TestMcpServer")),
 		connect.WithHandlerOptions(opts...),
 	)
 	runtimeServiceListToolsHandler := connect.NewUnaryHandler(
@@ -1080,8 +1055,6 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 			runtimeServiceGetRuntimeHandler.ServeHTTP(w, r)
 		case RuntimeServiceWatchRuntimeProcedure:
 			runtimeServiceWatchRuntimeHandler.ServeHTTP(w, r)
-		case RuntimeServiceTestMcpServerProcedure:
-			runtimeServiceTestMcpServerHandler.ServeHTTP(w, r)
 		case RuntimeServiceListToolsProcedure:
 			runtimeServiceListToolsHandler.ServeHTTP(w, r)
 		case RuntimeServiceCallToolProcedure:
@@ -1107,10 +1080,6 @@ func (UnimplementedRuntimeServiceHandler) GetRuntime(context.Context, *connect.R
 
 func (UnimplementedRuntimeServiceHandler) WatchRuntime(context.Context, *connect.Request[v1.WatchRuntimeRequest], *connect.ServerStream[v1.WatchRuntimeResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.WatchRuntime is not implemented"))
-}
-
-func (UnimplementedRuntimeServiceHandler) TestMcpServer(context.Context, *connect.Request[v1.TestMcpServerRequest]) (*connect.Response[v1.TestMcpServerResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.TestMcpServer is not implemented"))
 }
 
 func (UnimplementedRuntimeServiceHandler) ListTools(context.Context, *connect.Request[v1.ListToolsRequest]) (*connect.Response[v1.ListToolsResponse], error) {

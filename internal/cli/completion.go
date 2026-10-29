@@ -373,7 +373,6 @@ func (k *completer) registerCompletions(root *cobra.Command) {
 		find(path...).ValidArgsFunction = complete
 	}
 	set(firstArg(func() []candidate { return k.definitions(config.KindMCPServers, true) }), "mcp", "remove")
-	set(firstArg(func() []candidate { return k.definitions(config.KindMCPServers, false) }), "mcp", "test")
 	set(firstArg(func() []candidate { return k.definitions(config.KindMCPServers, false) }), "mcp", "tools")
 	set(k.toolServers, "mcp", "call")
 	set(func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -26,22 +25,13 @@ import (
 func mcpCommand(paths *platform.Paths, builtins *config.Builtins, fragments *harnessConfig) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "mcp",
-		Short:   "Add, list, remove, test, and call MCP servers",
+		Short:   "Add, list, remove, and call MCP servers",
 		GroupID: "config",
-	}
-	test := &cobra.Command{
-		Use:   "test <id>",
-		Short: "Connect to an MCP server through the daemon and list its tools",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return testMCP(cmd.Context(), *paths, *builtins, args[0])
-		},
 	}
 	command.AddCommand(
 		mcpAddCommand(paths, builtins),
 		listCommand(paths, builtins, config.KindMCPServers),
 		removeCommand(paths, builtins, config.KindMCPServers),
-		test,
 		mcpToolsCommand(paths, builtins),
 		mcpCallCommand(paths, builtins),
 		mcpTypesCommand(paths, builtins),
@@ -229,7 +219,7 @@ func offerLogin(ctx context.Context, s *session, id, url string, browser bool) (
 	needed, err := auth.NeedsLogin(probe, url)
 	cancel()
 	if err != nil {
-		ui.Diagnose(ui.Warn, "%v; agx mcp test %s checks it later", err, id)
+		ui.Diagnose(ui.Warn, "%v; agx mcp tools %s --all checks it later", err, id)
 		needed = false
 	}
 	if !needed {
@@ -263,54 +253,6 @@ func daemonReachable(paths platform.Paths) bool {
 	}
 	_, err = c.runtime.GetRuntime(context.Background(), connect.NewRequest(&v1.GetRuntimeRequest{}))
 	return err == nil
-}
-
-func testMCP(ctx context.Context, paths platform.Paths, builtins config.Builtins, id string) error {
-	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
-	if err != nil {
-		return coded(codeConfigInvalid, err)
-	}
-	if _, ok := c.MCP[config.ID(id)]; !ok {
-		return codedf(codeNotFound, "unknown MCP server %s", id)
-	}
-	// Only the variables the server's values read are forwarded, as for a launch.
-	snapshot := &config.Snapshot{Config: c, Resources: []config.Resource{{Kind: "mcp", ID: config.ID(id)}}}
-	inputs := map[string]string{}
-	for _, name := range snapshot.MCPEnvironment() {
-		if value, ok := os.LookupEnv(name); ok {
-			inputs[name] = value
-		}
-	}
-	directory, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	client, err := daemonClient(ctx, paths, autostart(c))
-	if err != nil {
-		return err
-	}
-	progress("Connecting to " + id)
-	call, cancel := context.WithTimeout(ctx, 45*time.Second)
-	defer cancel()
-	response, err := client.runtime.TestMcpServer(call, connect.NewRequest(&v1.TestMcpServerRequest{
-		McpId:             id,
-		Directory:         directory,
-		EnvironmentInputs: inputs,
-	}))
-	if err != nil {
-		return fmt.Errorf("MCP server %s: %w", id, err)
-	}
-	msg := response.Msg
-	return emit(msg, func() error {
-		out := ui.Stdout
-		server := strings.TrimSpace(msg.ServerName + " " + msg.ServerVersion)
-		tools := slices.Sorted(slices.Values(msg.Tools))
-		_, err := fmt.Fprint(out,
-			out.Status(ui.OK, fmt.Sprintf("%s answered with %s.", id, plural(len(tools), "tool")))+"\n",
-			out.Fields([2]string{"server", server}, [2]string{"tools", strings.Join(tools, " ")}),
-		)
-		return err
-	})
 }
 
 // mcpRows describes MCP servers for list output; values are shown as configured, never resolved.

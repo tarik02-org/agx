@@ -62,8 +62,6 @@ service LaunchService {
 service RuntimeService {
   rpc GetRuntime(GetRuntimeRequest) returns (GetRuntimeResponse);
   rpc WatchRuntime(WatchRuntimeRequest) returns (stream WatchRuntimeResponse);
-  // Connects to one MCP server outside any launch and lists its tools.
-  rpc TestMcpServer(TestMcpServerRequest) returns (TestMcpServerResponse);
   // Lists the tools of the MCP servers in a call scope. Takes a launch grant for a launch's
   // scope, or management authorization.
   rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
@@ -456,27 +454,6 @@ message WatchRuntimeRequest {}
 message WatchRuntimeResponse {
   RuntimeView runtime = 1;
 }
-message TestMcpServerRequest {
-  string mcp_id = 1;
-  // Directory a stdio server without cwd runs in.
-  string directory = 2;
-  // Sensitive: only names the server's injected values need are accepted.
-  map<string, string> environment_inputs = 3;
-}
-message TestMcpServerResponse {
-  string server_name = 1;
-  string server_version = 2;
-  // Names of the tools the server lists.
-  repeated string tools = 3;
-  // The tools the server lists, in its order, with their descriptions.
-  repeated Tool tool_details = 4;
-
-  message Tool {
-    string name = 1;
-    string description = 2;
-  }
-}
-
 // The MCP servers a ListTools or CallTool caller reaches. With launch_id, the request carries
 // that launch's grant, or management authorization, and reaches the servers of the launch's
 // snapshot through its endpoints, native and on-demand alike. Without it, the request carries

@@ -21,10 +21,7 @@ The Go module path is `github.com/tarik02-org/agx`.
   a launch, with its thread launches, to a daemon that does not hold it.
 - `RuntimeService`: inspect redacted daemon, launch, and MCP server state, with
   `WatchRuntime` supplying live views for the web UI;
-  `TestMcpServer`, which connects to one MCP server outside any launch and
-  lists its tools with their descriptions (`agx mcp test`), accepting only the
-  environment variables the server's values name and reporting failures with the
-  endpoint's diagnostics; and `ListTools` and `CallTool`, which list and call the
+  `ListTools` and `CallTool`, which list and call the
   tools of the MCP servers in a call scope (`agx mcp tools`, `agx mcp call`, and
   the client of `agx mcp types`); list and stop MCP server processes; and `Stop`,
   which stops the daemon.

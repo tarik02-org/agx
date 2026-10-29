@@ -372,7 +372,7 @@ func TestJSONCommands(t *testing.T) {
 		{"secret", "set", "token"},
 		{"secret", "logout", "token"},
 		{"secret", "login", "token"},
-		{"mcp", "test", "fs"},
+		{"mcp", "tools", "fs"},
 	} {
 		failJSON(t, 1, codeDaemonUnavailable, append(args, "--json")...)
 	}
@@ -390,7 +390,6 @@ func TestJSONCommands(t *testing.T) {
 			t.Fatalf("%q without a daemon = %+v", args, stopped)
 		}
 	}
-	failJSON(t, 1, codeNotFound, "mcp", "test", "missing", "--json")
 }
 
 func TestJSONUsageErrors(t *testing.T) {
