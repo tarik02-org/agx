@@ -370,6 +370,8 @@ message RenewLaunchRequest {
   // Native session the launch serves, once known; renewing a thread launch with it marks the
   // thread running. Thread launches otherwise follow their parent's lease.
   string session_id = 3;
+  // PID of the wrapper renewing the launch, so the daemon can tell why a lease ran out.
+  uint64 wrapper_pid = 4;
 }
 message RenewLaunchResponse {
   google.protobuf.Timestamp expires_at = 1;

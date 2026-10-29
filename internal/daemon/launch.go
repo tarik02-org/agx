@@ -381,6 +381,10 @@ func (s *Server) RenewLaunch(
 	} else {
 		if msg.HarnessPid != 0 {
 			l.view.State = v1.Launch_STATE_RUNNING
+			l.harnessPID = int(msg.HarnessPid) //nolint:gosec // PIDs fit
+		}
+		if msg.WrapperPid != 0 {
+			l.wrapperPID = int(msg.WrapperPid) //nolint:gosec // PIDs fit
 		}
 		if msg.SessionId != "" {
 			l.view.SessionId = msg.SessionId

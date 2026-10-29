@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -44,10 +45,13 @@ func (g *Group) start() error {
 	if err := g.cmd.Start(); err != nil {
 		return err
 	}
+	pid := uint32(g.cmd.Process.Pid)
 	job, err := windows.CreateJobObject(nil, nil)
 	if err == nil {
 		g.job = job
-		err = assign(job, uint32(g.cmd.Process.Pid))
+		if err = assign(job, pid, windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE); err == nil {
+			err = resume(pid)
+		}
 	}
 	if err != nil {
 		g.kill()
@@ -69,16 +73,78 @@ func (g *Group) terminate() {}
 
 func (g *Group) release() { g.kill() }
 
-// assign puts the suspended process pid in job, then resumes it.
-func assign(job windows.Handle, pid uint32) error {
+// StartTied starts cmd in a job object that ends it and its descendants when this process ends
+// before calling untie. A host that stops agx terminates it, which on Windows ends no child, so a
+// harness would otherwise keep running cut off from its launch. untie lets the descendants left
+// outlive this process, as they would without the job; they may also break away from it. When the
+// job cannot be set up, cmd runs untied, and StartTied returns the error with a no-op untie.
+func StartTied(cmd *exec.Cmd) (untie func(), err error) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &windows.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CreationFlags |= windows.CREATE_SUSPENDED
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	pid := uint32(cmd.Process.Pid)
+	job, err := windows.CreateJobObject(nil, nil)
+	if err == nil {
+		flags := uint32(windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK)
+		if err = assign(job, pid, flags); err != nil {
+			_ = windows.CloseHandle(job)
+			job = 0
+		}
+	}
+	if resumeErr := resume(pid); resumeErr != nil {
+		if job != 0 {
+			_ = windows.CloseHandle(job)
+		}
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("cannot start process: %w", resumeErr)
+	}
+	if job == 0 {
+		return func() {}, err
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			_ = limit(job, windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK)
+			_ = windows.CloseHandle(job)
+		})
+	}, nil
+}
+
+// Alive reports whether process pid runs; one whose PID was reused since reads as running.
+func Alive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	process, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(pid))
+	if err != nil {
+		return errors.Is(err, windows.ERROR_ACCESS_DENIED)
+	}
+	defer func() { _ = windows.CloseHandle(process) }()
+	event, err := windows.WaitForSingleObject(process, 0)
+	return err != nil || event == uint32(windows.WAIT_TIMEOUT)
+}
+
+// limit sets job's limit flags.
+func limit(job windows.Handle, flags uint32) error {
 	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
-	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-	if _, err := windows.SetInformationJobObject(
+	info.BasicLimitInformation.LimitFlags = flags
+	_, err := windows.SetInformationJobObject(
 		job,
 		windows.JobObjectExtendedLimitInformation,
 		uintptr(unsafe.Pointer(&info)),
 		uint32(unsafe.Sizeof(info)),
-	); err != nil {
+	)
+	return err
+}
+
+// assign sets job's limit flags and puts the suspended process pid in it.
+func assign(job windows.Handle, pid, flags uint32) error {
+	if err := limit(job, flags); err != nil {
 		return err
 	}
 	process, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, pid)
@@ -86,11 +152,12 @@ func assign(job windows.Handle, pid uint32) error {
 		return err
 	}
 	defer func() { _ = windows.CloseHandle(process) }()
-	if err := windows.AssignProcessToJobObject(job, process); err != nil {
-		return err
-	}
-	// The child cannot spawn descendants before it belongs to the job. x/sys has no
-	// NtResumeProcess, so each of its threads is resumed.
+	return windows.AssignProcessToJobObject(job, process)
+}
+
+// resume resumes the suspended process pid. Started suspended, it cannot spawn descendants
+// before it belongs to a job. x/sys has no NtResumeProcess, so each of its threads is resumed.
+func resume(pid uint32) error {
 	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPTHREAD, 0)
 	if err != nil {
 		return err

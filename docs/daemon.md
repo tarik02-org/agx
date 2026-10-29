@@ -109,7 +109,22 @@ for example `needs-auth` with the command to log in. A `codex app-server`
 process shows one launch per thread, indented under the process.
 
 If a harness's agx wrapper dies without saying goodbye, its access expires
-after `daemon.lease_seconds` (60 by default).
+after `daemon.lease_seconds` (60 by default). The log's `launch ended` line for
+an expired launch has a `reason`: `harness gone` or `wrapper and harness gone`
+when the harness exited too; `wrapper gone, harness still running` for a
+harness left without its wrapper; `renewals stopped, wrapper still running` for
+a wrapper that did not renew in time, as after the computer slept; and `no
+renewal` for a launch whose harness never started.
+
+On Windows, a host that ends a harness by terminating the agx wrapper it spawned
+ends the harness and its descendants with it, as their wrapper keeps them in a
+job object. When the harness exits on its own, what it started keeps running.
+On Unix, killing the wrapper with SIGKILL leaves the harness running until the
+host closes its terminal or pipes; SIGTERM and SIGINT reach the harness.
+
+A wrapper whose launch the daemon refuses to take back, because the launch's
+directory no longer resolves or the configuration does not load, retries for 5
+minutes and then warns that MCP access is lost.
 
 ## Cache cleanup
 

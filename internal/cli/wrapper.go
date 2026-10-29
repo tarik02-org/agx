@@ -291,12 +291,17 @@ func runHarness(
 		// The daemon's expiry turns into a monotonic deadline, which a wall clock jump leaves be.
 		expires := time.Now().Add(time.Until(p.Launch.GetExpiresAt().AsTime()))
 		// Failures are retried for as long as the harness runs: a daemon may recover, or another
-		// one take the launch.
+		// one take the launch. One that keeps refusing to take it back is given up on.
 		paused := false
+		var refused refusals
 		renew := func() (bool, bool) {
 			response, err := link.renew(
 				context.Background(),
-				&v1.RenewLaunchRequest{LaunchId: p.Launch.Id, HarnessPid: uint64(cmd.Process.Pid)},
+				&v1.RenewLaunchRequest{
+					LaunchId:   p.Launch.Id,
+					HarnessPid: uint64(cmd.Process.Pid),
+					WrapperPid: uint64(os.Getpid()),
+				},
 			)
 			if err == nil {
 				if next := response.GetExpiresAt(); next != nil {
@@ -306,6 +311,7 @@ func runHarness(
 					ui.Diagnose(ui.Info, "MCP access is back.")
 					paused = false
 				}
+				refused = refusals{}
 				return true, true
 			}
 			switch code := connect.CodeOf(err); {
@@ -319,6 +325,14 @@ func runHarness(
 					ui.Warn,
 					"the daemon no longer holds this launch and refused to take it back: %v; MCP access is lost. "+
 						"Relaunch to reconnect.",
+					err,
+				)
+				return false, false
+			case refused.exhausted(err, time.Now()):
+				ui.Diagnose(
+					ui.Warn,
+					"the daemon has refused to take this launch back for %v: %v; MCP access is lost. Relaunch to reconnect.",
+					attachRefusedWait,
 					err,
 				)
 				return false, false
@@ -460,8 +474,14 @@ func supervise(cmd *exec.Cmd, started func(), connect streams) error {
 	signals := make(chan os.Signal, 8)
 	signal.Notify(signals, platform.Interrupts()...)
 	defer signal.Stop(signals)
-	if err := cmd.Start(); err != nil {
+	untie, err := platform.StartTied(cmd)
+	if untie == nil {
 		return err
+	}
+	// The harness exited on its own by the time supervise returns; what it left keeps running.
+	defer untie()
+	if err != nil {
+		ui.Diagnose(ui.Warn, "the native process would outlive agx if terminated: %v", err)
 	}
 	if connected != nil {
 		connected()

@@ -123,6 +123,9 @@ type launch struct {
 	// unavailable says why an attached launch's MCP servers cannot be served, when its directory
 	// no longer resolves to the snapshot it started with.
 	unavailable string
+	// wrapperPID and harnessPID are the processes the last renewal reported, for telling why the
+	// lease ran out; zero when unknown.
+	wrapperPID, harnessPID int
 }
 
 type Server struct {
@@ -536,7 +539,11 @@ func (s *Server) end(l *launch, state v1.Launch_State) {
 	}
 	// A finished launch is the normal outcome; the others cut a running harness off.
 	if state != v1.Launch_STATE_FINISHED && l.view.ParentLaunchId == "" {
-		slog.Info("launch ended", "launch", shortID(l.view.Id), "harness", l.view.Harness, "state", savedEnd(state))
+		attrs := []any{"launch", shortID(l.view.Id), "harness", l.view.Harness, "state", savedEnd(state)}
+		if state == v1.Launch_STATE_EXPIRED {
+			attrs = append(attrs, "reason", expiryReason(l.wrapperPID, l.harnessPID, platform.Alive))
+		}
+		slog.Info("launch ended", attrs...)
 	}
 	s.clients.closeLaunch(l.view.Id)
 	go s.release(l.view.Id, l.endpoints)
@@ -1088,6 +1095,25 @@ var Build = sync.OnceValue(func() string {
 // files, lines, and IDs, never resolved values.
 func configError(err error) error {
 	return configInvalid("daemon configuration invalid: "+err.Error(), err)
+}
+
+// expiryReason says why a lease ran out, from whether the wrapper and harness processes its last
+// renewal reported still run. A host that terminates the wrapper on Windows leaves an untied
+// harness running; a live wrapper renewing too rarely means a stalled daemon or a sleeping host.
+func expiryReason(wrapper, harness int, alive func(int) bool) string {
+	switch {
+	case harness == 0:
+		return "no renewal"
+	case !alive(harness) && wrapper != 0 && !alive(wrapper):
+		return "wrapper and harness gone"
+	case !alive(harness):
+		return "harness gone"
+	case wrapper == 0:
+		return "harness still running"
+	case !alive(wrapper):
+		return "wrapper gone, harness still running"
+	}
+	return "renewals stopped, wrapper still running"
 }
 
 // savedEnd names how a launch ended, for the log.

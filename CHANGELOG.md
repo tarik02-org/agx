@@ -72,3 +72,6 @@ agx has not been released yet. What it does today:
 - Launch records are an append-only `launch-records.jsonl` that a listing folds and prunes, so a
   launch appends two lines instead of rewriting every record; an existing `launch-records.json`
   is folded in and removed. Session listings open only session files that changed.
+- On Windows, terminating an agx wrapper also ends its harness and the harness's descendants,
+  instead of leaving them running without MCP access. A wrapper the daemon keeps refusing to take
+  its launch back from gives up after 5 minutes, and the daemon logs why a launch expired.

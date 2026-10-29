@@ -2527,7 +2527,9 @@ type RenewLaunchRequest struct {
 	HarnessPid uint64                 `protobuf:"varint,2,opt,name=harness_pid,json=harnessPid,proto3" json:"harness_pid,omitempty"`
 	// Native session the launch serves, once known; renewing a thread launch with it marks the
 	// thread running. Thread launches otherwise follow their parent's lease.
-	SessionId     string `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	SessionId string `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// PID of the wrapper renewing the launch, so the daemon can tell why a lease ran out.
+	WrapperPid    uint64 `protobuf:"varint,4,opt,name=wrapper_pid,json=wrapperPid,proto3" json:"wrapper_pid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2581,6 +2583,13 @@ func (x *RenewLaunchRequest) GetSessionId() string {
 		return x.SessionId
 	}
 	return ""
+}
+
+func (x *RenewLaunchRequest) GetWrapperPid() uint64 {
+	if x != nil {
+		return x.WrapperPid
+	}
+	return 0
 }
 
 type RenewLaunchResponse struct {
@@ -7062,13 +7071,15 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\vconfig_json\x18\x01 \x01(\tR\n" +
 	"configJson\x12\"\n" +
 	"\finstructions\x18\x02 \x01(\tR\finstructions\x12)\n" +
-	"\x10disabled_plugins\x18\x03 \x03(\tR\x0fdisabledPlugins\"q\n" +
+	"\x10disabled_plugins\x18\x03 \x03(\tR\x0fdisabledPlugins\"\x92\x01\n" +
 	"\x12RenewLaunchRequest\x12\x1b\n" +
 	"\tlaunch_id\x18\x01 \x01(\tR\blaunchId\x12\x1f\n" +
 	"\vharness_pid\x18\x02 \x01(\x04R\n" +
 	"harnessPid\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x03 \x01(\tR\tsessionId\"P\n" +
+	"session_id\x18\x03 \x01(\tR\tsessionId\x12\x1f\n" +
+	"\vwrapper_pid\x18\x04 \x01(\x04R\n" +
+	"wrapperPid\"P\n" +
 	"\x13RenewLaunchResponse\x129\n" +
 	"\n" +
 	"expires_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xa2\x03\n" +

@@ -24,6 +24,27 @@ const (
 	discoveryPoll = 250 * time.Millisecond
 )
 
+// attachRefusedWait bounds retrying a daemon that refuses to take a launch back because its
+// directory no longer resolves or configuration does not load: either may be fixed, but rarely
+// while the harness runs.
+const attachRefusedWait = 5 * time.Minute
+
+// refusals tracks since when a daemon refuses to take a launch back.
+type refusals struct{ since time.Time }
+
+// exhausted records err from renewing at now, and reports whether the daemon has refused to take
+// the launch back for attachRefusedWait.
+func (r *refusals) exhausted(err error, now time.Time) bool {
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		r.since = time.Time{}
+		return false
+	}
+	if r.since.IsZero() {
+		r.since = now
+	}
+	return now.Sub(r.since) >= attachRefusedWait
+}
+
 // stopping reports whether err comes from a daemon that stopped taking new work, so the request
 // is worth retrying with the next one.
 func stopping(err error) bool {
