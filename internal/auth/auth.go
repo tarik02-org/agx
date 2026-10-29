@@ -40,9 +40,20 @@ type Manager struct {
 	hints    map[string]string
 	// refused maps credential keys whose refresh token the authorization server refused to the
 	// reason, until a new login or logout; refreshing again could not succeed.
-	refused  map[string]string
+	refused map[string]string
+	// helpers keeps command secrets' values by credential key for helperTTL, since every launch
+	// and MCP server start resolves them.
+	helpers  map[string]helperValue
 	callback string
 	store    *Store
+}
+
+// helperTTL is how long a command secret's value is reused before its command runs again.
+const helperTTL = time.Minute
+
+type helperValue struct {
+	value   string
+	expires time.Time
 }
 
 var (
@@ -86,6 +97,7 @@ func New(callback string, store *Store) *Manager {
 		required:    map[string]bool{},
 		hints:       map[string]string{},
 		refused:     map[string]string{},
+		helpers:     map[string]helperValue{},
 		callback:    callback,
 	}
 }
@@ -137,8 +149,41 @@ func (m *Manager) Value(
 		return sopsValue(ctx, id, s, env, func(ref config.ID) (string, error) {
 			return m.Value(ctx, ref, secrets[ref], secrets, inputs, "")
 		})
+	case "command":
+		return m.helperValue(ctx, id, s)
 	}
 	return LocalValue(ctx, m.store, id, s, secrets, env)
+}
+
+func (m *Manager) helperValue(ctx context.Context, id config.ID, s config.Secret) (string, error) {
+	k := key(id, s)
+	m.mu.Lock()
+	cached, ok := m.helpers[k]
+	m.mu.Unlock()
+	if ok && time.Now().Before(cached.expires) {
+		return cached.value, nil
+	}
+	value, err := runHelper(ctx, id, s.Command)
+	if err != nil {
+		return "", err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := time.Now()
+	for k, v := range m.helpers {
+		if !now.Before(v.expires) {
+			delete(m.helpers, k)
+		}
+	}
+	m.helpers[k] = helperValue{value: value, expires: now.Add(helperTTL)}
+	return value, nil
+}
+
+// ForgetHelpers drops the command secrets' values, so that their commands run again.
+func (m *Manager) ForgetHelpers() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	clear(m.helpers)
 }
 
 // LocalValue resolves secrets that need no daemon state, for commands that run without the

@@ -118,7 +118,7 @@ func (s *Server) attachable(id, grant, lifecycle string) (*launch, error) {
 // launches need.
 func (s *Server) attachProcess(ctx context.Context, msg *v1.AttachLaunchRequest) (*launch, error) {
 	view := msg.Launch
-	b, err := s.launchBasis(view.Directory, view.Harness, msg.NativeArguments)
+	b, err := s.launchBasis(view.Directory, view.Harness, "", msg.NativeArguments)
 	if err != nil {
 		return nil, err
 	}

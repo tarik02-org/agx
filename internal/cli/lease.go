@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -20,8 +22,8 @@ const (
 	// period, exits, and the next one starts.
 	restartWait = 30 * time.Second
 	// discoveryPoll is how often a wrapper looks for a daemon that replaced its own, so a
-	// restarted daemon gets its launches attached promptly.
-	discoveryPoll = 250 * time.Millisecond
+	// restarted daemon gets its launches attached promptly. Calls that fail look at once.
+	discoveryPoll = time.Second
 )
 
 // attachRefusedWait bounds retrying a daemon that refuses to take a launch back because its
@@ -84,6 +86,24 @@ type lease struct {
 	threads map[string]*v1.AttachedThread
 	// started is when the wrapper last started a daemon to replace a crashed one.
 	started time.Time
+	// seen is the discovery file as the last poll found it.
+	seen discoveryStamp
+}
+
+// discoveryStamp tells a rewritten discovery file from the one read before without reading it:
+// every wrapper polls it, and on Windows an open file cannot be deleted.
+type discoveryStamp struct{ modified, size int64 }
+
+// discoveryChanged reports whether the discovery file changed since it last did, a missing file
+// counting as one with a zero stamp.
+func (l *lease) discoveryChanged() bool {
+	var stamp discoveryStamp
+	if info, err := os.Stat(filepath.Join(l.paths.Runtime, "daemon.json")); err == nil {
+		stamp = discoveryStamp{info.ModTime().UnixNano(), info.Size()}
+	}
+	changed := stamp != l.seen
+	l.seen = stamp
+	return changed
 }
 
 // crashRestartInterval spaces the daemons a wrapper starts for a crashed one.
@@ -204,7 +224,7 @@ func (l *lease) await(done <-chan struct{}, d time.Duration) bool {
 		case <-poll.C:
 			// The next daemon may listen on the same port, where the old client would reach it
 			// with the old management token.
-			if l.reconnect(l.current()) {
+			if l.discoveryChanged() && l.reconnect(l.current()) {
 				return true
 			}
 		}

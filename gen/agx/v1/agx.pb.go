@@ -2217,8 +2217,11 @@ type ResolveThreadRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ParentLaunchId string                 `protobuf:"bytes,1,opt,name=parent_launch_id,json=parentLaunchId,proto3" json:"parent_launch_id,omitempty"`
 	Directory      string                 `protobuf:"bytes,2,opt,name=directory,proto3" json:"directory,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Leaves disabled_plugins out, for a caller preparing the thread launch next, whose plan
+	// carries them.
+	SnapshotOnly  bool `protobuf:"varint,3,opt,name=snapshot_only,json=snapshotOnly,proto3" json:"snapshot_only,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ResolveThreadRequest) Reset() {
@@ -2263,6 +2266,13 @@ func (x *ResolveThreadRequest) GetDirectory() string {
 		return x.Directory
 	}
 	return ""
+}
+
+func (x *ResolveThreadRequest) GetSnapshotOnly() bool {
+	if x != nil {
+		return x.SnapshotOnly
+	}
+	return false
 }
 
 type ResolveThreadResponse struct {
@@ -7045,10 +7055,11 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\rSTATE_RUNNING\x10\x02\x12\x12\n" +
 	"\x0eSTATE_FINISHED\x10\x03\x12\x11\n" +
 	"\rSTATE_REVOKED\x10\x04\x12\x11\n" +
-	"\rSTATE_EXPIRED\x10\x05\"^\n" +
+	"\rSTATE_EXPIRED\x10\x05\"\x83\x01\n" +
 	"\x14ResolveThreadRequest\x12(\n" +
 	"\x10parent_launch_id\x18\x01 \x01(\tR\x0eparentLaunchId\x12\x1c\n" +
-	"\tdirectory\x18\x02 \x01(\tR\tdirectory\"p\n" +
+	"\tdirectory\x18\x02 \x01(\tR\tdirectory\x12#\n" +
+	"\rsnapshot_only\x18\x03 \x01(\bR\fsnapshotOnly\"p\n" +
 	"\x15ResolveThreadResponse\x12,\n" +
 	"\bsnapshot\x18\x01 \x01(\v2\x10.agx.v1.SnapshotR\bsnapshot\x12)\n" +
 	"\x10disabled_plugins\x18\x02 \x03(\tR\x0fdisabledPlugins\"\xb5\x02\n" +

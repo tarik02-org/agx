@@ -75,3 +75,9 @@ agx has not been released yet. What it does today:
 - On Windows, terminating an agx wrapper also ends its harness and the harness's descendants,
   instead of leaving them running without MCP access. A wrapper the daemon keeps refusing to take
   its launch back from gives up after 5 minutes, and the daemon logs why a launch expired.
+- Runtime watches send at most one view per 250 ms, and none for a renewal that only extends a
+  lease, so `expires_at` in a watched view may lag. Wrappers look for a replacing daemon once a
+  second instead of four times, reading the discovery file only when it changed.
+- The daemon reuses a command secret's value for a minute, or until configuration changes, and
+  asks Codex whether plugins are disabled again only when its settings change, not whenever it
+  rewrites `config.toml`.

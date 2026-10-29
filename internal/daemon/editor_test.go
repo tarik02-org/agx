@@ -15,6 +15,7 @@ import (
 	"connectrpc.com/connect"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/platform"
 )
@@ -61,7 +62,7 @@ func editorServer(t *testing.T, configuration string) (*Server, string) {
 		Cache:  filepath.Join(dir, "cache"),
 		State:  filepath.Join(dir, "state"),
 	}
-	return &Server{paths: paths, builtins: config.Builtins{}}, dir
+	return &Server{paths: paths, builtins: config.Builtins{}, manager: auth.New("", nil)}, dir
 }
 
 func writeFile(t *testing.T, path, content string) {

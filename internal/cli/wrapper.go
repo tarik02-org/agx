@@ -54,6 +54,8 @@ func (e *ExitError) Error() string { return fmt.Sprintf("native process exited w
 // harnessConfig holds the definitions harness commands launch from. When configuration fails to
 // load, err records why and only the built-ins remain, so other commands keep working.
 type harnessConfig struct {
+	// path is the root configuration they were loaded from.
+	path   string
 	config *config.Config
 	err    error
 }
@@ -62,9 +64,9 @@ func loadHarnesses(path string, builtins config.Builtins) harnessConfig {
 	// Harnesses come only from configuration fragments, so packages need not be installed.
 	c, err := config.Load(path, config.Options{Builtins: builtins})
 	if err != nil {
-		return harnessConfig{config: config.Bare(builtins), err: err}
+		return harnessConfig{path: path, config: config.Bare(builtins), err: err}
 	}
-	return harnessConfig{config: c}
+	return harnessConfig{path: path, config: c}
 }
 
 // runHarness launches harness name with native args. resumed is the ID of the session the launch

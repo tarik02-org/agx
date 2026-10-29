@@ -150,3 +150,22 @@ func TestAutostart(t *testing.T) {
 		})
 	}
 }
+
+// The fragments the command line was loaded from decide, unless --config named another root.
+func TestConfiguredAutostart(t *testing.T) {
+	t.Setenv("AGX_NO_AUTOSTART", "")
+	dir := t.TempDir()
+	root := filepath.Join(dir, "agx.yaml")
+	if err := os.WriteFile(root, []byte("daemon: {autostart: false}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	on := true
+	loaded := harnessConfig{path: root, config: &config.Config{Daemon: config.Daemon{Autostart: &on}}}
+	if !configuredAutostart(platform.Paths{Config: root}, config.Builtins{}, loaded) {
+		t.Error("the loaded fragments were read again")
+	}
+	loaded.path = filepath.Join(dir, "other.yaml")
+	if configuredAutostart(platform.Paths{Config: root}, config.Builtins{}, loaded) {
+		t.Error("fragments of another root configuration decided")
+	}
+}

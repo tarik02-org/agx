@@ -23,7 +23,7 @@ import (
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
-func mcpCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func mcpCommand(paths *platform.Paths, builtins *config.Builtins, fragments *harnessConfig) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "mcp",
 		Short:   "Add, list, remove, test, and call MCP servers",
@@ -45,8 +45,8 @@ func mcpCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command
 		mcpToolsCommand(paths, builtins),
 		mcpCallCommand(paths, builtins),
 		mcpTypesCommand(paths, builtins),
-		mcpProcessesCommand(paths, builtins),
-		mcpStopCommand(paths, builtins),
+		mcpProcessesCommand(paths, builtins, fragments),
+		mcpStopCommand(paths, builtins, fragments),
 	)
 	return command
 }

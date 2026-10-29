@@ -66,7 +66,9 @@ func (h *threadHost) prepare(ctx context.Context, c *client, directory string) (
 	defer cancel()
 	resolved, err := c.launches.ResolveThread(
 		resolveCtx,
-		connect.NewRequest(&v1.ResolveThreadRequest{ParentLaunchId: h.parent, Directory: directory}),
+		connect.NewRequest(
+			&v1.ResolveThreadRequest{ParentLaunchId: h.parent, Directory: directory, SnapshotOnly: true},
+		),
 	)
 	if err != nil {
 		return adapters.ThreadLaunch{}, err

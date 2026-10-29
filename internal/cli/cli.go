@@ -237,10 +237,10 @@ func run(osArgs []string, stdout io.Writer) int {
 		sessionsCommand(&paths, registry, &harnesses),
 		daemonCommand(&paths, registry, &builtins),
 		doctorCommand(&paths, registry, &builtins),
-		launchCommand(&paths, &builtins),
-		secretCommand(&paths, &builtins),
+		launchCommand(&paths, &builtins, &harnesses),
+		secretCommand(&paths, &builtins, &harnesses),
 		shimsCommand(&paths, registry, &builtins),
-		mcpCommand(&paths, &builtins),
+		mcpCommand(&paths, &builtins, &harnesses),
 		skillCommand(&paths, &builtins),
 		instructionsCommand(&paths, &builtins),
 		harnessCommand(&paths, &builtins),
@@ -668,7 +668,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 	return command
 }
 
-func launchCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func launchCommand(paths *platform.Paths, builtins *config.Builtins, fragments *harnessConfig) *cobra.Command {
 	command := &cobra.Command{Use: "launch", Short: "Inspect and revoke harness launches", GroupID: "runtime"}
 	shorts := map[string]string{"list": "List active launches", "show": "Show one launch"}
 	for _, name := range []string{"list", "show"} {
@@ -682,7 +682,7 @@ func launchCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 				return cobra.NoArgs(cmd, args)
 			},
 			RunE: func(cmd *cobra.Command, args []string) error {
-				c, err := commandClient(cmd, paths, builtins)
+				c, err := commandClient(cmd, paths, builtins, fragments)
 				if err != nil {
 					return err
 				}
@@ -709,7 +709,7 @@ func launchCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 		Short: "Revoke a launch's MCP access",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := commandClient(cmd, paths, builtins)
+			c, err := commandClient(cmd, paths, builtins, fragments)
 			if err != nil {
 				return err
 			}
@@ -768,14 +768,14 @@ func readSecret(id string) ([]byte, error) {
 	return data, nil
 }
 
-func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func secretCommand(paths *platform.Paths, builtins *config.Builtins, fragments *harnessConfig) *cobra.Command {
 	command := &cobra.Command{Use: "secret", Short: "Manage configured secrets and OAuth logins", GroupID: "runtime"}
 	status := &cobra.Command{
 		Use:   "status [secret-id]",
 		Short: "Show secret state",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := commandClient(cmd, paths, builtins)
+			c, err := commandClient(cmd, paths, builtins, fragments)
 			if err != nil {
 				return err
 			}
@@ -803,7 +803,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			if err != nil {
 				return err
 			}
-			c, err := commandClient(cmd, paths, builtins)
+			c, err := commandClient(cmd, paths, builtins, fragments)
 			if err != nil {
 				return err
 			}
@@ -823,7 +823,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 		Short: "Delete a stored secret or OAuth login",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := commandClient(cmd, paths, builtins)
+			c, err := commandClient(cmd, paths, builtins, fragments)
 			if err != nil {
 				return err
 			}
@@ -840,7 +840,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 		Short: "Renew an OAuth secret's access token now with its refresh token",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := commandClient(cmd, paths, builtins)
+			c, err := commandClient(cmd, paths, builtins, fragments)
 			if err != nil {
 				return err
 			}
@@ -868,7 +868,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			"succeeds, fails, or expires; Ctrl-C cancels it.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return login(cmd.Context(), *paths, args[0], !noBrowser, configuredAutostart(*paths, *builtins))
+			return login(cmd.Context(), *paths, args[0], !noBrowser, configuredAutostart(*paths, *builtins, *fragments))
 		},
 	}
 	login.Flags().BoolVar(&noBrowser, "no-browser", false, "print the authorization URL without opening a browser")

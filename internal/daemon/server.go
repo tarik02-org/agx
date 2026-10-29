@@ -174,6 +174,9 @@ type Server struct {
 	previews previews
 	// icons remembers the icons MCP servers declared, for the web UI.
 	icons *mcpIcons
+	// resolved keeps the snapshots resolve requests returned, for preparing the launch that
+	// follows each without resolving, and hashing local skills, again; s.mu guards it.
+	resolved map[resolveKey]resolvedSnapshot
 }
 
 // Serve runs the daemon until stop closes or a stop request arrives, then shuts down gracefully:
@@ -508,6 +511,8 @@ func (s *Server) reload() (*config.Config, error) {
 	if err == nil {
 		s.config = c
 	}
+	// Changed configuration may mean a command secret's command now prints another value.
+	s.manager.ForgetHelpers()
 	return c, err
 }
 
@@ -908,7 +913,7 @@ func (s *Server) Resolve(
 			return nil, rpcError(connect.CodeInvalidArgument, err.Error())
 		}
 	}
-	snapshot, err := c.Resolve(req.Msg.Directory, req.Msg.Harness)
+	snapshot, err := s.resolve(c, req.Msg.Directory, req.Msg.Harness)
 	if err != nil {
 		return nil, rpcError(
 			connect.CodeFailedPrecondition,
@@ -951,8 +956,19 @@ func (s *Server) WatchRuntime(
 			return refusal()
 		case <-changed:
 		}
+		// Changes come in bursts, such as a launch's MCP servers starting; one view covers them.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-s.drain.stopping.Done():
+			return refusal()
+		case <-time.After(watchCoalesce):
+		}
 	}
 }
+
+// watchCoalesce is how long a runtime watch waits after a change for the ones following it.
+const watchCoalesce = 250 * time.Millisecond
 
 // warnMissing logs the missing packages a launch goes without, once per package.
 func warnMissing(snapshot *config.Snapshot) {

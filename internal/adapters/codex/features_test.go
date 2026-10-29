@@ -111,11 +111,24 @@ func TestPluginsDisabled(t *testing.T) {
 	if string(log) != want {
 		t.Errorf("Codex ran with\n%s\nwant\n%s", log, want)
 	}
-	// A changed profile asks again.
+	// Rewriting the files without changing their settings, as Codex does when it records
+	// project trust, asks nothing; a changed profile asks again.
 	later := time.Now().Add(time.Hour)
 	if err := os.Chtimes(filepath.Join(dir, "work.config.toml"), later, later); err != nil {
 		t.Fatal(err)
 	}
+	writeFile(t, filepath.Join(dir, "config.toml"), "[projects.\"/work\"]\ntrust_level = \"trusted\"\n")
+	ask("-p", "work", "--config", "features.plugins=true")
+	if again, _ := os.ReadFile(filepath.Join(dir, "log")); strings.Count(string(again), "\n") != 3 {
+		t.Errorf("after config.toml was created, Codex ran with\n%s", again)
+	}
+	writeFile(t, filepath.Join(dir, "config.toml"),
+		"[projects.\"/work\"]\ntrust_level = \"trusted\"\n[projects.\"/other\"]\ntrust_level = \"trusted\"\n")
+	ask("-p", "work", "--config", "features.plugins=true")
+	if again, _ := os.ReadFile(filepath.Join(dir, "log")); strings.Count(string(again), "\n") != 3 {
+		t.Errorf("after project trust changed, Codex ran with\n%s", again)
+	}
+	writeFile(t, filepath.Join(dir, "work.config.toml"), "[features]\nplugins = true\n")
 	ask("-p", "work", "--config", "features.plugins=true")
 	if again, _ := os.ReadFile(filepath.Join(dir, "log")); strings.Count(string(again), "\n") != 4 {
 		t.Errorf("after the profile changed, Codex ran with\n%s", again)

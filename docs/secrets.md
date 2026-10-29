@@ -64,7 +64,7 @@ secrets:
 
 | Kind | Where the value comes from |
 | --- | --- |
-| `command` | the trimmed output of a command, run with a minimal environment and a time limit |
+| `command` | the trimmed output of a command, run with a minimal environment and a time limit; the daemon reuses it for a minute, or until configuration changes |
 | `keychain` | the OS keychain; store it with `agx secret set <id>`, which prompts or reads stdin |
 | `sops` | a value in a [sops](https://getsops.io)-encrypted file; see [below](#sops-encrypted-files) |
 | `oauth` | an OAuth login; only for an MCP server's `auth`, see [MCP servers](mcp.md#logging-in) |

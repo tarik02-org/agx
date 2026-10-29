@@ -36,8 +36,25 @@ type toolTarget struct {
 	client *client
 	token  string
 	scope  *v1.McpCallScope
-	// config is loaded outside a launch; inside one it may be nil.
+	// config is set outside a launch; inside one it may be nil.
 	config *config.Config
+}
+
+// launchScoped reports whether tool commands reach the servers of the launch they run in, which
+// its daemon knows without this process loading configuration.
+func launchScoped(all bool) bool {
+	_, _, ok := inLaunch()
+	return ok && !all
+}
+
+// toolConfig loads configuration for tool commands. Inside a launch, which its daemon serves from
+// its own, a configuration that does not load is no error.
+func toolConfig(paths platform.Paths, builtins config.Builtins, all bool) (*config.Config, error) {
+	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
+	if err != nil && !launchScoped(all) {
+		return nil, coded(codeConfigInvalid, err)
+	}
+	return c, nil
 }
 
 // inLaunch reports the launch whose harness environment this process runs in.
@@ -46,27 +63,24 @@ func inLaunch() (id, grant string, ok bool) {
 	return id, grant, id != "" && grant != ""
 }
 
-// newToolTarget connects to the daemon for tool commands. server, when set, is the only server
-// whose environment inputs are forwarded.
+// newToolTarget connects to the daemon for tool commands with c, as toolConfig loaded it; inside
+// a launch it may be nil. server, when set, is the only server whose environment inputs are
+// forwarded.
 func newToolTarget(
 	ctx context.Context,
 	paths platform.Paths,
-	builtins config.Builtins,
+	c *config.Config,
 	all bool,
 	server string,
 ) (*toolTarget, error) {
-	if launchID, grant, ok := inLaunch(); ok && !all {
-		// The launch's daemon runs while its harness does; its configuration is optional here.
-		c, _ := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
+	if launchScoped(all) {
+		// The launch's daemon runs while its harness does.
+		launchID, grant, _ := inLaunch()
 		client, err := newClient(paths)
 		if err != nil {
 			return nil, err
 		}
 		return &toolTarget{client: client, token: grant, scope: &v1.McpCallScope{LaunchId: launchID}, config: c}, nil
-	}
-	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
-	if err != nil {
-		return nil, coded(codeConfigInvalid, err)
 	}
 	directory, err := os.Getwd()
 	if err != nil {
@@ -140,7 +154,14 @@ func mcpToolsCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 			if len(args) > 0 {
 				server = args[0]
 			}
-			target, err := newToolTarget(cmd.Context(), *paths, *builtins, all, server)
+			var c *config.Config
+			if !launchScoped(all) {
+				var err error
+				if c, err = toolConfig(*paths, *builtins, all); err != nil {
+					return err
+				}
+			}
+			target, err := newToolTarget(cmd.Context(), *paths, c, all, server)
 			if err != nil {
 				return err
 			}
@@ -305,23 +326,20 @@ func mcpCallCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 					return &usageError{fmt.Errorf("--args: %w", err)}
 				}
 			}
+			// With one dot, server.tool splits only one way, and the launch's daemon needs no
+			// configuration from here.
 			var c *config.Config
-			if _, _, ok := inLaunch(); !ok || all {
+			if !launchScoped(all) || strings.Count(args[0], ".") > 1 {
 				var err error
-				if c, err = config.Load(
-					paths.Config,
-					config.Options{Builtins: *builtins, Cache: paths.Cache},
-				); err != nil {
-					return coded(codeConfigInvalid, err)
+				if c, err = toolConfig(*paths, *builtins, all); err != nil {
+					return err
 				}
-			} else {
-				c, _ = config.Load(paths.Config, config.Options{Builtins: *builtins, Cache: paths.Cache})
 			}
 			server, tool, err := splitTool(c, args[0])
 			if err != nil {
 				return err
 			}
-			target, err := newToolTarget(cmd.Context(), *paths, *builtins, all, server)
+			target, err := newToolTarget(cmd.Context(), *paths, c, all, server)
 			if err != nil {
 				return err
 			}
