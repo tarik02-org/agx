@@ -188,9 +188,8 @@ func RemoveUnusedArtifacts(cache string, active []string, now time.Time) {
 			}
 		case used[entry.Name()]:
 			_ = os.Chtimes(dir, now, now)
-		// v2 directories were keyed by snapshot.
 		case known && age > unusedArtifacts &&
-			(strings.HasPrefix(entry.Name(), layout+"-") || strings.HasPrefix(entry.Name(), "v2-")):
+			strings.HasPrefix(entry.Name(), layout+"-"):
 			// Renaming is quick, so launches wait for no removal.
 			removed := filepath.Join(parent, ".remove-"+entry.Name())
 			if os.Rename(dir, removed) == nil {

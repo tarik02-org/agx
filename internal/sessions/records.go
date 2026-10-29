@@ -52,20 +52,10 @@ func (r Record) window() (time.Time, time.Time) {
 // finishes, so a write costs the same however many records there are; a listing folds the lines
 // into one per record and rewrites the log, pruned. Losing the last line in a crash only costs a
 // resumption its definition, so appends are not synced.
-type Records struct{ path, legacy string }
+type Records struct{ path string }
 
 func NewRecords(state string) Records {
-	return Records{
-		path:   filepath.Join(state, "launch-records.jsonl"),
-		legacy: filepath.Join(state, "launch-records.json"),
-	}
-}
-
-// legacyFile is the whole-file format agx wrote before the log; a listing folds it into the log
-// and removes it.
-type legacyFile struct {
-	Version int      `json:"version"`
-	Records []Record `json:"records"`
+	return Records{path: filepath.Join(state, "launch-records.jsonl")}
 }
 
 // finishLine is the line Finish appends: a record line without a start.
@@ -95,13 +85,11 @@ func (r Records) append(line any) error {
 	return securefs.AppendPrivate(r.path, append(b, '\n'))
 }
 
-// lock serializes writers. The lock file is the one agx used for the whole-file format, so a wrapper
-// of an older agx still running cannot rewrite that file while a listing folds it.
 func (r Records) lock() (func(), error) {
 	if err := os.MkdirAll(filepath.Dir(r.path), 0o700); err != nil {
 		return nil, err
 	}
-	lock := flock.New(r.legacy + ".lock")
+	lock := flock.New(r.path + ".lock")
 	if err := lock.Lock(); err != nil {
 		return nil, err
 	}
@@ -139,14 +127,11 @@ func (r Records) update(change func([]Record) []Record) error {
 	if err := securefs.WritePrivate(r.path, b); err != nil {
 		return err
 	}
-	if err := os.Remove(r.legacy); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
 	return nil
 }
 
-// load folds the legacy file and the log into records, in the order of their first line; folded reports
-// whether the log already holds exactly one line per record and no legacy file is left.
+// load folds the log into records in the order of their first line; folded reports
+// whether the log already holds exactly one line per record.
 func (r Records) load() (records []Record, folded bool, err error) {
 	records = []Record{}
 	byLaunch := map[string]int{}
@@ -170,20 +155,7 @@ func (r Records) load() (records []Record, folded bool, err error) {
 			}
 		}
 	}
-	legacy := false
 	// Records only refine resumption, so damaged content is skipped instead of failing launches.
-	switch b, err := os.ReadFile(r.legacy); {
-	case err == nil:
-		legacy = true
-		var file legacyFile
-		if json.Unmarshal(b, &file) == nil && file.Version == 1 {
-			for _, record := range file.Records {
-				add(record)
-			}
-		}
-	case !errors.Is(err, fs.ErrNotExist):
-		return nil, false, err
-	}
 	b, err := os.ReadFile(r.path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, false, err
@@ -196,5 +168,5 @@ func (r Records) load() (records []Record, folded bool, err error) {
 			add(record)
 		}
 	}
-	return records, !legacy && lines == len(records), nil
+	return records, lines == len(records), nil
 }

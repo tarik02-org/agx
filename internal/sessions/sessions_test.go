@@ -3,7 +3,6 @@ package sessions
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -271,37 +270,6 @@ func TestRecordsKeepConcurrentLaunches(t *testing.T) {
 		if r.Finished == nil {
 			t.Errorf("launch %s lost its finish", r.Launch)
 		}
-	}
-}
-
-func TestRecordsFoldTheLegacyFile(t *testing.T) {
-	state := t.TempDir()
-	legacy := filepath.Join(state, "launch-records.json")
-	if err := os.WriteFile(legacy, []byte(`{"version":1,"records":[
-		{"launch":"old","harness":"codex-x","builtin":"codex","directory":"/work","started":"2026-10-01T12:00:00Z"}
-	]}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	records := NewRecords(state)
-	if err := records.Finish("old", at(5)); err != nil {
-		t.Fatal(err)
-	}
-	if err := records.Start(Record{Launch: "new", Builtin: "codex", Started: at(10)}); err != nil {
-		t.Fatal(err)
-	}
-	if err := records.update(func([]Record) []Record { return nil }); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(legacy); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("the legacy file was not removed: %v", err)
-	}
-	loaded, folded, err := records.load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(loaded) != 2 || loaded[0].Launch != "old" || loaded[0].Harness != "codex-x" ||
-		loaded[0].Finished == nil || !loaded[0].Finished.Equal(at(5)) || loaded[1].Launch != "new" || !folded {
-		t.Fatalf("records = %+v, folded %v", loaded, folded)
 	}
 }
 
