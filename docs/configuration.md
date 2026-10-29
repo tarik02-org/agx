@@ -85,7 +85,8 @@ Check what a directory ends up with:
 agx explain ~/work/legacy
 ```
 
-`explain` lists every selected and removed resource with the file and line that
+`explain` uses one compact row per selected or removed resource, with shortened
+paths and the file and line that
 decided it, and marks on-demand MCP servers. `agx config validate` checks the
 whole configuration.
 

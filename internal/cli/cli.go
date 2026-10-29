@@ -152,7 +152,6 @@ func run(osArgs []string, stdout io.Writer) int {
 	schemaCmd.Flags().BoolVar(&schemaManifest, "package", false, "print the package manifest schema instead")
 	configCmd.AddCommand(schemaCmd)
 	root.AddCommand(configCmd)
-	verbose := false
 	harness := ""
 	explain := &cobra.Command{
 		Use:     "explain [directory]",
@@ -187,15 +186,9 @@ func run(osArgs []string, stdout io.Writer) int {
 				*config.Snapshot
 				Settings []explainedSetting `json:"settings"`
 			}{snapshot, explainSettings(snapshot)}
-			return emit(document, func() error {
-				if verbose || !ui.Stdout.Styled() {
-					return printExplain(snapshot)
-				}
-				return printExplainCompact(snapshot)
-			})
+			return emit(document, func() error { return printExplain(snapshot) })
 		},
 	}
-	explain.Flags().BoolVar(&verbose, "verbose", false, "show every step with full paths")
 	explain.Flags().
 		StringVar(&harness, "harness", "", "resolve for a harness (default: harness-independent rules only)")
 	root.AddCommand(explain)

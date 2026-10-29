@@ -88,97 +88,6 @@ func plural(n int, noun string) string {
 	return fmt.Sprintf("%d %ss", n, noun)
 }
 
-func snapshotFields(out *ui.Printer, snapshot *config.Snapshot) string {
-	return out.Fields(
-		[2]string{"directory", out.Path(snapshot.Directory)},
-		[2]string{"snapshot", out.ID(snapshot.ID)},
-		[2]string{"harness", out.ID(snapshot.Harness)},
-		[2]string{"environment", strings.Join(snapshot.RequiredEnvironment, " ")},
-	)
-}
-
-// printExplain keeps the unstyled form line-oriented ("skill x (selected)", indented steps,
-// "inject <target> = <value>"); styled output draws the same lines as a tree.
-func printExplain(snapshot *config.Snapshot) error {
-	out := ui.Stdout
-	var b strings.Builder
-	b.WriteString(snapshotFields(out, snapshot))
-	if out.Styled() {
-		b.WriteString("\n" + out.Heading("Resources") + "\n")
-	} else {
-		b.WriteString("\n")
-	}
-	if len(snapshot.Traces) == 0 {
-		b.WriteString(out.Muted("No resources match this directory.") + "\n")
-	}
-	changeWidth := 0
-	for _, t := range snapshot.Traces {
-		for _, step := range t.Steps {
-			changeWidth = max(changeWidth, len(step.Change))
-		}
-	}
-	resources := out.Tree()
-	for _, t := range snapshot.Traces {
-		state, level := "removed", ui.Error
-		if t.Selected {
-			state, level = "selected", ui.OK
-		}
-		root := fmt.Sprintf("%s %s (%s)", t.Resource.Kind, t.Resource.ID, state)
-		if out.Styled() {
-			root = fmt.Sprintf("%s %s  %s", t.Resource.Kind, out.ID(string(t.Resource.ID)), out.Badge(level, state))
-		}
-		root += mcpMark(out, snapshot.Config, t.Resource)
-		if t.Order != 0 {
-			root += " " + out.Muted("order ") + strconv.Itoa(t.Order)
-		}
-		node := out.Node(root)
-		for _, step := range t.Steps {
-			node.Child(explainStep(out, step, changeWidth))
-		}
-		resources.Child(node)
-	}
-	if len(snapshot.Traces) > 0 {
-		b.WriteString(resources.String() + "\n")
-	}
-	if len(snapshot.Injections) > 0 {
-		if out.Styled() {
-			b.WriteString("\n" + out.Heading("Injected values") + "\n")
-		} else {
-			b.WriteString("\n")
-		}
-		// Tagged values are shown as configured; they resolve only at launch.
-		injections := out.Tree()
-		for _, i := range snapshot.Injections {
-			location := out.Path(fmt.Sprintf("%s:%d", i.Source.Path, i.Source.Line))
-			if out.Styled() {
-				injections.Child(out.Node(out.Label(i.Target)+" = "+out.Value(i.Text), location))
-			} else {
-				injections.Child(out.Node("inject "+i.Target+" = "+i.Text, location))
-			}
-		}
-		b.WriteString(injections.String() + "\n")
-	}
-	if settings := explainSettings(snapshot); len(settings) > 0 {
-		if out.Styled() {
-			b.WriteString("\n" + out.Heading("Settings") + "\n")
-		} else {
-			b.WriteString("\n")
-		}
-		tree := out.Tree()
-		for _, setting := range settings {
-			location := out.Path(fmt.Sprintf("%s:%d", setting.Source.Path, setting.Source.Line))
-			if out.Styled() {
-				tree.Child(out.Node(settingLine(out, setting), location))
-			} else {
-				tree.Child(out.Node("setting "+settingLine(out, setting), location))
-			}
-		}
-		b.WriteString(tree.String() + "\n")
-	}
-	_, err := io.WriteString(out, b.String())
-	return err
-}
-
 // mcpMark notes after its ID that an MCP server is on demand or shared, and how.
 func mcpMark(out *ui.Printer, c *config.Config, r config.Resource) string {
 	if r.Kind != "mcp" {
@@ -198,9 +107,9 @@ func mcpMark(out *ui.Printer, c *config.Config, r config.Resource) string {
 	return " " + out.Muted("("+strings.Join(notes, ", ")+")")
 }
 
-// printExplainCompact puts each resource on one line with the steps that decided it, shortening
+// printExplain puts each resource on one line with the steps that decided it, shortening
 // paths against the configuration directory, the explained directory, and the home directory.
-func printExplainCompact(snapshot *config.Snapshot) error {
+func printExplain(snapshot *config.Snapshot) error {
 	out := ui.Stdout
 	short := shortener(snapshot)
 	var b strings.Builder
@@ -337,35 +246,6 @@ func scopeLabel(out *ui.Printer, directory string) string {
 		return out.Muted("everywhere")
 	}
 	return out.Path(directory)
-}
-
-func explainStep(out *ui.Printer, step config.Step, changeWidth int) string {
-	location := fmt.Sprintf("%s:%d", step.Source.Path, step.Source.Line)
-	if !out.Styled() {
-		origin := "scope=" + scopeLabel(out, step.Directory)
-		if step.Harness != "" {
-			origin = "harness=" + step.Harness
-		}
-		return fmt.Sprintf("%s %s %s bundles=%v", step.Change, location, origin, step.BundleChain)
-	}
-	level := ui.OK
-	if step.Change == "remove" {
-		level = ui.Error
-	}
-	change := out.Badge(level, step.Change+strings.Repeat(" ", changeWidth-len(step.Change)))
-	origin := out.Muted("scope ") + scopeLabel(out, step.Directory)
-	if step.Harness != "" {
-		origin = out.Muted("harness ") + out.ID(step.Harness)
-	}
-	line := change + "  " + out.Path(location) + "  " + origin
-	if len(step.BundleChain) > 0 {
-		chain := []string{}
-		for _, id := range step.BundleChain {
-			chain = append(chain, out.ID(string(id)))
-		}
-		line += "  " + out.Muted("via ") + strings.Join(chain, out.Muted(" → "))
-	}
-	return line
 }
 
 func printInstalled(result packages.Result, update bool) error {

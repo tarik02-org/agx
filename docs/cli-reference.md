@@ -50,7 +50,7 @@ go before it.
 | --- | --- |
 | `agx config validate` | load and check the whole configuration |
 | `agx config schema [--root\|--package]` | print the JSON Schema for fragments, the root file, or package manifests |
-| `agx explain [dir] [--harness <name>] [--verbose]` | show why each resource is selected or removed |
+| `agx explain [dir] [--harness <name>]` | show why each resource is selected or removed |
 | `agx install [--frozen]` | install packages and write lockfiles; register Codex skill plugins |
 | `agx update [package-id...]` | move packages to their newest commit (all when none given) |
 
