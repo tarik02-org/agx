@@ -21,6 +21,8 @@ The Go module path is `github.com/tarik02-org/agx`.
   a launch, with its thread launches, to a daemon that does not hold it.
 - `RuntimeService`: inspect redacted daemon, launch, and MCP server state, with
   `WatchRuntime` supplying live views for the web UI;
+  `ListSessions` supplying cached and refreshed session history for the caller's
+  explicit store roots;
   `ListTools` and `CallTool`, which list and call the
   tools of the MCP servers in a call scope (`agx mcp tools`, `agx mcp call`, and
   the client of `agx mcp types`); list and stop MCP server processes; and `Stop`,
@@ -113,6 +115,19 @@ terminal launch cannot be revived. Revoke releases its MCP runtime without
 signaling the harness process.
 
 ## Watches and failures
+
+`ListSessions` requires management authorization and accepts absolute store roots
+keyed by built-in harness name. The caller resolves its environment and Pi
+settings before sending them; the daemon never substitutes its own store paths.
+The stream sends an existing cached listing, when available, followed by the
+result of a new scan marked `fresh`, then ends. `fresh_only` omits the interim
+cached response, as used by `agx sessions`. Failed stores are named in `errors`
+and retain their last known entries. Cancelling a caller stops its wait without
+cancelling a refresh shared with other callers. Nothing is indexed at daemon
+startup or periodically while the picker is closed.
+
+`GetRuntime` with `probe_only` answers reachability checks with an empty response
+without constructing a runtime view.
 
 Runtime watches start with a complete redacted view and send replacement views
 when state changes, at most one per 250 ms. A renewal that only extends a lease

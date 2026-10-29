@@ -16,6 +16,11 @@ A full-screen picker opens with one search field and two lists:
 - **Sessions**: earlier Codex, Claude Code, and Pi conversations, with their
   harness, age, title or first message, and directory. Enter resumes one.
 
+The picker opens before session history finishes loading, so you can start a
+new session or quit immediately. When a daemon is already running, its cached
+history appears first and refreshes in the background. Your search and selected
+session stay in place as results arrive.
+
 | Key | Action |
 | --- | --- |
 | type | filter harnesses and sessions |
@@ -50,3 +55,12 @@ Sessions are read from each harness's own storage, so sessions started without
 agx show up too. agx honours `CODEX_HOME`, `CLAUDE_CONFIG_DIR`,
 `PI_CODING_AGENT_DIR`, and Pi's session directory setting. It only reads them;
 it never changes or deletes sessions. Subagent sessions are not listed.
+
+The daemon keeps completed listings and parsed-file indexes for the stores
+selected by your shell. Only new or changed files are parsed on a refresh;
+unchanged files reuse their cached excerpts. Stores are scanned in parallel,
+and concurrent requests for the same stores share one refresh. A failed store
+keeps its last known sessions with a warning.
+
+`agx sessions` waits for a fresh scan. With no daemon available, both the command
+and picker read the stores locally; browsing history does not start a daemon.

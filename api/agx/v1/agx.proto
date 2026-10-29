@@ -62,6 +62,9 @@ service LaunchService {
 service RuntimeService {
   rpc GetRuntime(GetRuntimeRequest) returns (GetRuntimeResponse);
   rpc WatchRuntime(WatchRuntimeRequest) returns (stream WatchRuntimeResponse);
+  // Returns a cached session listing when available, then a freshly scanned listing.
+  // Store roots are resolved by the caller, whose environment may differ from the daemon's.
+  rpc ListSessions(ListSessionsRequest) returns (stream ListSessionsResponse);
   // Lists the tools of the MCP servers in a call scope. Takes a launch grant for a launch's
   // scope, or management authorization.
   rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
@@ -414,7 +417,39 @@ message RuntimeView {
   repeated Diagnostic diagnostics = 5;
 }
 
-message GetRuntimeRequest {}
+message GetRuntimeRequest {
+  // Answers a reachability check without constructing the runtime view.
+  bool probe_only = 1;
+}
+
+message ListSessionsRequest {
+  // Built-in harness name to its absolute session store root.
+  map<string, string> stores = 1;
+  // Omit the interim cached listing for callers that only need the fresh result.
+  bool fresh_only = 2;
+}
+
+message StoredSession {
+  string id = 1;
+  string directory = 2;
+  string title = 3;
+  string message = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  string builtin = 7;
+  string harness = 8;
+  bool recorded = 9;
+}
+
+message ListSessionsResponse {
+  repeated StoredSession sessions = 1;
+  uint32 parsed = 2;
+  uint32 cached = 3;
+  uint32 malformed = 4;
+  map<string, string> errors = 5;
+  // False for the cached listing sent while a refresh is in progress.
+  bool fresh = 6;
+}
 message GetRuntimeResponse {
   RuntimeView runtime = 1;
 }

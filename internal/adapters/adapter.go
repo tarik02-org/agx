@@ -40,9 +40,10 @@ type Adapter interface {
 	// Arguments returns the native arguments that bring a launch's skills, instructions, and
 	// MCP servers to the harness. They precede the definition's groups and the caller's arguments.
 	Arguments(launch Launch) ([]string, error)
-	// Sessions lists the sessions in the harness's own store, honouring its home override, and
-	// parses files through files. A missing store holds no sessions; the store is never written.
-	Sessions(ctx context.Context, files SessionFiles) ([]Session, error)
+	// SessionRoot resolves the caller's store, which may differ from the daemon's environment.
+	SessionRoot(directory string, lookup func(string) string) (string, error)
+	// Sessions lists the read-only store at root, parsing files through files.
+	Sessions(ctx context.Context, files SessionFiles, root string) ([]Session, error)
 	// Resume returns the native arguments that resume a session in its directory.
 	Resume(session Session) []string
 }

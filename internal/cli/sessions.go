@@ -13,10 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/cli/launcher"
 	"github.com/tarik02-org/agx/internal/cli/ui"
@@ -36,7 +38,7 @@ func sessionsCommand(a *app) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			listing, err := listSessions(cmd.Context(), a.paths, a.registry, a.harnesses)
+			listing, err := listSessions(cmd.Context(), a.paths, a.registry, a.harnesses, nil)
 			if err != nil {
 				return err
 			}
@@ -81,16 +83,81 @@ func listSessions(
 	paths platform.Paths,
 	registry adapters.Registry,
 	harnesses harnessConfig,
+	publish func(sessions.Listing, bool) error,
 ) (sessions.Listing, error) {
-	listing, err := sessions.List(ctx, registry, paths.Cache, paths.State)
+	directory, err := os.Getwd()
 	if err != nil {
 		return sessions.Listing{}, err
 	}
-	for i := range listing.Entries {
-		e := &listing.Entries[i]
-		if h, err := harnesses.config.Harness(e.Harness); err != nil || h.Builtin != e.Builtin {
-			e.Harness = e.Builtin
+	stores, problems := sessions.Stores(registry, directory, os.Getenv)
+	var last sessions.Listing
+	deliver := func(listing sessions.Listing, fresh bool) error {
+		if listing.Errors == nil {
+			listing.Errors = map[string]error{}
 		}
+		maps.Copy(listing.Errors, problems)
+		for i := range listing.Entries {
+			entry := &listing.Entries[i]
+			if h, err := harnesses.config.Harness(entry.Harness); err != nil || h.Builtin != entry.Builtin {
+				entry.Harness = entry.Builtin
+			}
+		}
+		last = listing
+		if publish != nil {
+			return publish(listing, fresh)
+		}
+		return nil
+	}
+	if c, err := newClient(paths); err == nil {
+		stream, err := c.runtime.ListSessions(
+			ctx,
+			connect.NewRequest(&v1.ListSessionsRequest{Stores: stores, FreshOnly: publish == nil}),
+		)
+		if err == nil {
+			defer func() { _ = stream.Close() }()
+			fresh := false
+			for stream.Receive() {
+				message := stream.Msg()
+				listing := sessions.Listing{
+					Entries: []sessions.Entry{},
+					Errors:  map[string]error{},
+					Stats: sessions.Stats{
+						Parsed:    int(message.Parsed),
+						Cached:    int(message.Cached),
+						Malformed: int(message.Malformed),
+					},
+				}
+				for name, problem := range message.Errors {
+					listing.Errors[name] = errors.New(problem)
+				}
+				for _, entry := range message.Sessions {
+					listing.Entries = append(listing.Entries, sessions.Entry{
+						Session: adapters.Session{
+							ID: entry.Id, Directory: entry.Directory, Title: entry.Title, Message: entry.Message,
+							Started: entry.StartedAt.AsTime(), Updated: entry.UpdatedAt.AsTime(),
+						},
+						Builtin: entry.Builtin, Harness: entry.Harness, Recorded: entry.Recorded,
+					})
+				}
+				if err := deliver(listing, message.Fresh); err != nil {
+					return sessions.Listing{}, err
+				}
+				fresh = message.Fresh
+			}
+			if stream.Err() == nil && fresh {
+				return last, nil
+			}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return sessions.Listing{}, err
+	}
+	listing, err := sessions.List(ctx, registry, paths.Cache, paths.State, stores)
+	if err != nil {
+		return sessions.Listing{}, err
+	}
+	if err := deliver(listing, true); err != nil {
+		return sessions.Listing{}, err
 	}
 	return listing, nil
 }
@@ -172,15 +239,17 @@ func runLauncher(ctx context.Context, paths platform.Paths, registry adapters.Re
 	if err != nil {
 		return err
 	}
-	listing, err := listSessions(ctx, paths, registry, harnesses)
-	if err != nil {
-		return err
-	}
 	opts := launcher.Options{
-		Sessions:  listing.Entries,
 		Directory: directory,
 		Profile:   ui.Stdout.Profile(),
-		Notes:     listingNotes(listing),
+		LoadSessions: func(ctx context.Context, publish func(launcher.SessionUpdate) error) error {
+			_, err := listSessions(ctx, paths, registry, harnesses, func(listing sessions.Listing, fresh bool) error {
+				return publish(launcher.SessionUpdate{
+					Entries: listing.Entries, Notes: listingNotes(listing), Loading: !fresh,
+				})
+			})
+			return err
+		},
 	}
 	if harnesses.err != nil {
 		opts.Notes = append(opts.Notes, fmt.Sprintf("Only built-ins: configuration did not load: %v", harnesses.err))

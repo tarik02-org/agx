@@ -32,7 +32,20 @@ type Options struct {
 	Directory string
 	Profile   colorprofile.Profile
 	// Notes are shown under the key help, such as stores that could not be read.
-	Notes []string
+	Notes        []string
+	LoadSessions func(context.Context, func(SessionUpdate) error) error
+}
+
+type SessionUpdate struct {
+	Entries []sessions.Entry
+	Notes   []string
+	Loading bool
+}
+
+type sessionResult struct {
+	update SessionUpdate
+	err    error
+	closed bool
 }
 
 type Action int
@@ -54,8 +67,32 @@ type Choice struct {
 // Run shows the launcher until the user picks or quits. The terminal is restored when it returns,
 // so the caller can hand it to a harness.
 func Run(ctx context.Context, opts Options) (Choice, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	m := newModel(opts)
+	if opts.LoadSessions != nil {
+		updates := make(chan sessionResult)
+		m.updates = updates
+		go func() {
+			defer close(updates)
+			err := opts.LoadSessions(ctx, func(update SessionUpdate) error {
+				select {
+				case updates <- sessionResult{update: update}:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			})
+			if err != nil {
+				select {
+				case updates <- sessionResult{err: err}:
+				case <-ctx.Done():
+				}
+			}
+		}()
+	}
 	final, err := tea.NewProgram(
-		newModel(opts),
+		m,
 		tea.WithContext(ctx),
 		tea.WithColorProfile(opts.Profile),
 	).Run()
@@ -70,23 +107,46 @@ type row struct {
 	entry   *sessions.Entry
 }
 
+type lineKind int
+
+const (
+	listRow lineKind = iota
+	harnessHeading
+	sessionHeading
+	blankLine
+	emptySessions
+)
+
+type bodyLine struct {
+	kind lineKind
+	row  int
+}
+
 type model struct {
-	opts     Options
-	here     []sessions.Entry
-	input    textinput.Model
-	all      bool
-	rows     []row
-	cursor   int
-	offset   int
-	width    int
-	height   int
-	picker   []string
-	picked   int
-	choice   Choice
-	styles   styles
-	now      time.Time
-	plain    bool
-	quitting bool
+	opts          Options
+	here          []sessions.Entry
+	input         textinput.Model
+	all           bool
+	rows          []row
+	lines         []bodyLine
+	rowLines      []int
+	harnessWidth  int
+	sessionCount  int
+	cursor        int
+	offset        int
+	width         int
+	height        int
+	picker        []string
+	picked        int
+	pickerSession sessions.Entry
+	updates       <-chan sessionResult
+	loading       bool
+	notes         []string
+	choice        Choice
+	styles        styles
+	now           time.Time
+	plain         bool
+	quitting      bool
 }
 
 type styles struct {
@@ -104,13 +164,14 @@ func newModel(opts Options) model {
 	input.SetStyles(s)
 	input.Focus()
 	m := model{
-		opts:   opts,
-		here:   sessions.Within(opts.Sessions, opts.Directory),
-		input:  input,
-		width:  80,
-		height: 24,
-		now:    time.Now(),
-		plain:  opts.Profile <= colorprofile.ASCII,
+		opts:    opts,
+		here:    sessions.Within(opts.Sessions, opts.Directory),
+		input:   input,
+		width:   80,
+		height:  24,
+		now:     time.Now(),
+		plain:   opts.Profile <= colorprofile.ASCII,
+		loading: opts.LoadSessions != nil,
 		styles: styles{
 			heading:  lipgloss.NewStyle().Bold(true),
 			selected: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Cyan),
@@ -125,10 +186,53 @@ func newModel(opts Options) model {
 	return m
 }
 
-func (m model) Init() tea.Cmd { return nil }
+func (m model) Init() tea.Cmd { return m.nextSessions() }
+
+func (m model) nextSessions() tea.Cmd {
+	if m.updates == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		result, ok := <-m.updates
+		if !ok {
+			return sessionResult{closed: true}
+		}
+		return result
+	}
+}
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case sessionResult:
+		if msg.closed {
+			m.loading = false
+			return m, nil
+		}
+		if msg.err != nil {
+			m.loading = false
+			m.notes = append(m.notes, "Cannot list sessions: "+msg.err.Error())
+			m.scroll()
+			return m, m.nextSessions()
+		}
+		var selected row
+		if m.cursor < len(m.rows) {
+			selected = m.rows[m.cursor]
+		}
+		m.opts.Sessions = msg.update.Entries
+		m.now = time.Now()
+		m.here = sessions.Within(msg.update.Entries, m.opts.Directory)
+		m.notes, m.loading = msg.update.Notes, msg.update.Loading
+		m.refresh()
+		for i, candidate := range m.rows {
+			if selected.harness != nil && candidate.harness != nil && selected.harness.Name == candidate.harness.Name ||
+				selected.entry != nil && candidate.entry != nil && selected.entry.Builtin == candidate.entry.Builtin &&
+					selected.entry.ID == candidate.entry.ID {
+				m.cursor = i
+				break
+			}
+		}
+		m.scroll()
+		return m, m.nextSessions()
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.input.SetWidth(max(m.width-len(m.input.Prompt)-1, 1))
@@ -161,7 +265,7 @@ func (m model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case "down", "ctrl+n":
 			m.picked = min(m.picked+1, len(m.picker)-1)
 		case "enter":
-			return m.quit(Choice{Action: Resume, Harness: m.picker[m.picked], Session: *m.rows[m.cursor].entry})
+			return m.quit(Choice{Action: Resume, Harness: m.picker[m.picked], Session: m.pickerSession})
 		}
 		return m, nil
 	}
@@ -191,6 +295,7 @@ func (m model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+h":
 		if len(m.rows) > 0 && m.rows[m.cursor].entry != nil {
 			e := m.rows[m.cursor].entry
+			m.pickerSession = *e
 			m.picker = []string{}
 			m.picked = 0
 			for _, h := range m.opts.Harnesses {
@@ -258,11 +363,12 @@ func (m *model) refresh() {
 		m.rows = append(m.rows, row{entry: &found[i]})
 	}
 	m.cursor = min(m.cursor, max(len(m.rows)-1, 0))
+	m.layoutRows()
 	m.scroll()
 }
 
 // Lines above and below the list: the search field and scope, and the key help with notes.
-func (m model) chrome() int { return 3 + 2 + len(m.opts.Notes) }
+func (m model) chrome() int { return 3 + 2 + len(m.opts.Notes) + len(m.notes) }
 
 func (m model) visible() int { return max(m.height-m.chrome(), 3) }
 
@@ -277,82 +383,84 @@ func (m *model) scroll() {
 	if line >= m.offset+visible {
 		m.offset = line - visible + 1
 	}
-	m.offset = max(min(m.offset, len(m.body())-visible), 0)
+	m.offset = max(min(m.offset, len(m.lines)-visible), 0)
 }
 
 // lineOf is the body line holding row i.
 func (m model) lineOf(i int) int {
-	_, lines := m.layout()
-	if i < len(lines) {
-		return lines[i]
+	if i >= 0 && i < len(m.rowLines) {
+		return m.rowLines[i]
 	}
 	return 0
 }
 
-func (m model) body() []string {
-	body, _ := m.layout()
-	return body
-}
-
-// layout renders the list body and records which line holds each row.
-func (m model) layout() ([]string, []int) {
-	body := []string{}
-	lines := make([]int, len(m.rows))
+func (m *model) layoutRows() {
+	m.lines = m.lines[:0]
+	m.rowLines = make([]int, len(m.rows))
+	m.harnessWidth = 0
 	harnesses, entries := 0, 0
 	for _, r := range m.rows {
 		if r.harness != nil {
 			harnesses++
+			m.harnessWidth = max(m.harnessWidth, ansi.StringWidth(r.harness.Name))
 		} else {
 			entries++
+			m.harnessWidth = max(m.harnessWidth, ansi.StringWidth(r.entry.Harness))
 		}
 	}
-	query := strings.TrimSpace(m.input.Value())
+	m.harnessWidth = min(m.harnessWidth, 20)
+	m.sessionCount = entries
 	if harnesses > 0 {
-		body = append(body, m.render(m.styles.heading, "New session"))
+		m.lines = append(m.lines, bodyLine{kind: harnessHeading})
 	}
-	width := 0
-	for _, r := range m.rows {
-		if r.entry != nil {
-			width = max(width, ansi.StringWidth(r.entry.Harness))
-		} else {
-			width = max(width, ansi.StringWidth(r.harness.Name))
-		}
-	}
-	width = min(width, 20)
 	for i, r := range m.rows {
-		if r.harness == nil {
-			if i == harnesses {
-				if harnesses > 0 {
-					body = append(body, "")
-				}
-				body = append(body, m.sessionsHeading(entries))
+		if r.entry != nil && i == harnesses {
+			if harnesses > 0 {
+				m.lines = append(m.lines, bodyLine{kind: blankLine})
 			}
-			lines[i] = len(body)
-			body = append(body, m.sessionRow(*r.entry, width, i == m.cursor))
-			continue
+			m.lines = append(m.lines, bodyLine{kind: sessionHeading})
 		}
-		lines[i] = len(body)
-		text := pad(r.harness.Name, width)
-		if r.harness.Builtin != r.harness.Name {
-			text += "  " + m.render(m.styles.muted, r.harness.Builtin)
-		}
-		body = append(body, m.line(text, i == m.cursor))
+		m.rowLines[i] = len(m.lines)
+		m.lines = append(m.lines, bodyLine{kind: listRow, row: i})
 	}
 	if entries == 0 {
 		if harnesses > 0 {
-			body = append(body, "")
+			m.lines = append(m.lines, bodyLine{kind: blankLine})
 		}
-		body = append(body, m.sessionsHeading(0))
-		switch {
-		case query != "":
-			body = append(body, "  "+m.render(m.styles.muted, "No matching sessions."))
-		case !m.all:
-			body = append(body, "  "+m.render(m.styles.muted, "No sessions in this directory. Tab shows all."))
-		default:
-			body = append(body, "  "+m.render(m.styles.muted, "No sessions yet."))
-		}
+		m.lines = append(m.lines, bodyLine{kind: sessionHeading}, bodyLine{kind: emptySessions})
 	}
-	return body, lines
+}
+
+func (m model) renderLine(line bodyLine) string {
+	switch line.kind {
+	case harnessHeading:
+		return m.render(m.styles.heading, "New session")
+	case sessionHeading:
+		return m.sessionsHeading(m.sessionCount)
+	case emptySessions:
+		text := "No sessions yet."
+		switch {
+		case m.loading:
+			text = "Loading sessions…"
+		case strings.TrimSpace(m.input.Value()) != "":
+			text = "No matching sessions."
+		case !m.all:
+			text = "No sessions in this directory. Tab shows all."
+		}
+		return "  " + m.render(m.styles.muted, text)
+	case listRow:
+		row := m.rows[line.row]
+		if row.entry != nil {
+			return m.sessionRow(*row.entry, m.harnessWidth, line.row == m.cursor)
+		}
+		text := pad(row.harness.Name, m.harnessWidth)
+		if row.harness.Builtin != row.harness.Name {
+			text += "  " + m.render(m.styles.muted, row.harness.Builtin)
+		}
+		return m.line(text, line.row == m.cursor)
+	default:
+		return ""
+	}
 }
 
 func (m model) sessionsHeading(count int) string {
@@ -423,7 +531,7 @@ func (m model) View() tea.View {
 	b.WriteString(m.render(m.styles.muted, scope) + "\n\n")
 	visible := m.visible()
 	if m.picker != nil {
-		e := m.rows[m.cursor].entry
+		e := &m.pickerSession
 		title := cmp.Or(e.Title, e.Message, e.ID)
 		b.WriteString(m.render(m.styles.heading, "Resume with") + " " +
 			m.render(m.styles.muted, ansi.Truncate(title, max(m.width-14, 8), "…")) + "\n")
@@ -434,10 +542,9 @@ func (m model) View() tea.View {
 			b.WriteString("\n")
 		}
 	} else {
-		body := m.body()
-		end := min(m.offset+visible, len(body))
-		for _, line := range body[m.offset:end] {
-			b.WriteString(line + "\n")
+		end := min(m.offset+visible, len(m.lines))
+		for _, line := range m.lines[m.offset:end] {
+			b.WriteString(m.renderLine(line) + "\n")
 		}
 		for range visible - (end - m.offset) {
 			b.WriteString("\n")
@@ -448,7 +555,7 @@ func (m model) View() tea.View {
 		help = "↑↓ move · enter resume · esc back"
 	}
 	b.WriteString("\n" + m.render(m.styles.muted, help))
-	for _, note := range m.opts.Notes {
+	for _, note := range append(append([]string{}, m.opts.Notes...), m.notes...) {
 		b.WriteString("\n" + m.render(m.styles.warn, note))
 	}
 	lines := strings.Split(b.String(), "\n")

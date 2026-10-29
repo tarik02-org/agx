@@ -251,7 +251,7 @@ func daemonReachable(paths platform.Paths) bool {
 	if err != nil {
 		return false
 	}
-	_, err = c.runtime.GetRuntime(context.Background(), connect.NewRequest(&v1.GetRuntimeRequest{}))
+	_, err = c.runtime.GetRuntime(context.Background(), connect.NewRequest(&v1.GetRuntimeRequest{ProbeOnly: true}))
 	return err == nil
 }
 

@@ -67,19 +67,10 @@ func run(osArgs []string, stdout io.Writer) int {
 	root.SetHelpFunc(help)
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		ui.Configure(color)
-		var err error
-		a.paths.Config, err = filepath.Abs(a.paths.Config)
-		if err != nil {
+		if err := a.paths.Derive(); err != nil {
 			return err
 		}
-		a.paths.Cache, err = filepath.Abs(a.paths.Cache)
-		if err != nil {
-			return err
-		}
-		if err := checkExplicitConfig(root, cmd, a.paths.Config); err != nil {
-			return err
-		}
-		return a.paths.Derive()
+		return checkExplicitConfig(root, cmd, a.paths.Config)
 	}
 	a.registry = builtin.Registry()
 	// builtins is complete once the command tree is, as definitions cannot shadow its commands.
@@ -269,6 +260,9 @@ func run(osArgs []string, stdout io.Writer) int {
 	}
 	a.builtins = a.registry.Builtins(reserved)
 	if name := invokedName(osArgs[0]); name != root.Name() {
+		if err := a.paths.Derive(); err != nil {
+			return exitCode(err)
+		}
 		if self, err := os.Executable(); err == nil {
 			if current, ok := shims.Origin(self); ok {
 				return handOff(current, name, osArgs[1:])
@@ -317,12 +311,15 @@ func run(osArgs []string, stdout io.Writer) int {
 		return exitCode(&usageError{err})
 	}
 	ui.Configure(color)
-	configPath, err := platform.Canonical(a.paths.Config)
-	if err != nil {
+	if err := a.paths.Derive(); err != nil {
 		return exitCode(err)
 	}
-	a.paths.Config = configPath
-	a.harnesses = a.fragments()
+	versionOnly := len(args) == 1 && (args[0] == "--version" || args[0] == "-v")
+	if !completing && (versionOnly || len(args) > 0 && args[0] == "daemon") {
+		a.harnesses = harnessConfig{path: a.paths.Config, config: config.Bare(a.builtins)}
+	} else {
+		a.harnesses = a.fragments()
+	}
 	for _, name := range a.harnesses.config.HarnessNames() {
 		short := "Launch " + name + " with directory-scoped resources"
 		if _, builtin := a.registry.Adapter(name); !builtin {
