@@ -21,7 +21,6 @@ import (
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/configedit"
-	"github.com/tarik02-org/agx/internal/platform"
 )
 
 // interactive reports whether a person can answer prompts: stdin and stderr are terminals.
@@ -138,12 +137,12 @@ type definitionID struct {
 	ID   string      `json:"id"`
 }
 
-func newSession(ctx context.Context, paths platform.Paths, builtins config.Builtins, yes bool) (*session, error) {
-	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
+func (a *app) newSession(ctx context.Context, yes bool) (*session, error) {
+	c, err := a.config()
 	if err != nil {
 		return nil, fmt.Errorf("configuration is invalid; fix it before editing: %w", err)
 	}
-	edits, err := configedit.New(paths, builtins, c)
+	edits, err := configedit.New(a.paths, a.builtins, c)
 	if err != nil {
 		return nil, err
 	}

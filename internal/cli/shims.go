@@ -10,14 +10,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/cli/ui"
-	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/shims"
 )
 
-func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *config.Builtins) *cobra.Command {
+func shimsCommand(a *app) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "shims",
 		Short:   "Expose harness definitions as executables on PATH",
@@ -25,13 +22,13 @@ func shimsCommand(paths *platform.Paths, registry adapters.Registry, builtins *c
 	}
 	// Shims exist for definitions only: a built-in's shim would shadow its native executable.
 	definitions := func() ([]string, error) {
-		c, err := config.Load(paths.Config, config.Options{Builtins: *builtins})
+		c, err := a.fragmentConfig()
 		if err != nil {
 			return nil, err
 		}
 		names := []string{}
 		for _, name := range c.HarnessNames() {
-			if _, builtin := registry.Adapter(name); !builtin {
+			if _, builtin := a.registry.Adapter(name); !builtin {
 				names = append(names, name)
 			}
 		}

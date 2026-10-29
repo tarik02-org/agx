@@ -161,11 +161,11 @@ func TestConfiguredAutostart(t *testing.T) {
 	}
 	on := true
 	loaded := harnessConfig{path: root, config: &config.Config{Daemon: config.Daemon{Autostart: &on}}}
-	if !configuredAutostart(platform.Paths{Config: root}, config.Builtins{}, loaded) {
+	if !(&app{paths: platform.Paths{Config: root}, harnesses: loaded}).autostart() {
 		t.Error("the loaded fragments were read again")
 	}
 	loaded.path = filepath.Join(dir, "other.yaml")
-	if configuredAutostart(platform.Paths{Config: root}, config.Builtins{}, loaded) {
+	if (&app{paths: platform.Paths{Config: root}, harnesses: loaded}).autostart() {
 		t.Error("fragments of another root configuration decided")
 	}
 }

@@ -76,7 +76,7 @@ type doctorReport struct {
 	} `json:"summary"`
 }
 
-func doctorCommand(paths *platform.Paths, registry adapters.Registry, builtins *config.Builtins) *cobra.Command {
+func doctorCommand(a *app) *cobra.Command {
 	all := false
 	command := &cobra.Command{
 		Use:     "doctor [directory]",
@@ -98,7 +98,7 @@ func doctorCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			if err != nil {
 				return err
 			}
-			report := runDoctor(cmd.Context(), *paths, registry, *builtins, directory, all)
+			report := a.runDoctor(cmd.Context(), directory, all)
 			if err := emit(report, func() error { return printDoctor(report) }); err != nil {
 				return err
 			}
@@ -112,18 +112,15 @@ func doctorCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 	return command
 }
 
-func runDoctor(
+func (a *app) runDoctor(
 	ctx context.Context,
-	paths platform.Paths,
-	registry adapters.Registry,
-	builtins config.Builtins,
 	directory string,
 	all bool,
 ) doctorReport {
-	report := doctorReport{Directory: directory, Root: paths.Config, Files: []string{}}
+	report := doctorReport{Directory: directory, Root: a.paths.Config, Files: []string{}}
 	add := func(checks ...check) { report.Checks = append(report.Checks, checks...) }
 
-	c, loaded, checks := configChecks(paths, builtins)
+	c, loaded, checks := a.configChecks()
 	add(checks...)
 	if c.Root != "" {
 		report.Root = c.Root
@@ -133,10 +130,10 @@ func runDoctor(
 	}
 
 	executables := map[string]string{}
-	harnessRows := make([]check, len(registry.Names()))
+	harnessRows := make([]check, len(a.registry.Names()))
 	var wg sync.WaitGroup
-	for i, name := range registry.Names() {
-		adapter, _ := registry.Adapter(name)
+	for i, name := range a.registry.Names() {
+		adapter, _ := a.registry.Adapter(name)
 		configured := ""
 		if h, err := c.Harness(name); err == nil {
 			configured = h.Executable
@@ -168,10 +165,10 @@ func runDoctor(
 	add(harnessRows...)
 
 	if loaded && len(c.Skills) > 0 {
-		add(definitionChecks(ctx, c, registry, paths.Cache)...)
+		add(definitionChecks(ctx, c, a.registry, a.paths.Cache)...)
 	}
 
-	client, daemonRow := connectDaemon(ctx, paths, c)
+	client, daemonRow := connectDaemon(ctx, a.paths, c)
 	add(daemonRow)
 	if client != nil && loaded {
 		add(mcpChecks(ctx, client, c, directory, all)...)
@@ -180,7 +177,7 @@ func runDoctor(
 		add(secretChecks(ctx, client)...)
 	}
 	add(sopsChecks(c, exec.LookPath)...)
-	add(shimChecks(c, registry)...)
+	add(shimChecks(c, a.registry)...)
 
 	for _, ch := range report.Checks {
 		switch ch.Status {
@@ -197,10 +194,10 @@ func runDoctor(
 
 // configChecks loads the configuration. When it does not load, the fragments alone, or else
 // only the built-ins, still let the other checks run; loaded reports a complete load.
-func configChecks(paths platform.Paths, builtins config.Builtins) (*config.Config, bool, []check) {
-	read, readErr := config.Load(paths.Config, config.Options{Builtins: builtins})
+func (a *app) configChecks() (*config.Config, bool, []check) {
+	read, readErr := a.fragmentConfig()
 	if readErr != nil {
-		return config.Bare(builtins), false, []check{{
+		return config.Bare(a.builtins), false, []check{{
 			Group:  "config",
 			Name:   "configuration",
 			Status: checkFail,
@@ -208,11 +205,11 @@ func configChecks(paths platform.Paths, builtins config.Builtins) (*config.Confi
 			Hint:   "fix the reported fragment; agx config validate shows the error",
 		}}
 	}
-	c, loadErr := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
+	c, loadErr := a.config()
 	c, loaded, checks := packageChecks(read, c, loadErr, filesDetail(read))
 	// Loading trusts installed content; a damaged cache entry stays until it is removed.
 	if loaded {
-		if err := c.VerifyPackages(paths.Cache); err != nil {
+		if err := c.VerifyPackages(a.paths.Cache); err != nil {
 			checks[len(checks)-1] = check{
 				Group:  "config",
 				Name:   "packages",

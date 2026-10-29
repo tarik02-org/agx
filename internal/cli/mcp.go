@@ -22,26 +22,26 @@ import (
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
-func mcpCommand(paths *platform.Paths, builtins *config.Builtins, fragments *harnessConfig) *cobra.Command {
+func mcpCommand(a *app) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "mcp",
 		Short:   "Add, list, remove, and call MCP servers",
 		GroupID: "config",
 	}
 	command.AddCommand(
-		mcpAddCommand(paths, builtins),
-		listCommand(paths, builtins, config.KindMCPServers),
-		removeCommand(paths, builtins, config.KindMCPServers),
-		mcpToolsCommand(paths, builtins),
-		mcpCallCommand(paths, builtins),
-		mcpTypesCommand(paths, builtins),
-		mcpProcessesCommand(paths, builtins, fragments),
-		mcpStopCommand(paths, builtins, fragments),
+		mcpAddCommand(a),
+		listCommand(a, config.KindMCPServers),
+		removeCommand(a, config.KindMCPServers),
+		mcpToolsCommand(a),
+		mcpCallCommand(a),
+		mcpTypesCommand(a),
+		mcpProcessesCommand(a),
+		mcpStopCommand(a),
 	)
 	return command
 }
 
-func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func mcpAddCommand(a *app) *cobra.Command {
 	var flags editFlags
 	var headers, env []string
 	authValue, clientID, description, load, share := "", "", "", "", ""
@@ -67,7 +67,7 @@ func mcpAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			return cobra.MaximumNArgs(2)(cmd, args)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := newSession(cmd.Context(), *paths, *builtins, flags.yes)
+			s, err := a.newSession(cmd.Context(), flags.yes)
 			if err != nil {
 				return err
 			}
@@ -312,7 +312,7 @@ func location(c *config.Config, source config.Source) string {
 }
 
 // listCommand lists the definitions of a kind as a table or JSON.
-func listCommand(paths *platform.Paths, builtins *config.Builtins, kind config.Kind) *cobra.Command {
+func listCommand(a *app, kind config.Kind) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "list",
 		Short: map[config.Kind]string{
@@ -326,9 +326,9 @@ func listCommand(paths *platform.Paths, builtins *config.Builtins, kind config.K
 			var c *config.Config
 			var err error
 			if kind == config.KindHarnesses {
-				c, err = config.Load(paths.Config, config.Options{Builtins: *builtins})
+				c, err = a.fragmentConfig()
 			} else {
-				c, err = config.Load(paths.Config, config.Options{Builtins: *builtins, Cache: paths.Cache})
+				c, err = a.config()
 			}
 			if err != nil {
 				return err
@@ -360,7 +360,7 @@ func listCommand(paths *platform.Paths, builtins *config.Builtins, kind config.K
 }
 
 // removeCommand deletes a definition, refusing while other entries reference it unless forced.
-func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind config.Kind) *cobra.Command {
+func removeCommand(a *app, kind config.Kind) *cobra.Command {
 	var flags editFlags
 	force := false
 	cmd := &cobra.Command{
@@ -368,7 +368,7 @@ func removeCommand(paths *platform.Paths, builtins *config.Builtins, kind config
 		Short: removeShort(kind.Label()),
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := newSession(cmd.Context(), *paths, *builtins, flags.yes)
+			s, err := a.newSession(cmd.Context(), flags.yes)
 			if err != nil {
 				return err
 			}

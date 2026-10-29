@@ -24,7 +24,7 @@ import (
 	"github.com/tarik02-org/agx/internal/sessions"
 )
 
-func sessionsCommand(paths *platform.Paths, registry adapters.Registry, harnesses *harnessConfig) *cobra.Command {
+func sessionsCommand(a *app) *cobra.Command {
 	all := false
 	cmd := &cobra.Command{
 		Use:     "sessions [query]",
@@ -35,7 +35,7 @@ func sessionsCommand(paths *platform.Paths, registry adapters.Registry, harnesse
 			if err != nil {
 				return err
 			}
-			listing, err := listSessions(cmd.Context(), *paths, registry, *harnesses)
+			listing, err := listSessions(cmd.Context(), a.paths, a.registry, a.harnesses)
 			if err != nil {
 				return err
 			}

@@ -7,10 +7,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/spf13/cobra"
 
 	"github.com/tarik02-org/agx/gen/agx/v1/agxv1connect"
-	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/daemon"
 	"github.com/tarik02-org/agx/internal/platform"
 )
@@ -100,15 +98,4 @@ func (i daemonInterceptor) WrapStreamingClient(next connect.StreamingClientFunc)
 
 func (daemonInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
 	return next
-}
-
-// commandClient connects a command to the daemon, starting one unless the configuration turns
-// autostart off.
-func commandClient(
-	cmd *cobra.Command,
-	paths *platform.Paths,
-	builtins *config.Builtins,
-	fragments *harnessConfig,
-) (*client, error) {
-	return daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins, *fragments))
 }

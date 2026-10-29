@@ -19,19 +19,18 @@ import (
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/configedit"
-	"github.com/tarik02-org/agx/internal/platform"
 )
 
-func skillCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func skillCommand(a *app) *cobra.Command {
 	command := &cobra.Command{Use: "skill", Short: "Add, list, and remove skills", GroupID: "config"}
-	remove := removeCommand(paths, builtins, config.KindSkills)
+	remove := removeCommand(a, config.KindSkills)
 	remove.Use = "remove <id | package-id>"
 	remove.Short = "Remove a skill definition, or a package that skill add declared with its skills"
 	remove.Example = "  agx skill remove deploy\n" +
 		"  agx skill remove anthropics      # the package agx skill add anthropics/skills declared"
 	command.AddCommand(
-		skillAddCommand(paths, builtins),
-		listCommand(paths, builtins, config.KindSkills),
+		skillAddCommand(a),
+		listCommand(a, config.KindSkills),
 		remove,
 	)
 	return command
@@ -144,7 +143,7 @@ func writtenPath(file, path string) string {
 	return configedit.HomeRelative(path)
 }
 
-func skillAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func skillAddCommand(a *app) *cobra.Command {
 	var flags editFlags
 	var choice skillChoice
 	var ref, subdir, packageID, githubBase string
@@ -157,7 +156,7 @@ func skillAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 			"  agx skill add anthropics/skills --skill pdf --skill docx",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := newSession(cmd.Context(), *paths, *builtins, flags.yes)
+			s, err := a.newSession(cmd.Context(), flags.yes)
 			if err != nil {
 				return err
 			}

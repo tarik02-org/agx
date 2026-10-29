@@ -18,7 +18,6 @@ import (
 	"github.com/spf13/pflag"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
-	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
@@ -41,6 +40,7 @@ func run(osArgs []string, stdout io.Writer) int {
 	if err != nil {
 		return exitCode(err)
 	}
+	a := &app{paths: paths}
 	root := &cobra.Command{
 		Use:           "agx",
 		Short:         "Directory-scoped skills, MCP servers, and instructions",
@@ -50,8 +50,8 @@ func run(osArgs []string, stdout io.Writer) int {
 	}
 	root.SetOut(stdout)
 	root.SetErr(os.Stderr)
-	root.PersistentFlags().StringVar(&paths.Config, "config", paths.Config, "root configuration file")
-	root.PersistentFlags().StringVar(&paths.Cache, "cache", paths.Cache, "immutable package and artifact cache")
+	root.PersistentFlags().StringVar(&a.paths.Config, "config", a.paths.Config, "root configuration file")
+	root.PersistentFlags().StringVar(&a.paths.Cache, "cache", a.paths.Cache, "immutable package and artifact cache")
 	color := ui.ColorAuto
 	root.PersistentFlags().Var(&color, "color", "style output: auto (terminals without NO_COLOR), always, never")
 	root.PersistentFlags().
@@ -68,23 +68,21 @@ func run(osArgs []string, stdout io.Writer) int {
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		ui.Configure(color)
 		var err error
-		paths.Config, err = filepath.Abs(paths.Config)
+		a.paths.Config, err = filepath.Abs(a.paths.Config)
 		if err != nil {
 			return err
 		}
-		paths.Cache, err = filepath.Abs(paths.Cache)
+		a.paths.Cache, err = filepath.Abs(a.paths.Cache)
 		if err != nil {
 			return err
 		}
-		if err := checkExplicitConfig(root, cmd, paths.Config); err != nil {
+		if err := checkExplicitConfig(root, cmd, a.paths.Config); err != nil {
 			return err
 		}
-		return paths.Derive()
+		return a.paths.Derive()
 	}
-	registry := builtin.Registry()
+	a.registry = builtin.Registry()
 	// builtins is complete once the command tree is, as definitions cannot shadow its commands.
-	var builtins config.Builtins
-	var harnesses harnessConfig
 	root.AddCommand(
 		&cobra.Command{
 			Use:                "run <harness> -- [native arguments...]",
@@ -93,14 +91,14 @@ func run(osArgs []string, stdout io.Writer) int {
 			DisableFlagParsing: true,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				if len(args) == 0 {
-					return fmt.Errorf("harness required: %s", strings.Join(harnesses.config.HarnessNames(), ", "))
+					return fmt.Errorf("harness required: %s", strings.Join(a.harnesses.config.HarnessNames(), ", "))
 				}
 				name := args[0]
 				args = args[1:]
 				if len(args) > 0 && args[0] == "--" {
 					args = args[1:]
 				}
-				return runHarness(cmd.Context(), paths, registry, harnesses, name, args, "")
+				return runHarness(cmd.Context(), a.paths, a.registry, a.harnesses, name, args, "")
 			},
 		},
 	)
@@ -110,7 +108,7 @@ func run(osArgs []string, stdout io.Writer) int {
 		Short: "Load and validate the configuration",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
+			c, err := a.config()
 			if err != nil {
 				return err
 			}
@@ -140,7 +138,7 @@ func run(osArgs []string, stdout io.Writer) int {
 			case schemaManifest:
 				kind = config.ManifestSchema
 			}
-			b, err := config.Schema(kind, builtins)
+			b, err := config.Schema(kind, a.builtins)
 			if err != nil {
 				return err
 			}
@@ -163,7 +161,7 @@ func run(osArgs []string, stdout io.Writer) int {
 			if len(args) > 0 {
 				directory = args[0]
 			}
-			c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
+			c, err := a.config()
 			if err != nil {
 				return err
 			}
@@ -201,7 +199,7 @@ func run(osArgs []string, stdout io.Writer) int {
 	frozen := false
 	install.Flags().BoolVar(&frozen, "frozen", false, "require unchanged lockfiles and content")
 	install.RunE = func(cmd *cobra.Command, args []string) error {
-		return installPackages(cmd.Context(), paths, registry, builtins, frozen, nil, false)
+		return a.installPackages(cmd.Context(), frozen, nil, false)
 	}
 	root.AddCommand(install)
 	update := &cobra.Command{
@@ -213,7 +211,7 @@ func run(osArgs []string, stdout io.Writer) int {
 			for _, id := range args {
 				ids = append(ids, config.ID(id))
 			}
-			return installPackages(cmd.Context(), paths, registry, builtins, false, ids, len(ids) == 0)
+			return a.installPackages(cmd.Context(), false, ids, len(ids) == 0)
 		},
 	}
 	root.AddCommand(update)
@@ -224,21 +222,21 @@ func run(osArgs []string, stdout io.Writer) int {
 		if !ui.Stdout.Terminal() || !term.IsTerminal(os.Stdin.Fd()) {
 			return cmd.Help()
 		}
-		return runLauncher(cmd.Context(), paths, registry, harnesses)
+		return runLauncher(cmd.Context(), a.paths, a.registry, a.harnesses)
 	}
 	root.AddCommand(
-		sessionsCommand(&paths, registry, &harnesses),
-		daemonCommand(&paths, registry, &builtins),
-		doctorCommand(&paths, registry, &builtins),
-		launchCommand(&paths, &builtins, &harnesses),
-		secretCommand(&paths, &builtins, &harnesses),
-		shimsCommand(&paths, registry, &builtins),
-		mcpCommand(&paths, &builtins, &harnesses),
-		skillCommand(&paths, &builtins),
-		instructionsCommand(&paths, &builtins),
-		harnessCommand(&paths, &builtins),
+		sessionsCommand(a),
+		daemonCommand(a),
+		doctorCommand(a),
+		launchCommand(a),
+		secretCommand(a),
+		shimsCommand(a),
+		mcpCommand(a),
+		skillCommand(a),
+		instructionsCommand(a),
+		harnessCommand(a),
 	)
-	root.AddCommand(useCommands(&paths, &builtins)...)
+	root.AddCommand(useCommands(a)...)
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error { return &usageError{err} })
 	var wrapArgs func(*cobra.Command)
 	wrapArgs = func(cmd *cobra.Command) {
@@ -255,7 +253,7 @@ func run(osArgs []string, stdout io.Writer) int {
 		}
 	}
 	wrapArgs(root)
-	completion := &completer{paths: &paths, builtins: &builtins}
+	completion := &completer{app: a}
 	completion.registerCompletions(root)
 	root.InitDefaultHelpCmd()
 	root.InitDefaultCompletionCmd()
@@ -269,21 +267,21 @@ func run(osArgs []string, stdout io.Writer) int {
 		reserved = append(reserved, cmd.Name())
 		reserved = append(reserved, cmd.Aliases...)
 	}
-	builtins = registry.Builtins(reserved)
+	a.builtins = a.registry.Builtins(reserved)
 	if name := invokedName(osArgs[0]); name != root.Name() {
 		if self, err := os.Executable(); err == nil {
 			if current, ok := shims.Origin(self); ok {
 				return handOff(current, name, osArgs[1:])
 			}
 		}
-		harnesses = loadHarnesses(paths.Config, builtins)
-		if slices.Contains(harnesses.config.HarnessNames(), name) {
-			return exitCode(runHarness(context.Background(), paths, registry, harnesses, name, osArgs[1:], ""))
+		a.harnesses = a.fragments()
+		if slices.Contains(a.harnesses.config.HarnessNames(), name) {
+			return exitCode(runHarness(context.Background(), a.paths, a.registry, a.harnesses, name, osArgs[1:], ""))
 		}
 		// A link named after a definition must not run the agx CLI with the harness's arguments
 		// just because the definition did not load. Renamed agx binaries keep the agx prefix.
-		if harnesses.err != nil && !strings.HasPrefix(name, root.Name()) {
-			ui.Diagnose(ui.Error, "%s: configuration failed to load: %v", name, harnesses.err)
+		if a.harnesses.err != nil && !strings.HasPrefix(name, root.Name()) {
+			ui.Diagnose(ui.Error, "%s: configuration failed to load: %v", name, a.harnesses.err)
 			return 1
 		}
 	}
@@ -319,15 +317,16 @@ func run(osArgs []string, stdout io.Writer) int {
 		return exitCode(&usageError{err})
 	}
 	ui.Configure(color)
-	configPath, err := filepath.Abs(paths.Config)
+	configPath, err := filepath.Abs(a.paths.Config)
 	if err != nil {
 		return exitCode(err)
 	}
-	harnesses = loadHarnesses(configPath, builtins)
-	for _, name := range harnesses.config.HarnessNames() {
+	a.paths.Config = configPath
+	a.harnesses = a.fragments()
+	for _, name := range a.harnesses.config.HarnessNames() {
 		short := "Launch " + name + " with directory-scoped resources"
-		if _, builtin := registry.Adapter(name); !builtin {
-			h, _ := harnesses.config.Harness(name)
+		if _, builtin := a.registry.Adapter(name); !builtin {
+			h, _ := a.harnesses.config.Harness(name)
 			short = "Launch " + name + " (" + h.Builtin + ")"
 		}
 		root.AddCommand(
@@ -339,7 +338,7 @@ func run(osArgs []string, stdout io.Writer) int {
 				// Native arguments are the harness's own; the shell completes them as files.
 				ValidArgsFunction: files,
 				RunE: func(cmd *cobra.Command, args []string) error {
-					return runHarness(cmd.Context(), paths, registry, harnesses, name, args, "")
+					return runHarness(cmd.Context(), a.paths, a.registry, a.harnesses, name, args, "")
 				},
 			},
 		)
@@ -357,8 +356,8 @@ func run(osArgs []string, stdout io.Writer) int {
 	}
 	// Cobra adds its completion commands only during Execute, so Find cannot know them yet.
 	if err != nil && !completing {
-		if harnesses.err != nil {
-			err = fmt.Errorf("%w (harness definitions unavailable: %w)", err, harnesses.err)
+		if a.harnesses.err != nil {
+			err = fmt.Errorf("%w (harness definitions unavailable: %w)", err, a.harnesses.err)
 		}
 		return exitCode(&usageError{err})
 	}
@@ -459,11 +458,8 @@ func statError(what, path string, err error) error {
 	return fmt.Errorf("cannot read %s %s: %w", what, path, err)
 }
 
-func installPackages(
+func (a *app) installPackages(
 	ctx context.Context,
-	paths platform.Paths,
-	registry adapters.Registry,
-	builtins config.Builtins,
 	frozen bool,
 	ids []config.ID,
 	all bool,
@@ -476,21 +472,22 @@ func installPackages(
 	}
 	result, err := packages.Install(
 		ctx,
-		paths.Config,
-		paths.Cache,
-		builtins,
+		a.paths.Config,
+		a.paths.Cache,
+		a.builtins,
 		packages.Options{Frozen: frozen, Updates: ids, UpdateAll: all},
 	)
 	if err != nil {
 		return err
 	}
-	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
+	a.configLoaded = false
+	c, err := a.config()
 	if err != nil {
 		return err
 	}
 	if !frozen {
 		progress("Installing native harness plugins")
-		warnings, err := registry.Install(ctx, c, paths.Cache, os.LookupEnv)
+		warnings, err := a.registry.Install(ctx, c, a.paths.Cache, os.LookupEnv)
 		for _, warning := range warnings {
 			ui.Diagnose(ui.Warn, "%s", warning)
 		}
@@ -501,7 +498,7 @@ func installPackages(
 	return emit(result, func() error { return printInstalled(result, update) })
 }
 
-func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *config.Builtins) *cobra.Command {
+func daemonCommand(a *app) *cobra.Command {
 	command := &cobra.Command{Use: "daemon", Short: "Manage the background daemon", GroupID: "runtime"}
 	foreground := false
 	start := &cobra.Command{
@@ -510,9 +507,9 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if foreground {
-				return serveDaemon(cmd.Context(), *paths, registry, *builtins)
+				return serveDaemon(cmd.Context(), a.paths, a.registry, a.builtins)
 			}
-			_, c, state := probeDaemon(cmd.Context(), *paths)
+			_, c, state := probeDaemon(cmd.Context(), a.paths)
 			switch state.action() {
 			case refuseDaemon:
 				return state.discovery
@@ -522,17 +519,17 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 						"daemon is already running with configuration %s, not %s, and has active launches; "+
 							"run agx daemon stop first, which ends their MCP access",
 						c.discovery.Config,
-						paths.Config,
+						a.paths.Config,
 					)
 				}
-				return printDaemonStarted(false, filepath.Join(paths.Runtime, "daemon.log"))
+				return printDaemonStarted(false, filepath.Join(a.paths.Runtime, "daemon.log"))
 			case replaceDaemon:
-				if err := replaceRunning(cmd.Context(), *paths, c, state); err != nil {
+				if err := replaceRunning(cmd.Context(), a.paths, c, state); err != nil {
 					return err
 				}
 			case startNewDaemon:
 			}
-			logPath, err := startDaemon(cmd.Context(), *paths)
+			logPath, err := startDaemon(cmd.Context(), a.paths)
 			if err != nil {
 				return err
 			}
@@ -547,7 +544,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// A daemon of another build, such as one started before agx was upgraded, still reports.
-			c, err := newAnyVersionClient(*paths)
+			c, err := newAnyVersionClient(a.paths)
 			var view *connect.Response[v1.GetRuntimeResponse]
 			if err == nil {
 				view, err = c.runtime.GetRuntime(cmd.Context(), connect.NewRequest(&v1.GetRuntimeRequest{}))
@@ -586,7 +583,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 		Short: "Stop the daemon",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := newAnyVersionClient(*paths)
+			c, err := newAnyVersionClient(a.paths)
 			kept := 0
 			if err == nil {
 				kept, err = stopDaemon(cmd.Context(), c, force, grace)
@@ -618,7 +615,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			keepRoot := !cmd.Flags().Changed("config")
-			result, err := restartDaemon(cmd.Context(), *paths, *builtins, keepRoot, force, grace)
+			result, err := restartDaemon(cmd.Context(), a.paths, a.builtins, keepRoot, force, grace)
 			if err != nil {
 				return err
 			}
@@ -655,48 +652,50 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 	return command
 }
 
-func launchCommand(paths *platform.Paths, builtins *config.Builtins, fragments *harnessConfig) *cobra.Command {
+func launchCommand(a *app) *cobra.Command {
 	command := &cobra.Command{Use: "launch", Short: "Inspect and revoke harness launches", GroupID: "runtime"}
-	shorts := map[string]string{"list": "List active launches", "show": "Show one launch"}
-	for _, name := range []string{"list", "show"} {
-		sub := &cobra.Command{
-			Use:   name + " [launch-id]",
-			Short: shorts[name],
-			Args: func(cmd *cobra.Command, args []string) error {
-				if name == "show" {
-					return cobra.ExactArgs(1)(cmd, args)
-				}
-				return cobra.NoArgs(cmd, args)
-			},
-			RunE: func(cmd *cobra.Command, args []string) error {
-				c, err := commandClient(cmd, paths, builtins, fragments)
-				if err != nil {
-					return err
-				}
-				response, err := c.runtime.GetRuntime(cmd.Context(), connect.NewRequest(&v1.GetRuntimeRequest{}))
-				if err != nil {
-					return err
-				}
-				view := response.Msg.Runtime
-				if name == "show" {
-					for _, l := range view.Launches {
-						if l.Id == args[0] {
-							return emit(l, func() error { return printLaunch(l, view.McpServers) })
-						}
-					}
-					return fmt.Errorf("unknown launch %s", args[0])
-				}
-				return emit(view, func() error { return printLaunches(view.Launches) })
-			},
-		}
-		command.AddCommand(sub)
+	list := &cobra.Command{
+		Use: "list", Short: "List active launches", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := a.client(cmd.Context())
+			if err != nil {
+				return err
+			}
+			response, err := c.runtime.GetRuntime(cmd.Context(), connect.NewRequest(&v1.GetRuntimeRequest{}))
+			if err != nil {
+				return err
+			}
+			view := response.Msg.Runtime
+			return emit(view, func() error { return printLaunches(view.Launches) })
+		},
 	}
+	show := &cobra.Command{
+		Use: "show <launch-id>", Short: "Show one launch", Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := a.client(cmd.Context())
+			if err != nil {
+				return err
+			}
+			response, err := c.runtime.GetRuntime(cmd.Context(), connect.NewRequest(&v1.GetRuntimeRequest{}))
+			if err != nil {
+				return err
+			}
+			view := response.Msg.Runtime
+			for _, launch := range view.Launches {
+				if launch.Id == args[0] {
+					return emit(launch, func() error { return printLaunch(launch, view.McpServers) })
+				}
+			}
+			return fmt.Errorf("unknown launch %s", args[0])
+		},
+	}
+	command.AddCommand(list, show)
 	revoke := &cobra.Command{
 		Use:   "revoke <launch-id>",
 		Short: "Revoke a launch's MCP access",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := commandClient(cmd, paths, builtins, fragments)
+			c, err := a.client(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -755,14 +754,14 @@ func readSecret(id string) ([]byte, error) {
 	return data, nil
 }
 
-func secretCommand(paths *platform.Paths, builtins *config.Builtins, fragments *harnessConfig) *cobra.Command {
+func secretCommand(a *app) *cobra.Command {
 	command := &cobra.Command{Use: "secret", Short: "Manage configured secrets and OAuth logins", GroupID: "runtime"}
 	status := &cobra.Command{
 		Use:   "status [secret-id]",
 		Short: "Show secret state",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := commandClient(cmd, paths, builtins, fragments)
+			c, err := a.client(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -790,7 +789,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins, fragments *
 			if err != nil {
 				return err
 			}
-			c, err := commandClient(cmd, paths, builtins, fragments)
+			c, err := a.client(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -810,7 +809,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins, fragments *
 		Short: "Delete a stored secret or OAuth login",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := commandClient(cmd, paths, builtins, fragments)
+			c, err := a.client(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -827,7 +826,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins, fragments *
 		Short: "Renew an OAuth secret's access token now with its refresh token",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := commandClient(cmd, paths, builtins, fragments)
+			c, err := a.client(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -855,7 +854,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins, fragments *
 			"succeeds, fails, or expires; Ctrl-C cancels it.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return login(cmd.Context(), *paths, args[0], !noBrowser, configuredAutostart(*paths, *builtins, *fragments))
+			return login(cmd.Context(), a.paths, args[0], !noBrowser, a.autostart())
 		},
 	}
 	login.Flags().BoolVar(&noBrowser, "no-browser", false, "print the authorization URL without opening a browser")

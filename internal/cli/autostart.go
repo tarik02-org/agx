@@ -41,20 +41,6 @@ func autostart(c *config.Config) bool {
 	return c == nil || c.Daemon.Autostart == nil || *c.Daemon.Autostart
 }
 
-// configuredAutostart reads only configuration fragments, so commands that need no packages
-// stay fast: fragments, which the command line was built from, unless a later --config names
-// another root configuration. A configuration that does not load leaves autostart on; the daemon
-// then reports why.
-func configuredAutostart(paths platform.Paths, builtins config.Builtins, fragments harnessConfig) bool {
-	if fragments.path != paths.Config {
-		fragments = loadHarnesses(paths.Config, builtins)
-	}
-	if fragments.err != nil {
-		return autostart(nil)
-	}
-	return autostart(fragments.config)
-}
-
 type daemonAction int
 
 const (

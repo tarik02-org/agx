@@ -26,7 +26,6 @@ import (
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/mcptools"
-	"github.com/tarik02-org/agx/internal/platform"
 )
 
 // toolTarget is how this invocation reaches MCP servers: inside a launch with its grant, unless
@@ -49,8 +48,8 @@ func launchScoped(all bool) bool {
 
 // toolConfig loads configuration for tool commands. Inside a launch, which its daemon serves from
 // its own, a configuration that does not load is no error.
-func toolConfig(paths platform.Paths, builtins config.Builtins, all bool) (*config.Config, error) {
-	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
+func (a *app) toolConfig(all bool) (*config.Config, error) {
+	c, err := a.config()
 	if err != nil && !launchScoped(all) {
 		return nil, err
 	}
@@ -66,9 +65,8 @@ func inLaunch() (id, grant string, ok bool) {
 // newToolTarget connects to the daemon for tool commands with c, as toolConfig loaded it; inside
 // a launch it may be nil. server, when set, is the only server whose environment inputs are
 // forwarded.
-func newToolTarget(
+func (a *app) newToolTarget(
 	ctx context.Context,
-	paths platform.Paths,
 	c *config.Config,
 	all bool,
 	server string,
@@ -76,7 +74,7 @@ func newToolTarget(
 	if launchScoped(all) {
 		// The launch's daemon runs while its harness does.
 		launchID, grant, _ := inLaunch()
-		client, err := newClient(paths)
+		client, err := newClient(a.paths)
 		if err != nil {
 			return nil, err
 		}
@@ -104,7 +102,7 @@ func newToolTarget(
 		}
 	}
 	inputs := environmentInputs(mcpEnvironment(c, ids...))
-	client, err := daemonClient(ctx, paths, autostart(c))
+	client, err := a.client(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +145,7 @@ func (t *toolTarget) listTools(ctx context.Context, server string) ([]*v1.McpToo
 	return response.Msg.Servers, nil
 }
 
-func mcpToolsCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func mcpToolsCommand(a *app) *cobra.Command {
 	schema, all := false, false
 	cmd := &cobra.Command{
 		Use:   "tools [<server>]",
@@ -165,11 +163,11 @@ func mcpToolsCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 			var c *config.Config
 			if !launchScoped(all) {
 				var err error
-				if c, err = toolConfig(*paths, *builtins, all); err != nil {
+				if c, err = a.toolConfig(all); err != nil {
 					return err
 				}
 			}
-			target, err := newToolTarget(cmd.Context(), *paths, c, all, server)
+			target, err := a.newToolTarget(cmd.Context(), c, all, server)
 			if err != nil {
 				return err
 			}
@@ -301,7 +299,7 @@ func printSignatures(s *v1.McpTools, withSchema bool) error {
 	return err
 }
 
-func mcpCallCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func mcpCallCommand(a *app) *cobra.Command {
 	var argsJSON, saveDir string
 	raw, all := false, false
 	timeout := 60 * time.Second
@@ -339,7 +337,7 @@ func mcpCallCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 			var c *config.Config
 			if !launchScoped(all) || strings.Count(args[0], ".") > 1 {
 				var err error
-				if c, err = toolConfig(*paths, *builtins, all); err != nil {
+				if c, err = a.toolConfig(all); err != nil {
 					return err
 				}
 			}
@@ -347,7 +345,7 @@ func mcpCallCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 			if err != nil {
 				return err
 			}
-			target, err := newToolTarget(cmd.Context(), *paths, c, all, server)
+			target, err := a.newToolTarget(cmd.Context(), c, all, server)
 			if err != nil {
 				return err
 			}
