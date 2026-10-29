@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 const scriptingConfig = `
@@ -234,8 +235,12 @@ func TestMissingPaths(t *testing.T) {
 	isolate(t, scriptingConfig)
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "missing.yaml")
+	canonical, err := platform.Canonical(missing)
+	if err != nil {
+		t.Fatal(err)
+	}
 	d := failJSON(t, 1, "--config", missing, "config", "validate", "--json")
-	if !strings.Contains(d.Message, missing+" does not exist") {
+	if !strings.Contains(d.Message, canonical+" does not exist") {
 		t.Fatalf("missing --config: %s", d.Message)
 	}
 	// Adding a definition creates the named root, importing the fragment it writes.
