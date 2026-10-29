@@ -65,3 +65,7 @@ agx has not been released yet. What it does today:
   launch started with its definition.
 - Only the runtime and state directories are private; caches get default permissions, and agx
   no longer changes the permissions of the configuration directory or writes lockfiles private.
+- Launches share one cached copy of their skills and instructions per distinct content, instead
+  of one per directory and configuration; Codex launches copy no skills. The daemon removes
+  copies no launch used for 7 days, and what interrupted writes and installations left in the
+  cache.

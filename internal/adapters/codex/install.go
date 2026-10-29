@@ -313,7 +313,7 @@ func publish(c *config.Config, native string, now time.Time) ([]string, error) {
 			if err != nil {
 				return nil, err
 			}
-			err = r.Materialize(filepath.Join(tmp, "skills", r.NativeName()))
+			_, err = r.Materialize(filepath.Join(tmp, "skills", r.NativeName()))
 			if err == nil {
 				err = writePluginManifest(filepath.Join(tmp, ".codex-plugin"), name)
 			}

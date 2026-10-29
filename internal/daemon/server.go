@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -290,7 +291,11 @@ func Serve(
 	// Launch files of launches whose wrappers did not attach them within a lease belong to
 	// harnesses that ended while no daemon ran.
 	started := time.Now()
-	sweep := time.AfterFunc(time.Duration(c.Daemon.LeaseSeconds)*time.Second, func() { s.sweep(started) })
+	// Cleaning the cache waits as long, so that launches of earlier agx versions have attached.
+	sweep := time.AfterFunc(time.Duration(c.Daemon.LeaseSeconds)*time.Second, func() {
+		s.sweep(started)
+		s.cleanCache(time.Now())
+	})
 	defer sweep.Stop()
 	slog.Info("daemon started", "version", Version, "build", Build(), "pid", os.Getpid(), "url", discovery.URL)
 	s.manager = auth.New(discovery.URL+"/oauth/callback", auth.OpenStore(paths.State))
@@ -350,6 +355,8 @@ func Serve(
 	go func() { errCh <- server.Serve(listener) }()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	cleaning := time.NewTicker(time.Hour)
+	defer cleaning.Stop()
 	var serveErr error
 	graceful := false
 loop:
@@ -368,6 +375,8 @@ loop:
 		case <-ticker.C:
 			s.expire()
 			s.clients.expire(time.Now())
+		case now := <-cleaning.C:
+			go s.cleanCache(now)
 		}
 	}
 	s.drain.start()
@@ -657,6 +666,50 @@ func (s *Server) sweep(started time.Time) {
 		s.mu.Unlock()
 		if info, err := entry.Info(); err == nil && !held && info.ModTime().Before(started) {
 			_ = os.RemoveAll(filepath.Join(root, entry.Name()))
+		}
+	}
+}
+
+// cacheLeftovers are the name prefixes of what interrupted writes and installations leave, by
+// cache subdirectory.
+var cacheLeftovers = map[string][]string{
+	".":                               {".agx-"},
+	"sessions":                        {".agx-"},
+	"packages":                        {".install-", ".inspect-"},
+	filepath.Join("packages", "pins"): {".agx-"},
+	"native":                          {".plugin-"},
+	filepath.Join("native", "marketplace", ".agents", "plugins"): {".agx-"},
+}
+
+// abandonedCacheEntry is the age past which a staged cache entry was left by a process that
+// stopped before finishing it.
+const abandonedCacheEntry = time.Hour
+
+// cleanCache removes the artifact directories launches no longer use, and what interrupted
+// writes and installations left in the cache.
+func (s *Server) cleanCache(now time.Time) {
+	s.mu.Lock()
+	ids := []string{}
+	for id, l := range s.launches {
+		if active(l.view.State) {
+			ids = append(ids, id)
+		}
+	}
+	s.mu.Unlock()
+	adapters.RemoveUnusedArtifacts(s.paths.Cache, ids, now)
+	for sub, prefixes := range cacheLeftovers {
+		dir := filepath.Join(s.paths.Cache, sub)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if !slices.ContainsFunc(prefixes, func(p string) bool { return strings.HasPrefix(entry.Name(), p) }) {
+				continue
+			}
+			if info, err := entry.Info(); err == nil && now.Sub(info.ModTime()) > abandonedCacheEntry {
+				_ = os.RemoveAll(filepath.Join(dir, entry.Name()))
+			}
 		}
 	}
 }

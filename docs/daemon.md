@@ -111,6 +111,14 @@ process shows one launch per thread, indented under the process.
 If a harness's agx wrapper dies without saying goodbye, its access expires
 after `daemon.lease_seconds` (60 by default).
 
+## Cache cleanup
+
+A lease after it starts, and hourly from then on, the daemon deletes the
+cached copies of skills and instructions that no launch used for 7 days, and
+files that interrupted writes, launches, and package installations left in the
+cache more than an hour ago. A copy a launch uses is kept for as long as the
+launch runs.
+
 ## Graceful shutdown
 
 When the daemon stops (`daemon stop`, `daemon restart`, an upgrade, Ctrl-C on a

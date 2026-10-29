@@ -546,16 +546,18 @@ func TestGeneratedSkillHash(t *testing.T) {
 `)
 	s := load(t, root).Skills["g"]
 	written := filepath.Join(t.TempDir(), "g")
-	if err := s.Materialize(written); err != nil {
+	copied, err := s.Materialize(written)
+	if err != nil {
 		t.Fatal(err)
 	}
 	tree, err := config.TreeHash(written)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Hashing in memory matches hashing the written skill.
-	if got, err := s.ContentHash(); err != nil || got != config.Digest([]any{tree, []string{"a-b"}}) {
-		t.Fatalf("ContentHash() = %q, %v", got, err)
+	// Hashing in memory and while copying matches hashing the written skill.
+	want := config.Digest([]any{tree, []string{"a-b"}})
+	if got, err := s.ContentHash(); err != nil || got != want || copied != want {
+		t.Fatalf("ContentHash() = %q, %v; Materialize() = %q", got, err, copied)
 	}
 }
 

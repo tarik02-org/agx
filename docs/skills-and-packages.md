@@ -177,6 +177,11 @@ agx update team        # just one
 - `install` hashes what it copies into the cache, and other commands trust an
   installed package without reading it again. `agx doctor` hashes installed
   packages again and names any cache entry that changed since.
+- Claude Code and Pi launches read the selected skills and instructions from a
+  copy in the cache, made once per distinct content and shared by every
+  directory that selects the same; Codex gets skills from its native plugins
+  and copies only instructions. The daemon deletes copies no launch used for 7
+  days.
 - Launching never fetches or updates anything. A missing package makes the
   launch fail with a hint to run `agx install`.
 - `update` is the only command that moves a package to a newer commit. A Git

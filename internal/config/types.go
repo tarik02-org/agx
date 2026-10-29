@@ -410,7 +410,9 @@ type Snapshot struct {
 	Missing []ID `json:"missing,omitempty"`
 	// Injections lists tagged values the launch resolves, as configured; never their values.
 	Injections []Injection `json:"injections,omitempty"`
-	Config     *Config     `json:"-"`
+	// SkillHashes holds the content hash of each selected skill as resolution found it.
+	SkillHashes map[ID]string `json:"-"`
+	Config      *Config       `json:"-"`
 }
 
 func Canonical(path string) (string, error) {
@@ -597,6 +599,7 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 	}{c.withoutPositions(), dir, harness, runtime.GOOS + "/" + runtime.GOARCH})
 	// Local resources are content inputs too, even when no package is declared.
 	content := []string{s.ID}
+	s.SkillHashes = map[ID]string{}
 	for _, r := range s.Resources {
 		switch r.Kind {
 		case "skill":
@@ -604,6 +607,7 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 			if err != nil {
 				return nil, fmt.Errorf("skill %s: %w", r.ID, err)
 			}
+			s.SkillHashes[r.ID] = h
 			content = append(content, h)
 		case "instructions":
 			b, err := c.Instructions[r.ID].Read()

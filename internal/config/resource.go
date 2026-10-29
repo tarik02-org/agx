@@ -48,9 +48,29 @@ func (s Skill) ContentHash() (string, error) {
 	if s.installed != "" {
 		return s.installed, nil
 	}
+	return s.hashTree(nil)
+}
+
+// hashTree hashes the skill directory. Unless create is nil, it also writes the directory as it
+// reads it: create makes each directory, returning nil, and opens each file for its content.
+func (s Skill) hashTree(create func(rel string, mode fs.FileMode, dir bool) (io.WriteCloser, error)) (string, error) {
 	h := newTreeHash()
-	if err := s.tree(func(rel string, size int64, _ fs.FileMode, content io.Reader) error {
-		return h.add(rel, size, content)
+	if err := s.tree(func(rel string, size int64, mode fs.FileMode, content io.Reader) error {
+		if create == nil {
+			return h.add(rel, size, content)
+		}
+		w, err := create(rel, mode, content == nil)
+		if err != nil {
+			return err
+		}
+		if content == nil {
+			return h.add(rel, size, nil)
+		}
+		err = h.add(rel, size, io.TeeReader(content, w))
+		if closeErr := w.Close(); err == nil {
+			err = closeErr
+		}
+		return err
 	}); err != nil {
 		return "", err
 	}
@@ -115,15 +135,21 @@ func frontmatterName(document string) string {
 	return strings.TrimSpace(fields.Name)
 }
 
-// Materialize writes the skill directory to dest, which must not exist yet.
-func (s Skill) Materialize(dest string) error {
-	return s.tree(func(rel string, _ int64, mode fs.FileMode, content io.Reader) error {
+// Materialize writes the skill directory to dest, which must not exist yet, and returns the
+// content hash of what it wrote. A skill inside an installed package reports its ContentHash,
+// since installation hashed that content already.
+func (s Skill) Materialize(dest string) (string, error) {
+	hash, err := s.hashTree(func(rel string, mode fs.FileMode, dir bool) (io.WriteCloser, error) {
 		target := filepath.Join(dest, filepath.FromSlash(rel))
-		if content == nil {
-			return os.MkdirAll(target, 0o700)
+		if dir {
+			return nil, os.MkdirAll(target, 0o700)
 		}
-		return writeNew(target, content, mode)
+		return os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	})
+	if err != nil || s.installed == "" {
+		return hash, err
+	}
+	return s.installed, nil
 }
 
 // tree visits the skill directory as Materialize writes it and in the order TreeHash walks a
@@ -227,19 +253,6 @@ func (s Skill) document() (string, error) {
 		b.WriteString("\n")
 	}
 	return b.String(), nil
-}
-
-func writeNew(path string, content io.Reader, mode os.FileMode) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(f, content)
-	closeErr := f.Close()
-	if err != nil {
-		return err
-	}
-	return closeErr
 }
 
 // Read returns the instructions text.

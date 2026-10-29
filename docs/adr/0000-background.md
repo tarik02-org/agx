@@ -59,7 +59,7 @@ snapshot into native arguments, configuration, and skill or plugin artifacts in
 agx's cache. agx keeps the harness's protocol, standard streams, exit status,
 and native account state; it does not own a harness home or hide existing global
 skills. Native plugins are an output format, not agx's package model: artifacts
-are generated per snapshot, so removing one resource does not require removing a
+are generated per selected content, so removing one resource does not require removing a
 plugin. Instructions are injected explicitly, because a guidance file inside a
 plugin is not guaranteed to load. Caches and artifacts are written atomically,
 keyed by content and adapter version, and kept while a launch references them;
