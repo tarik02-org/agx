@@ -278,5 +278,5 @@ About two and a half days:
   `registerProvider` in the generated extension, filling the fields it
   requires). The first keeps "native schema, harness validates"; the second
   makes agx own part of Pi's schema.
-- Whether OpenCode definitions ([ADR 0023](0023-opencode-plugin.md)) get
+- Whether OpenCode definitions get
   settings through `OPENCODE_CONFIG_CONTENT` under `--standalone`.

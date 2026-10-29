@@ -112,10 +112,5 @@ selected.
   `!file`, and executables, including an MCP server's command and `cwd`. `~user`
   and `${VAR}` are not supported, and package manifests cannot use `~`.
 
-Imports are strings (only the root file imports since
-[ADR 0027](0027-root-file-and-fragments.md)): one containing `*`, `?`, or `[` is a glob that may match
-nothing, and any other is a path that must exist. A file that may be missing is
-imported through a glob, so imports need no `optional` flag.
-
 Rejected: ID derivation for inline MCP servers,
 whose ID is user-facing in logins and tool names.

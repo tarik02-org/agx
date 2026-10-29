@@ -18,8 +18,8 @@ under the same ID, grant, and lifecycle token, so the endpoint URLs and grant th
 stay valid. Attaching a launch the daemon holds changes nothing but adding thread launches it
 misses, so wrappers may send it whenever in doubt.
 
-Wrappers find a new daemon by rereading discovery when a call fails and every 250 ms between
-renewals, so a restarted daemon gets its launches within a second. Until then, MCP requests for
+Wrappers find a new daemon by rereading discovery when a call fails and every second between
+renewals, so a restarted daemon normally gets its launches within a second. Until then, MCP requests for
 a launch the daemon does not hold, or let expire, answer 503 with `Retry-After`. A wrapper that
 finds the discovery file of a daemon that no longer answers, which a stopping daemon removes
 last, starts the next daemon; nothing else would, since harnesses talk to the port directly.
