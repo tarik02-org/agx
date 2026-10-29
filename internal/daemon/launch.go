@@ -36,7 +36,7 @@ func (s *Server) PrepareLaunch(
 	if msg.Executable != "" && !filepath.IsAbs(msg.Executable) {
 		return nil, rpcError(connect.CodeInvalidArgument, "executable must be absolute")
 	}
-	b, err := s.launchBasis(msg.Directory, msg.Harness, msg.NativeArguments)
+	b, err := s.launchBasis(msg.Directory, msg.Harness, msg.SnapshotId, msg.NativeArguments)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +168,8 @@ type launchBasis struct {
 	threadServer bool
 }
 
-func (s *Server) launchBasis(directory, name string, native []string) (launchBasis, error) {
+// launchBasis starts from snapshot id when resolving directory just returned it.
+func (s *Server) launchBasis(directory, name, id string, native []string) (launchBasis, error) {
 	c, err := s.reload()
 	if err != nil {
 		return launchBasis{}, configError(err)
@@ -189,7 +190,7 @@ func (s *Server) launchBasis(directory, name string, native []string) (launchBas
 			"non-session command must pass through without launch preparation",
 		)
 	}
-	snapshot, err := c.Resolve(directory, name)
+	snapshot, err := s.takeResolved(c, directory, name, id)
 	if err != nil {
 		return launchBasis{}, rpcError(connect.CodeFailedPrecondition, "directory cannot be resolved")
 	}
@@ -202,6 +203,59 @@ func (s *Server) launchBasis(directory, name string, native []string) (launchBas
 		snapshot:     snapshot,
 		threadServer: isThreads && threads.ThreadServer(native),
 	}, nil
+}
+
+// resolveKey is what a snapshot is resolved from.
+type resolveKey struct {
+	config             *config.Config
+	directory, harness string
+}
+
+type resolvedSnapshot struct {
+	snapshot *config.Snapshot
+	at       time.Time
+}
+
+// resolvedTTL bounds how long after resolving a snapshot preparing a launch takes it as resolved.
+const resolvedTTL = 10 * time.Second
+
+// resolve resolves directory for harness with c and keeps the snapshot for preparing the launch
+// a client asks for next.
+func (s *Server) resolve(c *config.Config, directory, harness string) (*config.Snapshot, error) {
+	snapshot, err := c.Resolve(directory, harness)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k, r := range s.resolved {
+		if k.config != c || now.Sub(r.at) > resolvedTTL {
+			delete(s.resolved, k)
+		}
+	}
+	if s.resolved == nil {
+		s.resolved = map[resolveKey]resolvedSnapshot{}
+	}
+	s.resolved[resolveKey{c, directory, harness}] = resolvedSnapshot{snapshot, now}
+	return snapshot, nil
+}
+
+// takeResolved takes snapshot id when resolve kept it for directory and harness with c, the
+// configuration still loaded, and otherwise resolves again.
+func (s *Server) takeResolved(c *config.Config, directory, harness, id string) (*config.Snapshot, error) {
+	k := resolveKey{c, directory, harness}
+	s.mu.Lock()
+	r, ok := s.resolved[k]
+	ok = ok && r.snapshot.ID == id && time.Since(r.at) <= resolvedTTL
+	if ok {
+		delete(s.resolved, k)
+	}
+	s.mu.Unlock()
+	if ok {
+		return r.snapshot, nil
+	}
+	return c.Resolve(directory, harness)
 }
 
 // resolveHarness resolves the harness definition's arguments and environment for a launch with
@@ -371,6 +425,9 @@ func (s *Server) RenewLaunch(
 		s.end(l, v1.Launch_STATE_EXPIRED)
 		return nil, endedError(l.view.State)
 	}
+	// A renewal that only extends the lease wakes no runtime watcher: expires_at in their views
+	// lags until something else changes.
+	state, session := l.view.State, l.view.SessionId
 	if parent := s.launches[l.view.ParentLaunchId]; parent != nil {
 		// A thread launch follows its parent's lease; renewing it reports its thread.
 		if msg.SessionId != "" {
@@ -381,6 +438,10 @@ func (s *Server) RenewLaunch(
 	} else {
 		if msg.HarnessPid != 0 {
 			l.view.State = v1.Launch_STATE_RUNNING
+			l.harnessPID = int(msg.HarnessPid) //nolint:gosec // PIDs fit
+		}
+		if msg.WrapperPid != 0 {
+			l.wrapperPID = int(msg.WrapperPid) //nolint:gosec // PIDs fit
 		}
 		if msg.SessionId != "" {
 			l.view.SessionId = msg.SessionId
@@ -390,7 +451,9 @@ func (s *Server) RenewLaunch(
 			child.extend(l.expires)
 		}
 	}
-	s.changed.notify()
+	if state != l.view.State || session != l.view.SessionId {
+		s.changed.notify()
+	}
 	return connect.NewResponse(&v1.RenewLaunchResponse{
 		ExpiresAt: proto.Clone(l.view.ExpiresAt).(*timestamppb.Timestamp),
 	}), nil

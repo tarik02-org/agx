@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -20,9 +22,30 @@ const (
 	// period, exits, and the next one starts.
 	restartWait = 30 * time.Second
 	// discoveryPoll is how often a wrapper looks for a daemon that replaced its own, so a
-	// restarted daemon gets its launches attached promptly.
-	discoveryPoll = 250 * time.Millisecond
+	// restarted daemon gets its launches attached promptly. Calls that fail look at once.
+	discoveryPoll = time.Second
 )
+
+// attachRefusedWait bounds retrying a daemon that refuses to take a launch back because its
+// directory no longer resolves or configuration does not load: either may be fixed, but rarely
+// while the harness runs.
+const attachRefusedWait = 5 * time.Minute
+
+// refusals tracks since when a daemon refuses to take a launch back.
+type refusals struct{ since time.Time }
+
+// exhausted records err from renewing at now, and reports whether the daemon has refused to take
+// the launch back for attachRefusedWait.
+func (r *refusals) exhausted(err error, now time.Time) bool {
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		r.since = time.Time{}
+		return false
+	}
+	if r.since.IsZero() {
+		r.since = now
+	}
+	return now.Sub(r.since) >= attachRefusedWait
+}
 
 // stopping reports whether err comes from a daemon that stopped taking new work, so the request
 // is worth retrying with the next one.
@@ -49,7 +72,7 @@ func pause(ctx context.Context, d time.Duration) error {
 }
 
 // lease is a wrapper's connection to the daemon serving its launch. It follows the discovery
-// file to the daemon that replaced its own, of any build, and attaches the launch to a daemon
+// file to the daemon that replaced its own, of any version, and attaches the launch to a daemon
 // that does not hold it, sending everything a daemon needs to serve it: the launch, its grant,
 // environment inputs, native arguments, and thread launches.
 type lease struct {
@@ -63,30 +86,34 @@ type lease struct {
 	threads map[string]*v1.AttachedThread
 	// started is when the wrapper last started a daemon to replace a crashed one.
 	started time.Time
+	// seen is the discovery file as the last poll found it.
+	seen discoveryStamp
+}
+
+// discoveryStamp tells a rewritten discovery file from the one read before without reading it:
+// every wrapper polls it, and on Windows an open file cannot be deleted.
+type discoveryStamp struct{ modified, size int64 }
+
+// discoveryChanged reports whether the discovery file changed since it last did, a missing file
+// counting as one with a zero stamp.
+func (l *lease) discoveryChanged() bool {
+	var stamp discoveryStamp
+	if info, err := os.Stat(filepath.Join(l.paths.Runtime, "daemon.json")); err == nil {
+		stamp = discoveryStamp{info.ModTime().UnixNano(), info.Size()}
+	}
+	changed := stamp != l.seen
+	l.seen = stamp
+	return changed
 }
 
 // crashRestartInterval spaces the daemons a wrapper starts for a crashed one.
 const crashRestartInterval = 10 * time.Second
 
-// replaceCrashed starts a daemon when the one discovery names is gone without having stopped:
-// it does not answer, and no daemon holds the startup lock, which a stopping daemon keeps until
-// it exits, after it stopped listening. Nothing else would start a daemon for the harness, whose
-// MCP requests go straight to the port. It reports whether a daemon answers afterwards.
+// replaceCrashed starts a daemon when the one the lease uses is gone without having stopped.
+// Nothing else would start a daemon for the harness, whose MCP requests go straight to the port.
+// It reports whether a daemon answers afterwards.
 func (l *lease) replaceCrashed(ctx context.Context) bool {
-	if time.Since(l.started) < crashRestartInterval {
-		return false
-	}
-	c, err := newAnyVersionClient(l.paths)
-	if err != nil {
-		return false
-	}
-	probe, cancel := context.WithTimeout(ctx, time.Second)
-	_, err = c.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{}))
-	cancel()
-	if err == nil || connect.CodeOf(err) != connect.CodeUnavailable {
-		return false
-	}
-	if held, err := lockHeld(l.paths); err != nil || held {
+	if time.Since(l.started) < crashRestartInterval || !crashed(l.paths, l.current().discovery.InstanceID) {
 		return false
 	}
 	l.started = time.Now()
@@ -96,6 +123,22 @@ func (l *lease) replaceCrashed(ctx context.Context) bool {
 		return false
 	}
 	return l.reconnect(l.current())
+}
+
+// crashed reports whether daemon instance is gone without having stopped: no daemon holds the
+// startup lock, and discovery still names instance. A stopping daemon removes discovery before it
+// releases the lock, and a starting one takes the lock before it writes discovery, so discovery
+// read after the lock was found free names instance only when instance did not stop, and no
+// daemon replaced it.
+func crashed(paths platform.Paths, instance string) bool {
+	if held, err := lockHeld(paths); err != nil || held {
+		return false
+	}
+	d, err := daemon.ReadDiscovery(paths)
+	if err != nil && !errors.Is(err, daemon.ErrVersionMismatch) {
+		return false
+	}
+	return d.InstanceID == instance
 }
 
 func newLease(paths platform.Paths, c *client, launch *v1.AttachLaunchRequest) *lease {
@@ -149,7 +192,7 @@ func (l *lease) attach(ctx context.Context) error {
 }
 
 // reconnect switches to the daemon the discovery file names when it is another instance than
-// used's, and reports whether it did. A daemon of another build serves launches all the same.
+// used's, and reports whether it did. A daemon of another version serves launches all the same.
 func (l *lease) reconnect(used *client) bool {
 	d, err := daemon.ReadDiscovery(l.paths)
 	if err != nil && !errors.Is(err, daemon.ErrVersionMismatch) {
@@ -181,7 +224,7 @@ func (l *lease) await(done <-chan struct{}, d time.Duration) bool {
 		case <-poll.C:
 			// The next daemon may listen on the same port, where the old client would reach it
 			// with the old management token.
-			if l.reconnect(l.current()) {
+			if l.discoveryChanged() && l.reconnect(l.current()) {
 				return true
 			}
 		}

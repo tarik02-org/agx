@@ -70,7 +70,7 @@ reason.
   are passed to the loader as an in-memory overlay; nothing is written unless
   the whole configuration loads. New definitions go to a fragment the root
   lists ([ADR 0027](0027-root-file-and-fragments.md)). Writes keep the file's mode, land at a symlink's target,
-  and replace the file atomically; lockfiles are written private.
+  and replace the file atomically; lockfiles are written the same way.
 - **Placement.** Matching rules in files that cannot be written are skipped, so a
   read-only or generated fragment does not block enabling elsewhere; only the
   chosen target is refused. `use`/`unuse` create a missing rule in the target

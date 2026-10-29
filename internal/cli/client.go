@@ -104,6 +104,11 @@ func (daemonInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc)
 
 // commandClient connects a command to the daemon, starting one unless the configuration turns
 // autostart off.
-func commandClient(cmd *cobra.Command, paths *platform.Paths, builtins *config.Builtins) (*client, error) {
-	return daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
+func commandClient(
+	cmd *cobra.Command,
+	paths *platform.Paths,
+	builtins *config.Builtins,
+	fragments *harnessConfig,
+) (*client, error) {
+	return daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins, *fragments))
 }

@@ -237,10 +237,10 @@ func run(osArgs []string, stdout io.Writer) int {
 		sessionsCommand(&paths, registry, &harnesses),
 		daemonCommand(&paths, registry, &builtins),
 		doctorCommand(&paths, registry, &builtins),
-		launchCommand(&paths, &builtins),
-		secretCommand(&paths, &builtins),
+		launchCommand(&paths, &builtins, &harnesses),
+		secretCommand(&paths, &builtins, &harnesses),
 		shimsCommand(&paths, registry, &builtins),
-		mcpCommand(&paths, &builtins),
+		mcpCommand(&paths, &builtins, &harnesses),
 		skillCommand(&paths, &builtins),
 		instructionsCommand(&paths, &builtins),
 		harnessCommand(&paths, &builtins),
@@ -524,20 +524,12 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			if foreground {
 				return serveDaemon(cmd.Context(), *paths, registry, *builtins)
 			}
-			if c, err := newAnyVersionClient(*paths); err == nil {
-				view, err := c.runtime.GetRuntime(cmd.Context(), connect.NewRequest(&v1.GetRuntimeRequest{}))
-				switch {
-				case err != nil:
-				case c.discovery.Version != daemon.Version:
-					return codedf(
-						codeVersionMismatch,
-						"daemon %s is already running (agx is %s); run agx daemon stop first",
-						c.discovery.Version,
-						daemon.Version,
-					)
-				case c.discovery.Config == paths.Config:
-					return printDaemonStarted(false, filepath.Join(paths.Runtime, "daemon.log"))
-				case activeLaunches(view.Msg.GetRuntime()) > 0:
+			_, c, state := probeDaemon(cmd.Context(), *paths)
+			switch state.action() {
+			case refuseDaemon:
+				return state.discovery
+			case useDaemon:
+				if !state.sameConfig {
 					return codedf(
 						codeConflict,
 						"daemon is already running with configuration %s, not %s, and has active launches; "+
@@ -545,20 +537,13 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 						c.discovery.Config,
 						paths.Config,
 					)
-				default:
-					// An idle daemon of another configuration costs nothing to replace.
-					ui.Diagnose(
-						ui.Info,
-						"stopping the daemon, which served configuration %s and had no active launches",
-						c.discovery.Config,
-					)
-					if _, err := stopDaemon(cmd.Context(), c, false, 0); err != nil {
-						return err
-					}
-					if err := awaitExit(cmd.Context(), *paths, replaceTimeout); err != nil {
-						return err
-					}
 				}
+				return printDaemonStarted(false, filepath.Join(paths.Runtime, "daemon.log"))
+			case replaceDaemon:
+				if err := replaceRunning(cmd.Context(), *paths, c, state); err != nil {
+					return err
+				}
+			case startNewDaemon:
 			}
 			logPath, err := startDaemon(cmd.Context(), *paths)
 			if err != nil {
@@ -588,15 +573,20 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 				return err
 			}
 			switch {
-			case c.discovery.Version != daemon.Version:
+			case c.discovery.Protocol != daemon.Protocol:
 				ui.Diagnose(
 					ui.Warn,
-					"the daemon runs agx %s, not this agx %s; run agx daemon restart to replace it",
+					"the daemon runs agx %s, which this agx %s cannot use; run agx daemon restart to replace it",
 					c.discovery.Version,
 					daemon.Version,
 				)
 			case c.discovery.Build != daemon.Build():
-				ui.Diagnose(ui.Warn, "the daemon runs another build of agx; run agx daemon restart to replace it")
+				ui.Diagnose(
+					ui.Info,
+					"the daemon runs agx %s, another build than this agx %s; agx daemon restart replaces it",
+					c.discovery.Version,
+					daemon.Version,
+				)
 			}
 			return emit(view.Msg.Runtime, func() error { return printDaemonStatus(view.Msg.Runtime) })
 		},
@@ -678,7 +668,7 @@ func daemonCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 	return command
 }
 
-func launchCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func launchCommand(paths *platform.Paths, builtins *config.Builtins, fragments *harnessConfig) *cobra.Command {
 	command := &cobra.Command{Use: "launch", Short: "Inspect and revoke harness launches", GroupID: "runtime"}
 	shorts := map[string]string{"list": "List active launches", "show": "Show one launch"}
 	for _, name := range []string{"list", "show"} {
@@ -692,7 +682,7 @@ func launchCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 				return cobra.NoArgs(cmd, args)
 			},
 			RunE: func(cmd *cobra.Command, args []string) error {
-				c, err := commandClient(cmd, paths, builtins)
+				c, err := commandClient(cmd, paths, builtins, fragments)
 				if err != nil {
 					return err
 				}
@@ -719,7 +709,7 @@ func launchCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 		Short: "Revoke a launch's MCP access",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := commandClient(cmd, paths, builtins)
+			c, err := commandClient(cmd, paths, builtins, fragments)
 			if err != nil {
 				return err
 			}
@@ -778,14 +768,14 @@ func readSecret(id string) ([]byte, error) {
 	return data, nil
 }
 
-func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func secretCommand(paths *platform.Paths, builtins *config.Builtins, fragments *harnessConfig) *cobra.Command {
 	command := &cobra.Command{Use: "secret", Short: "Manage configured secrets and OAuth logins", GroupID: "runtime"}
 	status := &cobra.Command{
 		Use:   "status [secret-id]",
 		Short: "Show secret state",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := commandClient(cmd, paths, builtins)
+			c, err := commandClient(cmd, paths, builtins, fragments)
 			if err != nil {
 				return err
 			}
@@ -813,7 +803,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			if err != nil {
 				return err
 			}
-			c, err := commandClient(cmd, paths, builtins)
+			c, err := commandClient(cmd, paths, builtins, fragments)
 			if err != nil {
 				return err
 			}
@@ -833,7 +823,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 		Short: "Delete a stored secret or OAuth login",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := commandClient(cmd, paths, builtins)
+			c, err := commandClient(cmd, paths, builtins, fragments)
 			if err != nil {
 				return err
 			}
@@ -850,7 +840,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 		Short: "Renew an OAuth secret's access token now with its refresh token",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := commandClient(cmd, paths, builtins)
+			c, err := commandClient(cmd, paths, builtins, fragments)
 			if err != nil {
 				return err
 			}
@@ -878,7 +868,7 @@ func secretCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Comm
 			"succeeds, fails, or expires; Ctrl-C cancels it.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return login(cmd.Context(), *paths, args[0], !noBrowser, configuredAutostart(*paths, *builtins))
+			return login(cmd.Context(), *paths, args[0], !noBrowser, configuredAutostart(*paths, *builtins, *fragments))
 		},
 	}
 	login.Flags().BoolVar(&noBrowser, "no-browser", false, "print the authorization URL without opening a browser")

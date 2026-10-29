@@ -154,13 +154,7 @@ func (p *Plan) Write() ([]string, error) {
 	}
 	written := []string{}
 	for _, f := range p.Files {
-		var err error
-		if f.Kind == Lockfile {
-			err = securefs.Write(f.Path, f.After, 0o600)
-		} else {
-			err = edit.Write(f.Path, f.After)
-		}
-		if err != nil {
+		if err := securefs.Write(f.Path, f.After); err != nil {
 			return written, err
 		}
 		written = append(written, f.Path)

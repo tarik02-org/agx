@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	version    = "0.0.0-e2e"
-	oldVersion = "0.0.0-e2e-old"
+	version    = "0.0.0+nightly.2.e2e"
+	oldVersion = "0.0.0+nightly.1.e2e"
 	token      = "e2e-secret-token"
 	sealed     = "e2e-sops-value"
 )
@@ -446,19 +446,24 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("args = %q, want the definition's group, then the session ID, before the native arguments", d.Args)
 		}
 		// The launch records the session it started, so it never claims another by time.
-		var records struct {
-			Records []struct {
-				Sessions []string `json:"sessions"`
-				Exact    bool     `json:"exact"`
-			} `json:"records"`
+		// Each start appends a record line; finish lines carry no harness.
+		type record struct {
+			Harness  string   `json:"harness"`
+			Sessions []string `json:"sessions"`
+			Exact    bool     `json:"exact"`
 		}
-		b, err := os.ReadFile(filepath.Join(e.dir, "state", "launch-records.json"))
-		if err == nil {
-			err = json.Unmarshal(b, &records)
+		var started *record
+		b, err := os.ReadFile(filepath.Join(e.dir, "state", "launch-records.jsonl"))
+		for line := range bytes.Lines(b) {
+			var r record
+			if err == nil {
+				err = json.Unmarshal(line, &r)
+			}
+			if r.Harness != "" {
+				started = &r
+			}
 		}
-		last := len(records.Records) - 1
-		if err != nil || last < 0 || !records.Records[last].Exact ||
-			!slices.Equal(records.Records[last].Sessions, []string{d.Args[n-3]}) {
+		if err != nil || started == nil || !started.Exact || !slices.Equal(started.Sessions, []string{d.Args[n-3]}) {
 			t.Errorf("launch records = %s, %v", b, err)
 		}
 		work, err := filepath.EvalSymlinks(e.work)
@@ -733,7 +738,7 @@ func TestAutostart(t *testing.T) {
 		}
 	})
 
-	t.Run("idle daemon of another build is replaced", func(t *testing.T) {
+	t.Run("idle daemon of an older agx is replaced", func(t *testing.T) {
 		e := newEnv(t)
 		t.Cleanup(func() { e.stopDaemon(true) })
 		if r := e.run(binaries.oldAgx, nil, "daemon", "start"); r.code != 0 {

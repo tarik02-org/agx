@@ -84,7 +84,8 @@ dies before spawning. Spawn failure is an explicit finish outcome.
 A harness process serving many threads (stdio `codex app-server`) has a launch
 without snapshot resources. For each thread, the wrapper calls `ResolveThread`
 with the parent launch and directory, which returns the snapshot, its required
-environment names, and the native plugins the thread keeps disabled, then
+environment names, and the native plugins the thread keeps disabled
+(`snapshot_only` leaves those out), then
 `PrepareThreadLaunch` with the snapshot ID and declared inputs. That returns a
 thread launch with its own MCP endpoints and grant, and a `ThreadPlan`: native
 configuration overrides as JSON (sensitive, since the grant travels in MCP
@@ -96,7 +97,7 @@ with its parent however the parent ends.
 Launches outlive the daemon that prepared them
 ([ADR 0016](../adr/0016-launches-survive-daemon-restarts.md)). When renewal fails,
 the wrapper rereads discovery and renews with the daemon it names, whatever its
-build. When that daemon does not hold the launch, or let it expire, the wrapper
+version. When that daemon does not hold the launch, or let it expire, the wrapper
 sends `AttachLaunch` with management authorization: the launch, its grant and
 lifecycle token, the environment inputs, native arguments, and executable it was
 prepared with, and its active thread launches with their grants
@@ -112,7 +113,9 @@ signaling the harness process.
 ## Watches and failures
 
 Runtime watches start with a complete redacted view and send replacement views
-when state changes. Clients reconnect by requesting a fresh view; v1 does not
+when state changes, at most one per 250 ms. A renewal that only extends a lease
+sends none, so a launch's `expires_at` in a watched view may lag; `GetRuntime`
+reports it current. Clients reconnect by requesting a fresh view; v1 does not
 promise durable event replay. Slow observers must not block MCP traffic.
 `Install` streams progress through a terminal outcome. Losing the caller does not
 cancel the installation. Daemon restart may abort it; atomic cache/lock writes

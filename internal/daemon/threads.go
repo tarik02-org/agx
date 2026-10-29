@@ -72,9 +72,12 @@ func (s *Server) ResolveThread(
 	if err != nil {
 		return nil, err
 	}
-	snapshot, err := p.config.Resolve(req.Msg.Directory, p.launch.view.Harness)
+	snapshot, err := s.resolve(p.config, req.Msg.Directory, p.launch.view.Harness)
 	if err != nil {
 		return nil, rpcError(connect.CodeFailedPrecondition, "directory cannot be resolved")
+	}
+	if req.Msg.SnapshotOnly {
+		return connect.NewResponse(&v1.ResolveThreadResponse{Snapshot: resolveMessage(snapshot).Snapshot}), nil
 	}
 	// Without endpoints or a grant, the plan carries only what the directory selects.
 	plan, err := adapters.BuildThread(
@@ -105,7 +108,7 @@ func (s *Server) PrepareThreadLaunch(
 	if err != nil {
 		return nil, err
 	}
-	snapshot, err := p.config.Resolve(msg.Directory, p.launch.view.Harness)
+	snapshot, err := s.takeResolved(p.config, msg.Directory, p.launch.view.Harness, msg.SnapshotId)
 	if err != nil {
 		return nil, rpcError(connect.CodeFailedPrecondition, "directory cannot be resolved")
 	}

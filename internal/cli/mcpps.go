@@ -15,7 +15,7 @@ import (
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
-func mcpProcessesCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func mcpProcessesCommand(paths *platform.Paths, builtins *config.Builtins, fragments *harnessConfig) *cobra.Command {
 	cwd, under := "", ""
 	cmd := &cobra.Command{
 		Use:   "ps",
@@ -40,7 +40,7 @@ func mcpProcessesCommand(paths *platform.Paths, builtins *config.Builtins) *cobr
 				}
 				*f.into = directory
 			}
-			c, err := commandClient(cmd, paths, builtins)
+			c, err := commandClient(cmd, paths, builtins, fragments)
 			if err != nil {
 				return err
 			}
@@ -90,7 +90,7 @@ func printMCPProcesses(processes []*v1.McpProcess, now time.Time) error {
 	return err
 }
 
-func mcpStopCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func mcpStopCommand(paths *platform.Paths, builtins *config.Builtins, fragments *harnessConfig) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stop <pid>",
 		Short: "Stop a running local MCP server process",
@@ -102,7 +102,7 @@ func mcpStopCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 			if err != nil {
 				return &usageError{fmt.Errorf("pid must be a number, not %q", args[0])}
 			}
-			c, err := commandClient(cmd, paths, builtins)
+			c, err := commandClient(cmd, paths, builtins, fragments)
 			if err != nil {
 				return err
 			}

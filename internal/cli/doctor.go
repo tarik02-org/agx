@@ -209,7 +209,20 @@ func configChecks(paths platform.Paths, builtins config.Builtins) (*config.Confi
 		}}
 	}
 	c, loadErr := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
-	return packageChecks(read, c, loadErr, filesDetail(read))
+	c, loaded, checks := packageChecks(read, c, loadErr, filesDetail(read))
+	// Loading trusts installed content; a damaged cache entry stays until it is removed.
+	if loaded {
+		if err := c.VerifyPackages(paths.Cache); err != nil {
+			checks[len(checks)-1] = check{
+				Group:  "config",
+				Name:   "packages",
+				Status: checkFail,
+				Detail: err.Error(),
+				Hint:   "delete that cache entry and run agx install",
+			}
+		}
+	}
+	return c, loaded, checks
 }
 
 // filesDetail describes the files configuration was read from. A root file that does not exist
@@ -254,8 +267,7 @@ func packageChecks(read, c *config.Config, loadErr error, files string) (*config
 		}
 		return c, true, []check{configRow, {Group: "config", Name: "packages", Status: checkPass, Detail: detail}}
 	case strings.Contains(loadErr.Error(), "run agx install") ||
-		strings.Contains(loadErr.Error(), "stale dependency lock") ||
-		strings.Contains(loadErr.Error(), "cache content does not match"):
+		strings.Contains(loadErr.Error(), "stale dependency lock"):
 		return read, false, []check{configRow, {
 			Group:  "config",
 			Name:   "packages",
@@ -374,11 +386,11 @@ func definitionChecks(ctx context.Context, c *config.Config, registry adapters.R
 	return rows
 }
 
-// connectDaemon reaches a daemon of this build, starting it as other commands do, and reports
+// connectDaemon reaches a daemon this agx can use, starting it as other commands do, and reports
 // what it found.
 func connectDaemon(ctx context.Context, paths platform.Paths, c *config.Config) (*client, check) {
 	row := check{Group: "daemon", Name: "daemon"}
-	before, discoveryErr := daemon.ReadDiscovery(paths)
+	before, _ := daemon.ReadDiscovery(paths)
 	if !autostart(c) {
 		client, err := newClient(paths)
 		if err != nil {
@@ -386,22 +398,19 @@ func connectDaemon(ctx context.Context, paths platform.Paths, c *config.Config) 
 			row.Hint = "run agx daemon start to test MCP servers and secrets"
 			return nil, row
 		}
-		return daemonClientCheck(ctx, paths, client, before, discoveryErr, false)
+		return daemonClientCheck(ctx, paths, client, before, false)
 	}
 	client, err := daemonClient(ctx, paths, true)
 	if err != nil {
 		row.Status, row.Detail = checkFail, errorMessage(err)
-		switch {
-		case errors.Is(err, daemon.ErrVersionMismatch) && strings.Contains(err.Error(), "--force"):
-			row.Hint = "run agx daemon stop --force, then agx doctor again"
-		case errors.Is(err, daemon.ErrVersionMismatch):
-			row.Hint = "run agx daemon stop, then agx doctor again"
-		default:
+		if errors.Is(err, daemon.ErrVersionMismatch) {
+			row.Hint = "update agx, or run agx daemon restart, then agx doctor again"
+		} else {
 			row.Hint = "inspect " + shownPath(filepath.Join(paths.Runtime, "daemon.log"))
 		}
 		return nil, row
 	}
-	return daemonClientCheck(ctx, paths, client, before, discoveryErr, true)
+	return daemonClientCheck(ctx, paths, client, before, true)
 }
 
 func daemonClientCheck(
@@ -409,7 +418,6 @@ func daemonClientCheck(
 	paths platform.Paths,
 	c *client,
 	before daemon.Discovery,
-	discoveryErr error,
 	started bool,
 ) (*client, check) {
 	row := check{Group: "daemon", Name: "daemon"}
@@ -425,7 +433,7 @@ func daemonClientCheck(
 		wantConfig:     paths.Config,
 		instance:       c.discovery.InstanceID,
 		previous:       before.InstanceID,
-		otherBuild:     errors.Is(discoveryErr, daemon.ErrVersionMismatch),
+		otherBuild:     before.InstanceID != "" && before.Build != c.discovery.Build,
 		mayHaveStarted: started,
 		launches:       len(view.Msg.GetRuntime().GetLaunches()),
 	})

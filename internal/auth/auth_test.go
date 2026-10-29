@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -699,5 +700,36 @@ func TestStore(t *testing.T) {
 	keyring.MockInit()
 	if _, err := auth.OpenStore(dir).Get("b"); err == nil || !strings.Contains(err.Error(), "no master key") {
 		t.Fatalf("a store without its master key: %v", err)
+	}
+}
+
+// A command secret's value is reused until the configuration reloads or its definition changes.
+func TestCommandSecretReused(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the helper is a shell command")
+	}
+	runs := filepath.Join(t.TempDir(), "runs")
+	helper := func(prefix string) config.Secret {
+		script := `echo >> "$0"; echo ` + prefix + `$(wc -l < "$0")`
+		return config.Secret{Kind: "command", Command: []string{"sh", "-c", script, runs}}
+	}
+	manager := auth.New("", auth.OpenStore(t.TempDir()))
+	value := func(s config.Secret) string {
+		t.Helper()
+		got, err := manager.Value(t.Context(), "token", s, nil, nil, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.ReplaceAll(got, " ", "")
+	}
+	if first, again := value(helper("a")), value(helper("a")); first != "a1" || again != "a1" {
+		t.Errorf("values = %q, %q; want the first reused", first, again)
+	}
+	if got := value(helper("b")); got != "b2" {
+		t.Errorf("changed definition = %q", got)
+	}
+	manager.ForgetHelpers()
+	if got := value(helper("a")); got != "a3" {
+		t.Errorf("after a reload = %q", got)
 	}
 }

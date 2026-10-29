@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -51,9 +53,21 @@ func init() {
 	}
 }
 
+// Protocol numbers the API between commands and the daemon. Commands use a daemon of the same
+// Protocol whatever its version or build; raise it with every change an older command or daemon
+// cannot handle.
+const Protocol = 1
+
 // ErrVersionMismatch is returned by ReadDiscovery together with the decoded
-// discovery when the running daemon has a different version.
+// discovery when the running daemon speaks another Protocol.
 var ErrVersionMismatch = errors.New("daemon version mismatch")
+
+// incompatible keeps a discovery error's own message while matching ErrVersionMismatch.
+type incompatible string
+
+func (i incompatible) Error() string { return string(i) }
+
+func (i incompatible) Is(target error) bool { return target == ErrVersionMismatch }
 
 // ErrUnavailable marks ReadDiscovery errors that leave no daemon to reach: it is not running,
 // or its discovery file is invalid.
@@ -78,6 +92,8 @@ type Discovery struct {
 	Config     string `json:"config"`
 	// PID is the daemon's process, for diagnosing one that stopped answering.
 	PID int `json:"pid,omitempty"`
+	// Protocol is missing from daemons older than it, which no command can use.
+	Protocol int `json:"protocol,omitempty"`
 }
 
 // verifier hashes a launch credential, so the daemon never holds one it could leak.
@@ -107,6 +123,9 @@ type launch struct {
 	// unavailable says why an attached launch's MCP servers cannot be served, when its directory
 	// no longer resolves to the snapshot it started with.
 	unavailable string
+	// wrapperPID and harnessPID are the processes the last renewal reported, for telling why the
+	// lease ran out; zero when unknown.
+	wrapperPID, harnessPID int
 }
 
 type Server struct {
@@ -155,6 +174,9 @@ type Server struct {
 	previews previews
 	// icons remembers the icons MCP servers declared, for the web UI.
 	icons *mcpIcons
+	// resolved keeps the snapshots resolve requests returned, for preparing the launch that
+	// follows each without resolving, and hashing local skills, again; s.mu guards it.
+	resolved map[resolveKey]resolvedSnapshot
 }
 
 // Serve runs the daemon until stop closes or a stop request arrives, then shuts down gracefully:
@@ -173,15 +195,29 @@ func Serve(
 		return err
 	}
 	lock := flock.New(filepath.Join(paths.Runtime, "daemon.lock"))
-	ok, err := lock.TryLock()
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("daemon is already running")
+	discoveryPath := filepath.Join(paths.Runtime, "daemon.json")
+	// Commands take the lock for a moment to learn whether a daemon holds it, so a held lock is
+	// tried again for a while. Discovery means a daemon holds it, serving or replacing a crashed
+	// one; waiting longer would only let this one take over once that daemon stops.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		ok, err := lock.TryLock()
+		if err != nil {
+			return err
+		}
+		if ok {
+			break
+		}
+		if _, err := os.Stat(discoveryPath); err == nil || time.Now().After(deadline) {
+			return fmt.Errorf("daemon is already running")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
 	}
 	defer func() { _ = lock.Unlock() }()
-	discoveryPath := filepath.Join(paths.Runtime, "daemon.json")
 	// Discovery left behind names the port of a daemon that was killed, which its launches'
 	// harnesses use; the state file names the port of one that stopped.
 	port := 0
@@ -192,7 +228,7 @@ func Serve(
 		slog.Warn("the previous daemon stopped without shutting down", "pid", previous.PID, "url", previous.URL)
 	}
 	// The startup lock makes stale discovery replacement safe.
-	if err := os.Remove(discoveryPath); err != nil && !os.IsNotExist(err) {
+	if err := removeDiscovery(discoveryPath); err != nil {
 		return err
 	}
 	inputs := &config.Inputs{}
@@ -219,6 +255,7 @@ func Serve(
 	defer cancel()
 	discovery := Discovery{
 		Version:    Version,
+		Protocol:   Protocol,
 		Build:      Build(),
 		InstanceID: securefs.Token(),
 		URL:        "http://" + listener.Addr().String(),
@@ -260,7 +297,11 @@ func Serve(
 	// Launch files of launches whose wrappers did not attach them within a lease belong to
 	// harnesses that ended while no daemon ran.
 	started := time.Now()
-	sweep := time.AfterFunc(time.Duration(c.Daemon.LeaseSeconds)*time.Second, func() { s.sweep(started) })
+	// Cleaning the cache waits as long, so that launches of earlier agx versions have attached.
+	sweep := time.AfterFunc(time.Duration(c.Daemon.LeaseSeconds)*time.Second, func() {
+		s.sweep(started)
+		s.cleanCache(time.Now())
+	})
 	defer sweep.Stop()
 	slog.Info("daemon started", "version", Version, "build", Build(), "pid", os.Getpid(), "url", discovery.URL)
 	s.manager = auth.New(discovery.URL+"/oauth/callback", auth.OpenStore(paths.State))
@@ -308,14 +349,20 @@ func Serve(
 	}), ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 64 * 1024}
 	// Discovery goes first: the listener queues connections meanwhile, and a wrapper whose old
 	// client reaches this daemon on a reused port must find the token it needs then.
-	if err := securefs.WriteJSON(discoveryPath, discovery); err != nil {
+	if err := securefs.WritePrivateJSON(discoveryPath, discovery); err != nil {
 		return err
 	}
-	defer func() { _ = os.Remove(discoveryPath) }()
+	defer func() {
+		if err := removeDiscovery(discoveryPath); err != nil {
+			slog.Error("cannot remove the discovery file; commands take this daemon for a crashed one", "error", err)
+		}
+	}()
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.Serve(listener) }()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	cleaning := time.NewTicker(time.Hour)
+	defer cleaning.Stop()
 	var serveErr error
 	graceful := false
 loop:
@@ -334,6 +381,8 @@ loop:
 		case <-ticker.C:
 			s.expire()
 			s.clients.expire(time.Now())
+		case now := <-cleaning.C:
+			go s.cleanCache(now)
 		}
 	}
 	s.drain.start()
@@ -462,6 +511,8 @@ func (s *Server) reload() (*config.Config, error) {
 	if err == nil {
 		s.config = c
 	}
+	// Changed configuration may mean a command secret's command now prints another value.
+	s.manager.ForgetHelpers()
 	return c, err
 }
 
@@ -493,7 +544,11 @@ func (s *Server) end(l *launch, state v1.Launch_State) {
 	}
 	// A finished launch is the normal outcome; the others cut a running harness off.
 	if state != v1.Launch_STATE_FINISHED && l.view.ParentLaunchId == "" {
-		slog.Info("launch ended", "launch", shortID(l.view.Id), "harness", l.view.Harness, "state", savedEnd(state))
+		attrs := []any{"launch", shortID(l.view.Id), "harness", l.view.Harness, "state", savedEnd(state)}
+		if state == v1.Launch_STATE_EXPIRED {
+			attrs = append(attrs, "reason", expiryReason(l.wrapperPID, l.harnessPID, platform.Alive))
+		}
+		slog.Info("launch ended", attrs...)
 	}
 	s.clients.closeLaunch(l.view.Id)
 	go s.release(l.view.Id, l.endpoints)
@@ -623,6 +678,50 @@ func (s *Server) sweep(started time.Time) {
 		s.mu.Unlock()
 		if info, err := entry.Info(); err == nil && !held && info.ModTime().Before(started) {
 			_ = os.RemoveAll(filepath.Join(root, entry.Name()))
+		}
+	}
+}
+
+// cacheLeftovers are the name prefixes of what interrupted writes and installations leave, by
+// cache subdirectory.
+var cacheLeftovers = map[string][]string{
+	".":                               {".agx-"},
+	"sessions":                        {".agx-"},
+	"packages":                        {".install-", ".inspect-"},
+	filepath.Join("packages", "pins"): {".agx-"},
+	"native":                          {".plugin-"},
+	filepath.Join("native", "marketplace", ".agents", "plugins"): {".agx-"},
+}
+
+// abandonedCacheEntry is the age past which a staged cache entry was left by a process that
+// stopped before finishing it.
+const abandonedCacheEntry = time.Hour
+
+// cleanCache removes the artifact directories launches no longer use, and what interrupted
+// writes and installations left in the cache.
+func (s *Server) cleanCache(now time.Time) {
+	s.mu.Lock()
+	ids := []string{}
+	for id, l := range s.launches {
+		if active(l.view.State) {
+			ids = append(ids, id)
+		}
+	}
+	s.mu.Unlock()
+	adapters.RemoveUnusedArtifacts(s.paths.Cache, ids, now)
+	for sub, prefixes := range cacheLeftovers {
+		dir := filepath.Join(s.paths.Cache, sub)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if !slices.ContainsFunc(prefixes, func(p string) bool { return strings.HasPrefix(entry.Name(), p) }) {
+				continue
+			}
+			if info, err := entry.Info(); err == nil && now.Sub(info.ModTime()) > abandonedCacheEntry {
+				_ = os.RemoveAll(filepath.Join(dir, entry.Name()))
+			}
 		}
 	}
 }
@@ -814,7 +913,7 @@ func (s *Server) Resolve(
 			return nil, rpcError(connect.CodeInvalidArgument, err.Error())
 		}
 	}
-	snapshot, err := c.Resolve(req.Msg.Directory, req.Msg.Harness)
+	snapshot, err := s.resolve(c, req.Msg.Directory, req.Msg.Harness)
 	if err != nil {
 		return nil, rpcError(
 			connect.CodeFailedPrecondition,
@@ -857,8 +956,19 @@ func (s *Server) WatchRuntime(
 			return refusal()
 		case <-changed:
 		}
+		// Changes come in bursts, such as a launch's MCP servers starting; one view covers them.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-s.drain.stopping.Done():
+			return refusal()
+		case <-time.After(watchCoalesce):
+		}
 	}
 }
+
+// watchCoalesce is how long a runtime watch waits after a change for the ones following it.
+const watchCoalesce = 250 * time.Millisecond
 
 // warnMissing logs the missing packages a launch goes without, once per package.
 func warnMissing(snapshot *config.Snapshot) {
@@ -930,9 +1040,9 @@ func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 	return out
 }
 
-// ReadDiscovery never returns credentials to inspection commands. On a version
-// mismatch it returns the valid discovery with an error wrapping
-// ErrVersionMismatch, so callers such as daemon stop can still reach the daemon.
+// ReadDiscovery never returns credentials to inspection commands. For a daemon of another
+// Protocol it returns the valid discovery with an error matching ErrVersionMismatch, so callers
+// such as daemon stop can still reach the daemon.
 func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 	var d Discovery
 	path := filepath.Join(paths.Runtime, "daemon.json")
@@ -955,17 +1065,31 @@ func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 	if err != nil || port < 1 || port > 65535 {
 		return d, unavailable("invalid daemon port")
 	}
-	if d.Build != Build() {
-		return d, fmt.Errorf(
-			"%w: it runs a different agx build; run agx daemon stop, then retry",
-			ErrVersionMismatch,
-		)
+	if d.Protocol != Protocol {
+		return d, incompatible(fmt.Sprintf(
+			"the daemon runs agx %s, which this agx %s cannot use; update agx or run agx daemon restart",
+			d.Version,
+			Version,
+		))
 	}
 	return d, nil
 }
 
-// Build identifies the running executable by content, so a rebuilt binary with an unchanged
-// version string still notices a daemon started from the old one.
+// removeDiscovery deletes the discovery file. On Windows a command reading it at that moment
+// makes the removal fail, so it retries briefly.
+func removeDiscovery(path string) error {
+	var err error
+	for range 20 {
+		if err = os.Remove(path); err == nil || errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return err
+}
+
+// Build identifies the running executable by content, for telling apart daemons of the same
+// version in daemon status.
 var Build = sync.OnceValue(func() string {
 	path, err := os.Executable()
 	if err != nil {
@@ -989,6 +1113,25 @@ func configError(err error) error {
 	return configInvalid("daemon configuration invalid: "+err.Error(), err)
 }
 
+// expiryReason says why a lease ran out, from whether the wrapper and harness processes its last
+// renewal reported still run. A host that terminates the wrapper on Windows leaves an untied
+// harness running; a live wrapper renewing too rarely means a stalled daemon or a sleeping host.
+func expiryReason(wrapper, harness int, alive func(int) bool) string {
+	switch {
+	case harness == 0:
+		return "no renewal"
+	case !alive(harness) && wrapper != 0 && !alive(wrapper):
+		return "wrapper and harness gone"
+	case !alive(harness):
+		return "harness gone"
+	case wrapper == 0:
+		return "harness still running"
+	case !alive(wrapper):
+		return "wrapper gone, harness still running"
+	}
+	return "renewals stopped, wrapper still running"
+}
+
 // savedEnd names how a launch ended, for the log.
 func savedEnd(state v1.Launch_State) string {
 	switch state {
@@ -1003,7 +1146,7 @@ func savedEnd(state v1.Launch_State) string {
 	return "unknown"
 }
 
-// abandonedTemporary matches the temporary files securefs.Write creates; one that outlives its
+// abandonedTemporary matches the temporary files securefs.WritePrivate creates; one that outlives its
 // write was left by a process killed mid-write.
 var abandonedTemporary = regexp.MustCompile(`^\.agx-[0-9]+$`)
 

@@ -37,6 +37,9 @@ func (a Adapter) Executable(configured string) (string, error) {
 // Codex it starts.
 func (Adapter) Forwarded() []string { return []string{homeVariable} }
 
+// NativeSkills marks that skills reach Codex as plugins of its native installation.
+func (Adapter) NativeSkills() {}
+
 // valueFlags are global options taking a separate value, skipped to find the subcommand.
 var valueFlags = []string{
 	"-c", "--config", "--enable", "--disable", "--remote", "--remote-auth-token-env", "-i", "--image",

@@ -45,7 +45,8 @@ agx has not been released yet. What it does today:
 - Harness `args` groups are `{values, modes}` only; skill `files` take `{content}` or `{path}` only.
 - Removed `agx mcp login` (use `agx secret login`) and `agx resolve` (use `agx explain`).
 - `agx secret set` prompts without echo on a terminal and reads piped stdin otherwise.
-- A daemon of another agx build is always replaced, keeping its launches.
+- Only a newer agx replaces a running daemon, keeping its launches; an agx uses a daemon of
+  another version that speaks its protocol, and fails without replacing one it cannot use.
 - Wrappers attach their launches, `codex app-server` threads included, to a daemon that does not
   hold them; the daemon keeps only its port and revoked launches in `daemon-state.json`.
 - `agx daemon restart --json` reports `kept_launches` instead of `restored`.
@@ -62,3 +63,21 @@ agx has not been released yet. What it does today:
   Windows shims are copies that run the agx recorded beside them.
 - New Claude launches pass `--session-id`, so `agx sessions` resumes exactly the session a
   launch started with its definition.
+- Only the runtime and state directories are private; caches get default permissions, and agx
+  no longer changes the permissions of the configuration directory or writes lockfiles private.
+- Launches share one cached copy of their skills and instructions per distinct content, instead
+  of one per directory and configuration; Codex launches copy no skills. The daemon removes
+  copies no launch used for 7 days, and what interrupted writes and installations left in the
+  cache.
+- Launch records are an append-only `launch-records.jsonl` that a listing folds and prunes, so a
+  launch appends two lines instead of rewriting every record; an existing `launch-records.json`
+  is folded in and removed. Session listings open only session files that changed.
+- On Windows, terminating an agx wrapper also ends its harness and the harness's descendants,
+  instead of leaving them running without MCP access. A wrapper the daemon keeps refusing to take
+  its launch back from gives up after 5 minutes, and the daemon logs why a launch expired.
+- Runtime watches send at most one view per 250 ms, and none for a renewal that only extends a
+  lease, so `expires_at` in a watched view may lag. Wrappers look for a replacing daemon once a
+  second instead of four times, reading the discovery file only when it changed.
+- The daemon reuses a command secret's value for a minute, or until configuration changes, and
+  asks Codex whether plugins are disabled again only when its settings change, not whenever it
+  rewrites `config.toml`.

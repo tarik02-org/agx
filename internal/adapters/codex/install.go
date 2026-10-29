@@ -2,6 +2,7 @@ package codex
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -95,13 +96,16 @@ func supersede(native, name string, now time.Time) (time.Time, error) {
 	if !os.IsNotExist(err) {
 		return time.Time{}, err
 	}
-	return now, securefs.Write(path, nil, 0o600)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return time.Time{}, err
+	}
+	return now, os.WriteFile(path, nil, 0o600)
 }
 
 // pluginName leads with the skill's native name, which Codex shows as the skill's namespace, and
 // ends with its content hash, so each version of a skill is its own plugin.
 func pluginName(skill config.Skill) (string, error) {
-	hash, err := skill.TreeHash()
+	hash, err := skill.ContentHash()
 	if err != nil {
 		return "", err
 	}
@@ -227,7 +231,7 @@ func (Adapter) Install(ctx context.Context, c *config.Config, cache string, targ
 		return nil
 	}
 	parent := filepath.Join(cache, "native")
-	if err := securefs.EnsureDir(parent); err != nil {
+	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return err
 	}
 	lock := flock.New(filepath.Join(parent, "install.lock"))
@@ -309,17 +313,9 @@ func publish(c *config.Config, native string, now time.Time) ([]string, error) {
 			if err != nil {
 				return nil, err
 			}
-			err = r.Materialize(filepath.Join(tmp, "skills", r.NativeName()))
+			_, err = r.Materialize(filepath.Join(tmp, "skills", r.NativeName()))
 			if err == nil {
-				err = securefs.WriteJSON(
-					filepath.Join(tmp, ".codex-plugin", "plugin.json"),
-					map[string]any{
-						"name":        name,
-						"version":     "1.0.0",
-						"description": "Directory-selected skill",
-						"skills":      "./skills/",
-					},
-				)
+				err = writePluginManifest(filepath.Join(tmp, ".codex-plugin"), name)
 			}
 			if err == nil {
 				err = os.MkdirAll(plugins, 0o700)
@@ -358,8 +354,24 @@ func publish(c *config.Config, native string, now time.Time) ([]string, error) {
 			},
 		)
 	}
-	return current, securefs.WriteJSON(
+	return current, securefs.WriteCacheJSON(
 		filepath.Join(native, "marketplace", ".agents", "plugins", "marketplace.json"),
 		map[string]any{"name": marketplaceName, "plugins": entries},
 	)
+}
+
+func writePluginManifest(dir, name string) error {
+	b, err := json.MarshalIndent(map[string]any{
+		"name":        name,
+		"version":     "1.0.0",
+		"description": "Directory-selected skill",
+		"skills":      "./skills/",
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "plugin.json"), append(b, '\n'), 0o600)
 }

@@ -12,7 +12,7 @@ agx doctor --all      # test every MCP server, not only the ones selected here
 for every problem. It checks:
 
 - that the configuration loads, and from which files;
-- that packages are installed and lockfiles are current;
+- that packages are installed, unchanged in the cache, and lockfiles are current;
 - each harness: found, and new enough;
 - Codex skill plugins, per Codex-based harness definition;
 - the daemon: running, the same agx version, serving this configuration;
@@ -36,6 +36,11 @@ A package or Git skill is not installed yet, or changed since it was installed
 goes on without that package's skills, instructions, and MCP servers; run
 `agx install` to get them. Launches never download anything themselves.
 `agx config validate` and `agx doctor` list every missing package.
+
+**`agx doctor` says "cache entry … does not match its content hash".**
+Something changed the files of an installed package in the cache. Launches
+use them as they are. Delete the directory the message names and run
+`agx install` to install the package again.
 
 **`agx install` says "git is not on PATH".**
 Git packages and Git skills are fetched with `git`. Install it, or add it to
@@ -74,9 +79,10 @@ plugins are not turned off (`features.plugins = false` in Codex's
 `config.toml`). `agx doctor` checks both. agx installs only skills that a rule
 selects, so check with `agx explain` that the skill is selected.
 
-**"daemon of another build" or "version mismatch".**
-A daemon from another agx build is running and the command could not replace
-it. Run `agx daemon stop`, then try again.
+**"the daemon runs agx X, which this agx Y cannot use".**
+A daemon of an agx with an incompatible protocol is running, and this agx is
+not newer, so it leaves the daemon alone. Use the newer agx, or run
+`agx daemon restart` to replace the daemon with one of this agx.
 
 **"upgrade agx".**
 A newer agx wrote one of agx's own files (package pins), and

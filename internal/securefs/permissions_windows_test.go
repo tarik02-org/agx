@@ -2,32 +2,31 @@ package securefs
 
 import (
 	"os"
-	"os/user"
 	"path/filepath"
 	"testing"
 
 	"golang.org/x/sys/windows"
 )
 
-// Private leaves a private directory be only when it recognizes its own DACL; otherwise every
+// makePrivate leaves a private directory be only when it recognizes its own DACL; otherwise every
 // call rewrites the whole tree again.
 func TestPrivateRecognizesItsDACL(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "child"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	current, err := user.Current()
+	sid, err := currentSID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if isPrivate(dir, current.Uid) {
+	if isPrivate(dir, sid) {
 		t.Fatal("a fresh temporary directory reads as private")
 	}
-	if err := Private(dir); err != nil {
+	if err := makePrivate(dir); err != nil {
 		t.Fatal(err)
 	}
-	if !isPrivate(dir, current.Uid) {
+	if !isPrivate(dir, sid) {
 		sd, _ := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-		t.Fatalf("Private's own DACL does not read as private: %v", sd)
+		t.Fatalf("makePrivate's own DACL does not read as private: %v", sd)
 	}
 }

@@ -72,6 +72,13 @@ func Forwarded(a Adapter) []string {
 	return nil
 }
 
+// NativeSkills is an adapter whose harness gets skills from its native installation, so its
+// launches' artifacts leave them out.
+type NativeSkills interface {
+	// NativeSkills marks the adapter; it is never called.
+	NativeSkills()
+}
+
 // Doctor is an adapter that checks what a definition's launches need beyond the executable.
 type Doctor interface {
 	// Doctor checks definition h, whose native executable is executable and whose processes
@@ -121,7 +128,8 @@ type Launch struct {
 	// ID names the launch's own files, which hold launch-specific endpoint URLs.
 	ID        string
 	Endpoints []Endpoint
-	// Artifacts is the snapshot's shared artifact directory: plugin/ and instructions.md.
+	// Artifacts is the shared artifact directory of the launch's content: plugin/ and
+	// instructions.md. Adapters with NativeSkills find no skills in plugin/.
 	Artifacts string
 	// Instructions is the content of the instructions file, empty when none are selected.
 	Instructions []byte
@@ -453,7 +461,8 @@ func Build(
 // plugins once when call reports ErrNotInstalled.
 func withArtifacts(ctx context.Context, a Adapter, l Launch, call func(Launch) error) error {
 	var err error
-	l.Artifacts, err = artifacts(l.Snapshot, l.Cache)
+	_, native := a.(NativeSkills)
+	l.Artifacts, err = artifacts(l, !native)
 	if err != nil {
 		return err
 	}

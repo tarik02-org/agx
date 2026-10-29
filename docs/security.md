@@ -22,9 +22,15 @@ replace that.
 ## What agx does protect
 
 **Against other users on the same machine.** The daemon listens only on
-`127.0.0.1`, and every request needs a token. The token, the daemon's files,
-logs, and saved launches are readable only by your account (private ACLs on
-Windows). Other local users cannot use your MCP servers or credentials.
+`127.0.0.1`, and every request needs a token. The runtime directory, with the
+token and the daemon's log, and the state directory, with the secret store, the
+daemon's state, and launch records, are readable only by your account (private
+ACLs on Windows). Other local users cannot use your MCP servers or credentials.
+
+Nothing else is hidden from them. Caches (installed packages, launch artifacts,
+per-launch files) hold only what your configuration already says, and agx
+creates them with default permissions; your configuration directory and its
+lockfiles keep whatever permissions you give them.
 
 The daemon's loopback token does not protect against your own processes: any
 program running as you can read it.

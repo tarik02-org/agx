@@ -3,6 +3,7 @@ package securefs
 import (
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -13,41 +14,142 @@ import (
 
 func Token() string { return rand.Text() }
 
-// Write never changes permissions of an existing parent; callers harden agx-owned directories with EnsureDir.
-func Write(path string, data []byte, mode os.FileMode) error {
+// WritePrivate replaces path atomically with a synced file only the current user can access, for
+// secrets, credentials and state. Directories it creates are private too; existing ones are left
+// as they are, so callers make agx's private directories private with EnsureDir.
+func WritePrivate(path string, data []byte) error {
 	if err := createPrivate(filepath.Dir(path)); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".agx-*")
+	tmp, err := temporary(filepath.Dir(path), data, true, makePrivate)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = os.Remove(f.Name()) }()
-	if err = f.Chmod(mode); err == nil {
-		err = Private(f.Name())
+	defer func() { _ = os.Remove(tmp) }()
+	return os.Rename(tmp, path)
+}
+
+func WritePrivateJSON(path string, value any) error {
+	b, err := encodeJSON(value)
+	if err != nil {
+		return err
+	}
+	return WritePrivate(path, b)
+}
+
+// AppendPrivate appends data to path, creating it private, with directories as WritePrivate does.
+// It does not sync, so it suits state whose last write a crash may lose.
+func AppendPrivate(path string, data []byte) error {
+	if err := createPrivate(filepath.Dir(path)); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE|os.O_EXCL, 0o600)
+	if err == nil {
+		err = makePrivate(path)
+	} else if errors.Is(err, fs.ErrExist) {
+		f, err = os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	}
+	if f == nil {
+		return err
 	}
 	if err == nil {
 		_, err = f.Write(data)
 	}
-	if err == nil {
-		err = f.Sync()
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
 	}
-	closeErr := f.Close()
-	if err != nil {
-		return err
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	return os.Rename(f.Name(), path)
+	return err
 }
 
-func WriteJSON(path string, value any) error {
-	b, err := json.MarshalIndent(value, "", "  ")
+// Staged is data written to a temporary file beside the file it is to replace.
+type Staged struct {
+	path, temp string
+}
+
+// Stage writes data beside path, synced, for Commit to put in place; Write explains the rest.
+func Stage(path string, data []byte) (*Staged, error) {
+	return stage(path, data, true)
+}
+
+func (s *Staged) Commit() error { return os.Rename(s.temp, s.path) }
+
+// Discard removes the temporary file of data not committed.
+func (s *Staged) Discard() { _ = os.Remove(s.temp) }
+
+// Write replaces path atomically with a synced file, for files of the user such as configuration
+// and lockfiles. An existing file keeps its mode, a new one gets 0644, and a symlinked file is
+// written at its target.
+func Write(path string, data []byte) error {
+	return commit(stage(path, data, true))
+}
+
+// WriteCacheJSON is Write for content agx can recreate, so it skips the sync.
+func WriteCacheJSON(path string, value any) error {
+	b, err := encodeJSON(value)
 	if err != nil {
 		return err
 	}
-	return Write(path, append(b, '\n'), 0o600)
+	return commit(stage(path, b, false))
+}
+
+func commit(s *Staged, err error) error {
+	if err != nil {
+		return err
+	}
+	defer s.Discard()
+	return s.Commit()
+}
+
+func stage(path string, data []byte, sync bool) (*Staged, error) {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	tmp, err := temporary(filepath.Dir(path), data, sync, func(name string) error { return os.Chmod(name, mode) })
+	if err != nil {
+		return nil, err
+	}
+	return &Staged{path: path, temp: tmp}, nil
+}
+
+// temporary writes data to a new temporary file in dir after protect sets its permissions, and
+// returns its name.
+func temporary(dir string, data []byte, sync bool, protect func(string) error) (string, error) {
+	f, err := os.CreateTemp(dir, ".agx-*")
+	if err != nil {
+		return "", err
+	}
+	err = protect(f.Name())
+	if err == nil {
+		_, err = f.Write(data)
+	}
+	if err == nil && sync {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
+}
+
+func encodeJSON(value any) ([]byte, error) {
+	b, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
 }
 
 func Within(root, path string) bool {
@@ -100,11 +202,12 @@ func Walk(src string, visit func(rel string, info fs.FileInfo, content io.Reader
 			if !info.Mode().IsRegular() {
 				return fmt.Errorf("unsupported package file: %s", rel)
 			}
-			f, err := fsys.Open(name)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = f.Close() }()
+			f := &lazyFile{fsys: fsys, name: name}
+			defer func() {
+				if f.file != nil {
+					_ = f.file.Close()
+				}
+			}()
 			return visit(rel, info, f)
 		}
 		for _, a := range active {
@@ -134,6 +237,38 @@ func Walk(src string, visit func(rel string, info fs.FileInfo, content io.Reader
 	return walk(start, ".")
 }
 
+// lazyFile opens a file on its first read, so a walk that checks only the structure of a tree
+// opens no file.
+type lazyFile struct {
+	fsys fs.FS
+	name string
+	file fs.File
+}
+
+func (f *lazyFile) open() error {
+	if f.file != nil {
+		return nil
+	}
+	var err error
+	f.file, err = f.fsys.Open(f.name)
+	return err
+}
+
+func (f *lazyFile) Read(p []byte) (int, error) {
+	if err := f.open(); err != nil {
+		return 0, err
+	}
+	return f.file.Read(p)
+}
+
+// WriteTo keeps the copy fast paths of the opened file.
+func (f *lazyFile) WriteTo(w io.Writer) (int64, error) {
+	if err := f.open(); err != nil {
+		return 0, err
+	}
+	return io.Copy(w, f.file)
+}
+
 // CopyTree dereferences internal symlinks so cached content cannot change later.
 func CopyTree(src, dst string) error {
 	return Walk(src, func(rel string, info fs.FileInfo, content io.Reader) error {
@@ -154,11 +289,13 @@ func CopyTree(src, dst string) error {
 	})
 }
 
+// EnsureDir creates path private, or makes an existing one private, for directories holding
+// credentials and state.
 func EnsureDir(path string) error {
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return err
 	}
-	return Private(path)
+	return makePrivate(path)
 }
 
 // createPrivate makes only the directories it creates private.
@@ -179,7 +316,7 @@ func createPrivate(path string) error {
 		return err
 	}
 	for i := len(missing) - 1; i >= 0; i-- {
-		if err := Private(missing[i]); err != nil {
+		if err := makePrivate(missing[i]); err != nil {
 			return err
 		}
 	}

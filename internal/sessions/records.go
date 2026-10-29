@@ -1,6 +1,7 @@
 package sessions
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -47,68 +48,153 @@ func (r Record) window() (time.Time, time.Time) {
 	return r.Started.Add(-skew), end.Add(skew)
 }
 
-// Records is the launch record file, shared by concurrent wrappers through a lock file.
-type Records struct{ path string }
+// Records is the launch record log. Each launch appends a line when it starts and when it
+// finishes, so a write costs the same however many records there are; a listing folds the lines
+// into one per record and rewrites the log, pruned. Losing the last line in a crash only costs a
+// resumption its definition, so appends are not synced.
+type Records struct{ path, legacy string }
 
 func NewRecords(state string) Records {
-	return Records{path: filepath.Join(state, "launch-records.json")}
+	return Records{
+		path:   filepath.Join(state, "launch-records.jsonl"),
+		legacy: filepath.Join(state, "launch-records.json"),
+	}
 }
 
-type recordFile struct {
+// legacyFile is the whole-file format agx wrote before the log; a listing folds it into the log
+// and removes it.
+type legacyFile struct {
 	Version int      `json:"version"`
 	Records []Record `json:"records"`
 }
 
-// Start adds a record for a launch about to spawn its harness.
-func (r Records) Start(record Record) error {
-	return r.update(func(records []Record) []Record { return append(records, record) })
+// finishLine is the line Finish appends: a record line without a start.
+type finishLine struct {
+	Launch   string    `json:"launch"`
+	Finished time.Time `json:"finished"`
 }
+
+// Start adds a record for a launch about to spawn its harness.
+func (r Records) Start(record Record) error { return r.append(record) }
 
 // Finish closes the window of a launch.
 func (r Records) Finish(launch string, at time.Time) error {
-	return r.update(func(records []Record) []Record {
-		for i := range records {
-			if records[i].Launch == launch {
-				records[i].Finished = &at
-			}
-		}
-		return records
-	})
+	return r.append(finishLine{Launch: launch, Finished: at})
 }
 
-// update applies change to the records under the lock; a nil result leaves the file unchanged.
-func (r Records) update(change func([]Record) []Record) error {
-	if err := securefs.EnsureDir(filepath.Dir(r.path)); err != nil {
+func (r Records) append(line any) error {
+	b, err := json.Marshal(line)
+	if err != nil {
 		return err
 	}
-	lock := flock.New(r.path + ".lock")
+	unlock, err := r.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return securefs.AppendPrivate(r.path, append(b, '\n'))
+}
+
+// lock serializes writers. The lock file is the one agx used for the whole-file format, so a wrapper
+// of an older agx still running cannot rewrite that file while a listing folds it.
+func (r Records) lock() (func(), error) {
+	if err := os.MkdirAll(filepath.Dir(r.path), 0o700); err != nil {
+		return nil, err
+	}
+	lock := flock.New(r.legacy + ".lock")
 	if err := lock.Lock(); err != nil {
+		return nil, err
+	}
+	return func() { _ = lock.Unlock() }, nil
+}
+
+// update applies change to the records under the lock and rewrites the log with one line per
+// record. A nil result leaves the records unchanged, and the log is rewritten only if it was not
+// already folded.
+func (r Records) update(change func([]Record) []Record) error {
+	unlock, err := r.lock()
+	if err != nil {
 		return err
 	}
-	defer func() { _ = lock.Unlock() }()
-	records, err := r.load()
+	defer unlock()
+	records, folded, err := r.load()
 	if err != nil {
 		return err
 	}
 	changed := change(slices.Clone(records))
 	if changed == nil {
-		return nil
+		if folded {
+			return nil
+		}
+		changed = records
 	}
-	return securefs.WriteJSON(r.path, recordFile{Version: 1, Records: changed})
+	var b []byte
+	for _, record := range changed {
+		line, err := json.Marshal(record)
+		if err != nil {
+			return err
+		}
+		b = append(append(b, line...), '\n')
+	}
+	if err := securefs.WritePrivate(r.path, b); err != nil {
+		return err
+	}
+	if err := os.Remove(r.legacy); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
-func (r Records) load() ([]Record, error) {
+// load folds the legacy file and the log into records, in the order of their first line; folded reports
+// whether the log already holds exactly one line per record and no legacy file is left.
+func (r Records) load() (records []Record, folded bool, err error) {
+	records = []Record{}
+	byLaunch := map[string]int{}
+	add := func(record Record) {
+		i, ok := byLaunch[record.Launch]
+		if !ok {
+			if record.Started.IsZero() {
+				// The finish of a launch whose start was lost, or of a thread that never bound.
+				return
+			}
+			byLaunch[record.Launch] = len(records)
+			records = append(records, record)
+			return
+		}
+		if record.Finished != nil {
+			records[i].Finished = record.Finished
+		}
+		for _, id := range record.Sessions {
+			if !slices.Contains(records[i].Sessions, id) {
+				records[i].Sessions = append(records[i].Sessions, id)
+			}
+		}
+	}
+	legacy := false
+	// Records only refine resumption, so damaged content is skipped instead of failing launches.
+	switch b, err := os.ReadFile(r.legacy); {
+	case err == nil:
+		legacy = true
+		var file legacyFile
+		if json.Unmarshal(b, &file) == nil && file.Version == 1 {
+			for _, record := range file.Records {
+				add(record)
+			}
+		}
+	case !errors.Is(err, fs.ErrNotExist):
+		return nil, false, err
+	}
 	b, err := os.ReadFile(r.path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return []Record{}, nil
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, false, err
 	}
-	if err != nil {
-		return nil, err
+	lines := 0
+	for line := range bytes.Lines(b) {
+		lines++
+		var record Record
+		if json.Unmarshal(line, &record) == nil && record.Launch != "" {
+			add(record)
+		}
 	}
-	var file recordFile
-	// Records only refine resumption, so a damaged file starts over instead of failing launches.
-	if err := json.Unmarshal(b, &file); err == nil && file.Version == 1 {
-		return file.Records, nil
-	}
-	return []Record{}, nil
+	return records, !legacy && lines == len(records), nil
 }

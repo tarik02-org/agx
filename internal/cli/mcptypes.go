@@ -36,7 +36,12 @@ func mcpTypesCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 			if len(args) == 1 {
 				server = args[0]
 			}
-			target, err := newToolTarget(cmd.Context(), *paths, *builtins, all, server)
+			// Inside a launch, configuration only names the variables each server reads.
+			c, err := toolConfig(*paths, *builtins, all)
+			if err != nil {
+				return err
+			}
+			target, err := newToolTarget(cmd.Context(), *paths, c, all, server)
 			if err != nil {
 				return err
 			}

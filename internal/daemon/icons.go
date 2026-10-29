@@ -183,7 +183,7 @@ func (c *mcpIcons) update(ctx context.Context, id string, declared []mcp.Icon) s
 		c.icons[id] = next
 	}
 	// An icon that is not remembered is drawn from the server's kind next time; nothing breaks.
-	_ = securefs.WriteJSON(c.path, c.icons)
+	_ = securefs.WriteCacheJSON(c.path, c.icons)
 	return next.Icon
 }
 

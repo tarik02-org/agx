@@ -31,10 +31,19 @@ MCP servers start fresh.
 `daemon stop --force` instead cuts off every running harness's MCP access. The
 harnesses themselves keep running.
 
-Upgrading agx works the same way: the first command of the new version stops
-the old daemon gracefully and starts its own, keeping running launches.
-`agx daemon status` does not replace it: it reports a daemon of another agx
-version or build with a warning to run `agx daemon restart`.
+Upgrading agx works the same way: the first command of a newer version stops
+the older daemon gracefully and starts its own, keeping running launches. Only
+a newer agx replaces a daemon. Releases are ordered by version, and nightlies
+by the number of commits since their release; development builds are not
+ordered, so they never replace a daemon on their own. An agx uses a daemon of
+another version as long as both speak the same protocol, which changes only
+with incompatible changes to agx itself. An agx that cannot use the running
+daemon, and is not newer than it, fails with "the daemon runs agx X, which
+this agx Y cannot use" and leaves the daemon running: update agx, or run
+`agx daemon restart` to replace the daemon with one of this agx. A daemon that
+is too busy to answer in time is never replaced. `agx daemon status` replaces
+nothing either: it reports a daemon of another protocol with a warning, and one
+of another build with a note.
 
 ## Its environment
 
@@ -80,6 +89,11 @@ spawn a daemon; the extras exit and every command connects to the winner. A
 command reports a failed start, with the log's last line, only once the lock is
 free and nothing answers.
 
+When a daemon dies without shutting down, the wrappers of running harnesses
+start a new one: a wrapper does so only when no daemon holds the lock and the
+discovery file still names the daemon it used, so it never races a daemon
+another command is starting.
+
 ## Launches
 
 Every running harness is a launch:
@@ -95,7 +109,30 @@ for example `needs-auth` with the command to log in. A `codex app-server`
 process shows one launch per thread, indented under the process.
 
 If a harness's agx wrapper dies without saying goodbye, its access expires
-after `daemon.lease_seconds` (60 by default).
+after `daemon.lease_seconds` (60 by default). The log's `launch ended` line for
+an expired launch has a `reason`: `harness gone` or `wrapper and harness gone`
+when the harness exited too; `wrapper gone, harness still running` for a
+harness left without its wrapper; `renewals stopped, wrapper still running` for
+a wrapper that did not renew in time, as after the computer slept; and `no
+renewal` for a launch whose harness never started.
+
+On Windows, a host that ends a harness by terminating the agx wrapper it spawned
+ends the harness and its descendants with it, as their wrapper keeps them in a
+job object. When the harness exits on its own, what it started keeps running.
+On Unix, killing the wrapper with SIGKILL leaves the harness running until the
+host closes its terminal or pipes; SIGTERM and SIGINT reach the harness.
+
+A wrapper whose launch the daemon refuses to take back, because the launch's
+directory no longer resolves or the configuration does not load, retries for 5
+minutes and then warns that MCP access is lost.
+
+## Cache cleanup
+
+A lease after it starts, and hourly from then on, the daemon deletes the
+cached copies of skills and instructions that no launch used for 7 days, and
+files that interrupted writes, launches, and package installations left in the
+cache more than an hour ago. A copy a launch uses is kept for as long as the
+launch runs.
 
 ## Graceful shutdown
 

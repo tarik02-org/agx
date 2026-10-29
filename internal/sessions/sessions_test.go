@@ -1,11 +1,16 @@
 package sessions
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -203,18 +208,100 @@ func TestRecordsFile(t *testing.T) {
 	if err := records.Finish("l", at(5)); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := records.load()
+	// A thread that never bound finishes without a record.
+	if err := records.Finish("unbound", at(5)); err != nil {
+		t.Fatal(err)
+	}
+	loaded, folded, err := records.load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(loaded) != 1 || loaded[0].Finished == nil || !loaded[0].Finished.Equal(at(5)) {
-		t.Fatalf("records = %+v", loaded)
+	if len(loaded) != 1 || loaded[0].Finished == nil || !loaded[0].Finished.Equal(at(5)) || folded {
+		t.Fatalf("records = %+v, folded %v", loaded, folded)
 	}
-	if err := os.WriteFile(filepath.Join(state, "launch-records.json"), []byte("{damaged"), 0o600); err != nil {
+	if err := records.update(func([]Record) []Record { return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if loaded, err := records.load(); err != nil || len(loaded) != 0 {
-		t.Fatalf("a damaged file must start over: %v, %v", loaded, err)
+	b, err := os.ReadFile(records.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines := bytes.Count(b, []byte("\n")); lines != 1 {
+		t.Fatalf("a listing left %d lines for one record:\n%s", lines, b)
+	}
+	if err := os.WriteFile(records.path, append([]byte("{damaged\n"), b...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if loaded, _, err := records.load(); err != nil || len(loaded) != 1 {
+		t.Fatalf("a damaged line must be skipped: %v, %v", loaded, err)
+	}
+}
+
+func TestRecordsKeepConcurrentLaunches(t *testing.T) {
+	records := NewRecords(t.TempDir())
+	var wg sync.WaitGroup
+	for i := range 32 {
+		wg.Go(func() {
+			launch := fmt.Sprint(i)
+			if err := records.Start(Record{Launch: launch, Builtin: "codex", Started: at(i)}); err != nil {
+				t.Error(err)
+			}
+			if err := records.Finish(launch, at(i+1)); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	// A listing folding the log meanwhile loses none of them.
+	wg.Go(func() {
+		for range 8 {
+			if err := records.update(func([]Record) []Record { return nil }); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+	wg.Wait()
+	loaded, _, err := records.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded) != 32 {
+		t.Fatalf("%d of 32 records kept", len(loaded))
+	}
+	for _, r := range loaded {
+		if r.Finished == nil {
+			t.Errorf("launch %s lost its finish", r.Launch)
+		}
+	}
+}
+
+func TestRecordsFoldTheLegacyFile(t *testing.T) {
+	state := t.TempDir()
+	legacy := filepath.Join(state, "launch-records.json")
+	if err := os.WriteFile(legacy, []byte(`{"version":1,"records":[
+		{"launch":"old","harness":"codex-x","builtin":"codex","directory":"/work","started":"2026-10-01T12:00:00Z"}
+	]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	records := NewRecords(state)
+	if err := records.Finish("old", at(5)); err != nil {
+		t.Fatal(err)
+	}
+	if err := records.Start(Record{Launch: "new", Builtin: "codex", Started: at(10)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := records.update(func([]Record) []Record { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(legacy); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("the legacy file was not removed: %v", err)
+	}
+	loaded, folded, err := records.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded) != 2 || loaded[0].Launch != "old" || loaded[0].Harness != "codex-x" ||
+		loaded[0].Finished == nil || !loaded[0].Finished.Equal(at(5)) || loaded[1].Launch != "new" || !folded {
+		t.Fatalf("records = %+v, folded %v", loaded, folded)
 	}
 }
 
@@ -241,6 +328,18 @@ func TestIndexReusesUnchangedFiles(t *testing.T) {
 	}
 	if parses != 1 {
 		t.Fatalf("parsed %d times, want the second listing to reuse the cache", parses)
+	}
+	if runtime.GOOS != "windows" {
+		// An unchanged file is not even opened.
+		if err := os.Chmod(file, 0); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := OpenIndex(path).Parse(file, parse); !ok {
+			t.Fatal("an unchanged file was opened")
+		}
+		if err := os.Chmod(file, 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	later := time.Now().Add(time.Hour)
 	if err := os.Chtimes(file, later, later); err != nil {
@@ -316,7 +415,7 @@ func TestList(t *testing.T) {
 	if other.ID != "b" || other.Harness != "codex" || other.Recorded {
 		t.Errorf("other = %+v", other)
 	}
-	records, err := NewRecords(state).load()
+	records, _, err := NewRecords(state).load()
 	if err != nil || len(records) != 1 || !slices.Equal(records[0].Sessions, []string{"a"}) {
 		t.Fatalf("records = %+v, %v", records, err)
 	}

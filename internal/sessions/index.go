@@ -63,35 +63,26 @@ func OpenIndex(path string) *Index {
 }
 
 func (x *Index) Parse(path string, parse adapters.ParseFunc) (adapters.Session, bool) {
+	// A cached file is recognized by its metadata alone: opening thousands of large stores is what
+	// makes a listing slow.
+	info, err := os.Stat(path)
+	if err != nil {
+		x.unreadable(err)
+		return adapters.Session{}, false
+	}
+	if session, ok, hit := x.cached(path, info); hit {
+		return session, ok
+	}
 	f, err := os.Open(path)
 	if err != nil {
-		// A file removed while listing is simply gone; others count as unreadable.
-		if !errors.Is(err, fs.ErrNotExist) {
-			x.count(func(s *Stats) { s.Malformed++ })
-		}
+		x.unreadable(err)
 		return adapters.Session{}, false
 	}
 	defer func() { _ = f.Close() }()
-	info, err := f.Stat()
-	if err != nil {
+	// The file may have changed since it was looked up; what is parsed is what the cache keeps.
+	if info, err = f.Stat(); err != nil {
 		x.count(func(s *Stats) { s.Malformed++ })
 		return adapters.Session{}, false
-	}
-	x.mu.Lock()
-	x.seen[path] = true
-	cached, ok := x.entries[path]
-	x.mu.Unlock()
-	if ok && cached.Size == info.Size() && cached.Modified.Equal(info.ModTime()) {
-		x.count(func(s *Stats) {
-			s.Cached++
-			if cached.Malformed {
-				s.Malformed++
-			}
-		})
-		if cached.Session == nil {
-			return adapters.Session{}, false
-		}
-		return *cached.Session, true
 	}
 	session, listed, err := parse(f, info)
 	e := indexEntry{Size: info.Size(), Modified: info.ModTime(), Malformed: err != nil}
@@ -107,6 +98,34 @@ func (x *Index) Parse(path string, parse adapters.ParseFunc) (adapters.Session, 
 	}
 	x.mu.Unlock()
 	return session, err == nil && listed
+}
+
+// unreadable counts a file that could not be read; one removed while listing is simply gone.
+func (x *Index) unreadable(err error) {
+	if !errors.Is(err, fs.ErrNotExist) {
+		x.count(func(s *Stats) { s.Malformed++ })
+	}
+}
+
+// cached returns the session cached for path while info matches it; hit is false otherwise.
+func (x *Index) cached(path string, info fs.FileInfo) (session adapters.Session, ok, hit bool) {
+	x.mu.Lock()
+	x.seen[path] = true
+	cached, found := x.entries[path]
+	x.mu.Unlock()
+	if !found || cached.Size != info.Size() || !cached.Modified.Equal(info.ModTime()) {
+		return adapters.Session{}, false, false
+	}
+	x.count(func(s *Stats) {
+		s.Cached++
+		if cached.Malformed {
+			s.Malformed++
+		}
+	})
+	if cached.Session == nil {
+		return adapters.Session{}, false, true
+	}
+	return *cached.Session, true, true
 }
 
 func (x *Index) count(update func(*Stats)) {
@@ -135,5 +154,5 @@ func (x *Index) Save(prune bool) error {
 	if !x.changed {
 		return nil
 	}
-	return securefs.WriteJSON(x.path, indexFile{Version: indexVersion, Files: x.entries})
+	return securefs.WriteCacheJSON(x.path, indexFile{Version: indexVersion, Files: x.entries})
 }

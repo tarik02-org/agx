@@ -135,6 +135,9 @@ type Skill struct {
 	// Inline marks definitions written in a selection list, whose IDs may not be reused.
 	Inline bool   `yaml:"-" json:"-"`
 	Source Source `yaml:"-" json:"source"`
+	// installed is the content hash of a skill inside an installed package, which follows from
+	// the package's content hash without reading the files.
+	installed string
 }
 
 // Instructions is guidance text: a file, a file from a Git source, or text in configuration.
@@ -407,7 +410,9 @@ type Snapshot struct {
 	Missing []ID `json:"missing,omitempty"`
 	// Injections lists tagged values the launch resolves, as configured; never their values.
 	Injections []Injection `json:"injections,omitempty"`
-	Config     *Config     `json:"-"`
+	// SkillHashes holds the content hash of each selected skill as resolution found it.
+	SkillHashes map[ID]string `json:"-"`
+	Config      *Config       `json:"-"`
 }
 
 func Canonical(path string) (string, error) {
@@ -594,13 +599,15 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 	}{c.withoutPositions(), dir, harness, runtime.GOOS + "/" + runtime.GOARCH})
 	// Local resources are content inputs too, even when no package is declared.
 	content := []string{s.ID}
+	s.SkillHashes = map[ID]string{}
 	for _, r := range s.Resources {
 		switch r.Kind {
 		case "skill":
-			h, err := c.Skills[r.ID].TreeHash()
+			h, err := c.Skills[r.ID].ContentHash()
 			if err != nil {
 				return nil, fmt.Errorf("skill %s: %w", r.ID, err)
 			}
+			s.SkillHashes[r.ID] = h
 			content = append(content, h)
 		case "instructions":
 			b, err := c.Instructions[r.ID].Read()

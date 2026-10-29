@@ -18,10 +18,6 @@ import (
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
-// replaceTimeout bounds waiting for a daemon of another build to exit; it first lets requests
-// in flight finish for its own grace period, which this build does not know.
-const replaceTimeout = time.Minute
-
 // serveDaemon serves the daemon in this process. The first stop signal shuts it down
 // gracefully, keeping its launches for the next daemon; a second one shuts it down at once.
 func serveDaemon(
@@ -68,8 +64,8 @@ type daemonRestarted struct {
 	KeptLaunches int `json:"kept_launches"`
 }
 
-// restartDaemon stops the running daemon, if any, waits until it exited, and starts one of this
-// build with the same root, unless keepRoot is false and paths names another. grace replaces the
+// restartDaemon stops the running daemon, if any, of any version, waits until it exited, and
+// starts one of this agx with the same root, unless keepRoot is false and paths names another. grace replaces the
 // daemon's shutdown grace period when positive.
 func restartDaemon(
 	ctx context.Context,
@@ -93,11 +89,7 @@ func restartDaemon(
 		return result, err
 	}
 	if result.Stopped {
-		if grace <= 0 {
-			grace = daemon.ShutdownGrace
-		}
-		// Shutting down also lets MCP servers exit, which takes a few seconds more.
-		if err := awaitExit(ctx, paths, grace+startupTimeout); err != nil {
+		if err := awaitExit(ctx, paths, exitTimeout(grace)); err != nil {
 			return result, err
 		}
 	}

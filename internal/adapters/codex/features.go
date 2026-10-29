@@ -2,6 +2,8 @@ package codex
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -70,7 +72,27 @@ func codexExecutable(t adapters.Target) (string, error) {
 // featureKey is what a features list answer depends on.
 type featureKey struct {
 	executable, home, args string
-	modified               [2]time.Time
+	settings               [2][32]byte
+}
+
+// settings hashes a configuration file's content, leaving out the tables Codex rewrites as it
+// runs, project trust and dismissed notices, which no feature reads. A missing file has the
+// settings of an empty one.
+func settings(content []byte) [32]byte {
+	var d map[string]any
+	if toml.Unmarshal(content, &d) != nil {
+		return sha256.Sum256(content)
+	}
+	delete(d, "projects")
+	delete(d, "notice")
+	if len(d) == 0 {
+		return [32]byte{}
+	}
+	b, err := json.Marshal(d)
+	if err != nil {
+		return sha256.Sum256(content)
+	}
+	return sha256.Sum256(b)
 }
 
 // featureCache holds features list answers by featureKey.
@@ -81,10 +103,12 @@ var featureCache sync.Map
 // the configuration options of t's arguments; a profile's features.plugins goes before them as an
 // override, since features list takes no --profile. When Codex cannot be found or fails, plugins
 // count as enabled: launching and installing then report Codex's own error. Answers are kept
-// until config.toml or the profile file changes.
+// until the settings in config.toml or the profile file change.
 func pluginsDisabled(ctx context.Context, executable, home string, t adapters.Target) string {
 	args, profile := configArgs(t.Arguments)
 	files := [2]string{filepath.Join(home, "config.toml")}
+	var contents [2][]byte
+	contents[0], _ = os.ReadFile(files[0])
 	if profile != "" {
 		files[1] = filepath.Join(home, profile+".config.toml")
 		var d struct {
@@ -92,15 +116,15 @@ func pluginsDisabled(ctx context.Context, executable, home string, t adapters.Ta
 				Plugins *bool `toml:"plugins"`
 			} `toml:"features"`
 		}
-		if b, err := os.ReadFile(files[1]); err == nil && toml.Unmarshal(b, &d) == nil && d.Features.Plugins != nil {
+		var err error
+		if contents[1], err = os.ReadFile(files[1]); err == nil && toml.Unmarshal(contents[1], &d) == nil &&
+			d.Features.Plugins != nil {
 			args = append([]string{"--config=features.plugins=" + strconv.FormatBool(*d.Features.Plugins)}, args...)
 		}
 	}
 	key := featureKey{executable: executable, home: home, args: strings.Join(args, "\x00")}
-	for i, file := range files {
-		if info, err := os.Stat(file); file != "" && err == nil {
-			key.modified[i] = info.ModTime()
-		}
+	for i, content := range contents {
+		key.settings[i] = settings(content)
 	}
 	if cached, ok := featureCache.Load(key); ok {
 		return cached.(string)

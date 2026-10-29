@@ -224,7 +224,7 @@ What `data` holds:
   | `needs_login` | a secret needs `agx secret login` first |
   | `mcp_failed` | an MCP server failed the request, or could not be reached or started |
   | `daemon_unavailable` | the daemon isn't running and couldn't start |
-  | `version_mismatch` | the CLI and the daemon are different versions |
+  | `version_mismatch` | the daemon runs an agx this one cannot use |
   | `network` | a network request failed |
   | `timeout` | the command timed out |
   | `interrupted` | the command was interrupted |

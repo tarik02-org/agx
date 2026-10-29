@@ -67,9 +67,9 @@ skips the load while every file, glob, lockfile, and package cache entry it read
 keeps its modification time and size; it publishes only valid configurations.
 An invalid reload blocks new preparations while existing launches retain their
 snapshots. Ended launches and package operations are pruned after an hour; idle
-MCP sessions after 30 minutes. Package caches and generated artifacts are
-retained; automatic garbage collection, registries, a UI, and automatic native
-binary updates are deferred.
+MCP sessions after 30 minutes. Package caches are retained, and generated
+artifacts until no launch used them for 7 days; package garbage collection,
+registries, a UI, and automatic native binary updates are deferred.
 
 Managed instructions use Codex's `developer_instructions` override (a thread's
 `developerInstructions` under `app-server`), Claude's

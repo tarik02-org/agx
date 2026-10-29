@@ -299,42 +299,6 @@ func writableDirectory(path, dir string) error {
 	return os.Remove(probe.Name())
 }
 
-// Write replaces path atomically, keeping the mode of an existing file; a symlinked file is
-// written at its target.
-func Write(path string, data []byte) error {
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		path = resolved
-	}
-	mode := os.FileMode(0o644)
-	if info, err := os.Stat(path); err == nil {
-		mode = info.Mode().Perm()
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".agx-*")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(f.Name()) }()
-	err = f.Chmod(mode)
-	if err == nil {
-		_, err = f.Write(data)
-	}
-	if err == nil {
-		err = f.Sync()
-	}
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	return os.Rename(f.Name(), path)
-}
-
 // sortedUnique returns values sorted without duplicates.
 func sortedUnique(values []string) []string {
 	out := slices.Clone(values)
