@@ -275,7 +275,7 @@ func printSignatures(s *v1.McpTools, withSchema bool) error {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString(highlightSignature(out, signature(t)) + "\n")
+		b.WriteString(signature(t) + "\n")
 		description := mcptools.FirstLine(t.Description, 160)
 		if description == "" {
 			description = mcptools.FirstLine(t.Title, 160)
@@ -557,7 +557,12 @@ func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir stri
 		content = append(content, fields)
 		switch item.Type {
 		case "text":
-			line(highlightJSON(out, item.Text))
+			var indented bytes.Buffer
+			if err := json.Indent(&indented, []byte(item.Text), "", "  "); err == nil {
+				line(indented.String())
+			} else {
+				line(item.Text)
+			}
 		case "image", "audio":
 			path, err := files.write(item.Data, item.MIMEType, "")
 			if err != nil {
@@ -613,7 +618,7 @@ func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir stri
 		if err := json.Indent(&indented, []byte(msg.StructuredContentJson), "", "  "); err != nil {
 			indented.WriteString(msg.StructuredContentJson)
 		}
-		line(highlightJSON(out, indented.String()))
+		line(indented.String())
 	}
 	var structured json.RawMessage
 	if msg.StructuredContentJson != "" {

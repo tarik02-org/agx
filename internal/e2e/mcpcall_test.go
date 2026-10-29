@@ -120,7 +120,10 @@ harnesses:
 			t.Fatalf("structured content = %s, want %s", called.StructuredContent, want)
 		}
 		r := e.runInput(binaries.agx, nil, `{"query":"stdin"}`, "mcp", "call", "echo.shape", "--args", "-")
-		if r.code != 0 || r.stdout != `{"query":"stdin"}`+"\n" {
+		var echoed struct {
+			Query string `json:"query"`
+		}
+		if r.code != 0 || json.Unmarshal([]byte(r.stdout), &echoed) != nil || echoed.Query != "stdin" {
 			t.Fatalf("--args - exited %d: %q %q", r.code, r.stdout, r.stderr)
 		}
 		e.jsonOK(&called, "mcp", "call", "tracker.echo", "text=on-demand")
