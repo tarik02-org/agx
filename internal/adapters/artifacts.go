@@ -8,7 +8,6 @@ import (
 	"unicode"
 
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/securefs"
 )
 
 // SkillNames names the snapshot's skills inside the shared artifacts by their native names, which
@@ -36,7 +35,7 @@ func SkillNames(s *config.Snapshot) map[config.ID]string {
 
 func artifacts(s *config.Snapshot, cache string) (string, error) {
 	parent := filepath.Join(cache, "artifacts")
-	if err := securefs.EnsureDir(parent); err != nil {
+	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return "", err
 	}
 	// v2 names skill directories by native name instead of by ID.
@@ -50,12 +49,13 @@ func artifacts(s *config.Snapshot, cache string) (string, error) {
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
 	plugin := filepath.Join(tmp, "plugin")
-	if err := os.MkdirAll(plugin, 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(plugin, ".claude-plugin"), 0o700); err != nil {
 		return "", err
 	}
-	if err := securefs.WriteJSON(
+	if err := os.WriteFile(
 		filepath.Join(plugin, ".claude-plugin", "plugin.json"),
-		map[string]string{"name": "agx-managed", "version": "1.0.0"},
+		[]byte(`{"name": "agx-managed", "version": "1.0.0"}`+"\n"),
+		0o600,
 	); err != nil {
 		return "", err
 	}
@@ -78,7 +78,7 @@ func artifacts(s *config.Snapshot, cache string) (string, error) {
 			text.WriteString("\n\n")
 		}
 	}
-	if err := securefs.Write(filepath.Join(tmp, "instructions.md"), []byte(text.String()), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(tmp, "instructions.md"), []byte(text.String()), 0o600); err != nil {
 		return "", err
 	}
 	// Detect edits during compilation instead of caching content under the wrong snapshot ID.

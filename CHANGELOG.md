@@ -63,3 +63,5 @@ agx has not been released yet. What it does today:
   Windows shims are copies that run the agx recorded beside them.
 - New Claude launches pass `--session-id`, so `agx sessions` resumes exactly the session a
   launch started with its definition.
+- Only the runtime and state directories are private; caches get default permissions, and agx
+  no longer changes the permissions of the configuration directory or writes lockfiles private.

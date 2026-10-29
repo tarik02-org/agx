@@ -280,10 +280,10 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 // writeLocks stages every lockfile before replacing any, so a failure while writing
 // leaves all previous locks in place.
 func writeLocks(locks map[string]config.Lock) error {
-	staged := map[string]string{}
+	staged := map[string]*securefs.Staged{}
 	defer func() {
-		for _, tmp := range staged {
-			_ = os.Remove(tmp)
+		for _, s := range staged {
+			s.Discard()
 		}
 	}()
 	for path, l := range locks {
@@ -291,33 +291,14 @@ func writeLocks(locks map[string]config.Lock) error {
 		if err != nil {
 			return err
 		}
-		if err := securefs.EnsureDir(filepath.Dir(path)); err != nil {
-			return err
-		}
-		f, err := os.CreateTemp(filepath.Dir(path), ".agx-*")
+		s, err := securefs.Stage(path, b)
 		if err != nil {
 			return err
 		}
-		staged[path] = f.Name()
-		if err = f.Chmod(0o600); err == nil {
-			err = securefs.Private(f.Name())
-		}
-		if err == nil {
-			_, err = f.Write(b)
-		}
-		if err == nil {
-			err = f.Sync()
-		}
-		closeErr := f.Close()
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return closeErr
-		}
+		staged[path] = s
 	}
-	for path, tmp := range staged {
-		if err := os.Rename(tmp, path); err != nil {
+	for path, s := range staged {
+		if err := s.Commit(); err != nil {
 			return err
 		}
 		delete(staged, path)

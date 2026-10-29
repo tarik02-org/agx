@@ -63,7 +63,7 @@ func (s *Server) saveState() {
 			state.Revoked[id] = at.UTC()
 		}
 	}
-	if err := securefs.WriteJSON(StatePath(s.paths), state); err != nil {
+	if err := securefs.WritePrivateJSON(StatePath(s.paths), state); err != nil {
 		fmt.Fprintf(os.Stderr, "agx daemon: cannot save daemon state: %v\n", err)
 	}
 }

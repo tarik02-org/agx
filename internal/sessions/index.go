@@ -135,5 +135,5 @@ func (x *Index) Save(prune bool) error {
 	if !x.changed {
 		return nil
 	}
-	return securefs.WriteJSON(x.path, indexFile{Version: indexVersion, Files: x.entries})
+	return securefs.WriteCacheJSON(x.path, indexFile{Version: indexVersion, Files: x.entries})
 }

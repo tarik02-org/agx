@@ -338,7 +338,7 @@ func Serve(
 	}), ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 64 * 1024}
 	// Discovery goes first: the listener queues connections meanwhile, and a wrapper whose old
 	// client reaches this daemon on a reused port must find the token it needs then.
-	if err := securefs.WriteJSON(discoveryPath, discovery); err != nil {
+	if err := securefs.WritePrivateJSON(discoveryPath, discovery); err != nil {
 		return err
 	}
 	defer func() {
@@ -1051,7 +1051,7 @@ func savedEnd(state v1.Launch_State) string {
 	return "unknown"
 }
 
-// abandonedTemporary matches the temporary files securefs.Write creates; one that outlives its
+// abandonedTemporary matches the temporary files securefs.WritePrivate creates; one that outlives its
 // write was left by a process killed mid-write.
 var abandonedTemporary = regexp.MustCompile(`^\.agx-[0-9]+$`)
 

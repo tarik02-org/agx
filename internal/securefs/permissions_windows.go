@@ -1,23 +1,22 @@
 package securefs
 
 import (
-	"os/user"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
 
-func Private(path string) error {
-	current, err := user.Current()
+func makePrivate(path string) error {
+	sid, err := currentSID()
 	if err != nil {
 		return err
 	}
 	// Setting a directory's DACL rewrites the inherited entries of everything below it, which
-	// takes seconds for a cache of thousands of files; a directory already private is left be.
-	if isPrivate(path, current.Uid) {
+	// takes seconds for a large tree; a directory already private is left be.
+	if isPrivate(path, sid) {
 		return nil
 	}
-	sd, err := windows.SecurityDescriptorFromString("D:P(A;OICI;FA;;;" + current.Uid + ")")
+	sd, err := windows.SecurityDescriptorFromString("D:P(A;OICI;FA;;;" + sid + ")")
 	if err != nil {
 		return err
 	}
@@ -36,10 +35,20 @@ func Private(path string) error {
 	)
 }
 
-// isPrivate reports whether path's DACL is the one Private sets: protected, with a single entry
-// granting uid full access, inherited by files and directories below. Its text form varies, as
-// Windows adds the auto-inherited flag once it has propagated it.
-func isPrivate(path, uid string) bool {
+// currentSID reads the user from the process token; looking the user up by name can ask a domain
+// controller.
+func currentSID() (string, error) {
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return "", err
+	}
+	return user.User.Sid.String(), nil
+}
+
+// isPrivate reports whether path's DACL is the one makePrivate sets: protected, with a single
+// entry granting owner full access, inherited by files and directories below. Its text form
+// varies, as Windows adds the auto-inherited flag once it has propagated it.
+func isPrivate(path, owner string) bool {
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
 		return false
@@ -62,5 +71,5 @@ func isPrivate(path, uid string) bool {
 	return ace.Header.AceType == windows.ACCESS_ALLOWED_ACE_TYPE &&
 		ace.Header.AceFlags&inherit == inherit &&
 		ace.Mask&fullAccess == fullAccess &&
-		sid.String() == uid
+		sid.String() == owner
 }

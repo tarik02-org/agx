@@ -51,7 +51,7 @@ else of a transcript is kept. A file that cannot be parsed is skipped and
 counted. The same ID in two files keeps the more recently modified one. Stores
 are only read.
 
-The index is cached in `<cache>/sessions/index.json` (mode 0600), keyed by path
+The index is cached in `<cache>/sessions/index.json`, keyed by path
 and valid while a file's size and modification time are unchanged; files are
 parsed concurrently. On real stores of 72 session files (51 listed, 320 MB) a
 listing takes 0.1 s with an empty cache and 0.03 s with a current one.

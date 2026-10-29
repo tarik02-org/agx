@@ -525,7 +525,7 @@ func ReadPin(path string) (string, error) {
 }
 
 func WritePin(path, hash string) error {
-	return securefs.WriteJSON(path, pin{Version: pinVersion, Hash: hash})
+	return securefs.WriteCacheJSON(path, pin{Version: pinVersion, Hash: hash})
 }
 
 // merger merges one file: a configuration fragment, or a package manifest under its namespace.

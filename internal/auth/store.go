@@ -94,7 +94,7 @@ func (s *Store) Delete(k string) error {
 func (s *Store) locked(op func(*storeFile) (bool, error)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+	if err := securefs.EnsureDir(filepath.Dir(s.path)); err != nil {
 		return err
 	}
 	lock := flock.New(s.path + ".lock")
@@ -114,7 +114,7 @@ func (s *Store) locked(op func(*storeFile) (bool, error)) error {
 	if err != nil {
 		return err
 	}
-	return securefs.Write(s.path, append(b, '\n'), 0o600)
+	return securefs.WritePrivate(s.path, append(b, '\n'))
 }
 
 // masterKey returns the store's key, asking the keychain only the first time, and creates it for

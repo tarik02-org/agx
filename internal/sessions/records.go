@@ -78,7 +78,7 @@ func (r Records) Finish(launch string, at time.Time) error {
 
 // update applies change to the records under the lock; a nil result leaves the file unchanged.
 func (r Records) update(change func([]Record) []Record) error {
-	if err := securefs.EnsureDir(filepath.Dir(r.path)); err != nil {
+	if err := os.MkdirAll(filepath.Dir(r.path), 0o700); err != nil {
 		return err
 	}
 	lock := flock.New(r.path + ".lock")
@@ -94,7 +94,7 @@ func (r Records) update(change func([]Record) []Record) error {
 	if changed == nil {
 		return nil
 	}
-	return securefs.WriteJSON(r.path, recordFile{Version: 1, Records: changed})
+	return securefs.WritePrivateJSON(r.path, recordFile{Version: 1, Records: changed})
 }
 
 func (r Records) load() ([]Record, error) {
