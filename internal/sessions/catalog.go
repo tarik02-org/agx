@@ -2,8 +2,6 @@ package sessions
 
 import (
 	"cmp"
-	"context"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -21,6 +19,7 @@ type Entry struct {
 	Builtin  string `json:"builtin"`
 	Harness  string `json:"harness"`
 	Recorded bool   `json:"recorded"`
+	Store    string `json:"-"`
 }
 
 type Listing struct {
@@ -31,69 +30,42 @@ type Listing struct {
 	Errors map[string]error
 }
 
-// List reads every harness store, matches sessions to launch records, and prunes records whose
-// sessions are gone. The index lives under cache; records under state.
-func List(ctx context.Context, registry adapters.Registry, cache, state string) (Listing, error) {
-	index := OpenIndex(filepath.Join(cache, "sessions", "index.json"))
-	listing := Listing{Errors: map[string]error{}}
-	byKey := map[[2]string]int{}
-	canonical := map[string]string{}
-	for _, name := range registry.Names() {
-		a, _ := registry.Adapter(name)
-		found, err := a.Sessions(ctx, index)
-		if err != nil {
-			listing.Errors[name] = err
-			continue
-		}
-		for _, s := range found {
-			dir, ok := canonical[s.Directory]
-			if !ok {
-				// A deleted directory canonicalizes through its nearest existing parent.
-				dir = filepath.Clean(s.Directory)
-				if c, err := platform.Canonical(s.Directory); err == nil {
-					dir = c
-				}
-				canonical[s.Directory] = dir
-			}
-			s.Directory = dir
-			key := [2]string{name, s.ID}
-			// The same ID in two files, as after a copy or an interrupted rewrite: the newer wins.
-			if i, ok := byKey[key]; ok {
-				if s.Updated.After(listing.Entries[i].Updated) {
-					listing.Entries[i].Session = s
-				}
-				continue
-			}
-			byKey[key] = len(listing.Entries)
-			listing.Entries = append(listing.Entries, Entry{Session: s, Builtin: name, Harness: name})
-		}
-	}
-	if err := ctx.Err(); err != nil {
-		return Listing{}, err
-	}
-	if err := NewRecords(state).update(func(records []Record) []Record {
-		return match(listing.Entries, records, listing.Errors, time.Now())
-	}); err != nil {
-		return Listing{}, err
-	}
-	listing.Stats = index.Stats()
-	if err := index.Save(len(listing.Errors) == 0); err != nil {
-		return Listing{}, err
-	}
-	slices.SortStableFunc(listing.Entries, func(a, b Entry) int {
-		return cmp.Or(b.Updated.Compare(a.Updated), cmp.Compare(a.Builtin, b.Builtin), cmp.Compare(a.ID, b.ID))
-	})
-	return listing, nil
-}
-
 // match assigns entries their recorded harness and returns the records with newly matched
 // sessions added and stale ones pruned, or nil when nothing changed.
-func match(entries []Entry, records []Record, failed map[string]error, now time.Time) []Record {
+func match(
+	entries []Entry,
+	records []Record,
+	failed map[string]error,
+	now time.Time,
+	stores map[string]string,
+) []Record {
 	changed := false
-	owner := map[[2]string]int{}
+	canonical := map[string]string{}
+	for _, root := range stores {
+		canonical[root] = root
+	}
+	for i := range records {
+		root := records[i].Store
+		if root == "" {
+			continue
+		}
+		real, ok := canonical[root]
+		if !ok {
+			real = root
+			if path, err := platform.Canonical(root); err == nil {
+				real = path
+			}
+			canonical[root] = real
+		}
+		if root != real {
+			records[i].Store = real
+			changed = true
+		}
+	}
+	owner := map[[3]string]int{}
 	for i, r := range records {
 		for _, id := range r.Sessions {
-			key := [2]string{r.Builtin, id}
+			key := [3]string{r.Builtin, r.Store, id}
 			if j, ok := owner[key]; !ok || records[j].Started.Before(r.Started) {
 				owner[key] = i
 			}
@@ -101,13 +73,14 @@ func match(entries []Entry, records []Record, failed map[string]error, now time.
 	}
 	for i := range entries {
 		e := &entries[i]
-		key := [2]string{e.Builtin, e.ID}
+		key := [3]string{e.Builtin, e.Store, e.ID}
 		j, ok := owner[key]
 		if !ok {
 			j = -1
 			for k, r := range records {
 				from, to := r.window()
-				if r.Exact || r.Builtin != e.Builtin || r.Directory != e.Directory || e.Started.Before(from) ||
+				if r.Exact || r.Builtin != e.Builtin || r.Store != e.Store || r.Directory != e.Directory ||
+					e.Started.Before(from) ||
 					e.Started.After(to) {
 					continue
 				}
@@ -126,19 +99,20 @@ func match(entries []Entry, records []Record, failed map[string]error, now time.
 		e.Harness = records[j].Harness
 		e.Recorded = true
 	}
-	present := map[[2]string]bool{}
+	present := map[[3]string]bool{}
 	for _, e := range entries {
-		present[[2]string{e.Builtin, e.ID}] = true
+		present[[3]string{e.Builtin, e.Store, e.ID}] = true
 	}
 	kept := records[:0]
 	for _, r := range records {
-		if failed[r.Builtin] != nil {
+		root, scanned := stores[r.Builtin]
+		if !scanned || root != r.Store || failed[r.Builtin] != nil {
 			kept = append(kept, r)
 			continue
 		}
 		ids := r.Sessions[:0]
 		for _, id := range r.Sessions {
-			if present[[2]string{r.Builtin, id}] {
+			if present[[3]string{r.Builtin, r.Store, id}] {
 				ids = append(ids, id)
 			}
 		}

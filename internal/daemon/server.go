@@ -36,6 +36,7 @@ import (
 	"github.com/tarik02-org/agx/internal/mcpruntime"
 	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/securefs"
+	"github.com/tarik02-org/agx/internal/sessions"
 )
 
 // Version is set at build time with -ldflags "-X agx/internal/daemon.Version=..."; otherwise it
@@ -143,7 +144,8 @@ type Server struct {
 	// changed wakes runtime watchers when launches or their MCP servers change.
 	changed *notifier
 	// clients pools the daemon's own MCP client sessions for ListTools and CallTool.
-	clients *clientPool
+	clients  *clientPool
+	sessions *sessions.Catalog
 	// shared runs the stdio MCP servers launches share.
 	shared *mcpruntime.Shared
 	// editMu serializes planning and applying configuration changes, so an apply checks and
@@ -255,6 +257,7 @@ func Serve(
 		revoked:   state.Revoked,
 		port:      listener.Addr().(*net.TCPAddr).Port,
 		clients:   newClientPool(),
+		sessions:  sessions.NewCatalog(serverCtx, registry, paths.Cache, paths.State),
 		icons:     newMCPIcons(filepath.Join(paths.Cache, "mcp-icons.json")),
 		changed:   &notifier{},
 	}
@@ -907,6 +910,9 @@ func (s *Server) GetRuntime(
 	ctx context.Context,
 	req *connect.Request[v1.GetRuntimeRequest],
 ) (*connect.Response[v1.GetRuntimeResponse], error) {
+	if req.Msg.ProbeOnly {
+		return connect.NewResponse(&v1.GetRuntimeResponse{}), nil
+	}
 	return connect.NewResponse(&v1.GetRuntimeResponse{Runtime: s.runtime()}), nil
 }
 

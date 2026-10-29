@@ -6,6 +6,7 @@ package sessions
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"sync"
@@ -27,6 +28,8 @@ type Index struct {
 	seen    map[string]bool
 	changed bool
 	stats   Stats
+	file    fs.FileInfo
+	err     error
 }
 
 // Stats counts what one listing did with session files.
@@ -51,7 +54,13 @@ type indexFile struct {
 // OpenIndex loads the cache at path; a missing, damaged, or outdated cache starts empty.
 func OpenIndex(path string) *Index {
 	x := &Index{path: path, entries: map[string]indexEntry{}, seen: map[string]bool{}}
-	b, err := os.ReadFile(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return x
+	}
+	defer func() { _ = f.Close() }()
+	x.file, _ = f.Stat()
+	b, err := io.ReadAll(f)
 	if err != nil {
 		return x
 	}
@@ -60,6 +69,27 @@ func OpenIndex(path string) *Index {
 		x.entries = file.Files
 	}
 	return x
+}
+
+// reload observes another daemon's atomic cache replacement while the store lock is held.
+func (x *Index) reload() {
+	info, err := os.Stat(x.path)
+	if err == nil && x.file != nil && os.SameFile(info, x.file) && info.Size() == x.file.Size() &&
+		info.ModTime().Equal(x.file.ModTime()) {
+		return
+	}
+	fresh := OpenIndex(x.path)
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	x.entries, x.file, x.changed = fresh.entries, fresh.file, false
+}
+
+func (x *Index) begin() {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	x.seen = map[string]bool{}
+	x.stats = Stats{}
+	x.err = nil
 }
 
 func (x *Index) Parse(path string, parse adapters.ParseFunc) (adapters.Session, bool) {
@@ -81,7 +111,7 @@ func (x *Index) Parse(path string, parse adapters.ParseFunc) (adapters.Session, 
 	defer func() { _ = f.Close() }()
 	// The file may have changed since it was looked up; what is parsed is what the cache keeps.
 	if info, err = f.Stat(); err != nil {
-		x.count(func(s *Stats) { s.Malformed++ })
+		x.unreadable(err)
 		return adapters.Session{}, false
 	}
 	session, listed, err := parse(f, info)
@@ -103,8 +133,19 @@ func (x *Index) Parse(path string, parse adapters.ParseFunc) (adapters.Session, 
 // unreadable counts a file that could not be read; one removed while listing is simply gone.
 func (x *Index) unreadable(err error) {
 	if !errors.Is(err, fs.ErrNotExist) {
-		x.count(func(s *Stats) { s.Malformed++ })
+		x.mu.Lock()
+		defer x.mu.Unlock()
+		x.stats.Malformed++
+		if x.err == nil {
+			x.err = err
+		}
 	}
+}
+
+func (x *Index) Err() error {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	return x.err
 }
 
 // cached returns the session cached for path while info matches it; hit is false otherwise.
@@ -154,5 +195,10 @@ func (x *Index) Save(prune bool) error {
 	if !x.changed {
 		return nil
 	}
-	return securefs.WriteCacheJSON(x.path, indexFile{Version: indexVersion, Files: x.entries})
+	if err := securefs.WriteCacheJSON(x.path, indexFile{Version: indexVersion, Files: x.entries}); err != nil {
+		return err
+	}
+	x.changed = false
+	x.file, _ = os.Stat(x.path)
+	return nil
 }

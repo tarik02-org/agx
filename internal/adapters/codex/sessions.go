@@ -19,26 +19,26 @@ import (
 // Sessions reads rollouts under $CODEX_HOME/sessions/YYYY/MM/DD. Names given with /rename live in
 // session_index.jsonl rather than in the rollout. Subagent threads are not listed: Codex resumes
 // them through their parent.
-func (Adapter) Sessions(ctx context.Context, files adapters.SessionFiles) ([]adapters.Session, error) {
-	home, err := adapters.StoreHome("CODEX_HOME", ".codex")
-	if err != nil {
-		return nil, err
-	}
-	paths, err := adapters.FindSessionFiles(filepath.Join(home, "sessions"), 3, "rollout-*.jsonl")
-	if err != nil {
-		return nil, err
-	}
+func (Adapter) SessionRoot(directory string, lookup func(string) string) (string, error) {
+	return adapters.StoreHome("CODEX_HOME", ".codex", directory, lookup)
+}
+
+func (Adapter) Sessions(ctx context.Context, files adapters.SessionFiles, home string) ([]adapters.Session, error) {
+	paths, scanErr := adapters.FindSessionFiles(ctx, filepath.Join(home, "sessions"), 3, "rollout-*.jsonl")
 	sessions := adapters.ParseAll(ctx, files, paths, parseRollout)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	names, err := threadNames(filepath.Join(home, "session_index.jsonl"))
 	if err != nil {
-		return nil, err
+		return sessions, errors.Join(scanErr, err)
 	}
 	for i := range sessions {
 		if name := names[sessions[i].ID]; name != "" {
 			sessions[i].Title = adapters.Excerpt(name, 120)
 		}
 	}
-	return sessions, nil
+	return sessions, scanErr
 }
 
 func (Adapter) Resume(s adapters.Session) []string { return []string{"resume", s.ID} }

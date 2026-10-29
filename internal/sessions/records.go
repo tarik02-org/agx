@@ -2,6 +2,7 @@ package sessions
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -20,6 +21,7 @@ type Record struct {
 	Launch    string     `json:"launch"`
 	Harness   string     `json:"harness"`
 	Builtin   string     `json:"builtin"`
+	Store     string     `json:"store"`
 	Directory string     `json:"directory"`
 	Started   time.Time  `json:"started"`
 	Finished  *time.Time `json:"finished,omitempty"`
@@ -77,7 +79,7 @@ func (r Records) append(line any) error {
 	if err != nil {
 		return err
 	}
-	unlock, err := r.lock()
+	unlock, err := r.lock(context.Background())
 	if err != nil {
 		return err
 	}
@@ -85,12 +87,18 @@ func (r Records) append(line any) error {
 	return securefs.AppendPrivate(r.path, append(b, '\n'))
 }
 
-func (r Records) lock() (func(), error) {
+func (r Records) lock(ctx context.Context) (func(), error) {
 	if err := os.MkdirAll(filepath.Dir(r.path), 0o700); err != nil {
 		return nil, err
 	}
 	lock := flock.New(r.path + ".lock")
-	if err := lock.Lock(); err != nil {
+	var err error
+	if ctx.Done() == nil {
+		err = lock.Lock()
+	} else {
+		_, err = lock.TryLockContext(ctx, 25*time.Millisecond)
+	}
+	if err != nil {
 		return nil, err
 	}
 	return func() { _ = lock.Unlock() }, nil
@@ -99,8 +107,8 @@ func (r Records) lock() (func(), error) {
 // update applies change to the records under the lock and rewrites the log with one line per
 // record. A nil result leaves the records unchanged, and the log is rewritten only if it was not
 // already folded.
-func (r Records) update(change func([]Record) []Record) error {
-	unlock, err := r.lock()
+func (r Records) update(ctx context.Context, change func([]Record) []Record) error {
+	unlock, err := r.lock(ctx)
 	if err != nil {
 		return err
 	}
@@ -110,6 +118,9 @@ func (r Records) update(change func([]Record) []Record) error {
 		return err
 	}
 	changed := change(slices.Clone(records))
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if changed == nil {
 		if folded {
 			return nil

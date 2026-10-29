@@ -109,6 +109,9 @@ const (
 	// RuntimeServiceWatchRuntimeProcedure is the fully-qualified name of the RuntimeService's
 	// WatchRuntime RPC.
 	RuntimeServiceWatchRuntimeProcedure = "/agx.v1.RuntimeService/WatchRuntime"
+	// RuntimeServiceListSessionsProcedure is the fully-qualified name of the RuntimeService's
+	// ListSessions RPC.
+	RuntimeServiceListSessionsProcedure = "/agx.v1.RuntimeService/ListSessions"
 	// RuntimeServiceListToolsProcedure is the fully-qualified name of the RuntimeService's ListTools
 	// RPC.
 	RuntimeServiceListToolsProcedure = "/agx.v1.RuntimeService/ListTools"
@@ -860,6 +863,9 @@ func (UnimplementedLaunchServiceHandler) AttachLaunch(context.Context, *connect.
 type RuntimeServiceClient interface {
 	GetRuntime(context.Context, *connect.Request[v1.GetRuntimeRequest]) (*connect.Response[v1.GetRuntimeResponse], error)
 	WatchRuntime(context.Context, *connect.Request[v1.WatchRuntimeRequest]) (*connect.ServerStreamForClient[v1.WatchRuntimeResponse], error)
+	// Returns a cached session listing when available, then a freshly scanned listing.
+	// Store roots are resolved by the caller, whose environment may differ from the daemon's.
+	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.ServerStreamForClient[v1.ListSessionsResponse], error)
 	// Lists the tools of the MCP servers in a call scope. Takes a launch grant for a launch's
 	// scope, or management authorization.
 	ListTools(context.Context, *connect.Request[v1.ListToolsRequest]) (*connect.Response[v1.ListToolsResponse], error)
@@ -900,6 +906,12 @@ func NewRuntimeServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(runtimeServiceMethods.ByName("WatchRuntime")),
 			connect.WithClientOptions(opts...),
 		),
+		listSessions: connect.NewClient[v1.ListSessionsRequest, v1.ListSessionsResponse](
+			httpClient,
+			baseURL+RuntimeServiceListSessionsProcedure,
+			connect.WithSchema(runtimeServiceMethods.ByName("ListSessions")),
+			connect.WithClientOptions(opts...),
+		),
 		listTools: connect.NewClient[v1.ListToolsRequest, v1.ListToolsResponse](
 			httpClient,
 			baseURL+RuntimeServiceListToolsProcedure,
@@ -937,6 +949,7 @@ func NewRuntimeServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 type runtimeServiceClient struct {
 	getRuntime       *connect.Client[v1.GetRuntimeRequest, v1.GetRuntimeResponse]
 	watchRuntime     *connect.Client[v1.WatchRuntimeRequest, v1.WatchRuntimeResponse]
+	listSessions     *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
 	listTools        *connect.Client[v1.ListToolsRequest, v1.ListToolsResponse]
 	callTool         *connect.Client[v1.CallToolRequest, v1.CallToolResponse]
 	listMcpProcesses *connect.Client[v1.ListMcpProcessesRequest, v1.ListMcpProcessesResponse]
@@ -952,6 +965,11 @@ func (c *runtimeServiceClient) GetRuntime(ctx context.Context, req *connect.Requ
 // WatchRuntime calls agx.v1.RuntimeService.WatchRuntime.
 func (c *runtimeServiceClient) WatchRuntime(ctx context.Context, req *connect.Request[v1.WatchRuntimeRequest]) (*connect.ServerStreamForClient[v1.WatchRuntimeResponse], error) {
 	return c.watchRuntime.CallServerStream(ctx, req)
+}
+
+// ListSessions calls agx.v1.RuntimeService.ListSessions.
+func (c *runtimeServiceClient) ListSessions(ctx context.Context, req *connect.Request[v1.ListSessionsRequest]) (*connect.ServerStreamForClient[v1.ListSessionsResponse], error) {
+	return c.listSessions.CallServerStream(ctx, req)
 }
 
 // ListTools calls agx.v1.RuntimeService.ListTools.
@@ -983,6 +1001,9 @@ func (c *runtimeServiceClient) Stop(ctx context.Context, req *connect.Request[v1
 type RuntimeServiceHandler interface {
 	GetRuntime(context.Context, *connect.Request[v1.GetRuntimeRequest]) (*connect.Response[v1.GetRuntimeResponse], error)
 	WatchRuntime(context.Context, *connect.Request[v1.WatchRuntimeRequest], *connect.ServerStream[v1.WatchRuntimeResponse]) error
+	// Returns a cached session listing when available, then a freshly scanned listing.
+	// Store roots are resolved by the caller, whose environment may differ from the daemon's.
+	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest], *connect.ServerStream[v1.ListSessionsResponse]) error
 	// Lists the tools of the MCP servers in a call scope. Takes a launch grant for a launch's
 	// scope, or management authorization.
 	ListTools(context.Context, *connect.Request[v1.ListToolsRequest]) (*connect.Response[v1.ListToolsResponse], error)
@@ -1017,6 +1038,12 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 		RuntimeServiceWatchRuntimeProcedure,
 		svc.WatchRuntime,
 		connect.WithSchema(runtimeServiceMethods.ByName("WatchRuntime")),
+		connect.WithHandlerOptions(opts...),
+	)
+	runtimeServiceListSessionsHandler := connect.NewServerStreamHandler(
+		RuntimeServiceListSessionsProcedure,
+		svc.ListSessions,
+		connect.WithSchema(runtimeServiceMethods.ByName("ListSessions")),
 		connect.WithHandlerOptions(opts...),
 	)
 	runtimeServiceListToolsHandler := connect.NewUnaryHandler(
@@ -1055,6 +1082,8 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 			runtimeServiceGetRuntimeHandler.ServeHTTP(w, r)
 		case RuntimeServiceWatchRuntimeProcedure:
 			runtimeServiceWatchRuntimeHandler.ServeHTTP(w, r)
+		case RuntimeServiceListSessionsProcedure:
+			runtimeServiceListSessionsHandler.ServeHTTP(w, r)
 		case RuntimeServiceListToolsProcedure:
 			runtimeServiceListToolsHandler.ServeHTTP(w, r)
 		case RuntimeServiceCallToolProcedure:
@@ -1080,6 +1109,10 @@ func (UnimplementedRuntimeServiceHandler) GetRuntime(context.Context, *connect.R
 
 func (UnimplementedRuntimeServiceHandler) WatchRuntime(context.Context, *connect.Request[v1.WatchRuntimeRequest], *connect.ServerStream[v1.WatchRuntimeResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.WatchRuntime is not implemented"))
+}
+
+func (UnimplementedRuntimeServiceHandler) ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest], *connect.ServerStream[v1.ListSessionsResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.ListSessions is not implemented"))
 }
 
 func (UnimplementedRuntimeServiceHandler) ListTools(context.Context, *connect.Request[v1.ListToolsRequest]) (*connect.Response[v1.ListToolsResponse], error) {

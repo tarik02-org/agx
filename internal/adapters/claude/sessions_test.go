@@ -17,7 +17,11 @@ func list(t *testing.T, home string) (map[string]adapters.Session, sessions.Stat
 	t.Helper()
 	t.Setenv("CLAUDE_CONFIG_DIR", home)
 	index := sessions.OpenIndex(filepath.Join(t.TempDir(), "index.json"))
-	found, err := (claude.Adapter{}).Sessions(context.Background(), index)
+	root, err := (claude.Adapter{}).SessionRoot(".", os.Getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found, err := (claude.Adapter{}).Sessions(context.Background(), index, root)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -241,12 +241,27 @@ func runHarness(
 		cmd.Env = append(cmd.Env, name+"="+p.Spawn.EnvironmentOverrides[name])
 	}
 	cmd.Env = guardEnviron(cmd.Env)
+	environment := map[string]string{}
+	for _, pair := range cmd.Env {
+		key, value, _ := strings.Cut(pair, "=")
+		if runtime.GOOS == "windows" {
+			key = strings.ToUpper(key)
+		}
+		environment[key] = value
+	}
+	store, storeErr := adapter.SessionRoot(cmd.Dir, func(name string) string {
+		if runtime.GOOS == "windows" {
+			name = strings.ToUpper(name)
+		}
+		return environment[name]
+	})
 	// The record lets the launcher resume this launch's sessions with the same definition.
 	records := sessions.NewRecords(paths.State)
 	record := sessions.Record{
 		Launch:    p.Launch.Id,
 		Harness:   name,
 		Builtin:   h.Builtin,
+		Store:     store,
 		Directory: directory,
 		Started:   time.Now(),
 	}
@@ -256,7 +271,9 @@ func runHarness(
 	if assigned != "" {
 		record.Sessions, record.Exact = []string{assigned}, true
 	}
-	if err := records.Start(record); err != nil {
+	if storeErr != nil {
+		ui.Diagnose(ui.Warn, "cannot locate the session store for resumption: %v", storeErr)
+	} else if err := records.Start(record); err != nil {
 		ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
 	}
 	link := newLease(paths, c, &v1.AttachLaunchRequest{
@@ -378,6 +395,7 @@ func runHarness(
 			parent:  p.Launch.Id,
 			harness: name,
 			builtin: h.Builtin,
+			store:   store,
 			records: records,
 		}
 		connect = func(cmd *exec.Cmd) (func(), error) {

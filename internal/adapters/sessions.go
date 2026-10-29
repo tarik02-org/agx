@@ -75,28 +75,46 @@ func ParseAll(ctx context.Context, files SessionFiles, paths []string, parse Par
 
 // StoreHome is the directory named by the harness's override variable, or dir under the home
 // directory.
-func StoreHome(variable, dir string) (string, error) {
-	if value := os.Getenv(variable); value != "" {
-		return filepath.Abs(value)
+func StoreHome(variable, dir, directory string, lookup func(string) string) (string, error) {
+	if value := lookup(variable); variable != "" && value != "" {
+		return StorePath(directory, value)
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
+	home := lookup("HOME")
+	if runtime.GOOS == "windows" {
+		home = lookup("USERPROFILE")
 	}
-	return filepath.Join(home, dir), nil
+	if home == "" {
+		var err error
+		home, err = os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+	}
+	return StorePath(directory, filepath.Join(home, dir))
+}
+
+func StorePath(directory, path string) (string, error) {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(directory, path)
+	}
+	return filepath.Abs(path)
 }
 
 // FindSessionFiles lists the regular files under root matching pattern, at most depth directories
 // down. A missing root holds no sessions.
-func FindSessionFiles(root string, depth int, pattern string) ([]string, error) {
+func FindSessionFiles(ctx context.Context, root string, depth int, pattern string) ([]string, error) {
 	paths := []string{}
+	problems := []error{}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err != nil {
 			if path == root && errors.Is(err, fs.ErrNotExist) {
 				return fs.SkipAll
 			}
-			// An unreadable subdirectory hides only its own sessions.
 			if d != nil && d.IsDir() && path != root {
+				problems = append(problems, err)
 				return fs.SkipDir
 			}
 			return err
@@ -116,7 +134,7 @@ func FindSessionFiles(root string, depth int, pattern string) ([]string, error) 
 		}
 		return nil
 	})
-	return paths, err
+	return paths, errors.Join(append(problems, err)...)
 }
 
 // ScanHead calls fn for each line within the head of f until fn returns false. A line longer than

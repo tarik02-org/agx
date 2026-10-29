@@ -46,6 +46,7 @@ func isolate(t *testing.T, configuration string) string {
 		"AGX_CACHE":       filepath.Join(dir, "cache"),
 		"AGX_STATE":       filepath.Join(dir, "state"),
 		"HOME":            filepath.Join(dir, "home"),
+		"USERPROFILE":     filepath.Join(dir, "home"),
 		"XDG_CONFIG_HOME": filepath.Join(dir, "home", ".config"),
 		"XDG_CACHE_HOME":  filepath.Join(dir, "home", ".cache"),
 		"XDG_STATE_HOME":  filepath.Join(dir, "home", ".local", "state"),

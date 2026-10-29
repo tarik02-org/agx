@@ -84,7 +84,7 @@ func probeDaemon(ctx context.Context, paths platform.Paths) (daemon.Discovery, *
 	}
 	c := dial(d)
 	probe, cancel := context.WithTimeout(ctx, probeTimeout)
-	_, err = c.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{}))
+	_, err = c.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{ProbeOnly: true}))
 	cancel()
 	switch {
 	case err == nil:
@@ -209,8 +209,9 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 	}
 	deadline := time.NewTimer(startupTimeout)
 	defer deadline.Stop()
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
+	delay := 10 * time.Millisecond
+	timer := time.NewTimer(0)
+	defer timer.Stop()
 	childExited := false
 	for {
 		select {
@@ -221,12 +222,12 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 		case <-exited:
 			childExited = true
 			exited = nil
-		case <-ticker.C:
+		case <-timer.C:
 		}
 		c, err := newClient(paths)
 		if err == nil {
 			probe, cancel := context.WithTimeout(ctx, time.Second)
-			_, err = c.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{}))
+			_, err = c.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{ProbeOnly: true}))
 			cancel()
 			if err == nil {
 				return logPath, nil
@@ -243,6 +244,8 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 				return "", failed("startup failed")
 			}
 		}
+		timer.Reset(delay)
+		delay = min(delay*2, 100*time.Millisecond)
 	}
 }
 

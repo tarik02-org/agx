@@ -70,7 +70,7 @@ func TestMatchAssignsSessionsToLaunches(t *testing.T) {
 		entry("claude", "e", "/work", at(2)),
 		entry("claude", "g", "/work", at(2)),
 	}
-	got := match(entries, records, nil, at(61))
+	got := match(entries, records, nil, at(61), map[string]string{"codex": "", "claude": ""})
 	if got == nil {
 		t.Fatal("match reported no change")
 	}
@@ -102,7 +102,7 @@ func TestMatchAssignsSessionsToLaunches(t *testing.T) {
 	for i := range again {
 		again[i].Harness, again[i].Recorded = again[i].Builtin, false
 	}
-	if match(again, got, nil, at(62)) != nil {
+	if match(again, got, nil, at(62), map[string]string{"codex": "", "claude": ""}) != nil {
 		t.Error("an unchanged listing rewrote the records")
 	}
 }
@@ -126,16 +126,17 @@ func TestMatchPrunesRecords(t *testing.T) {
 			Sessions:  []string{"y"},
 		},
 		{Launch: "running", Builtin: "claude", Directory: "/work", Started: at(0)},
+		{Launch: "other-store", Builtin: "codex", Store: "/another-store", Started: at(0), Sessions: []string{"z"}},
 	}
 	failed := map[string]error{"pi": fs.ErrPermission}
-	got := match(nil, records, failed, at(120))
+	got := match(nil, records, failed, at(120), map[string]string{"codex": "", "pi": "", "claude": ""})
 	launches := []string{}
 	for _, r := range got {
 		launches = append(launches, r.Launch)
 	}
 	// A record whose sessions are all gone is dropped; one whose store failed is kept as is; a
 	// launch still inside its window may yet start a session.
-	if !slices.Equal(launches, []string{"kept", "running"}) {
+	if !slices.Equal(launches, []string{"kept", "running", "other-store"}) {
 		t.Fatalf("kept records %v", launches)
 	}
 	if !slices.Equal(got[0].Sessions, []string{"y"}) {
@@ -218,7 +219,7 @@ func TestRecordsFile(t *testing.T) {
 	if len(loaded) != 1 || loaded[0].Finished == nil || !loaded[0].Finished.Equal(at(5)) || folded {
 		t.Fatalf("records = %+v, folded %v", loaded, folded)
 	}
-	if err := records.update(func([]Record) []Record { return nil }); err != nil {
+	if err := records.update(context.Background(), func([]Record) []Record { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(records.path)
@@ -253,7 +254,7 @@ func TestRecordsKeepConcurrentLaunches(t *testing.T) {
 	// A listing folding the log meanwhile loses none of them.
 	wg.Go(func() {
 		for range 8 {
-			if err := records.update(func([]Record) []Record { return nil }); err != nil {
+			if err := records.update(context.Background(), func([]Record) []Record { return nil }); err != nil {
 				t.Error(err)
 			}
 		}
@@ -285,8 +286,9 @@ func TestIndexReusesUnchangedFiles(t *testing.T) {
 		return adapters.Session{ID: "s", Updated: info.ModTime()}, true, nil
 	}
 	path := filepath.Join(dir, "cache", "index.json")
+	index := OpenIndex(path)
 	for range 2 {
-		index := OpenIndex(path)
+		index.begin()
 		if s, ok := index.Parse(file, parse); !ok || s.ID != "s" {
 			t.Fatalf("Parse = %+v, %v", s, ok)
 		}
@@ -313,7 +315,7 @@ func TestIndexReusesUnchangedFiles(t *testing.T) {
 	if err := os.Chtimes(file, later, later); err != nil {
 		t.Fatal(err)
 	}
-	index := OpenIndex(path)
+	index = OpenIndex(path)
 	index.Parse(file, parse)
 	if parses != 2 || index.Stats().Parsed != 1 {
 		t.Fatalf("a touched file was not parsed again (%d parses, %+v)", parses, index.Stats())
@@ -338,7 +340,7 @@ type store struct {
 
 func (s store) Name() string { return s.name }
 
-func (s store) Sessions(context.Context, adapters.SessionFiles) ([]adapters.Session, error) {
+func (s store) Sessions(context.Context, adapters.SessionFiles, string) ([]adapters.Session, error) {
 	return s.sessions, nil
 }
 
@@ -363,12 +365,18 @@ func TestList(t *testing.T) {
 	)
 	state := filepath.Join(dir, "state")
 	if err := NewRecords(state).Start(Record{
-		Launch: "l", Harness: "codex-cpa", Builtin: "codex", Directory: canonicalWork,
+		Launch: "l", Harness: "codex-cpa", Builtin: "codex", Store: dir, Directory: canonicalWork,
 		Started: now.Add(-2 * time.Hour), Finished: finished(now.Add(-30 * time.Minute)),
 	}); err != nil {
 		t.Fatal(err)
 	}
-	listing, err := List(context.Background(), registry, filepath.Join(dir, "cache"), state)
+	listing, err := List(
+		context.Background(),
+		registry,
+		filepath.Join(dir, "cache"),
+		state,
+		map[string]string{"codex": dir},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

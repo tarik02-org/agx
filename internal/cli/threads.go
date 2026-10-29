@@ -20,6 +20,7 @@ type threadHost struct {
 	parent  string
 	harness string
 	builtin string
+	store   string
 	records sessions.Records
 }
 
@@ -131,10 +132,14 @@ func (h *threadHost) Bind(ctx context.Context, launch adapters.ThreadLaunch, thr
 		return err
 	}
 	h.lease.bindThread(launch.ID, thread)
+	if h.store == "" {
+		return nil
+	}
 	return h.records.Start(sessions.Record{
 		Launch:    launch.ID,
 		Harness:   h.harness,
 		Builtin:   h.builtin,
+		Store:     h.store,
 		Directory: launch.Directory,
 		Started:   time.Now(),
 		Sessions:  []string{thread},

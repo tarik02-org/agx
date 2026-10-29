@@ -15,7 +15,10 @@ import (
 
 // Paths locates agx's files. Runtime holds the daemon's discovery, lock, log, and saved state under the
 // cache; State holds data worth keeping when the cache is wiped, such as launch records.
-type Paths struct{ Config, Cache, Runtime, State string }
+type Paths struct {
+	Config, Cache, Runtime, State string
+	canonicalConfig               string
+}
 
 func DefaultPaths() (Paths, error) {
 	p := Paths{Config: filepath.Join(xdg.ConfigHome, "agx", "agx.yaml"), Cache: defaultCache()}
@@ -33,7 +36,7 @@ func DefaultPaths() (Paths, error) {
 			)
 		}
 	}
-	return p, p.Derive()
+	return p, nil
 }
 
 func defaultCache() string { return filepath.Join(xdg.CacheHome, "agx") }
@@ -43,10 +46,18 @@ func defaultCache() string { return filepath.Join(xdg.CacheHome, "agx") }
 // It also spells Config as the filesystem does, so that a daemon and its callers, comparing
 // configuration roots, do not tell apart spellings of one file (case, or a Windows short name).
 func (p *Paths) Derive() error {
-	var err error
-	p.Config, err = Canonical(p.Config)
+	cache, err := filepath.Abs(p.Cache)
 	if err != nil {
 		return err
+	}
+	p.Cache = cache
+	// Canonicalization walks the filesystem; repeated derivation of one root need not.
+	if p.Config != p.canonicalConfig {
+		p.Config, err = Canonical(p.Config)
+		if err != nil {
+			return err
+		}
+		p.canonicalConfig = p.Config
 	}
 	hash := sha256.Sum256([]byte(p.Config))
 	p.Runtime = filepath.Join(p.Cache, "runtime", hex.EncodeToString(hash[:6]))

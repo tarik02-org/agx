@@ -15,22 +15,19 @@ import (
 // Sessions reads $CLAUDE_CONFIG_DIR/projects/<escaped directory>/<id>.jsonl. The escaped name is
 // lossy, so the directory comes from the entries' cwd. Subagent transcripts live in nested
 // directories or agent-*.jsonl files and are not listed.
-func (Adapter) Sessions(ctx context.Context, files adapters.SessionFiles) ([]adapters.Session, error) {
-	home, err := adapters.StoreHome("CLAUDE_CONFIG_DIR", ".claude")
-	if err != nil {
-		return nil, err
-	}
-	paths, err := adapters.FindSessionFiles(filepath.Join(home, "projects"), 1, "*.jsonl")
-	if err != nil {
-		return nil, err
-	}
+func (Adapter) SessionRoot(directory string, lookup func(string) string) (string, error) {
+	return adapters.StoreHome("CLAUDE_CONFIG_DIR", ".claude", directory, lookup)
+}
+
+func (Adapter) Sessions(ctx context.Context, files adapters.SessionFiles, home string) ([]adapters.Session, error) {
+	paths, err := adapters.FindSessionFiles(ctx, filepath.Join(home, "projects"), 1, "*.jsonl")
 	kept := paths[:0]
 	for _, p := range paths {
 		if !strings.HasPrefix(filepath.Base(p), "agent-") {
 			kept = append(kept, p)
 		}
 	}
-	return adapters.ParseAll(ctx, files, kept, parseTranscript), nil
+	return adapters.ParseAll(ctx, files, kept, parseTranscript), err
 }
 
 func (Adapter) Resume(s adapters.Session) []string { return []string{"--resume", s.ID} }

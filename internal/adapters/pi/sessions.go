@@ -17,26 +17,19 @@ import (
 // Sessions reads <session dir>/--<escaped directory>--/<timestamp>_<id>.jsonl. The session
 // directory is PI_CODING_AGENT_SESSION_DIR, else the agent settings' sessionDir, else sessions
 // under PI_CODING_AGENT_DIR (~/.pi/agent).
-func (Adapter) Sessions(ctx context.Context, files adapters.SessionFiles) ([]adapters.Session, error) {
-	root, err := sessionDir()
-	if err != nil {
-		return nil, err
-	}
+func (Adapter) Sessions(ctx context.Context, files adapters.SessionFiles, root string) ([]adapters.Session, error) {
 	// A custom session directory may hold files directly as well as per-directory folders.
-	paths, err := adapters.FindSessionFiles(root, 1, "*.jsonl")
-	if err != nil {
-		return nil, err
-	}
-	return adapters.ParseAll(ctx, files, paths, parseSession), nil
+	paths, err := adapters.FindSessionFiles(ctx, root, 1, "*.jsonl")
+	return adapters.ParseAll(ctx, files, paths, parseSession), err
 }
 
 func (Adapter) Resume(s adapters.Session) []string { return []string{"--session", s.ID} }
 
-func sessionDir() (string, error) {
-	if dir := os.Getenv("PI_CODING_AGENT_SESSION_DIR"); dir != "" {
-		return filepath.Abs(dir)
+func (Adapter) SessionRoot(directory string, lookup func(string) string) (string, error) {
+	if dir := lookup("PI_CODING_AGENT_SESSION_DIR"); dir != "" {
+		return adapters.StorePath(directory, dir)
 	}
-	agent, err := adapters.StoreHome("PI_CODING_AGENT_DIR", filepath.Join(".pi", "agent"))
+	agent, err := adapters.StoreHome("PI_CODING_AGENT_DIR", filepath.Join(".pi", "agent"), directory, lookup)
 	if err != nil {
 		return "", err
 	}
@@ -51,7 +44,7 @@ func sessionDir() (string, error) {
 	if err == nil && json.Unmarshal(b, &settings) == nil && settings.SessionDir != "" {
 		dir := settings.SessionDir
 		if rest, ok := strings.CutPrefix(dir, "~"+string(filepath.Separator)); ok {
-			home, err := os.UserHomeDir()
+			home, err := adapters.StoreHome("", "", directory, lookup)
 			if err != nil {
 				return "", err
 			}
@@ -59,10 +52,10 @@ func sessionDir() (string, error) {
 		}
 		// A relative sessionDir follows the working directory, so it names no single store.
 		if filepath.IsAbs(dir) {
-			return dir, nil
+			return adapters.StorePath(directory, dir)
 		}
 	}
-	return filepath.Join(agent, "sessions"), nil
+	return adapters.StorePath(directory, filepath.Join(agent, "sessions"))
 }
 
 type entry struct {
