@@ -646,24 +646,11 @@ func shimChecks(c *config.Config, registry adapters.Registry) []check {
 	if err != nil {
 		return []check{{Group: "shims", Name: "shims", Status: checkWarn, Detail: err.Error()}}
 	}
-	linked, names := linkedOnPath(names)
-	if len(names) == 0 {
-		return []check{{
-			Group:  "shims",
-			Name:   "links",
-			Status: checkPass,
-			Detail: plural(len(linked), "definition") + " run agx through links on PATH",
-		}}
-	}
 	target, err := shims.Target(os.Args[0])
 	if err != nil {
 		return []check{{Group: "shims", Name: "shims", Status: checkWarn, Detail: err.Error()}}
 	}
-	entries, err := shims.List(dir, target, names)
-	if err != nil {
-		return []check{{Group: "shims", Name: "shims", Status: checkWarn, Detail: err.Error()}}
-	}
-	return shimRows(dir, entries, shims.OnPath(dir), shims.Collisions(dir, target, names))
+	return shimFindings(dir, target, names)
 }
 
 // linkedOnPath splits names into those PATH already runs as agx, through links outside the shim

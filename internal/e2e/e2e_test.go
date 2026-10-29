@@ -88,6 +88,7 @@ func newEnv(t *testing.T) *env {
 		"AGX_CACHE":           filepath.Join(dir, "cache"),
 		"AGX_STATE":           filepath.Join(dir, "state"),
 		"HOME":                home,
+		"LOCALAPPDATA":        filepath.Join(home, "localappdata"),
 		"USERPROFILE":         home,
 		"XDG_CONFIG_HOME":     filepath.Join(home, "config"),
 		"XDG_CACHE_HOME":      filepath.Join(home, "cache"),

@@ -171,23 +171,36 @@ func printShims(dir string, entries []shims.Entry) error {
 	return err
 }
 
-// warnShims reports what keeps shims from running as intended.
-func warnShims(dir, target string, names []string) {
+func shimFindings(dir, target string, names []string) []check {
+	linked, names := linkedOnPath(names)
+	if len(names) == 0 {
+		if len(linked) == 0 {
+			return nil
+		}
+		return []check{{
+			Group: "shims", Name: "links", Status: checkPass,
+			Detail: plural(len(linked), "definition") + " run agx through links on PATH",
+		}}
+	}
+	entries, err := shims.List(dir, target, names)
+	if err != nil {
+		return []check{{Group: "shims", Name: "shims", Status: checkWarn, Detail: err.Error()}}
+	}
+	findings := shimRows(dir, entries, shims.OnPath(dir), shims.Collisions(dir, target, names))
 	if shims.InNixStore(target) {
-		ui.Diagnose(
-			ui.Warn,
-			"shims run %s, which Nix garbage collection can remove; run agx shims install through a profile link such as ~/.nix-profile/bin/agx",
-			target,
-		)
+		findings = append(findings, check{
+			Group: "shims", Name: "target", Status: checkWarn,
+			Detail: "shims run " + target + ", which Nix garbage collection can remove",
+			Hint:   "run agx shims install through a profile link such as ~/.nix-profile/bin/agx",
+		})
 	}
-	if !shims.OnPath(dir) {
-		ui.Diagnose(ui.Warn, "%s is not on PATH; add it to run shims by name", dir)
-	}
-	for _, c := range shims.Collisions(dir, target, names) {
-		if c.First {
-			ui.Diagnose(ui.Warn, "%s runs %s, not the agx shim", c.Name, c.Path)
-		} else {
-			ui.Diagnose(ui.Warn, "the %s shim shadows %s", c.Name, c.Path)
+	return findings
+}
+
+func warnShims(dir, target string, names []string) {
+	for _, finding := range shimFindings(dir, target, names) {
+		if finding.Status != checkPass {
+			ui.Diagnose(ui.Warn, "%s; %s", finding.Detail, finding.Hint)
 		}
 	}
 }
