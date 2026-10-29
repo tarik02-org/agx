@@ -93,6 +93,7 @@ func newEnv(t *testing.T) *env {
 		"XDG_CACHE_HOME":      filepath.Join(home, "cache"),
 		"XDG_STATE_HOME":      filepath.Join(home, "state"),
 		"XDG_DATA_HOME":       filepath.Join(home, "data"),
+		"LOCALAPPDATA":        filepath.Join(home, "AppData", "Local"),
 		"CODEX_HOME":          filepath.Join(home, "codex"),
 		"CLAUDE_CONFIG_DIR":   filepath.Join(home, "claude"),
 		"PI_CODING_AGENT_DIR": filepath.Join(home, "pi"),
