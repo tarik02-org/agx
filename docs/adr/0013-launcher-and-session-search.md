@@ -57,17 +57,14 @@ failure keeps the previous session and reports a store warning. The same ID in
 two files keeps the more recently modified one. Stores
 are only read.
 
-Indexes are cached in `<cache>/sessions/<builtin>-<store-hash>.json`, keyed by
-file path and valid while size and modification time are unchanged. A store's
-file lock coordinates refresh and persistence across configuration daemons.
-Resident indexes observe another daemon's cache replacement before refreshing.
-The daemon reuses recent store combinations, evicting idle entries as new
-combinations are requested. At most two refreshes run at once; a refresh visits
-up to three stores in parallel.
+Indexes are cached as rows in `<cache>/cache.db`, keyed by built-in store and
+file path, and valid while size and modification time are unchanged. Only
+changed rows are written. A transaction publishes updates; comparisons against
+the metadata originally read avoid overwriting another scanner's newer work.
+The daemon retains recent completed listings and shares concurrent refreshes.
+At most two refreshes execute at once, visiting up to three stores in parallel.
 New or changed files are parsed concurrently; unchanged files are not opened.
-Metadata discovery remains proportional to store size, but no longer delays the
-launcher's first frame. No filesystem watchers or append-offset parsers are
-needed for that behavior.
+Metadata discovery remains proportional to store size, after the first frame.
 
 Concurrent callers share a refresh, which has the daemon's lifetime and a
 30-second bound. A caller can stop waiting independently. Completed listings
@@ -77,20 +74,13 @@ any readable results, and incomplete scans never prune their index or records.
 
 ## Launch records
 
-The wrapper records each managed launch in `<state>/launch-records.jsonl`, a log
-it appends one line to when the launch starts and one when it finishes, under a
-lock file held only for the append, so recording costs the same however many
-records there are and concurrent launches barely wait for each other. Appends
-are not synced: losing the last line in a crash only makes a session resume with
-its built-in. A listing folds the log into one line per record and rewrites it,
-pruned. The lock is `launch-records.jsonl.lock`. `<state>` is the XDG state directory
-(`$XDG_STATE_HOME/agx`, by default `~/.local/state/agx`, `~/Library/Application Support/agx` on macOS, and
-`%LOCALAPPDATA%\agx` on Windows), not the cache, because records cannot be
-rebuilt and a cache wipe must not lose them; `AGX_STATE` overrides it, and a
-non-default `AGX_CACHE` or `--cache` keeps state in `<cache>/state` so isolated
-runs stay isolated. Each record holds the definition name, its built-in, the
-store root, canonical directory, and start and finish times. Store roots are
-normalized while matching, keeping filesystem traversal off harness startup.
+The wrapper records each managed launch in `<state>/state.db`, updating its row
+at start and finish. Listings update associations and prune expired records in
+a transaction. `<state>` is the XDG state directory; `AGX_STATE` overrides it,
+and a non-default `AGX_CACHE` or `--cache` keeps state in `<cache>/state`.
+A cache wipe does not lose launch associations. Each record holds the definition
+name, built-in, store root, canonical directory, and start and finish times.
+Store roots are normalized while matching, keeping traversal off harness startup.
 A launch the launcher started as a resume records that
 session's ID directly. A new Claude launch starts its session with
 `--session-id` and a UUID agx chooses, and its record lists exactly that

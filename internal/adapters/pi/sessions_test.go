@@ -15,7 +15,11 @@ import (
 
 func list(t *testing.T) (map[string]adapters.Session, sessions.Stats) {
 	t.Helper()
-	index := sessions.OpenIndex(filepath.Join(t.TempDir(), "index.json"))
+	index, err := sessions.OpenIndex(t.Context(), filepath.Join(t.TempDir(), "cache.db"), "pi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = index.Close() })
 	root, err := (pi.Adapter{}).SessionRoot(".", os.Getenv)
 	if err != nil {
 		t.Fatal(err)

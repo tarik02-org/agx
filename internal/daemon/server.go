@@ -37,6 +37,7 @@ import (
 	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/securefs"
 	"github.com/tarik02-org/agx/internal/sessions"
+	"github.com/tarik02-org/agx/internal/storage"
 )
 
 // Version is set at build time with -ldflags "-X agx/internal/daemon.Version=..."; otherwise it
@@ -219,9 +220,9 @@ func Serve(
 	}
 	// Holding the startup lock, no other daemon writes these directories.
 	removeAbandonedTemporaries(paths.State, time.Now())
-	state, err := loadState(StatePath(paths), time.Now())
+	state, err := loadState(paths, time.Now())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "agx daemon: %v\n", err)
+		return fmt.Errorf("load daemon state: %w", err)
 	}
 	if port == 0 {
 		port = state.Port
@@ -258,7 +259,7 @@ func Serve(
 		port:      listener.Addr().(*net.TCPAddr).Port,
 		clients:   newClientPool(),
 		sessions:  sessions.NewCatalog(serverCtx, registry, paths.Cache, paths.State),
-		icons:     newMCPIcons(filepath.Join(paths.Cache, "mcp-icons.json")),
+		icons:     newMCPIcons(storage.Cache(paths.Cache)),
 		changed:   &notifier{},
 	}
 	s.shared = mcpruntime.NewShared(serverCtx, Version, s.changed.notify)

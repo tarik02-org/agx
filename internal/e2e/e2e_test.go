@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/storage"
 )
 
 const (
@@ -454,25 +455,16 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("args = %q, want the definition's group, then the session ID, before the native arguments", d.Args)
 		}
 		// The launch records the session it started, so it never claims another by time.
-		// Each start appends a record line; finish lines carry no harness.
-		type record struct {
-			Harness  string   `json:"harness"`
-			Sessions []string `json:"sessions"`
-			Exact    bool     `json:"exact"`
+		db, err := storage.Open(context.Background(), storage.State(filepath.Join(e.dir, "state")))
+		if err != nil {
+			t.Fatal(err)
 		}
-		var started *record
-		b, err := os.ReadFile(filepath.Join(e.dir, "state", "launch-records.jsonl"))
-		for line := range bytes.Lines(b) {
-			var r record
-			if err == nil {
-				err = json.Unmarshal(line, &r)
-			}
-			if r.Harness != "" {
-				started = &r
-			}
-		}
-		if err != nil || started == nil || !started.Exact || !slices.Equal(started.Sessions, []string{d.Args[n-3]}) {
-			t.Errorf("launch records = %s, %v", b, err)
+		var exact bool
+		err = db.QueryRowContext(context.Background(), `SELECT l.exact FROM launches l
+ JOIN launch_sessions s ON s.launch = l.id WHERE s.session = ?`, d.Args[n-3]).Scan(&exact)
+		_ = db.Close()
+		if err != nil || !exact {
+			t.Errorf("named launch = %v, %v", exact, err)
 		}
 		work, err := filepath.EvalSymlinks(e.work)
 		if err != nil {

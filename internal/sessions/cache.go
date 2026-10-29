@@ -5,18 +5,17 @@ import (
 	"context"
 	"errors"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"sync"
 	"time"
 
-	"github.com/gofrs/flock"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/storage"
 )
 
 // Catalog retains completed listings and parsed files for caller-selected stores.
@@ -37,7 +36,6 @@ type cachedListing struct {
 	used    time.Time
 	done    chan struct{}
 	err     error
-	indexes map[string]*Index
 }
 
 func NewCatalog(ctx context.Context, registry adapters.Registry, cache, state string) *Catalog {
@@ -103,7 +101,7 @@ func (c *Catalog) Refresh(ctx context.Context, stores map[string]string) (Listin
 			}
 			delete(c.listings, oldest)
 		}
-		entry = &cachedListing{indexes: map[string]*Index{}}
+		entry = &cachedListing{}
 		c.listings[key] = entry
 	}
 	entry.used = time.Now()
@@ -131,7 +129,7 @@ func (c *Catalog) refresh(entry *cachedListing, stores map[string]string) {
 	var err error
 	select {
 	case c.workers <- struct{}{}:
-		listing, err = c.scan(ctx, stores, entry.indexes, entry.listing)
+		listing, err = c.scan(ctx, stores, entry.listing)
 		<-c.workers
 	case <-ctx.Done():
 		err = ctx.Err()
@@ -160,13 +158,8 @@ func List(
 func (c *Catalog) scan(
 	ctx context.Context,
 	stores map[string]string,
-	indexes map[string]*Index,
 	previous Listing,
 ) (Listing, error) {
-	dir := filepath.Join(c.cache, "sessions")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return Listing{}, err
-	}
 	type storeResult struct {
 		name     string
 		sessions []adapters.Session
@@ -179,26 +172,19 @@ func (c *Catalog) scan(
 	group.SetLimit(3)
 	for i, name := range names {
 		root := stores[name]
-		index := indexes[name]
-		if index == nil {
-			index = OpenIndex(filepath.Join(dir, name+"-"+config.Digest(root)[:16]+".json"))
-			indexes[name] = index
-		}
 		group.Go(func() error {
 			result := storeResult{name: name}
-			lock := flock.New(index.path + ".lock")
-			if _, err := lock.TryLockContext(ctx, 25*time.Millisecond); err != nil {
+			index, err := OpenIndex(ctx, storage.Cache(c.cache), config.Digest([]string{name, root}))
+			if err != nil {
 				result.err = err
 			} else {
-				defer func() { _ = lock.Unlock() }()
-				index.reload()
-				index.begin()
+				defer func() { _ = index.Close() }()
 				adapter, _ := c.registry.Adapter(name)
 				result.sessions, result.err = adapter.Sessions(ctx, index, root)
 				result.err = errors.Join(result.err, index.Err())
 				result.stats = index.Stats()
 				if ctx.Err() == nil {
-					if err := index.Save(result.err == nil); err != nil {
+					if err := index.Save(ctx, result.err == nil); err != nil {
 						result.err = err
 					}
 				}
@@ -253,9 +239,7 @@ func (c *Catalog) scan(
 			}
 		}
 	}
-	if err := NewRecords(c.state).update(ctx, func(records []Record) []Record {
-		return match(listing.Entries, records, listing.Errors, time.Now(), stores)
-	}); err != nil {
+	if err := NewRecords(c.state).Match(ctx, listing.Entries, listing.Errors, time.Now(), stores); err != nil {
 		return Listing{}, err
 	}
 	slices.SortStableFunc(listing.Entries, func(a, b Entry) int {

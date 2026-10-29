@@ -16,15 +16,14 @@ ran into three problems:
 
 ## Decision
 
-Values live in `secrets.json` in the state directory. The file is JSON written
-atomically with mode 0600 (a private ACL on Windows), and every read-modify-write holds
-`secrets.json.lock`. Each record is sealed with AES-256-GCM under one 256-bit key, with the
-record's key as additional data, so a record cannot be moved under another key. The OS keychain
-holds only that key, as the single item `master-key`. A process asks the keychain for it once and
-keeps it in memory.
+Values live in the `secrets` table of `<state>/state.db` (see
+[ADR 0028](0028-sqlite-state.md)). SQLite transactions serialize updates. Each
+record is sealed with AES-256-GCM under one 256-bit key, with the record's key
+as additional data. The OS keychain holds only that key, as the single item
+`master-key`. A process asks the keychain for it once and keeps it in memory.
 
 - **Lost key:** a store with records whose master key the keychain no longer has, as after a
-  keychain reset, cannot be read; agx says so and names the file to delete to start over.
+  keychain reset, cannot be read; agx says so; remove the affected credentials with `agx secret logout` and store or log in again.
 - **No keychain:** the store fails as the keychain items did; nothing is ever stored in
   plaintext.
 - **Earlier keychain items** are not read; secrets stored before need storing or logging in

@@ -66,7 +66,7 @@ secrets:
 | --- | --- |
 | `command` | the trimmed output of a command, run with a minimal environment and a time limit; the daemon reuses it for a minute, or until configuration changes |
 | `keychain` | the OS keychain; store it with `agx secret set <id>`, which prompts or reads stdin |
-| `sops` | a value in a [sops](https://getsops.io)-encrypted file; see [below](#sops-encrypted-files) |
+| `sops` | a value in a [sops](https://getsops.io)-encrypted records; see [below](#sops-encrypted-files) |
 | `oauth` | an OAuth login; only for an MCP server's `auth`, see [MCP servers](mcp.md#logging-in) |
 
 Store a keychain secret by typing it at the prompt, which does not echo it, or
@@ -87,11 +87,11 @@ An MCP server with `auth: keychain` stores its token the same way, under the
 server's ID. That is how the GitHub MCP server is set up, with a personal
 access token: see [MCP servers](mcp.md#github).
 
-agx keeps these values, and OAuth logins, encrypted in `secrets.json` in its
+agx keeps these values, and OAuth logins, encrypted in `state.db` in its
 state directory. The OS keychain holds only the key, so agx asks it once per
 process, whatever the number or size of the secrets. If the keychain loses the
-key, for example after a keychain reset, the file cannot be read: delete it and
-store the secrets again.
+key, for example after a keychain reset, stored credentials cannot be decrypted. Remove them with `agx secret logout`,
+then store the values or log in again. Other database state remains intact.
 
 There is no plaintext fallback: when the OS keychain is unavailable, keychain
 and OAuth secrets fail with an error.

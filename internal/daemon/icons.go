@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"io"
 	"maps"
 	"mime"
@@ -21,7 +20,8 @@ import (
 
 	"go.yaml.in/yaml/v4"
 
-	"github.com/tarik02-org/agx/internal/securefs"
+	"github.com/tarik02-org/agx/internal/storage"
+	"github.com/tarik02-org/agx/internal/storage/cachedb"
 )
 
 // Icons the web UI draws for definitions arrive as data URIs, so that the UI loads nothing from
@@ -124,16 +124,18 @@ func (c *mcpIcons) load() {
 		return
 	}
 	c.icons = map[string]mcpIcon{}
-	data, err := os.ReadFile(c.path)
+	db, err := storage.OpenCache(context.Background(), c.path)
 	if err != nil {
 		return
 	}
-	var stored map[string]mcpIcon
-	if json.Unmarshal(data, &stored) == nil {
-		for id, icon := range stored {
-			if iconDataURI.MatchString(icon.Icon) {
-				c.icons[id] = icon
-			}
+	defer func() { _ = db.Close() }()
+	icons, err := cachedb.New(db).ListIcons(context.Background())
+	if err != nil {
+		return
+	}
+	for _, icon := range icons {
+		if iconDataURI.MatchString(icon.Icon) {
+			c.icons[icon.ID] = mcpIcon{Source: icon.Source, Icon: icon.Icon}
 		}
 	}
 }
@@ -183,7 +185,15 @@ func (c *mcpIcons) update(ctx context.Context, id string, declared []mcp.Icon) s
 		c.icons[id] = next
 	}
 	// An icon that is not remembered is drawn from the server's kind next time; nothing breaks.
-	_ = securefs.WriteCacheJSON(c.path, c.icons)
+	if db, err := storage.OpenCache(context.Background(), c.path); err == nil {
+		if next.Icon == "" {
+			_ = cachedb.New(db).DeleteIcon(context.Background(), id)
+		} else {
+			_ = cachedb.New(db).
+				PutIcon(context.Background(), cachedb.PutIconParams{ID: id, Source: next.Source, Icon: next.Icon})
+		}
+		_ = db.Close()
+	}
 	return next.Icon
 }
 

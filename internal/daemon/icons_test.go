@@ -28,7 +28,7 @@ func TestMCPIcons(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	path := filepath.Join(t.TempDir(), "mcp-icons.json")
+	path := filepath.Join(t.TempDir(), "cache.db")
 	icons := &mcpIcons{path: path, client: server.Client()}
 	inline := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("png"))
 	wantSVG := "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString(svg)

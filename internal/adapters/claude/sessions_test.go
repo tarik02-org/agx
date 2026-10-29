@@ -16,7 +16,11 @@ import (
 func list(t *testing.T, home string) (map[string]adapters.Session, sessions.Stats) {
 	t.Helper()
 	t.Setenv("CLAUDE_CONFIG_DIR", home)
-	index := sessions.OpenIndex(filepath.Join(t.TempDir(), "index.json"))
+	index, err := sessions.OpenIndex(t.Context(), filepath.Join(t.TempDir(), "cache.db"), "claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = index.Close() })
 	root, err := (claude.Adapter{}).SessionRoot(".", os.Getenv)
 	if err != nil {
 		t.Fatal(err)

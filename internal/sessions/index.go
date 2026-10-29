@@ -4,16 +4,18 @@
 package sessions
 
 import (
-	"encoding/json"
+	"context"
+	"database/sql"
 	"errors"
-	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/tarik02-org/agx/internal/adapters"
-	"github.com/tarik02-org/agx/internal/securefs"
+	"github.com/tarik02-org/agx/internal/storage"
+	"github.com/tarik02-org/agx/internal/storage/cachedb"
 )
 
 // indexVersion changes whenever parsing does, so a newer agx parses every file again.
@@ -22,14 +24,15 @@ const indexVersion = 1
 // Index caches parsed session files keyed by path, valid while a file's size and modification
 // time are unchanged. It never holds more than a listing shows.
 type Index struct {
-	path    string
-	mu      sync.Mutex
-	entries map[string]indexEntry
-	seen    map[string]bool
-	changed bool
-	stats   Stats
-	file    fs.FileInfo
-	err     error
+	db       *sql.DB
+	store    string
+	mu       sync.Mutex
+	entries  map[string]indexEntry
+	original map[string]indexEntry
+	seen     map[string]bool
+	changed  map[string]bool
+	stats    Stats
+	err      error
 }
 
 // Stats counts what one listing did with session files.
@@ -40,57 +43,60 @@ type Stats struct {
 }
 
 type indexEntry struct {
+	Version   int
 	Size      int64             `json:"size"`
-	Modified  time.Time         `json:"modified"`
+	Modified  int64             `json:"modified"`
 	Session   *adapters.Session `json:"session,omitempty"`
 	Malformed bool              `json:"malformed,omitempty"`
 }
 
-type indexFile struct {
-	Version int                   `json:"version"`
-	Files   map[string]indexEntry `json:"files"`
-}
-
-// OpenIndex loads the cache at path; a missing, damaged, or outdated cache starts empty.
-func OpenIndex(path string) *Index {
-	x := &Index{path: path, entries: map[string]indexEntry{}, seen: map[string]bool{}}
-	f, err := os.Open(path)
+func OpenIndex(ctx context.Context, path, store string) (*Index, error) {
+	db, err := storage.OpenCache(ctx, path)
 	if err != nil {
-		return x
+		return nil, err
 	}
-	defer func() { _ = f.Close() }()
-	x.file, _ = f.Stat()
-	b, err := io.ReadAll(f)
+	success := false
+	defer func() {
+		if !success {
+			_ = db.Close()
+		}
+	}()
+	x := &Index{
+		db:      db,
+		store:   store,
+		entries: map[string]indexEntry{},
+		seen:    map[string]bool{},
+		changed: map[string]bool{},
+	}
+	rows, err := cachedb.New(db).ListSessionFiles(ctx, store)
 	if err != nil {
-		return x
+		return nil, err
 	}
-	var file indexFile
-	if json.Unmarshal(b, &file) == nil && file.Version == indexVersion && file.Files != nil {
-		x.entries = file.Files
+	for _, row := range rows {
+		entry := indexEntry{Version: int(row.Version), Size: row.Size, Modified: row.Modified, Malformed: row.Malformed}
+		if row.Listed && entry.Version == indexVersion {
+			entry.Session = &adapters.Session{
+				ID:        row.SessionID,
+				Directory: row.Directory,
+				Title:     row.Title,
+				Message:   row.Message,
+			}
+			if row.Started.Valid {
+				entry.Session.Started = time.Unix(0, row.Started.Int64)
+			}
+			if row.Updated.Valid {
+				entry.Session.Updated = time.Unix(0, row.Updated.Int64)
+			}
+		}
+		x.entries[row.Path] = entry
 	}
-	return x
+
+	x.original = maps.Clone(x.entries)
+	success = true
+	return x, nil
 }
 
-// reload observes another daemon's atomic cache replacement while the store lock is held.
-func (x *Index) reload() {
-	info, err := os.Stat(x.path)
-	if err == nil && x.file != nil && os.SameFile(info, x.file) && info.Size() == x.file.Size() &&
-		info.ModTime().Equal(x.file.ModTime()) {
-		return
-	}
-	fresh := OpenIndex(x.path)
-	x.mu.Lock()
-	defer x.mu.Unlock()
-	x.entries, x.file, x.changed = fresh.entries, fresh.file, false
-}
-
-func (x *Index) begin() {
-	x.mu.Lock()
-	defer x.mu.Unlock()
-	x.seen = map[string]bool{}
-	x.stats = Stats{}
-	x.err = nil
-}
+func (x *Index) Close() error { return x.db.Close() }
 
 func (x *Index) Parse(path string, parse adapters.ParseFunc) (adapters.Session, bool) {
 	// A cached file is recognized by its metadata alone: opening thousands of large stores is what
@@ -115,13 +121,18 @@ func (x *Index) Parse(path string, parse adapters.ParseFunc) (adapters.Session, 
 		return adapters.Session{}, false
 	}
 	session, listed, err := parse(f, info)
-	e := indexEntry{Size: info.Size(), Modified: info.ModTime(), Malformed: err != nil}
+	e := indexEntry{
+		Version:   indexVersion,
+		Size:      info.Size(),
+		Modified:  info.ModTime().UnixNano(),
+		Malformed: err != nil,
+	}
 	if err == nil && listed {
 		e.Session = &session
 	}
 	x.mu.Lock()
 	x.entries[path] = e
-	x.changed = true
+	x.changed[path] = true
 	x.stats.Parsed++
 	if err != nil {
 		x.stats.Malformed++
@@ -154,7 +165,8 @@ func (x *Index) cached(path string, info fs.FileInfo) (session adapters.Session,
 	x.seen[path] = true
 	cached, found := x.entries[path]
 	x.mu.Unlock()
-	if !found || cached.Size != info.Size() || !cached.Modified.Equal(info.ModTime()) {
+	if !found || cached.Version != indexVersion || cached.Size != info.Size() ||
+		cached.Modified != info.ModTime().UnixNano() {
 		return adapters.Session{}, false, false
 	}
 	x.count(func(s *Stats) {
@@ -181,24 +193,100 @@ func (x *Index) Stats() Stats {
 	return x.stats
 }
 
-// Save writes the cache when it changed. With prune, it keeps only files seen since it was opened;
-// a listing where a store failed must not prune, or that store's entries would be lost.
-func (x *Index) Save(prune bool) error {
+// Save publishes changed files and prunes unseen files only after a complete scan.
+func (x *Index) Save(ctx context.Context, prune bool) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	for path := range x.entries {
-		if prune && !x.seen[path] {
-			delete(x.entries, path)
-			x.changed = true
-		}
-	}
-	if !x.changed {
-		return nil
-	}
-	if err := securefs.WriteCacheJSON(x.path, indexFile{Version: indexVersion, Files: x.entries}); err != nil {
+	tx, err := x.db.BeginTx(ctx, nil)
+	if err != nil {
 		return err
 	}
-	x.changed = false
-	x.file, _ = os.Stat(x.path)
+	defer func() { _ = tx.Rollback() }()
+	q := cachedb.New(tx)
+	saved := map[string]indexEntry{}
+	pruned := []string{}
+	for path, entry := range x.entries {
+		if prune && !x.seen[path] {
+			if err := q.DeleteSessionFile(ctx, cachedb.DeleteSessionFileParams{
+				Store: x.store, Path: path, Modified: entry.Modified, Size: entry.Size, Version: int64(entry.Version),
+			}); err != nil {
+				return err
+			}
+			pruned = append(pruned, path)
+			continue
+		}
+		if !x.changed[path] {
+			continue
+		}
+		var session adapters.Session
+		if entry.Session != nil {
+			session = *entry.Session
+		}
+		var started, updated sql.NullInt64
+		if !session.Started.IsZero() {
+			started = sql.NullInt64{Int64: session.Started.UnixNano(), Valid: true}
+		}
+		if !session.Updated.IsZero() {
+			updated = sql.NullInt64{Int64: session.Updated.UnixNano(), Valid: true}
+		}
+		var err error
+		var affected int64
+		if original, exists := x.original[path]; exists {
+			affected, err = q.UpdateSessionFile(ctx, cachedb.UpdateSessionFileParams{
+				Store:            x.store,
+				Path:             path,
+				Size:             entry.Size,
+				Modified:         entry.Modified,
+				Version:          int64(indexVersion),
+				Malformed:        entry.Malformed,
+				Listed:           entry.Session != nil,
+				SessionID:        session.ID,
+				Directory:        session.Directory,
+				Title:            session.Title,
+				Message:          session.Message,
+				Started:          started,
+				Updated:          updated,
+				OriginalSize:     original.Size,
+				OriginalModified: original.Modified,
+				OriginalVersion:  int64(original.Version),
+			})
+		} else {
+			affected, err = q.InsertSessionFile(ctx, cachedb.InsertSessionFileParams{
+				Store:     x.store,
+				Path:      path,
+				Size:      entry.Size,
+				Modified:  entry.Modified,
+				Version:   int64(indexVersion),
+				Malformed: entry.Malformed,
+				Listed:    entry.Session != nil,
+				SessionID: session.ID,
+				Directory: session.Directory,
+				Title:     session.Title,
+				Message:   session.Message,
+				Started:   started,
+				Updated:   updated,
+			})
+		}
+		if err != nil {
+			return err
+		}
+		if affected != 0 {
+			saved[path] = entry
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	for path, entry := range saved {
+		x.original[path] = entry
+	}
+	for _, path := range pruned {
+		delete(x.original, path)
+		delete(x.entries, path)
+	}
+	clear(x.changed)
 	return nil
 }
