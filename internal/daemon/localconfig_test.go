@@ -88,10 +88,27 @@ func TestLaunchHistoryReportSurvivesDaemonReplacement(t *testing.T) {
 	if _, err := s.RecordLaunch(t.Context(), connect.NewRequest(request)); err != nil {
 		t.Fatal(err)
 	}
+	local := config.EmptyLocal()
+	local.Document["mcp"] = map[string]any{"temporary": map[string]any{"command": []string{"tool"}}}
+	if _, err := configstore.WriteSession(
+		t.Context(),
+		s.paths.State,
+		s.paths.Config,
+		"launch",
+		local,
+		nil,
+		[32]byte{},
+	); err != nil {
+		t.Fatal(err)
+	}
 	replacement := &Server{paths: s.paths, adapters: builtin.Registry()}
 	request.FinishedAt = timestamppb.New(now.Add(-time.Minute))
 	if _, err := replacement.RecordLaunch(t.Context(), connect.NewRequest(request)); err != nil {
 		t.Fatal(err)
+	}
+	saved, _, err := configstore.ReadSession(t.Context(), s.paths.State, s.paths.Config, "launch", [32]byte{})
+	if err != nil || saved.Revision != 0 {
+		t.Fatalf("durable completion retained attachments: %v, %v", saved, err)
 	}
 	request.FinishedAt = nil
 	if _, err := replacement.RecordLaunch(t.Context(), connect.NewRequest(request)); err != nil {

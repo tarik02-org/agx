@@ -49,8 +49,14 @@ _Avoid_: Connection
 
 **On-demand MCP server**: An MCP server with `load: on_demand`: launches select
 it as usual, but harnesses do not get it in their tool list; agents reach it
-with `agx mcp call`. The opposite is a native server.
+through the built-in agx server or with `agx mcp call`. The opposite is a native server.
 _Avoid_: Lazy server
+
+**Built-in agx server**: The MCP server offered to each launch for browsing
+resources, saving configuration and using temporary attachments.
+
+**Temporary attachment**: An MCP server added to one running launch, available
+until that launch ends, without changing its saved configuration.
 
 **Call scope**: The MCP servers `agx mcp tools` and `agx mcp call` reach: a
 launch's, through its grant, or the servers selected for a directory, or every
@@ -61,7 +67,8 @@ directory at launch time.
 
 **Launch**: One running harness instance associated with a snapshot.
 
-**Launch grant**: Authorization to use the selected MCP servers during a launch.
+**Launch grant**: Authorization to use a launch's MCP servers and manage resources
+through its built-in agx server until the launch ends.
 
 **Lifecycle credential**: Authorization held by the wrapper to renew or finish
 one launch, separate from the harness's launch grant.

@@ -29,7 +29,9 @@ Each launch gets the resources selected for the current directory:
 - **Skills** appear under their names: `agx-managed:<name>` in Claude Code,
   `<name>` in Pi, and as a plugin per skill in Codex.
 - **MCP servers** appear as `agx-<id>`, for example `agx-github`. The harness
-  talks to them through the agx daemon, which holds their credentials.
+  talks to them through the agx daemon, which holds their credentials. Every
+  managed launch also gets the built-in [`agx` server](mcp.md#the-built-in-agx-server)
+  for resource discovery, configuration edits and temporary MCP attachments.
 
 Codex's `-C`/`--cd` changes the directory agx resolves resources for.
 
@@ -163,7 +165,9 @@ harnesses:
   overrides and the definition's `args`. A setting merges with the table your
   `config.toml` has at that path, so `model_providers.cpa` above keeps any
   other keys you set there. Your own `-c` and the definition's `args` win
-  over a setting of the same key.
+  over a setting of the same key. The native MCP server names `agx` and
+  `agx-*`, and skill plugins under `@agx-managed`, are reserved; definitions
+  cannot put settings at those paths.
 - **Claude Code** gets the settings as a file passed with `--settings`, which
   applies above your user and project settings for that session only. Lists
   such as `permissions.allow` add to the ones in your files. Use `settings`

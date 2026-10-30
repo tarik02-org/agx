@@ -213,6 +213,11 @@ func ServerNames(endpoints []Endpoint) map[config.ID]string {
 	candidates := map[config.ID]string{}
 	count := map[string]int{}
 	for _, endpoint := range endpoints {
+		if endpoint.ID == config.AgxMCP {
+			candidates[endpoint.ID] = "agx"
+			count["agx"]++
+			continue
+		}
 		var name strings.Builder
 		name.WriteString("agx-")
 		for _, r := range string(endpoint.ID) {

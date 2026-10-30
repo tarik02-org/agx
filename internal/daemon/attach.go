@@ -148,6 +148,11 @@ func (s *Server) attachProcess(ctx context.Context, msg *v1.AttachLaunchRequest)
 	default:
 		l.endpoints, _ = s.endpoints(l.ctx, view.Id, b.snapshot, inputs)
 	}
+	if err := s.restoreSession(ctx, l, inputs); err != nil {
+		l.cancel()
+		closeEndpoints(l.endpoints)
+		return nil, err
+	}
 	return l, nil
 }
 
@@ -187,6 +192,11 @@ func (s *Server) attachThread(parent *launch, thread *v1.AttachedThread) bool {
 		return fail(err)
 	} else {
 		l.endpoints, _ = s.endpoints(l.ctx, view.Id, snapshot, inputs)
+	}
+	if err := s.restoreSession(parent.ctx, l, thread.EnvironmentInputs); err != nil {
+		l.cancel()
+		closeEndpoints(l.endpoints)
+		return fail(err)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

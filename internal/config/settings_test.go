@@ -78,9 +78,13 @@ func TestHarnessSettingsErrors(t *testing.T) {
 			"harnesses:\n  pi-work:\n    base: pi\n    settings: {defaultModel: x}\n",
 			"harness pi-work: pi takes no settings; pass its options in args instead",
 		},
+		"reserved built-in codex server": {
+			"harnesses:\n  codex:\n    settings:\n      mcp_servers: {agx: {url: x}}\n",
+			"settings mcp_servers.agx: agx and agx-* servers are reserved",
+		},
 		"reserved codex server": {
 			"harnesses:\n  codex:\n    settings:\n      mcp_servers: {agx-docs: {url: x}}\n",
-			"settings mcp_servers.agx-docs: agx-* servers are agx's own",
+			"settings mcp_servers.agx-docs: agx and agx-* servers are reserved",
 		},
 		"claude settings flag": {
 			"harnesses:\n  claude:\n    args: [--settings, x.json]\n    settings: {model: opus}\n",

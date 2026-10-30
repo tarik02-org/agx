@@ -130,6 +130,13 @@ func (p *clientPool) closeLaunch(id string) {
 	}
 }
 
+func (p *clientPool) closeServer(launchID, id string) {
+	key := "launch\x00" + launchID + "\x00" + id
+	for _, closer := range p.take(func(c *pooledClient) bool { return c.key == key }) {
+		closer()
+	}
+}
+
 // closeAll closes every session, waiting until they closed, and opens none from then on.
 func (p *clientPool) closeAll() {
 	p.mu.Lock()

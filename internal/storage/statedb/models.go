@@ -246,3 +246,16 @@ type Secret struct {
 	Key        string
 	Ciphertext string
 }
+
+type SessionConfiguration struct {
+	Configuration string
+	Launch        string
+	Owner         string
+}
+
+type SessionEnvironment struct {
+	Owner      string
+	Mcp        string
+	Name       string
+	Ciphertext string
+}

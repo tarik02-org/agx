@@ -26,6 +26,27 @@ func (q *Queries) AdvanceConfigRevision(ctx context.Context, arg AdvanceConfigRe
 	return revision, err
 }
 
+const deleteConfigOwner = `-- name: DeleteConfigOwner :exec
+DELETE FROM configurations WHERE root = ?
+`
+
+func (q *Queries) DeleteConfigOwner(ctx context.Context, root string) error {
+	_, err := q.db.ExecContext(ctx, deleteConfigOwner, root)
+	return err
+}
+
+const deleteFinishedSessionConfiguration = `-- name: DeleteFinishedSessionConfiguration :exec
+DELETE FROM configurations WHERE root IN (
+    SELECT owner FROM session_configurations JOIN launches ON launch = launches.id
+    WHERE launches.id = ? AND launches.finished IS NOT NULL
+)
+`
+
+func (q *Queries) DeleteFinishedSessionConfiguration(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteFinishedSessionConfiguration, id)
+	return err
+}
+
 const deleteLocalDefinition = `-- name: DeleteLocalDefinition :exec
 DELETE FROM local_definitions WHERE root = ? AND key = ?
 `
@@ -65,6 +86,15 @@ type DeleteLocalScopeParams struct {
 
 func (q *Queries) DeleteLocalScope(ctx context.Context, arg DeleteLocalScopeParams) error {
 	_, err := q.db.ExecContext(ctx, deleteLocalScope, arg.Root, arg.Position)
+	return err
+}
+
+const deleteSessionEnvironment = `-- name: DeleteSessionEnvironment :exec
+DELETE FROM session_environment WHERE owner = ?
+`
+
+func (q *Queries) DeleteSessionEnvironment(ctx context.Context, owner string) error {
+	_, err := q.db.ExecContext(ctx, deleteSessionEnvironment, owner)
 	return err
 }
 
@@ -1374,6 +1404,76 @@ func (q *Queries) ListLocalSkills(ctx context.Context, root string) ([]LocalSkil
 		return nil, err
 	}
 	return items, nil
+}
+
+const listSessionEnvironment = `-- name: ListSessionEnvironment :many
+SELECT mcp, name, ciphertext FROM session_environment WHERE owner = ? ORDER BY mcp, name
+`
+
+type ListSessionEnvironmentRow struct {
+	Mcp        string
+	Name       string
+	Ciphertext string
+}
+
+func (q *Queries) ListSessionEnvironment(ctx context.Context, owner string) ([]ListSessionEnvironmentRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSessionEnvironment, owner)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSessionEnvironmentRow{}
+	for rows.Next() {
+		var i ListSessionEnvironmentRow
+		if err := rows.Scan(&i.Mcp, &i.Name, &i.Ciphertext); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const putSessionConfiguration = `-- name: PutSessionConfiguration :exec
+INSERT INTO session_configurations(configuration, launch, owner) VALUES (?, ?, ?)
+ON CONFLICT(configuration, launch) DO NOTHING
+`
+
+type PutSessionConfigurationParams struct {
+	Configuration string
+	Launch        string
+	Owner         string
+}
+
+func (q *Queries) PutSessionConfiguration(ctx context.Context, arg PutSessionConfigurationParams) error {
+	_, err := q.db.ExecContext(ctx, putSessionConfiguration, arg.Configuration, arg.Launch, arg.Owner)
+	return err
+}
+
+const putSessionEnvironment = `-- name: PutSessionEnvironment :exec
+INSERT INTO session_environment(owner, mcp, name, ciphertext) VALUES (?, ?, ?, ?)
+`
+
+type PutSessionEnvironmentParams struct {
+	Owner      string
+	Mcp        string
+	Name       string
+	Ciphertext string
+}
+
+func (q *Queries) PutSessionEnvironment(ctx context.Context, arg PutSessionEnvironmentParams) error {
+	_, err := q.db.ExecContext(ctx, putSessionEnvironment,
+		arg.Owner,
+		arg.Mcp,
+		arg.Name,
+		arg.Ciphertext,
+	)
+	return err
 }
 
 const resetSecrets = `-- name: ResetSecrets :exec

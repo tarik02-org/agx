@@ -19,6 +19,8 @@ import (
 
 type ID string
 
+const AgxMCP ID = "agx"
+
 // Kind is a kind of definition, named by its top-level section; the selection kinds are also
 // the keys of selection lists.
 type Kind string

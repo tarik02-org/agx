@@ -50,7 +50,7 @@ the tool's result ([ADR 0022](../adr/0022-on-demand-mcp-calls.md)).
 
 `ListTools` and `CallTool` take an `McpCallScope`. With `launch_id`, the request
 carries that launch's grant (`AGX_MCP_GRANT`) or management authorization and
-reaches the servers of the launch's snapshot, native and on-demand, through the
+reaches the servers of the launch's snapshot plus temporary attachments, native and on-demand, through the
 endpoints the launch holds, with its own values and environment inputs. Without
 it, the request carries management authorization and reaches the servers
 selected for `directory`, or every configured server with `all`; only the
@@ -198,3 +198,30 @@ Generated messages are boundary data. Decode them into validated internal IDs,
 paths, and variants; reject unspecified enums and unset `oneof` fields. Status
 and explanation messages must never include secret values or raw native prompts.
 MCP clients receive native MCP/HTTP errors rather than Connect envelopes.
+
+## Built-in session MCP server
+
+`/launch/<id>/mcp/agx` is an SDK Streamable HTTP MCP endpoint authenticated with
+that launch's grant. Adapters inject it as native server `agx`; the parent of a
+multi-thread harness gets no endpoint, while each thread launch gets its own.
+It is separate from the ordinary MCP endpoint map, so tool search cannot recurse
+into itself. Its SDK handler is created only when first requested. Requests have
+a 4 MiB body limit and are refused while draining; launch cancellation ends work
+and closes SDK sessions.
+
+The tools and examples are documented in [MCP servers](../mcp.md#the-built-in-agx-server).
+Configuration changes reuse `UpdateConfiguration` validation and revision checks.
+Search and calls reuse the endpoint client pool; searches run at most four server
+discoveries concurrently, with a 45-second deadline. Calls have a 10-minute deadline.
+No upstream discovery runs at launch or attachment time.
+
+Temporary definitions use private owners in the existing relational configuration
+tables. They never participate in normal configuration loading or export. Per-server
+environment inputs are encrypted under the launch grant hash with owner, server
+and input name as authenticated context. Definitions, inputs and revision commit
+atomically and are read in one transaction. The daemon restores them through
+`AttachLaunch`; a normal daemon shutdown or lease expiry retains them. Finish and
+revocation delete the private owner and its child rows. Durable launch completion
+also deletes retained attachment state if the finishing daemon no longer holds
+the launch. An abruptly abandoned wrapper can leave private state, just as it can
+leave an unfinished launch record; recovery does not depend on a time-based purge.

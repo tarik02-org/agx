@@ -187,6 +187,9 @@ func (s *Server) PrepareThreadLaunch(
 		target:    p.target,
 		created:   time.Now(),
 		lease:     p.launch.lease,
+		local:     config.EmptyLocal(),
+		inputs:    inputs,
+		temporary: map[config.ID]config.MCPServer{},
 	}); err != nil {
 		discard()
 		return nil, err

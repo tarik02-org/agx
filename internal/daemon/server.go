@@ -52,14 +52,20 @@ func matches(hash [32]byte, value string) bool { return hash == verifier(value) 
 type launch struct {
 	// view.ExpiresAt shows expires, which alone decides expiry: it holds a monotonic clock
 	// reading, so that a wall clock jump expires no lease early or late.
-	view      *v1.Launch
-	expires   time.Time
-	grant     [32]byte
-	lifecycle [32]byte
-	ctx       context.Context
-	cancel    context.CancelFunc
-	endpoints map[config.ID]*mcpruntime.Endpoint
-	snapshot  *config.Snapshot
+	view       *v1.Launch
+	expires    time.Time
+	grant      [32]byte
+	lifecycle  [32]byte
+	ctx        context.Context
+	cancel     context.CancelFunc
+	endpoints  map[config.ID]*mcpruntime.Endpoint
+	snapshot   *config.Snapshot
+	sessionMu  sync.Mutex
+	local      *config.Local
+	inputs     map[string]string
+	temporary  map[config.ID]config.MCPServer
+	tempInputs map[config.ID]map[string]string
+	agx        http.Handler
 	// target is the harness process a launch started; its thread launches share it.
 	target  adapters.Target
 	ended   time.Time
@@ -508,6 +514,21 @@ func (s *Server) end(l *launch, state v1.Launch_State) {
 		slog.Info("launch ended", attrs...)
 	}
 	s.clients.closeLaunch(l.view.Id)
+	if (state == v1.Launch_STATE_FINISHED || state == v1.Launch_STATE_REVOKED) && l.local != nil &&
+		l.local.Revision > 0 {
+		go func() {
+			l.sessionMu.Lock()
+			defer l.sessionMu.Unlock()
+			if err := configstore.DeleteSession(
+				context.Background(),
+				s.paths.State,
+				s.paths.Config,
+				l.view.Id,
+			); err != nil {
+				slog.Error("cannot remove session configuration", "launch", shortID(l.view.Id), "error", err)
+			}
+		}()
+	}
 	go s.release(l.view.Id, l.endpoints)
 	for _, child := range s.children(l) {
 		s.end(child, state)
@@ -768,8 +789,14 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	// A stopping daemon finishes the sessions it serves but opens none; event streams would
 	// outlast it.
-	if s.drain.draining() && (r.Header.Get("Mcp-Session-Id") == "" || r.Method == http.MethodGet) {
+	if s.drain.draining() &&
+		(parts[1] == string(config.AgxMCP) || r.Header.Get("Mcp-Session-Id") == "" || r.Method == http.MethodGet) {
 		refuse(w)
+		return
+	}
+	if parts[1] == string(config.AgxMCP) {
+		r.Body = http.MaxBytesReader(w, r.Body, 4<<20)
+		s.sessionHandler(l).ServeHTTP(w, r)
 		return
 	}
 	s.mu.Lock()
