@@ -20,7 +20,6 @@ func (s *Server) Install(
 	req *connect.Request[v1.InstallRequest],
 	stream *connect.ServerStream[v1.InstallResponse],
 ) error {
-	frozen := req.Msg.Frozen
 	done := make(chan *v1.InstallResponse, 1)
 	s.mu.Lock()
 	if s.installsClosed {
@@ -28,7 +27,7 @@ func (s *Server) Install(
 		return refusal()
 	}
 	s.installs.Go(func() {
-		done <- s.install(frozen)
+		done <- s.install(req.Msg)
 	})
 	s.mu.Unlock()
 	if err := stream.Send(&v1.InstallResponse{
@@ -44,15 +43,21 @@ func (s *Server) Install(
 	}
 }
 
-func (s *Server) install(frozen bool) *v1.InstallResponse {
+func (s *Server) install(request *v1.InstallRequest) *v1.InstallResponse {
+	frozen := request.Frozen
+	updates := make([]config.ID, len(request.Updates))
+	for i, id := range request.Updates {
+		updates[i] = config.ID(id)
+	}
 	result, err := packages.Install(
 		s.ctx,
 		s.paths.Config,
 		s.paths.Cache,
 		s.builtins,
-		packages.Options{Frozen: frozen, State: s.paths.State},
+		packages.Options{Frozen: frozen, State: s.paths.State, Updates: updates, UpdateAll: request.UpdateAll},
 	)
-	if err == nil && !frozen {
+	warnings := []string{}
+	if err == nil && !frozen && !request.PackagesOnly {
 		var c *config.Config
 		c, err = config.Load(
 			s.paths.Config,
@@ -60,7 +65,7 @@ func (s *Server) install(frozen bool) *v1.InstallResponse {
 		)
 		if err == nil {
 			// Skipped installations need no action from the requester; launches warn about them.
-			_, err = s.adapters.Install(s.ctx, c, s.paths.Cache, os.LookupEnv)
+			warnings, err = s.adapters.Install(s.ctx, c, s.paths.Cache, os.LookupEnv)
 		}
 	}
 	if err != nil {
@@ -73,7 +78,7 @@ func (s *Server) install(frozen bool) *v1.InstallResponse {
 		names = append(names, string(id))
 	}
 	return &v1.InstallResponse{State: &v1.InstallResponse_Result{
-		Result: &v1.PackageResult{PackageIds: names, Lockfiles: result.Lockfiles},
+		Result: &v1.PackageResult{PackageIds: names, Lockfiles: result.Lockfiles, Warnings: warnings},
 	}}
 }
 

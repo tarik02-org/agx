@@ -85,6 +85,10 @@ func listSessions(
 	harnesses harnessConfig,
 	publish func(sessions.Listing, bool) error,
 ) (sessions.Listing, error) {
+	var localErr *localConfigError
+	if errors.As(harnesses.err, &localErr) {
+		return sessions.Listing{}, harnesses.err
+	}
 	directory, err := os.Getwd()
 	if err != nil {
 		return sessions.Listing{}, err
@@ -108,58 +112,63 @@ func listSessions(
 		}
 		return nil
 	}
-	if c, err := newClient(paths); err == nil {
-		stream, err := c.runtime.ListSessions(
-			ctx,
-			connect.NewRequest(&v1.ListSessionsRequest{Stores: stores, FreshOnly: publish == nil}),
-		)
-		if err == nil {
-			defer func() { _ = stream.Close() }()
-			fresh := false
-			for stream.Receive() {
-				message := stream.Msg()
-				listing := sessions.Listing{
-					Entries: []sessions.Entry{},
-					Errors:  map[string]error{},
-					Stats: sessions.Stats{
-						Parsed:    int(message.Parsed),
-						Cached:    int(message.Cached),
-						Malformed: int(message.Malformed),
-					},
-				}
-				for name, problem := range message.Errors {
-					listing.Errors[name] = errors.New(problem)
-				}
-				for _, entry := range message.Sessions {
-					listing.Entries = append(listing.Entries, sessions.Entry{
-						Session: adapters.Session{
-							ID: entry.Id, Directory: entry.Directory, Title: entry.Title, Message: entry.Message,
-							Started: entry.StartedAt.AsTime(), Updated: entry.UpdatedAt.AsTime(),
-						},
-						Builtin: entry.Builtin, Harness: entry.Harness, Recorded: entry.Recorded,
-					})
-				}
-				if err := deliver(listing, message.Fresh); err != nil {
-					return sessions.Listing{}, err
-				}
-				fresh = message.Fresh
-			}
-			if stream.Err() == nil && fresh {
-				return last, nil
-			}
-		}
-	}
-	if err := ctx.Err(); err != nil {
-		return sessions.Listing{}, err
-	}
-	listing, err := sessions.List(ctx, registry, paths.Cache, paths.State, stores)
+	client, err := daemonClient(ctx, paths, autostart(harnesses.config))
 	if err != nil {
 		return sessions.Listing{}, err
 	}
-	if err := deliver(listing, true); err != nil {
+	stream, err := client.runtime.ListSessions(
+		ctx,
+		connect.NewRequest(&v1.ListSessionsRequest{Stores: stores, FreshOnly: publish == nil}),
+	)
+	if err != nil {
 		return sessions.Listing{}, err
 	}
-	return listing, nil
+	defer func() { _ = stream.Close() }()
+	fresh := false
+	for stream.Receive() {
+		message := stream.Msg()
+		listing := sessions.Listing{
+			Entries: []sessions.Entry{},
+			Errors:  map[string]error{},
+			Stats: sessions.Stats{
+				Parsed:    int(message.Parsed),
+				Cached:    int(message.Cached),
+				Malformed: int(message.Malformed),
+			},
+		}
+		for name, problem := range message.Errors {
+			listing.Errors[name] = errors.New(problem)
+		}
+		for _, entry := range message.Sessions {
+			listing.Entries = append(
+				listing.Entries,
+				sessions.Entry{
+					Session: adapters.Session{
+						ID:        entry.Id,
+						Directory: entry.Directory,
+						Title:     entry.Title,
+						Message:   entry.Message,
+						Started:   entry.StartedAt.AsTime(),
+						Updated:   entry.UpdatedAt.AsTime(),
+					},
+					Builtin:  entry.Builtin,
+					Harness:  entry.Harness,
+					Recorded: entry.Recorded,
+				},
+			)
+		}
+		if err := deliver(listing, message.Fresh); err != nil {
+			return sessions.Listing{}, err
+		}
+		fresh = message.Fresh
+	}
+	if err := stream.Err(); err != nil {
+		return sessions.Listing{}, err
+	}
+	if !fresh {
+		return sessions.Listing{}, errors.New("session listing ended without a fresh result")
+	}
+	return last, nil
 }
 
 func reportListing(listing sessions.Listing) {
@@ -234,28 +243,47 @@ func printSessions(entries []sessions.Entry, directory string, all, searched boo
 
 // runLauncher opens the launcher and then starts or resumes the chosen harness. The launcher has
 // released the terminal by the time the harness starts.
-func runLauncher(ctx context.Context, paths platform.Paths, registry adapters.Registry, harnesses harnessConfig) error {
+func runLauncher(ctx context.Context, a *app) error {
 	directory, err := workingDirectory()
 	if err != nil {
 		return err
 	}
+	loaded := make(chan harnessConfig, 1)
 	opts := launcher.Options{
-		Directory: directory,
-		Profile:   ui.Stdout.Profile(),
+		Directory: directory, Profile: ui.Stdout.Profile(),
 		LoadSessions: func(ctx context.Context, publish func(launcher.SessionUpdate) error) error {
-			_, err := listSessions(ctx, paths, registry, harnesses, func(listing sessions.Listing, fresh bool) error {
-				return publish(launcher.SessionUpdate{
-					Entries: listing.Entries, Notes: listingNotes(listing), Loading: !fresh,
-				})
-			})
+			loader := &app{paths: a.paths, registry: a.registry, builtins: a.builtins}
+			_, _ = loader.localConfigContext(ctx)
+			harnesses := loader.fragments()
+			loaded <- harnesses
+			notes := []string{}
+			if harnesses.err != nil {
+				notes = append(notes, fmt.Sprintf("Only built-ins: configuration did not load: %v", harnesses.err))
+			}
+			names, err := launcherHarnesses(harnesses.config)
+			if err != nil {
+				return err
+			}
+			if err := publish(launcher.SessionUpdate{Harnesses: names, Notes: notes, Loading: true}); err != nil {
+				return err
+			}
+			_, err = listSessions(
+				ctx,
+				a.paths,
+				a.registry,
+				harnesses,
+				func(listing sessions.Listing, fresh bool) error {
+					return publish(
+						launcher.SessionUpdate{
+							Entries: listing.Entries,
+							Notes:   append(slices.Clone(notes), listingNotes(listing)...),
+							Loading: !fresh,
+						},
+					)
+				},
+			)
 			return err
 		},
-	}
-	if harnesses.err != nil {
-		opts.Notes = append(opts.Notes, fmt.Sprintf("Only built-ins: configuration did not load: %v", harnesses.err))
-	}
-	if opts.Harnesses, err = launcherHarnesses(harnesses.config); err != nil {
-		return err
 	}
 	choice, err := launcher.Run(ctx, opts)
 	if err != nil {
@@ -267,9 +295,9 @@ func runLauncher(ctx context.Context, paths platform.Paths, registry adapters.Re
 	case launcher.Interrupt:
 		return &ExitError{Code: 130}
 	case launcher.Start:
-		return runHarness(ctx, paths, registry, harnesses, choice.Harness, nil, "")
+		return runHarness(ctx, a.paths, a.registry, <-loaded, choice.Harness, nil, "")
 	case launcher.Resume:
-		return resumeSession(ctx, paths, registry, harnesses, choice.Session, choice.Harness)
+		return resumeSession(ctx, a.paths, a.registry, <-loaded, choice.Session, choice.Harness)
 	}
 	return nil
 }

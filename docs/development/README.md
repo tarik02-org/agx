@@ -23,6 +23,7 @@ golangci-lint fmt ./... && golangci-lint run ./...
 GOOS=windows golangci-lint run ./...
 buf lint && buf generate && go generate ./...   # Protobuf bindings, JSON Schemas, and SQL queries
 nix build .#agx
+nix flake check                            # includes Home Manager overlay validation
 ```
 
 Tests isolate `HOME`, the `AGX_*` paths, and the harness stores, and need no

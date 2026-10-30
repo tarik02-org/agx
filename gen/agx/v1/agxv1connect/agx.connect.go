@@ -41,6 +41,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// ConfigurationServiceGetLocalConfigurationProcedure is the fully-qualified name of the
+	// ConfigurationService's GetLocalConfiguration RPC.
+	ConfigurationServiceGetLocalConfigurationProcedure = "/agx.v1.ConfigurationService/GetLocalConfiguration"
+	// ConfigurationServiceResolvePassthroughProcedure is the fully-qualified name of the
+	// ConfigurationService's ResolvePassthrough RPC.
+	ConfigurationServiceResolvePassthroughProcedure = "/agx.v1.ConfigurationService/ResolvePassthrough"
 	// ConfigurationServiceValidateProcedure is the fully-qualified name of the ConfigurationService's
 	// Validate RPC.
 	ConfigurationServiceValidateProcedure = "/agx.v1.ConfigurationService/Validate"
@@ -82,6 +88,9 @@ const (
 	// PackageServiceInspectSourceProcedure is the fully-qualified name of the PackageService's
 	// InspectSource RPC.
 	PackageServiceInspectSourceProcedure = "/agx.v1.PackageService/InspectSource"
+	// LaunchServiceRecordLaunchProcedure is the fully-qualified name of the LaunchService's
+	// RecordLaunch RPC.
+	LaunchServiceRecordLaunchProcedure = "/agx.v1.LaunchService/RecordLaunch"
 	// LaunchServicePrepareLaunchProcedure is the fully-qualified name of the LaunchService's
 	// PrepareLaunch RPC.
 	LaunchServicePrepareLaunchProcedure = "/agx.v1.LaunchService/PrepareLaunch"
@@ -141,6 +150,10 @@ const (
 
 // ConfigurationServiceClient is a client for the agx.v1.ConfigurationService service.
 type ConfigurationServiceClient interface {
+	// Managed definitions and package locks for local YAML validation and edit previews.
+	GetLocalConfiguration(context.Context, *connect.Request[v1.GetLocalConfigurationRequest]) (*connect.Response[v1.GetLocalConfigurationResponse], error)
+	// Resolve native passthrough arguments and environment without creating a managed launch.
+	ResolvePassthrough(context.Context, *connect.Request[v1.ResolvePassthroughRequest]) (*connect.Response[v1.ResolvePassthroughResponse], error)
 	Validate(context.Context, *connect.Request[v1.ValidateRequest]) (*connect.Response[v1.ValidateResponse], error)
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
 	// The configuration as loaded, for browsing it: harnesses, scope directories, and files.
@@ -169,6 +182,18 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 	baseURL = strings.TrimRight(baseURL, "/")
 	configurationServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("ConfigurationService").Methods()
 	return &configurationServiceClient{
+		getLocalConfiguration: connect.NewClient[v1.GetLocalConfigurationRequest, v1.GetLocalConfigurationResponse](
+			httpClient,
+			baseURL+ConfigurationServiceGetLocalConfigurationProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("GetLocalConfiguration")),
+			connect.WithClientOptions(opts...),
+		),
+		resolvePassthrough: connect.NewClient[v1.ResolvePassthroughRequest, v1.ResolvePassthroughResponse](
+			httpClient,
+			baseURL+ConfigurationServiceResolvePassthroughProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ResolvePassthrough")),
+			connect.WithClientOptions(opts...),
+		),
 		validate: connect.NewClient[v1.ValidateRequest, v1.ValidateResponse](
 			httpClient,
 			baseURL+ConfigurationServiceValidateProcedure,
@@ -228,15 +253,27 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 
 // configurationServiceClient implements ConfigurationServiceClient.
 type configurationServiceClient struct {
-	validate            *connect.Client[v1.ValidateRequest, v1.ValidateResponse]
-	resolve             *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
-	getConfiguration    *connect.Client[v1.GetConfigurationRequest, v1.GetConfigurationResponse]
-	completeDirectory   *connect.Client[v1.CompleteDirectoryRequest, v1.CompleteDirectoryResponse]
-	listDefinitions     *connect.Client[v1.ListDefinitionsRequest, v1.ListDefinitionsResponse]
-	getSkill            *connect.Client[v1.GetSkillRequest, v1.GetSkillResponse]
-	readFile            *connect.Client[v1.ReadFileRequest, v1.ReadFileResponse]
-	writeResourceFile   *connect.Client[v1.WriteResourceFileRequest, v1.WriteResourceFileResponse]
-	updateConfiguration *connect.Client[v1.UpdateConfigurationRequest, v1.UpdateConfigurationResponse]
+	getLocalConfiguration *connect.Client[v1.GetLocalConfigurationRequest, v1.GetLocalConfigurationResponse]
+	resolvePassthrough    *connect.Client[v1.ResolvePassthroughRequest, v1.ResolvePassthroughResponse]
+	validate              *connect.Client[v1.ValidateRequest, v1.ValidateResponse]
+	resolve               *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
+	getConfiguration      *connect.Client[v1.GetConfigurationRequest, v1.GetConfigurationResponse]
+	completeDirectory     *connect.Client[v1.CompleteDirectoryRequest, v1.CompleteDirectoryResponse]
+	listDefinitions       *connect.Client[v1.ListDefinitionsRequest, v1.ListDefinitionsResponse]
+	getSkill              *connect.Client[v1.GetSkillRequest, v1.GetSkillResponse]
+	readFile              *connect.Client[v1.ReadFileRequest, v1.ReadFileResponse]
+	writeResourceFile     *connect.Client[v1.WriteResourceFileRequest, v1.WriteResourceFileResponse]
+	updateConfiguration   *connect.Client[v1.UpdateConfigurationRequest, v1.UpdateConfigurationResponse]
+}
+
+// GetLocalConfiguration calls agx.v1.ConfigurationService.GetLocalConfiguration.
+func (c *configurationServiceClient) GetLocalConfiguration(ctx context.Context, req *connect.Request[v1.GetLocalConfigurationRequest]) (*connect.Response[v1.GetLocalConfigurationResponse], error) {
+	return c.getLocalConfiguration.CallUnary(ctx, req)
+}
+
+// ResolvePassthrough calls agx.v1.ConfigurationService.ResolvePassthrough.
+func (c *configurationServiceClient) ResolvePassthrough(ctx context.Context, req *connect.Request[v1.ResolvePassthroughRequest]) (*connect.Response[v1.ResolvePassthroughResponse], error) {
+	return c.resolvePassthrough.CallUnary(ctx, req)
 }
 
 // Validate calls agx.v1.ConfigurationService.Validate.
@@ -286,6 +323,10 @@ func (c *configurationServiceClient) UpdateConfiguration(ctx context.Context, re
 
 // ConfigurationServiceHandler is an implementation of the agx.v1.ConfigurationService service.
 type ConfigurationServiceHandler interface {
+	// Managed definitions and package locks for local YAML validation and edit previews.
+	GetLocalConfiguration(context.Context, *connect.Request[v1.GetLocalConfigurationRequest]) (*connect.Response[v1.GetLocalConfigurationResponse], error)
+	// Resolve native passthrough arguments and environment without creating a managed launch.
+	ResolvePassthrough(context.Context, *connect.Request[v1.ResolvePassthroughRequest]) (*connect.Response[v1.ResolvePassthroughResponse], error)
 	Validate(context.Context, *connect.Request[v1.ValidateRequest]) (*connect.Response[v1.ValidateResponse], error)
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
 	// The configuration as loaded, for browsing it: harnesses, scope directories, and files.
@@ -310,6 +351,18 @@ type ConfigurationServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	configurationServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("ConfigurationService").Methods()
+	configurationServiceGetLocalConfigurationHandler := connect.NewUnaryHandler(
+		ConfigurationServiceGetLocalConfigurationProcedure,
+		svc.GetLocalConfiguration,
+		connect.WithSchema(configurationServiceMethods.ByName("GetLocalConfiguration")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceResolvePassthroughHandler := connect.NewUnaryHandler(
+		ConfigurationServiceResolvePassthroughProcedure,
+		svc.ResolvePassthrough,
+		connect.WithSchema(configurationServiceMethods.ByName("ResolvePassthrough")),
+		connect.WithHandlerOptions(opts...),
+	)
 	configurationServiceValidateHandler := connect.NewUnaryHandler(
 		ConfigurationServiceValidateProcedure,
 		svc.Validate,
@@ -366,6 +419,10 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 	)
 	return "/agx.v1.ConfigurationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ConfigurationServiceGetLocalConfigurationProcedure:
+			configurationServiceGetLocalConfigurationHandler.ServeHTTP(w, r)
+		case ConfigurationServiceResolvePassthroughProcedure:
+			configurationServiceResolvePassthroughHandler.ServeHTTP(w, r)
 		case ConfigurationServiceValidateProcedure:
 			configurationServiceValidateHandler.ServeHTTP(w, r)
 		case ConfigurationServiceResolveProcedure:
@@ -392,6 +449,14 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 
 // UnimplementedConfigurationServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedConfigurationServiceHandler struct{}
+
+func (UnimplementedConfigurationServiceHandler) GetLocalConfiguration(context.Context, *connect.Request[v1.GetLocalConfigurationRequest]) (*connect.Response[v1.GetLocalConfigurationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.GetLocalConfiguration is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) ResolvePassthrough(context.Context, *connect.Request[v1.ResolvePassthroughRequest]) (*connect.Response[v1.ResolvePassthroughResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.ResolvePassthrough is not implemented"))
+}
 
 func (UnimplementedConfigurationServiceHandler) Validate(context.Context, *connect.Request[v1.ValidateRequest]) (*connect.Response[v1.ValidateResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.Validate is not implemented"))
@@ -619,6 +684,8 @@ func (UnimplementedPackageServiceHandler) InspectSource(context.Context, *connec
 
 // LaunchServiceClient is a client for the agx.v1.LaunchService service.
 type LaunchServiceClient interface {
+	// Management-authorized, idempotent history reporting, independent of active leases.
+	RecordLaunch(context.Context, *connect.Request[v1.RecordLaunchRequest]) (*connect.Response[v1.RecordLaunchResponse], error)
 	PrepareLaunch(context.Context, *connect.Request[v1.PrepareLaunchRequest]) (*connect.Response[v1.PrepareLaunchResponse], error)
 	RenewLaunch(context.Context, *connect.Request[v1.RenewLaunchRequest]) (*connect.Response[v1.RenewLaunchResponse], error)
 	FinishLaunch(context.Context, *connect.Request[v1.FinishLaunchRequest]) (*connect.Response[v1.FinishLaunchResponse], error)
@@ -645,6 +712,12 @@ func NewLaunchServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 	baseURL = strings.TrimRight(baseURL, "/")
 	launchServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("LaunchService").Methods()
 	return &launchServiceClient{
+		recordLaunch: connect.NewClient[v1.RecordLaunchRequest, v1.RecordLaunchResponse](
+			httpClient,
+			baseURL+LaunchServiceRecordLaunchProcedure,
+			connect.WithSchema(launchServiceMethods.ByName("RecordLaunch")),
+			connect.WithClientOptions(opts...),
+		),
 		prepareLaunch: connect.NewClient[v1.PrepareLaunchRequest, v1.PrepareLaunchResponse](
 			httpClient,
 			baseURL+LaunchServicePrepareLaunchProcedure,
@@ -692,6 +765,7 @@ func NewLaunchServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // launchServiceClient implements LaunchServiceClient.
 type launchServiceClient struct {
+	recordLaunch        *connect.Client[v1.RecordLaunchRequest, v1.RecordLaunchResponse]
 	prepareLaunch       *connect.Client[v1.PrepareLaunchRequest, v1.PrepareLaunchResponse]
 	renewLaunch         *connect.Client[v1.RenewLaunchRequest, v1.RenewLaunchResponse]
 	finishLaunch        *connect.Client[v1.FinishLaunchRequest, v1.FinishLaunchResponse]
@@ -699,6 +773,11 @@ type launchServiceClient struct {
 	resolveThread       *connect.Client[v1.ResolveThreadRequest, v1.ResolveThreadResponse]
 	prepareThreadLaunch *connect.Client[v1.PrepareThreadLaunchRequest, v1.PrepareThreadLaunchResponse]
 	attachLaunch        *connect.Client[v1.AttachLaunchRequest, v1.AttachLaunchResponse]
+}
+
+// RecordLaunch calls agx.v1.LaunchService.RecordLaunch.
+func (c *launchServiceClient) RecordLaunch(ctx context.Context, req *connect.Request[v1.RecordLaunchRequest]) (*connect.Response[v1.RecordLaunchResponse], error) {
+	return c.recordLaunch.CallUnary(ctx, req)
 }
 
 // PrepareLaunch calls agx.v1.LaunchService.PrepareLaunch.
@@ -738,6 +817,8 @@ func (c *launchServiceClient) AttachLaunch(ctx context.Context, req *connect.Req
 
 // LaunchServiceHandler is an implementation of the agx.v1.LaunchService service.
 type LaunchServiceHandler interface {
+	// Management-authorized, idempotent history reporting, independent of active leases.
+	RecordLaunch(context.Context, *connect.Request[v1.RecordLaunchRequest]) (*connect.Response[v1.RecordLaunchResponse], error)
 	PrepareLaunch(context.Context, *connect.Request[v1.PrepareLaunchRequest]) (*connect.Response[v1.PrepareLaunchResponse], error)
 	RenewLaunch(context.Context, *connect.Request[v1.RenewLaunchRequest]) (*connect.Response[v1.RenewLaunchResponse], error)
 	FinishLaunch(context.Context, *connect.Request[v1.FinishLaunchRequest]) (*connect.Response[v1.FinishLaunchResponse], error)
@@ -760,6 +841,12 @@ type LaunchServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewLaunchServiceHandler(svc LaunchServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	launchServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("LaunchService").Methods()
+	launchServiceRecordLaunchHandler := connect.NewUnaryHandler(
+		LaunchServiceRecordLaunchProcedure,
+		svc.RecordLaunch,
+		connect.WithSchema(launchServiceMethods.ByName("RecordLaunch")),
+		connect.WithHandlerOptions(opts...),
+	)
 	launchServicePrepareLaunchHandler := connect.NewUnaryHandler(
 		LaunchServicePrepareLaunchProcedure,
 		svc.PrepareLaunch,
@@ -804,6 +891,8 @@ func NewLaunchServiceHandler(svc LaunchServiceHandler, opts ...connect.HandlerOp
 	)
 	return "/agx.v1.LaunchService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case LaunchServiceRecordLaunchProcedure:
+			launchServiceRecordLaunchHandler.ServeHTTP(w, r)
 		case LaunchServicePrepareLaunchProcedure:
 			launchServicePrepareLaunchHandler.ServeHTTP(w, r)
 		case LaunchServiceRenewLaunchProcedure:
@@ -826,6 +915,10 @@ func NewLaunchServiceHandler(svc LaunchServiceHandler, opts ...connect.HandlerOp
 
 // UnimplementedLaunchServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedLaunchServiceHandler struct{}
+
+func (UnimplementedLaunchServiceHandler) RecordLaunch(context.Context, *connect.Request[v1.RecordLaunchRequest]) (*connect.Response[v1.RecordLaunchResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.RecordLaunch is not implemented"))
+}
 
 func (UnimplementedLaunchServiceHandler) PrepareLaunch(context.Context, *connect.Request[v1.PrepareLaunchRequest]) (*connect.Response[v1.PrepareLaunchResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.PrepareLaunch is not implemented"))

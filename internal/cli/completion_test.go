@@ -42,19 +42,24 @@ func isolate(t *testing.T, configuration string) string {
 	dir := t.TempDir()
 	root, fragment := writeConfig(t, filepath.Join(dir, "config"), configuration)
 	for name, value := range map[string]string{
-		"AGX_CONFIG":      root,
-		"AGX_CACHE":       filepath.Join(dir, "cache"),
-		"AGX_STATE":       filepath.Join(dir, "state"),
-		"HOME":            filepath.Join(dir, "home"),
-		"USERPROFILE":     filepath.Join(dir, "home"),
-		"XDG_CONFIG_HOME": filepath.Join(dir, "home", ".config"),
-		"XDG_CACHE_HOME":  filepath.Join(dir, "home", ".cache"),
-		"XDG_STATE_HOME":  filepath.Join(dir, "home", ".local", "state"),
-		"XDG_DATA_HOME":   filepath.Join(dir, "home", ".local", "share"),
-		"LOCALAPPDATA":    filepath.Join(dir, "home", "AppData", "Local"),
+		"AGX_CONFIG":          root,
+		"AGX_CACHE":           filepath.Join(dir, "cache"),
+		"AGX_STATE":           filepath.Join(dir, "state"),
+		"HOME":                filepath.Join(dir, "home"),
+		"USERPROFILE":         filepath.Join(dir, "home"),
+		"XDG_CONFIG_HOME":     filepath.Join(dir, "home", ".config"),
+		"XDG_CACHE_HOME":      filepath.Join(dir, "home", ".cache"),
+		"XDG_STATE_HOME":      filepath.Join(dir, "home", ".local", "state"),
+		"XDG_DATA_HOME":       filepath.Join(dir, "home", ".local", "share"),
+		"LOCALAPPDATA":        filepath.Join(dir, "home", "AppData", "Local"),
+		"CODEX_HOME":          filepath.Join(dir, "home", "codex"),
+		"CLAUDE_CONFIG_DIR":   filepath.Join(dir, "home", "claude"),
+		"PI_CODING_AGENT_DIR": filepath.Join(dir, "home", "pi"),
 	} {
 		t.Setenv(name, value)
 	}
+	t.Setenv("AGX_TEST_DAEMON", "1")
+	t.Cleanup(func() { stopTestDaemons(t, filepath.Join(dir, "cache")) })
 	return fragment
 }
 

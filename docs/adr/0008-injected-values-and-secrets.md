@@ -30,11 +30,10 @@ The `agx auth` command group becomes `agx secret` (`login`, `set`, `status`,
 
 The daemon resolves values for managed launches: harness values while preparing
 the launch, stdio MCP server environments when starting an upstream, and HTTP
-headers per request. Passthrough invocations run without the daemon, so the
-wrapper resolves their harness values itself; `environment`, `command`, and
-`keychain` secrets work there, and `daemon_environment` secrets fail. A daemon RPC
-returning secret values was rejected: it would let any management client read
-every secret. OAuth secrets cannot be injected.
+headers per request. Passthrough invocations now ask the daemon to resolve only
+their configured harness arguments and environment (ADR 0028); their wrappers
+receive those values to run the native command. There is no RPC to retrieve an
+arbitrary credential. OAuth secrets cannot be injected.
 
 `auth_environment` is removed; `environment: {NAME: !secret id}` replaces it.
 Nothing has shipped, so there is no compatibility alias.

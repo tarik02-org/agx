@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+
 	"github.com/spf13/cobra"
 
 	"github.com/tarik02-org/agx/internal/cli/prompt"
@@ -41,6 +43,7 @@ func (s *session) removePackage(id config.ID, force bool) error {
 	if err != nil {
 		return err
 	}
+	s.undefine(config.KindPackages, string(id))
 	s.result.Removed = append(s.result.Removed, definitionID{Kind: config.KindPackages, ID: string(id)})
 	for _, r := range disabled {
 		s.result.Disabled = append(s.result.Disabled, definitionID{Kind: r.Kind, ID: string(r.ID)})
@@ -232,6 +235,14 @@ func (s *session) addPackageSkills(
 	if declared {
 		s.result.Defined = append(s.result.Defined, definitionID{Kind: config.KindPackages, ID: string(id)})
 	}
+	s.changes = append(
+		s.changes,
+		&v1.ConfigChange{
+			Change: &v1.ConfigChange_AddPackage{
+				AddPackage: &v1.PackageSource{Id: string(id), Git: source.Git, Ref: source.Ref, Subdir: source.Subdir},
+			},
+		},
+	)
 	progress("Fetching " + source.Git)
 	if err := s.Install(s.ctx); err != nil {
 		return err

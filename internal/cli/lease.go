@@ -276,3 +276,34 @@ func (l *lease) sync(ctx context.Context) error {
 	_, err := l.renew(ctx, &v1.RenewLaunchRequest{LaunchId: l.launch.Launch.Id})
 	return err
 }
+
+// record persists wrapper history even when the daemon lost its lease or configuration changed.
+func (l *lease) record(ctx context.Context, record *v1.RecordLaunchRequest) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), restartWait+startupTimeout)
+	defer cancel()
+	deadline := time.Now().Add(restartWait)
+	for attempt := 0; ; attempt++ {
+		err := l.call(
+			func(c *client) error { _, err := c.launches.RecordLaunch(ctx, connect.NewRequest(record)); return err },
+		)
+		if err == nil {
+			return nil
+		}
+		if !daemonGone(err) && !stopping(err) && connect.CodeOf(err) != connect.CodeUnauthenticated {
+			return err
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if (stopping(err) || connect.CodeOf(err) == connect.CodeUnauthenticated) && time.Now().Before(deadline) {
+			if err := pause(ctx, backoff(attempt)); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := startDaemon(ctx, l.paths); err != nil {
+			return err
+		}
+		l.reconnect(l.current())
+	}
+}

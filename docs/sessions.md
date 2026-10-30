@@ -62,5 +62,6 @@ unchanged files reuse their cached excerpts. Stores are scanned in parallel,
 and concurrent requests for the same stores share one refresh. A failed store
 keeps its last known sessions with a warning.
 
-`agx sessions` waits for a fresh scan. With no daemon available, both the command
-and picker read the stores locally; browsing history does not start a daemon.
+`agx sessions` waits for a fresh scan. Browsing history uses the daemon and starts
+it when autostart permits. The picker loads configuration and history after its
+first frame; the CLI never opens the session cache or launch-history database.

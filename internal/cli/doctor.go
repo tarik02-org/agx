@@ -168,7 +168,7 @@ func (a *app) runDoctor(
 		add(definitionChecks(ctx, c, a.registry, a.paths.Cache)...)
 	}
 
-	client, daemonRow := connectDaemon(ctx, a.paths, c)
+	client, daemonRow := connectDaemon(ctx, a.paths, a.autostart())
 	add(daemonRow)
 	if client != nil && loaded {
 		add(mcpChecks(ctx, client, c, directory, all)...)
@@ -385,10 +385,10 @@ func definitionChecks(ctx context.Context, c *config.Config, registry adapters.R
 
 // connectDaemon reaches a daemon this agx can use, starting it as other commands do, and reports
 // what it found.
-func connectDaemon(ctx context.Context, paths platform.Paths, c *config.Config) (*client, check) {
+func connectDaemon(ctx context.Context, paths platform.Paths, enabled bool) (*client, check) {
 	row := check{Group: "daemon", Name: "daemon"}
 	before, _ := daemon.ReadDiscovery(paths)
-	if !autostart(c) {
+	if !enabled {
 		client, err := newClient(paths)
 		if err != nil {
 			row.Status, row.Detail = checkWarn, "not running; automatic startup is off"

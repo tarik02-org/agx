@@ -91,7 +91,9 @@ agx explain ~/work/legacy
 `explain` uses one compact row per selected or removed resource, with shortened
 paths and the file and line that
 decided it, and marks on-demand MCP servers. `agx config validate` checks the
-whole configuration.
+whole configuration. For declarative builds, `agx config validate --yaml-only`
+checks only the YAML configuration and its packages, without managed definitions
+or a daemon. Home Manager uses this mode when checking its generated overlay.
 
 ## Scopes
 

@@ -67,6 +67,11 @@ func (r Records) Start(record Record) error {
 				return err
 			}
 		}
+		if record.Finished != nil {
+			return q.FinishLaunch(context.Background(), statedb.FinishLaunchParams{
+				ID: record.Launch, Finished: end,
+			})
+		}
 		return nil
 	})
 }

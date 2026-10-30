@@ -21,6 +21,7 @@ const (
 type client struct {
 	discovery daemon.Discovery
 	config    agxv1connect.ConfigurationServiceClient
+	packages  agxv1connect.PackageServiceClient
 	launches  agxv1connect.LaunchServiceClient
 	runtime   agxv1connect.RuntimeServiceClient
 	secrets   agxv1connect.SecretServiceClient
@@ -42,6 +43,7 @@ func dial(d daemon.Discovery) *client {
 	return &client{
 		discovery: d,
 		config:    agxv1connect.NewConfigurationServiceClient(httpClient, d.URL, options),
+		packages:  agxv1connect.NewPackageServiceClient(httpClient, d.URL, options),
 		launches:  agxv1connect.NewLaunchServiceClient(httpClient, d.URL, options),
 		runtime:   agxv1connect.NewRuntimeServiceClient(httpClient, d.URL, options),
 		secrets:   agxv1connect.NewSecretServiceClient(httpClient, d.URL, options),

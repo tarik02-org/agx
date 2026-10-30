@@ -4,12 +4,21 @@ import (
 	"context"
 	"path/filepath"
 
+	"connectrpc.com/connect"
+
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
 type app struct {
+	local         *config.Local
+	localLoaded   bool
+	localErr      error
+	offline       bool
+	completing    bool
 	paths         platform.Paths
 	builtins      config.Builtins
 	registry      adapters.Registry
@@ -32,9 +41,13 @@ func (a *app) config() (*config.Config, error) {
 		if err != nil {
 			return nil, err
 		}
+		local, err := a.localConfig()
+		if err != nil {
+			return nil, err
+		}
 		a.configuration, a.configErr = config.Load(
 			root,
-			config.Options{Builtins: a.builtins, State: a.paths.State, Cache: cache},
+			config.Options{Builtins: a.builtins, Local: local, Cache: cache},
 		)
 		a.configLoaded = true
 	}
@@ -43,7 +56,16 @@ func (a *app) config() (*config.Config, error) {
 
 func (a *app) fragments() harnessConfig {
 	if a.harnesses.path != a.paths.Config {
-		a.harnesses = loadHarnesses(a.paths, a.builtins)
+		local, err := a.localConfig()
+		if err != nil {
+			a.harnesses = harnessConfig{
+				path:   a.paths.Config,
+				config: config.Bare(a.builtins),
+				err:    &localConfigError{err},
+			}
+		} else {
+			a.harnesses = loadHarnesses(a.paths, a.builtins, local)
+		}
 	}
 	return a.harnesses
 }
@@ -54,11 +76,68 @@ func (a *app) fragmentConfig() (*config.Config, error) {
 }
 
 func (a *app) autostart() bool {
-	fragments := a.fragments()
-	if fragments.err != nil {
+	if a.harnesses.path == a.paths.Config && a.harnesses.config != nil && a.harnesses.err == nil {
+		return autostart(a.harnesses.config)
+	}
+	root, err := config.ReadRoot(a.paths.Config, a.builtins)
+	if err != nil {
 		return autostart(nil)
 	}
-	return autostart(fragments.config)
+	return autostart(&config.Config{Daemon: root.Daemon})
+}
+
+func (a *app) localConfig() (*config.Local, error) { return a.localConfigContext(context.Background()) }
+
+func (a *app) localConfigContext(ctx context.Context) (*config.Local, error) {
+	if a.offline {
+		return config.EmptyLocal(), nil
+	}
+	if !a.localLoaded {
+		a.localLoaded = true
+		var c *client
+		var err error
+		if a.completing {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, completionDaemonTimeout)
+			defer cancel()
+			c, err = newClient(a.paths)
+		} else {
+			c, err = a.client(ctx)
+		}
+		if err == nil {
+			var response *connect.Response[v1.GetLocalConfigurationResponse]
+			response, err = c.config.GetLocalConfiguration(ctx, connect.NewRequest(&v1.GetLocalConfigurationRequest{}))
+			if err == nil {
+				m := response.Msg
+				local := config.EmptyLocal()
+				local.Document, local.Revision = m.Document.AsMap(), m.Revision
+				for id, row := range m.Packages {
+					dependencies := make([]config.ID, len(row.Dependencies))
+					for i, id := range row.Dependencies {
+						dependencies[i] = config.ID(id)
+					}
+					local.Lock.Packages[config.ID(id)] = config.LockedPackage{
+						Source: config.Package{
+							Path:   row.Path,
+							Git:    row.Git,
+							Ref:    row.Ref,
+							Hash:   row.SourceHash,
+							Subdir: row.Subdir,
+						},
+						Revision:     row.Revision,
+						Hash:         row.Hash,
+						Dependencies: dependencies,
+					}
+				}
+				a.local = local
+			}
+		}
+		if err != nil && a.completing {
+			a.local, err = config.EmptyLocal(), nil
+		}
+		a.localErr = err
+	}
+	return a.local, a.localErr
 }
 
 func (a *app) client(ctx context.Context) (*client, error) {

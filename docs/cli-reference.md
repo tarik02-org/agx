@@ -50,6 +50,7 @@ go before it.
 | --- | --- |
 | `agx config export` | print local definitions and rules as a YAML overlay |
 | `agx config validate` | load and check the whole configuration |
+| `agx config validate --yaml-only` | check YAML overlays without managed configuration or a daemon; useful for declarative builds |
 | `agx config schema [--root\|--package]` | print the JSON Schema for fragments, the root file, or package manifests |
 | `agx explain [dir] [--harness <name>]` | show why each resource is selected or removed |
 | `agx install [--frozen]` | install packages and write lockfiles; register Codex skill plugins |
@@ -76,7 +77,8 @@ go before it.
 | `agx use <id>` | enable a defined resource in a scope |
 | `agx unuse <id>` | disable a resource in a scope |
 
-Configuration commands save local definitions and rules in SQLite. YAML overlays
+Configuration commands read and save local definitions and rules through the
+daemon, which owns SQLite access. They require a running daemon or autostart. YAML overlays
 remain authoritative and read-only through agx. Results report the saved
 `revision` and semantic changes; file diffs and fragment selection are removed.
 

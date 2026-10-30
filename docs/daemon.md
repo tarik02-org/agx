@@ -9,9 +9,16 @@ agx keeps a small background process, the daemon, running as you. It:
 - receives OAuth logins in your browser.
 
 You rarely need to think about it. Any command that needs it (launching a
-harness, `agx mcp tools`, `agx secret …`, `agx doctor`) starts
-it in the background if it is not running. Help, version, and login commands of
-harnesses, and commands that only read or edit configuration, work without it.
+harness, reading or editing managed configuration, browsing sessions, or
+using `agx secret …`) starts it in the background if it is not running.
+Only daemon processes open SQLite and run migrations. Each configuration has
+its own daemon; those daemons can share the database and coordinate through SQLite.
+`agx --help`, `--version`, schema output and completion-script generation stay
+local. Shell completion asks an existing daemon briefly and never starts one.
+`agx config validate --yaml-only` checks declarative overlays locally for builds.
+The terminal picker opens immediately while configuration and session history load.
+Native harness help, version and login commands ask the daemon to resolve their
+configured environment, without creating a managed launch.
 
 ## Commands
 
@@ -84,6 +91,14 @@ When a daemon dies without shutting down, the wrappers of running harnesses
 start a new one: a wrapper does so only when no daemon holds the lock and the
 discovery file still names the daemon it used, so it never races a daemon
 another command is starting.
+
+Wrappers report durable launch history through the daemon, separately from leased
+MCP access. When a wrapper finishes while no daemon runs, it reconnects or starts
+one to record the original exit time, even after a graceful stop or broken YAML.
+This recovery also applies when initial autostart was disabled: the launch already
+had a daemon. An unreadable database remains an error; wrappers never write a
+fallback history file. The daemon can start with invalid YAML so diagnostics,
+history reporting and credential reset remain available.
 
 ## Launches
 

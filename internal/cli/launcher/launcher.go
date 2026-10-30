@@ -37,9 +37,11 @@ type Options struct {
 }
 
 type SessionUpdate struct {
-	Entries []sessions.Entry
-	Notes   []string
-	Loading bool
+	// Nil leaves the current harness listing unchanged.
+	Harnesses []Harness
+	Entries   []sessions.Entry
+	Notes     []string
+	Loading   bool
 }
 
 type sessionResult struct {
@@ -115,6 +117,7 @@ const (
 	sessionHeading
 	blankLine
 	emptySessions
+	emptyHarnesses
 )
 
 type bodyLine struct {
@@ -123,30 +126,31 @@ type bodyLine struct {
 }
 
 type model struct {
-	opts          Options
-	here          []sessions.Entry
-	input         textinput.Model
-	all           bool
-	rows          []row
-	lines         []bodyLine
-	rowLines      []int
-	harnessWidth  int
-	sessionCount  int
-	cursor        int
-	offset        int
-	width         int
-	height        int
-	picker        []string
-	picked        int
-	pickerSession sessions.Entry
-	updates       <-chan sessionResult
-	loading       bool
-	notes         []string
-	choice        Choice
-	styles        styles
-	now           time.Time
-	plain         bool
-	quitting      bool
+	opts             Options
+	here             []sessions.Entry
+	input            textinput.Model
+	all              bool
+	rows             []row
+	lines            []bodyLine
+	rowLines         []int
+	harnessWidth     int
+	sessionCount     int
+	cursor           int
+	offset           int
+	width            int
+	height           int
+	picker           []string
+	picked           int
+	pickerSession    sessions.Entry
+	updates          <-chan sessionResult
+	loading          bool
+	loadingHarnesses bool
+	notes            []string
+	choice           Choice
+	styles           styles
+	now              time.Time
+	plain            bool
+	quitting         bool
 }
 
 type styles struct {
@@ -164,14 +168,15 @@ func newModel(opts Options) model {
 	input.SetStyles(s)
 	input.Focus()
 	m := model{
-		opts:    opts,
-		here:    sessions.Within(opts.Sessions, opts.Directory),
-		input:   input,
-		width:   80,
-		height:  24,
-		now:     time.Now(),
-		plain:   opts.Profile <= colorprofile.ASCII,
-		loading: opts.LoadSessions != nil,
+		opts:             opts,
+		here:             sessions.Within(opts.Sessions, opts.Directory),
+		input:            input,
+		width:            80,
+		height:           24,
+		now:              time.Now(),
+		plain:            opts.Profile <= colorprofile.ASCII,
+		loading:          opts.LoadSessions != nil,
+		loadingHarnesses: opts.LoadSessions != nil && opts.Harnesses == nil,
 		styles: styles{
 			heading:  lipgloss.NewStyle().Bold(true),
 			selected: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Cyan),
@@ -205,18 +210,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case sessionResult:
 		if msg.closed {
-			m.loading = false
+			m.loading, m.loadingHarnesses = false, false
+			m.refresh()
 			return m, nil
 		}
 		if msg.err != nil {
-			m.loading = false
-			m.notes = append(m.notes, "Cannot list sessions: "+msg.err.Error())
-			m.scroll()
+			m.loading, m.loadingHarnesses = false, false
+			m.notes = append(m.notes, "Cannot load launcher: "+msg.err.Error())
+			m.refresh()
 			return m, m.nextSessions()
 		}
 		var selected row
 		if m.cursor < len(m.rows) {
 			selected = m.rows[m.cursor]
+		}
+		if msg.update.Harnesses != nil {
+			m.opts.Harnesses, m.loadingHarnesses = msg.update.Harnesses, false
 		}
 		m.opts.Sessions = msg.update.Entries
 		m.now = time.Now()
@@ -410,8 +419,11 @@ func (m *model) layoutRows() {
 	}
 	m.harnessWidth = min(m.harnessWidth, 20)
 	m.sessionCount = entries
-	if harnesses > 0 {
+	if harnesses > 0 || m.loadingHarnesses {
 		m.lines = append(m.lines, bodyLine{kind: harnessHeading})
+	}
+	if m.loadingHarnesses {
+		m.lines = append(m.lines, bodyLine{kind: emptyHarnesses})
 	}
 	for i, r := range m.rows {
 		if r.entry != nil && i == harnesses {
@@ -433,6 +445,8 @@ func (m *model) layoutRows() {
 
 func (m model) renderLine(line bodyLine) string {
 	switch line.kind {
+	case emptyHarnesses:
+		return m.render(m.styles.muted, "Loading harnesses…")
 	case harnessHeading:
 		return m.render(m.styles.heading, "New session")
 	case sessionHeading:

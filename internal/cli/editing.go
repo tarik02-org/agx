@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,12 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"connectrpc.com/connect"
+
+	"google.golang.org/protobuf/types/known/structpb"
+
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
@@ -95,6 +102,8 @@ func (f *editFlags) enableTarget() (scope, error) {
 type session struct {
 	*configedit.Session
 	ctx         context.Context
+	client      *client
+	changes     []*v1.ConfigChange
 	yes         bool
 	interactive bool
 	// result records what the command did, for its JSON document.
@@ -125,7 +134,14 @@ func (a *app) newSession(ctx context.Context, yes bool) (*session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("configuration is invalid; fix it before editing: %w", err)
 	}
-	edits, err := configedit.New(a.paths, a.builtins, c)
+	client, err := a.client(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Previews cannot persist; only the daemon receives the semantic changes.
+	previewPaths := a.paths
+	previewPaths.State = ""
+	edits, err := configedit.New(previewPaths, a.builtins, c)
 	if err != nil {
 		return nil, err
 	}
@@ -133,6 +149,7 @@ func (a *app) newSession(ctx context.Context, yes bool) (*session, error) {
 	tty := interactive() && !scripting.enabled
 	s := &session{
 		Session:     edits,
+		client:      client,
 		ctx:         ctx,
 		yes:         yes || !tty,
 		interactive: tty,
@@ -150,14 +167,28 @@ func (s *session) report() error {
 func (s *session) enable(kind config.Kind, id string, target scope) (bool, error) {
 	s.result.Enabled = append(s.result.Enabled, definitionID{Kind: kind, ID: id})
 	s.result.Scope = &target
-	return s.Enable(kind, id, target)
+	changed, err := s.Enable(kind, id, target)
+	if err == nil && changed {
+		s.changes = append(
+			s.changes,
+			&v1.ConfigChange{Change: &v1.ConfigChange_Enable{Enable: selectionRequest(kind, id, target)}},
+		)
+	}
+	return changed, err
 }
 
 // disable takes id out of the target scope.
 func (s *session) disable(kind config.Kind, id string, target scope) (bool, error) {
 	s.result.Disabled = append(s.result.Disabled, definitionID{Kind: kind, ID: id})
 	s.result.Scope = &target
-	return s.Disable(kind, id, target)
+	changed, err := s.Disable(kind, id, target)
+	if err == nil && changed {
+		s.changes = append(
+			s.changes,
+			&v1.ConfigChange{Change: &v1.ConfigChange_Disable{Disable: selectionRequest(kind, id, target)}},
+		)
+	}
+	return changed, err
 }
 
 var errDeclined = errors.New("nothing was written")
@@ -177,7 +208,14 @@ func (s *session) commit() (bool, error) {
 			return false, errDeclined
 		}
 	}
-	changed, err := s.Commit(s.ctx)
+	response, err := s.client.config.UpdateConfiguration(
+		s.ctx,
+		connect.NewRequest(&v1.UpdateConfigurationRequest{ExpectedRevision: s.Local.Revision, Changes: s.changes}),
+	)
+	changed := err == nil
+	if err == nil {
+		s.Local.Revision = response.Msg.Revision
+	}
 	if err != nil {
 		return false, err
 	}
@@ -227,6 +265,20 @@ func (s *session) define(kind config.Kind, id string, value any) error {
 	if err := s.Define(kind, id, value); err != nil {
 		return err
 	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	var encoded structpb.Value
+	if err := encoded.UnmarshalJSON(data); err != nil {
+		return err
+	}
+	s.changes = append(
+		s.changes,
+		&v1.ConfigChange{
+			Change: &v1.ConfigChange_Define{Define: &v1.DefineChange{Kind: string(kind), Id: id, Value: &encoded}},
+		},
+	)
 	s.result.Defined = append(s.result.Defined, definitionID{Kind: kind, ID: id})
 	return nil
 }
@@ -250,6 +302,7 @@ func (s *session) removeDefinition(kind config.Kind, id string, force bool) erro
 	if err := s.RemoveDefinition(kind, id, force); err != nil {
 		return err
 	}
+	s.undefine(kind, id)
 	s.result.Removed = append(s.result.Removed, definitionID{Kind: kind, ID: id})
 	return nil
 }
@@ -275,4 +328,15 @@ func pairs(flag string, values []string) (map[string]any, error) {
 		m[key] = value(text)
 	}
 	return m, nil
+}
+
+func selectionRequest(kind config.Kind, id string, target scope) *v1.SelectionChange {
+	return &v1.SelectionChange{Kind: string(kind), Id: id, Directory: target.Directory, Harnesses: target.Harnesses}
+}
+
+func (s *session) undefine(kind config.Kind, id string) {
+	s.changes = append(
+		s.changes,
+		&v1.ConfigChange{Change: &v1.ConfigChange_Undefine{Undefine: &v1.UndefineChange{Kind: string(kind), Id: id}}},
+	)
 }

@@ -218,8 +218,11 @@ func Serve(
 		paths.Config,
 		config.Options{Builtins: builtins, State: paths.State, Cache: paths.Cache, Inputs: inputs},
 	)
+	configErr := err
 	if err != nil {
-		return err
+		c = config.Bare(builtins)
+		c.Root = paths.Config
+		c.Daemon = config.Daemon{LeaseSeconds: 60, RenewSeconds: 20}
 	}
 	// Holding the startup lock, no other daemon writes these directories.
 	removeAbandonedTemporaries(paths.State, time.Now())
@@ -251,6 +254,7 @@ func Serve(
 		adapters:  registry,
 		builtins:  builtins,
 		config:    c,
+		configErr: configErr,
 		inputs:    inputs,
 		discovery: discovery,
 		ctx:       serverCtx,

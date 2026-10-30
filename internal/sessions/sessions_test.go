@@ -391,13 +391,12 @@ func TestList(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	listing, err := List(
-		context.Background(),
+	listing, err := NewCatalog(
+		t.Context(),
 		registry,
 		filepath.Join(dir, "cache"),
 		state,
-		map[string]string{"codex": dir},
-	)
+	).Refresh(t.Context(), map[string]string{"codex": dir})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -33,12 +33,12 @@ Each launch gets the resources selected for the current directory:
 
 Codex's `-C`/`--cd` changes the directory agx resolves resources for.
 
-### Commands that skip agx
+### Commands without managed resources
 
 Help, version, login, and other management commands of the harness (for
 example `agx codex --version`, `agx claude mcp list`, `agx codex login`) run
-the harness directly without the daemon or any resources. Only the harness
-definition's `environment` and its arguments for the `passthrough` mode apply,
+the harness directly without managed resources. The daemon resolves the harness
+definition's `environment` and its arguments for the `passthrough` mode,
 so the environment's `!env` and `!secret` values must resolve for these
 commands too.
 
