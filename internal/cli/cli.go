@@ -94,6 +94,7 @@ func run(osArgs []string, stdout io.Writer) int {
 		},
 	)
 	configCmd := &cobra.Command{Use: "config", Short: "Inspect the root configuration", GroupID: "config"}
+	yamlOnly := false
 	validate := &cobra.Command{
 		Use:   "validate",
 		Short: "Load and validate the configuration",
@@ -113,6 +114,8 @@ func run(osArgs []string, stdout io.Writer) int {
 			return emit(document, func() error { return printValid(c) })
 		},
 	}
+	validate.Flags().
+		BoolVar(&yamlOnly, "yaml-only", false, "validate YAML overlays without managed configuration or a daemon")
 	configCmd.AddCommand(validate)
 	configCmd.AddCommand(
 		&cobra.Command{
@@ -328,19 +331,28 @@ func run(osArgs []string, stdout io.Writer) int {
 		scripting.enabled = wantsJSON(args)
 		return exitCode(&usageError{err})
 	}
-	ui.Configure(color)
-	if err := a.paths.Derive(); err != nil {
-		return exitCode(err)
-	}
 	a.completing = completing
 	a.offline = len(args) == 0 && !term.IsTerminal(os.Stdin.Fd()) ||
 		len(args) > 0 &&
 			(args[0] == "--help" || args[0] == "-h" || args[0] == "help" || args[0] == "completion" || args[0] == "man" || args[0] == "config" && len(args) > 1 && args[1] == "schema")
-	if found, _, err := root.Find(
+	if found, remaining, err := root.Find(
 		args,
-	); err == nil && found != root && !found.DisableFlagParsing &&
-		(slices.Contains(args, "--help") || slices.Contains(args, "-h")) {
-		a.offline = true
+	); err == nil && found != root && !found.DisableFlagParsing {
+		if found == validate && !completing {
+			// Build-time validation must select YAML-only loading before discovering harnesses.
+			if err := validate.ParseFlags(remaining); err != nil && !errors.Is(err, pflag.ErrHelp) {
+				scripting.enabled = wantsJSON(args)
+				return exitCode(&usageError{err})
+			}
+			a.offline = a.offline || yamlOnly
+		}
+		if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
+			a.offline = true
+		}
+	}
+	ui.Configure(color)
+	if err := a.paths.Derive(); err != nil {
+		return exitCode(err)
 	}
 	versionOnly := len(args) == 1 && (args[0] == "--version" || args[0] == "-v")
 	if !completing && (versionOnly || len(args) == 0 || len(args) > 0 && args[0] == "daemon") {

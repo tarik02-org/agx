@@ -15,6 +15,7 @@ Only daemon processes open SQLite and run migrations. Each configuration has
 its own daemon; those daemons can share the database and coordinate through SQLite.
 `agx --help`, `--version`, schema output and completion-script generation stay
 local. Shell completion asks an existing daemon briefly and never starts one.
+`agx config validate --yaml-only` checks declarative overlays locally for builds.
 The terminal picker opens immediately while configuration and session history load.
 Native harness help, version and login commands ask the daemon to resolve their
 configured environment, without creating a managed launch.

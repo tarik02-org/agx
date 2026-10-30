@@ -85,6 +85,10 @@ func listSessions(
 	harnesses harnessConfig,
 	publish func(sessions.Listing, bool) error,
 ) (sessions.Listing, error) {
+	var localErr *localConfigError
+	if errors.As(harnesses.err, &localErr) {
+		return sessions.Listing{}, harnesses.err
+	}
 	directory, err := os.Getwd()
 	if err != nil {
 		return sessions.Listing{}, err

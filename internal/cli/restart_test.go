@@ -12,6 +12,45 @@ import (
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
+func TestSessionsRespectConfiguredAutostart(t *testing.T) {
+	isolate(t, "")
+	t.Setenv("AGX_NO_AUTOSTART", "0")
+	if err := os.WriteFile(os.Getenv("AGX_CONFIG"), []byte("daemon:\n  autostart: false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	failJSON(t, 1, "--json", "sessions")
+	if files, err := filepath.Glob(
+		filepath.Join(os.Getenv("AGX_CACHE"), "runtime", "*", "daemon.json"),
+	); err != nil ||
+		len(files) != 0 {
+		t.Fatalf("session listing started a daemon: %v, %v", files, err)
+	}
+}
+
+func TestCommandsRespectConfiguredAutostart(t *testing.T) {
+	for _, args := range [][]string{{"doctor"}, {"launch", "list"}, {"install"}, {"secret", "status"}, {"secret", "login", "token"}} {
+		t.Run(args[0], func(t *testing.T) {
+			isolate(t, "")
+			t.Setenv("AGX_NO_AUTOSTART", "0")
+			t.Setenv("PATH", t.TempDir())
+			if err := os.WriteFile(
+				os.Getenv("AGX_CONFIG"),
+				[]byte("daemon:\n  autostart: false\n"),
+				0o600,
+			); err != nil {
+				t.Fatal(err)
+			}
+			run(append([]string{"agx", "--json"}, args...), io.Discard)
+			if files, err := filepath.Glob(
+				filepath.Join(os.Getenv("AGX_CACHE"), "runtime", "*", "daemon.json"),
+			); err != nil ||
+				len(files) != 0 {
+				t.Fatalf("%v started a daemon: %v, %v", args, files, err)
+			}
+		})
+	}
+}
+
 func TestHarnessConfigurationSurvivesDaemonRestart(t *testing.T) {
 	self, err := os.Executable()
 	if err != nil {

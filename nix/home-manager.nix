@@ -64,7 +64,7 @@ let
           cp $out "$TMPDIR/config/agx.d/${cfg.dropInName}.yaml"
           ${lib.optionalString (cfg.settings ? daemon) ''cp ${root} "$TMPDIR/config/agx.yaml"''}
           AGX_CONFIG="$TMPDIR/config/agx.yaml" AGX_CACHE="$TMPDIR/cache" AGX_NO_AUTOSTART=1 \
-            agx --color never config validate
+            agx --color never config validate --yaml-only
         ''
       );
 
@@ -166,7 +166,7 @@ in
       type = lib.types.bool;
       default = true;
       description = ''
-        Check the drop-in with `agx config validate` at build time. `~/` points
+        Check the drop-in with `agx config validate --yaml-only` at build time. `~/` points
         at an empty scratch home there, so disable this when the settings refer
         to files that only exist at run time.
       '';

@@ -58,7 +58,11 @@ func (a *app) fragments() harnessConfig {
 	if a.harnesses.path != a.paths.Config {
 		local, err := a.localConfig()
 		if err != nil {
-			a.harnesses = harnessConfig{path: a.paths.Config, config: config.Bare(a.builtins), err: err}
+			a.harnesses = harnessConfig{
+				path:   a.paths.Config,
+				config: config.Bare(a.builtins),
+				err:    &localConfigError{err},
+			}
 		} else {
 			a.harnesses = loadHarnesses(a.paths, a.builtins, local)
 		}
@@ -72,7 +76,7 @@ func (a *app) fragmentConfig() (*config.Config, error) {
 }
 
 func (a *app) autostart() bool {
-	if a.harnesses.path == a.paths.Config && a.harnesses.config != nil {
+	if a.harnesses.path == a.paths.Config && a.harnesses.config != nil && a.harnesses.err == nil {
 		return autostart(a.harnesses.config)
 	}
 	root, err := config.ReadRoot(a.paths.Config, a.builtins)

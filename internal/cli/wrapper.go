@@ -59,6 +59,8 @@ type harnessConfig struct {
 	err    error
 }
 
+type localConfigError struct{ error }
+
 func loadHarnesses(paths platform.Paths, builtins config.Builtins, local *config.Local) harnessConfig {
 	// Harnesses come only from configuration fragments, so packages need not be installed.
 	path := paths.Config
@@ -90,6 +92,10 @@ func runHarness(
 		)
 	}
 	if harnesses.err != nil {
+		var localErr *localConfigError
+		if errors.As(harnesses.err, &localErr) {
+			return harnesses.err
+		}
 		if _, builtin := registry.Adapter(name); !builtin {
 			return fmt.Errorf("unknown harness %s (harness definitions unavailable: %w)", name, harnesses.err)
 		}

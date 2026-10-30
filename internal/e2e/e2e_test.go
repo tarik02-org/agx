@@ -354,13 +354,15 @@ func (e *env) jsonFail(args ...string) {
 
 func TestEndToEnd(t *testing.T) {
 	e := newEnv(t)
+	t.Cleanup(func() { e.stopDaemon(true) })
 
 	if r := e.ok("--version"); !strings.Contains(r.stdout, version) {
 		t.Fatalf("--version printed %q", r.stdout)
 	}
 	e.ok("config", "validate")
+	e.stopDaemon(true)
 
-	t.Run("passthrough without a daemon", func(t *testing.T) {
+	t.Run("passthrough starts daemon without managed resources", func(t *testing.T) {
 		d, r := e.harness("claude-e2e", "--version")
 		if r.code != 0 || !strings.Contains(r.stdout, "fakeharness 1") {
 			t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
@@ -373,6 +375,9 @@ func TestEndToEnd(t *testing.T) {
 		}
 		if _, ok := d.Env["AGX_MCP_GRANT"]; ok {
 			t.Error("passthrough received a grant")
+		}
+		if !e.daemonRunning() {
+			t.Fatal("passthrough did not start a daemon to resolve its environment")
 		}
 	})
 
@@ -417,6 +422,7 @@ func TestEndToEnd(t *testing.T) {
 		}
 
 		// A managed launch through a link starts the daemon as agx, not as the link's harness.
+		e.stopDaemon(true)
 		r := e.run(filepath.Join(links, "claude-e2e"), []string{path}, "-p", "hi")
 		if r.code != 0 || !e.daemonRunning() {
 			t.Fatalf("managed launch through a link: exit %d, stderr %q", r.code, r.stderr)
@@ -424,12 +430,12 @@ func TestEndToEnd(t *testing.T) {
 		e.stopDaemon(true)
 	})
 
-	if e.daemonRunning() {
-		t.Fatal("a passthrough command started the daemon")
-	}
-	r := e.agx([]string{"AGX_NO_AUTOSTART=1"}, "claude", "-p", "hi")
-	if r.code != 1 || !strings.Contains(r.stderr, "agx daemon start") || e.daemonRunning() {
-		t.Fatalf("a managed launch with autostart disabled: exit %d, %q", r.code, r.stderr)
+	e.stopDaemon(true)
+	for _, args := range [][]string{{"claude", "--help"}, {"claude", "-p", "hi"}} {
+		r := e.agx([]string{"AGX_NO_AUTOSTART=1"}, args...)
+		if r.code != 1 || !strings.Contains(r.stderr, "agx daemon start") || e.daemonRunning() {
+			t.Fatalf("%v with autostart disabled: exit %d, %q", args, r.code, r.stderr)
+		}
 	}
 	if r := e.agx(nil, "daemon", "status"); r.code != 0 || !strings.Contains(r.stdout, "not running") ||
 		e.daemonRunning() {
@@ -437,7 +443,6 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	e.ok("daemon", "start")
-	t.Cleanup(func() { e.stopDaemon(true) })
 	if r := e.ok("daemon", "status", "--json"); !strings.Contains(r.stdout, version) {
 		t.Fatalf("daemon status = %s", r.stdout)
 	}
