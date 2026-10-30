@@ -122,6 +122,9 @@ func (s *Server) PrepareLaunch(
 		created:      time.Now(),
 		lease:        time.Duration(b.config.Daemon.LeaseSeconds) * time.Second,
 		threadServer: b.threadServer,
+		local:        config.EmptyLocal(),
+		inputs:       inputs,
+		temporary:    map[config.ID]config.MCPServer{},
 	}
 	l.extend(time.Now().Add(l.lease))
 	response := &v1.PrepareLaunchResponse{
@@ -331,6 +334,7 @@ func (s *Server) endpoints(
 ) (map[config.ID]*mcpruntime.Endpoint, []adapters.Endpoint) {
 	endpoints := map[config.ID]*mcpruntime.Endpoint{}
 	native := []adapters.Endpoint{}
+	native = append(native, adapters.Endpoint{ID: config.AgxMCP, URL: s.discovery.URL + "/launch/" + id + "/mcp/agx"})
 	for _, r := range snapshot.Resources {
 		if r.Kind != "mcp" {
 			continue

@@ -36,16 +36,21 @@ The daemon's loopback token does not protect against your own processes: any
 program running as you can read it.
 
 **Secret values stay out of files and output.** Values from `!secret`, `!env`,
-and `!file` are resolved at launch and kept in memory. They are not written to
+and `!file` are resolved at launch. They are not written to
 agx's generated files, lockfiles, logs, `explain`, `--json` output, or error
 messages. Keychain secrets and OAuth tokens live in `state.db` in the state
 directory, encrypted under a key that the OS keychain holds; there is no
-plaintext fallback.
+plaintext fallback. Temporary attachment environment inputs are also encrypted in
+`state.db`, using a key derived from that launch's random grant so the wrapper
+can recover them after a daemon restart without an OS-keychain request. Other
+configuration literals, including ad-hoc definitions, are ordinary configuration;
+use injection references for credentials.
 
 **MCP credentials stay in the daemon.** Harnesses never receive the API keys or
 OAuth tokens of remote MCP servers; they talk to the daemon, which adds them.
-Each harness gets a grant that works only for its own launch's MCP servers and
-expires when the launch ends or is revoked (`agx launch revoke <id>`).
+Each harness gets a grant for its own launch's MCP servers, including the
+built-in `agx` management server and temporary attachments. The built-in tools can
+browse all configured resources and save persistent edits immediately. The grant expires when the launch ends or is revoked (`agx launch revoke <id>`).
 `agx mcp call` and the client `agx mcp types` generates receive only tool
 results; the daemon runs the calls. Since the management token is readable by
 your processes, an agent can reach every configured server with

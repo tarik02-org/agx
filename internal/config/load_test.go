@@ -779,3 +779,14 @@ func TestMCPShare(t *testing.T) {
 		}
 	}
 }
+
+func TestAgxMCPIDReserved(t *testing.T) {
+	root := fragment(t, t.TempDir(), "mcp:\n  agx: {command: [server]}\n")
+	if _, err := config.Load(
+		root,
+		config.Options{Builtins: builtins},
+	); err == nil ||
+		!strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("reserved MCP ID accepted: %v", err)
+	}
+}

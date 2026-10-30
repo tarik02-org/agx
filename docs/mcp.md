@@ -5,7 +5,98 @@ launch access to the servers selected for its directory. Credentials stay in
 the daemon; the harness only gets a short-lived grant for its own launch. The
 same servers can be [called from the shell](#calling-servers-from-the-shell),
 and [on-demand servers](#on-demand-servers) stay out of the harness's tool list
-until an agent calls them that way.
+until an agent calls them through the built-in `agx` server or the shell.
+
+## The built-in agx server
+
+Every managed harness launch gets a native MCP server named **`agx`**, including
+launches with no selected MCP servers. Codex app-server threads each get their
+own instance. The ID `agx` is reserved in configuration. Help, login and other
+passthrough invocations have no launch or built-in server.
+
+Its tool list stays small; upstream servers and tool schemas are discovered only
+when requested. Startup does not wait for discovery.
+
+| Tool | Purpose |
+| --- | --- |
+| `get_context` | Current launch, directory, harness, initial selection, temporary attachments and configuration revision. |
+| `list_resources` | Browse all configured resources, including those outside the initial selection. Filter by `kind` and `query`; `limit` defaults to 50, maximum 200. Follow `next_offset` with `offset` for more. |
+| `get_resource` | Read skill content, instructions or resource definitions. Credentials are redacted; secrets expose status only. |
+| `update_configuration` | Commit semantic edits immediately, using `expected_revision` from `get_context`. |
+| `attach_mcp` | Temporarily attach a configured server by `id`, or an ad-hoc `definition`. |
+| `detach_mcp` | Remove a temporary attachment by `server` ID. |
+| `search_tools` | Search names and descriptions on selected and temporarily attached servers, returning schemas. Optional `server`, `query`, `limit` and `offset`; follow `next_offset` for more. |
+| `call_tool` | Call a `server` and `tool` with an `arguments` object; preserves rich content, structured results and tool errors. |
+
+For example, an agent can call these tools in sequence:
+
+```json
+{"name":"attach_mcp","arguments":{"id":"tracker"}}
+{"name":"search_tools","arguments":{"server":"tracker","query":"search issues"}}
+{"name":"call_tool","arguments":{"server":"tracker","tool":"search_issues","arguments":{"query":"startup"}}}
+```
+
+An ad-hoc attachment uses the same definition syntax as configuration, with
+explicit injection objects in place of YAML tags:
+
+```json
+{
+  "name": "attach_mcp",
+  "arguments": {
+    "id": "temporary-docs",
+    "definition": {
+      "command": ["docs-mcp", "--stdio"],
+      "environment": {"API_KEY": {"$env": "DOCS_KEY"}}
+    },
+    "environment": {"DOCS_KEY": "value supplied by the caller"}
+  }
+}
+```
+
+HTTP definitions use `url` and the usual `auth` settings. Interactive OAuth
+login still uses `agx secret login`: save an ad-hoc server as persistent
+configuration first if it needs a new login, or reference an existing configured
+credential. Missing `$env` inputs
+must be passed in `environment`; inputs already captured when the launch started
+are reused. Only declared inputs are accepted. Referenced secret definitions
+are retained privately for recovery; an existing attachment keeps its definitions
+when persistent configuration changes. Attachments use the existing credential
+manager, client pool, and explicit process-sharing settings.
+
+Attaching is lazy: it does not start or connect to the upstream server. Search
+or a call does that. A temporary server is immediately reachable through
+`search_tools` / `call_tool` and the launch-scoped shell commands; the harness's
+native MCP catalog does not change. Another launch cannot see the attachment.
+Initial scope-selected servers cannot be detached through `detach_mcp`.
+Attachments survive daemon replacement, crashes and lease reattachment. They
+end with the launch, not a saved conversation: resuming a conversation in a new
+launch starts with its configured selection again.
+
+Persistent edits are separate. `update_configuration` accepts the same semantic
+changes as the management API: `define`, `undefine`, `enable`, `disable`, and
+`addPackage`. For example:
+
+```json
+{
+  "name": "update_configuration",
+  "arguments": {
+    "expected_revision": 0,
+    "changes": [
+      {"define": {"kind": "instructions", "id": "precise", "value": {"text": "Be precise."}}},
+      {"enable": {"kind": "instructions", "id": "precise", "directory": "/work/project"}}
+    ]
+  }
+}
+```
+
+A batch commits atomically or fails, including on a stale revision. YAML and
+package definitions remain read-only. Saved changes affect **future launches**;
+skills, instructions and native settings are not hot-reloaded. Saving an MCP
+server definition and attaching it are explicit separate actions.
+
+The built-in server has no credential-read tool or arbitrary file editor. Like
+shell commands, it runs with your authority and can save configuration or start
+commands you specify; see the [security model](security.md).
 
 ## Adding a server
 
@@ -49,9 +140,8 @@ agx secret login tracker
 This opens the authorization page in your browser and waits until you finish.
 `--no-browser` prints the URL instead, for example to open it on another device
 of yours; the browser must still be able to reach `127.0.0.1` on this machine,
-since that is where the login returns. Tokens are stored in the OS keychain
-(macOS Keychain, Windows Credential Manager, or the Secret Service on Linux) and
-refreshed automatically: an expired access token is renewed when the server is
+since that is where the login returns. Tokens are stored encrypted in agx’s state database, under a key held in the OS
+keychain, and refreshed automatically: an expired access token is renewed when the server is
 next used, and one the server rejects early, with 401, is renewed and the request
 sent again. `agx secret status` shows such a token as "renews on next use". When
 the authorization server refuses the refresh token itself, the secret reports

@@ -98,13 +98,10 @@ configuration, while the launch still holds their daemon endpoints for
 `agx mcp call`. `explain`, `resolve`, `mcp list`, and `mcp tools` show the load
 mode.
 
-agx generates nothing to tell agents about on-demand servers: no instruction and
-no skill. Users who want agents to find them write their own instructions, such
-as "run `agx mcp tools` to discover on-demand MCP servers", for example as an
-agx `instructions` entry. Rejected: an always-on generated instruction listing
-the servers, which costs context in every launch and fixes wording users want to
-tune; a generated `agx-mcp` skill, which only some harnesses load on demand and
-which would still be agx-authored text in every session.
+[ADR 0030](0030-session-mcp.md) adds an always-present `agx` MCP server for
+discovery and calls, alongside these shell commands. It replaces the original
+choice to require user-authored instructions for agents to find on-demand servers.
+No generated instruction or skill listing every server is needed.
 
 ## Pooled sessions
 

@@ -68,15 +68,8 @@ type Options struct {
 	Inputs *Inputs
 }
 
-func read(root string, builtins Builtins, inputs *Inputs, local *Local) (*Config, error) {
-	dir, err := RootDir(root)
-	if err != nil {
-		return nil, err
-	}
-	root, err = platform.Canonical(root)
-	if err != nil {
-		return nil, err
-	}
+// ParseLocal decodes and merges a supplied document without reading YAML overlays.
+func ParseLocal(root string, local *Local, builtins Builtins) (*Config, error) {
 	c := &Config{
 		Root:          root,
 		Local:         local,
@@ -98,6 +91,22 @@ func read(root string, builtins Builtins, inputs *Inputs, local *Local) (*Config
 		if err := c.merge(d, at, root, "", false); err != nil {
 			return nil, err
 		}
+	}
+	return c, nil
+}
+
+func read(root string, builtins Builtins, inputs *Inputs, local *Local) (*Config, error) {
+	dir, err := RootDir(root)
+	if err != nil {
+		return nil, err
+	}
+	root, err = platform.Canonical(root)
+	if err != nil {
+		return nil, err
+	}
+	c, err := ParseLocal(root, local, builtins)
+	if err != nil {
+		return nil, err
 	}
 	inputs.file(root)
 	b, err := os.ReadFile(root)
@@ -937,6 +946,9 @@ func (m *merger) addInstructions(id ID, i Instructions, at Source, inline bool) 
 func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
 	c := m.c
 	name := qualify(m.ns, id)
+	if name == AgxMCP {
+		return errorAt(at, "MCP server agx is reserved for session management")
+	}
 	existing, exists := c.MCP[name]
 	if apply, err := m.conflict(
 		KindMCPServers,

@@ -116,7 +116,8 @@ func (s *Server) launchScope(authorization string, management bool, id string) (
 		s.mu.Unlock()
 		return nil, rpcError(connect.CodeUnauthenticated, "invalid or expired launch grant")
 	}
-	endpoints, snapshot, unavailable := l.endpoints, l.snapshot, l.unavailable
+	endpoints, snapshot, unavailable := maps.Clone(l.endpoints), l.snapshot, l.unavailable
+	temporary := maps.Clone(l.temporary)
 	s.mu.Unlock()
 	if unavailable != "" {
 		return nil, rpcError(connect.CodeFailedPrecondition, unavailable)
@@ -132,6 +133,7 @@ func (s *Server) launchScope(authorization string, management bool, id string) (
 		for id := range endpoints {
 			scope.servers[id] = snapshot.Config.MCP[id]
 		}
+		maps.Copy(scope.servers, temporary)
 	}
 	return scope, nil
 }
@@ -414,28 +416,8 @@ func (s *Server) CallTool(
 	if _, err := scope.server(msg.McpId); err != nil {
 		return nil, err
 	}
-	id := config.ID(msg.McpId)
-	var result *mcp.CallToolResult
-	err = s.withSession(ctx, scope, id, func(session *mcp.ClientSession) error {
-		names := []string{}
-		for tool, err := range session.Tools(ctx, nil) {
-			if err != nil {
-				return err
-			}
-			names = append(names, tool.Name)
-		}
-		if !slices.Contains(names, msg.Tool) {
-			return unknownTool{mcpID: msg.McpId, tool: msg.Tool, names: names}
-		}
-		var err error
-		result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: msg.Tool, Arguments: arguments})
-		return err
-	})
-	var unknown unknownTool
-	switch {
-	case errors.As(err, &unknown):
-		return nil, rpcError(connect.CodeInvalidArgument, unknown.Error())
-	case err != nil:
+	result, err := s.callTool(ctx, scope, config.ID(msg.McpId), msg.Tool, arguments)
+	if err != nil {
 		return nil, err
 	}
 	content, err := json.Marshal(result.Content)
@@ -460,4 +442,37 @@ type unknownTool struct {
 
 func (u unknownTool) Error() string {
 	return fmt.Sprintf("MCP server %s has no tool %s%s", u.mcpID, u.tool, mcptools.Suggest(u.tool, u.names))
+}
+
+func (s *Server) callTool(
+	ctx context.Context,
+	scope *callScope,
+	id config.ID,
+	tool string,
+	arguments json.RawMessage,
+) (*mcp.CallToolResult, error) {
+	var result *mcp.CallToolResult
+	err := s.withSession(ctx, scope, id, func(session *mcp.ClientSession) error {
+		names := []string{}
+		for tool, err := range session.Tools(ctx, nil) {
+			if err != nil {
+				return err
+			}
+			names = append(names, tool.Name)
+		}
+		if !slices.Contains(names, tool) {
+			return unknownTool{mcpID: string(id), tool: tool, names: names}
+		}
+		var err error
+		result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: arguments})
+		return err
+	})
+	var unknown unknownTool
+	switch {
+	case errors.As(err, &unknown):
+		return nil, rpcError(connect.CodeInvalidArgument, unknown.Error())
+	case err != nil:
+		return nil, err
+	}
+	return result, nil
 }

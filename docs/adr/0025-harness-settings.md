@@ -159,9 +159,9 @@ The common cases already have flags: `--provider`, `--model` (including
   which come before the definition's `args`, which come before the arguments
   typed at launch: `settings`, agx resources, `args`, typed arguments. For Codex
   later `-c` win, so a definition's `args` and the user's own `-c` override its
-  settings, and agx's `mcp_servers.agx-*`, `developer_instructions`, and plugin
+  settings, and agx's `mcp_servers.agx` and `mcp_servers.agx-*`, `developer_instructions`, and plugin
   switches override a setting of the same path; validation rejects settings
-  under `mcp_servers.agx-*` and `plugins.<name>@agx-managed` since they cannot
+  under `mcp_servers.agx`, `mcp_servers.agx-*` and `plugins.<name>@agx-managed` since they cannot
   take effect. For Claude Code there is one `--settings`; a definition that sets
   `settings` and also passes `--settings` in `args` is a validation error.
 - **Against native configuration**: settings sit where each harness puts

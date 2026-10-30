@@ -69,9 +69,12 @@ func (r Records) Start(record Record) error {
 			}
 		}
 		if record.Finished != nil {
-			return q.FinishLaunch(context.Background(), statedb.FinishLaunchParams{
+			if err := q.FinishLaunch(context.Background(), statedb.FinishLaunchParams{
 				ID: record.Launch, Finished: end,
-			})
+			}); err != nil {
+				return err
+			}
+			return q.DeleteFinishedSessionConfiguration(context.Background(), record.Launch)
 		}
 		return nil
 	})
@@ -79,10 +82,13 @@ func (r Records) Start(record Record) error {
 
 func (r Records) Finish(launch string, at time.Time) error {
 	return r.transaction(context.Background(), func(q *statedb.Queries) error {
-		return q.FinishLaunch(
+		if err := q.FinishLaunch(
 			context.Background(),
 			statedb.FinishLaunchParams{ID: launch, Finished: sql.NullInt64{Int64: at.UnixNano(), Valid: true}},
-		)
+		); err != nil {
+			return err
+		}
+		return q.DeleteFinishedSessionConfiguration(context.Background(), launch)
 	})
 }
 
