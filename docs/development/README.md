@@ -17,8 +17,9 @@ These notes are for people working on agx itself. For using agx, start at the
 1.26 and golangci-lint 2.12.
 
 ```sh
+go build ./cmd/...                        # client and daemon
 go test ./...                              # unit tests
-go test -tags e2e ./internal/e2e/...       # builds agx and runs it end to end
+go test -tags e2e ./internal/e2e/...       # builds agx/agxd pairs and runs them end to end
 golangci-lint fmt ./... && golangci-lint run ./...
 GOOS=windows golangci-lint run ./...
 buf lint && buf generate && go generate ./...   # Protobuf bindings, JSON Schemas, and SQL queries
@@ -35,14 +36,23 @@ the pinned generator. Generated query code is checked in. Add forward migrations
 with the next version and update `PRAGMA user_version` in the same migration.
 Durable state and disposable cache have independent migration histories.
 
-Release builds set the version that `agx --version` reports and that commands
-compare to decide whether they replace an older daemon:
-`-ldflags "-X github.com/tarik02-org/agx/internal/daemon.Version=1.2.3"`. Until
+Release builds set the same version on both binaries, reported by `agx --version`
+and `agxd --version`. Commands compare it to decide whether they replace an older
+daemon:
+`-ldflags "-X github.com/tarik02-org/agx/internal/control.Version=1.2.3"`. Until
 the first tag, the Nix package reports `0.0.0-dev+<commit>`, which is not
 ordered against the unknown `dev` version. Version comparison uses semver, with
 nightly commit counts in build metadata compared separately. Each canonical root
 configuration path gets a daemon in its own hashed runtime directory; protocol
 numbers and executable-content fingerprints are unnecessary before the first release.
+
+`cmd/agx` links the CLI and RPC client; it must not link the daemon, database/sql,
+SQLite or Goose. Its dependency test enforces that boundary. `cmd/agxd` owns
+serving and signal handling. Pure configuration, authentication and session models
+live separately from `configstore`, `secretstore` and `sessionstore`, which own
+persistence. Configuration editing and package installation take local data
+explicitly and return changes for the daemon to persist. This prepares reuse by a
+future daemonless runtime; no daemonless launch mode is implemented yet.
 
 Go messages and Connect handlers live in `gen/agx/v1`; TypeScript Protobuf
 messages and service descriptors live in `gen/typescript`. Regenerate them with

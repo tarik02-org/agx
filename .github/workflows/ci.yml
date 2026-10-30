@@ -44,7 +44,7 @@ jobs:
       - name: End-to-end test
         run: go test -tags e2e ./internal/e2e/...
       - name: Build
-        run: go build ./cmd/agx
+        run: go build ./cmd/...
 
   lint:
     strategy:

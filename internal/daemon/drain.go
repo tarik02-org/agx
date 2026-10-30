@@ -11,17 +11,12 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/tarik02-org/agx/gen/agx/v1/agxv1connect"
+	"github.com/tarik02-org/agx/internal/control"
 )
 
 const (
-	// ShutdownGrace is how long a stopping daemon lets requests in flight finish when the stop
-	// does not set a timeout.
-	ShutdownGrace = 10 * time.Second
 	// forcedGrace bounds draining for a stop that revokes launches anyway.
 	forcedGrace = 2 * time.Second
-	// StoppingHeader marks an Unavailable error, or a 503 response, from a daemon that stops
-	// taking new work; the caller retries with the daemon that discovery names next.
-	StoppingHeader = "Agx-Daemon-Stopping"
 )
 
 var errStopping = errors.New("daemon stopping; retry with the next daemon")
@@ -113,13 +108,13 @@ func (d *drain) track(next http.Handler) http.Handler {
 // refusal is the error for new work while the daemon stops.
 func refusal() error {
 	err := rpcError(connect.CodeUnavailable, errStopping.Error())
-	err.Meta().Set(StoppingHeader, "1")
+	err.Meta().Set(control.StoppingHeader, "1")
 	return err
 }
 
 // refuse answers an HTTP request for new work while the daemon stops.
 func refuse(w http.ResponseWriter) {
-	w.Header().Set(StoppingHeader, "1")
+	w.Header().Set(control.StoppingHeader, "1")
 	w.Header().Set("Retry-After", "1")
 	http.Error(w, errStopping.Error(), http.StatusServiceUnavailable)
 }

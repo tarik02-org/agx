@@ -18,6 +18,7 @@ import (
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/mcpruntime"
 	"github.com/tarik02-org/agx/internal/securefs"
 )
@@ -459,10 +460,6 @@ func (s *Server) RenewLaunch(
 	}), nil
 }
 
-// EndedHeader carries, on a renewal refused because the launch ended, how it ended: revoked,
-// finished, or expired, so the wrapper can tell its user.
-const EndedHeader = "Agx-Launch-Ended"
-
 // endedError refuses renewing a launch that ended in state.
 func endedError(state v1.Launch_State) error {
 	var how, message string
@@ -476,7 +473,7 @@ func endedError(state v1.Launch_State) error {
 		how, message = "expired", "launch lease expired"
 	}
 	err := connect.NewError(connect.CodeUnauthenticated, errors.New(message))
-	err.Meta().Set(EndedHeader, how)
+	err.Meta().Set(control.EndedHeader, how)
 	return err
 }
 

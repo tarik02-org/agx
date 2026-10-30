@@ -5,7 +5,7 @@ request on Linux, macOS, and Windows (`.github/workflows/ci.yml`):
 
 ```sh
 go test ./...                          # unit tests; -race on Linux in CI
-go test -tags e2e ./internal/e2e/...   # end to end, against the built binary
+go test -tags e2e ./internal/e2e/...   # end to end, against built client/daemon pairs
 ```
 
 Tests run in temporary directories with `HOME`, `USERPROFILE`, the `AGX_*`
@@ -14,7 +14,10 @@ paths, the XDG directories, and the harness stores (`CODEX_HOME`,
 network and never touch the user's keychain: OAuth and keychain tests use the
 keyring library's in-memory provider. CI also lints for Linux and Windows,
 checks that `buf generate` and `go generate` leave no diff, and builds the Nix
-package on Linux and macOS.
+package and Home Manager integration on Linux and macOS. The end-to-end suite
+checks sibling daemon lookup, installed shims (including Windows copies), missing
+helper errors, daemon replacement and launch reattachment. A dependency test
+keeps SQL storage and daemon implementation out of the client binary.
 
 ## Exercised manually
 

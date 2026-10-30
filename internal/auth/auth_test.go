@@ -22,6 +22,8 @@ import (
 
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/configstore"
+	"github.com/tarik02-org/agx/internal/secretstore"
 )
 
 // provider is an authorization server issuing a short-lived token, then a refreshed one.
@@ -109,7 +111,7 @@ func newManager(t *testing.T) (*auth.Manager, string) {
 		manager.Callback(w, r)
 	}))
 	t.Cleanup(callback.Close)
-	manager = auth.New(callback.URL+"/oauth/callback", auth.OpenStore(t.TempDir()))
+	manager = auth.New(callback.URL+"/oauth/callback", secretstore.Open(t.TempDir()))
 	return manager, callback.URL + "/oauth/callback"
 }
 
@@ -672,13 +674,13 @@ func TestCancelledRefreshKeepsRotatedToken(t *testing.T) {
 func TestStore(t *testing.T) {
 	keyring.MockInit()
 	dir := t.TempDir()
-	store := auth.OpenStore(dir)
+	store := secretstore.Open(dir)
 	long := strings.Repeat("x", 10000)
 	if err := store.Set("a", long); err != nil {
 		t.Fatal(err)
 	}
 	// Another process opens the same store and asks the keychain for the key itself.
-	if got, err := auth.OpenStore(dir).Get("a"); err != nil || got != long {
+	if got, err := secretstore.Open(dir).Get("a"); err != nil || got != long {
 		t.Fatalf("Get from another store = %d bytes, %v", len(got), err)
 	}
 	b, err := os.ReadFile(filepath.Join(dir, "state.db"))
@@ -691,7 +693,7 @@ func TestStore(t *testing.T) {
 	if err := store.Delete("a"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := auth.OpenStore(dir).Get("a"); err == nil {
+	if _, err := secretstore.Open(dir).Get("a"); err == nil {
 		t.Fatal("a deleted value is still there")
 	}
 
@@ -700,7 +702,7 @@ func TestStore(t *testing.T) {
 	}
 	// A keychain that lost the master key, as after a reset, leaves the store unreadable.
 	keyring.MockInit()
-	if _, err := auth.OpenStore(dir).Get("b"); err == nil || !strings.Contains(err.Error(), "no master key") {
+	if _, err := secretstore.Open(dir).Get("b"); err == nil || !strings.Contains(err.Error(), "no master key") {
 		t.Fatalf("a store without its master key: %v", err)
 	}
 }
@@ -715,7 +717,7 @@ func TestCommandSecretReused(t *testing.T) {
 		script := `echo >> "$0"; echo ` + prefix + `$(wc -l < "$0")`
 		return config.Secret{Kind: "command", Command: []string{"sh", "-c", script, runs}}
 	}
-	manager := auth.New("", auth.OpenStore(t.TempDir()))
+	manager := auth.New("", secretstore.Open(t.TempDir()))
 	value := func(s config.Secret) string {
 		t.Helper()
 		got, err := manager.Value(t.Context(), "token", s, nil, nil, "")
@@ -739,7 +741,7 @@ func TestCommandSecretReused(t *testing.T) {
 func TestResetCredentialsPreservesConfiguration(t *testing.T) {
 	keyring.MockInit()
 	dir := t.TempDir()
-	store := auth.OpenStore(dir)
+	store := secretstore.Open(dir)
 	manager := auth.New("", store)
 	secret := config.Secret{Kind: "keychain"}
 	if err := manager.Set("orphaned", secret, []byte("private")); err != nil {
@@ -748,13 +750,13 @@ func TestResetCredentialsPreservesConfiguration(t *testing.T) {
 	root := filepath.Join(dir, "agx.yaml")
 	local := config.EmptyLocal()
 	local.Document["instructions"] = map[string]any{"style": map[string]any{"text": "Keep me."}}
-	if _, err := config.WriteLocal(t.Context(), dir, root, local); err != nil {
+	if _, err := configstore.Write(t.Context(), dir, root, local); err != nil {
 		t.Fatal(err)
 	}
 	if err := manager.Reset(); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := config.ReadLocal(t.Context(), dir, root)
+	loaded, err := configstore.Read(t.Context(), dir, root)
 	if err != nil || loaded.Revision != 1 || loaded.Document["instructions"] == nil {
 		t.Fatalf("local config lost: %+v %v", loaded, err)
 	}

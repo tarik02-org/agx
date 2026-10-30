@@ -1,4 +1,4 @@
-package config
+package configstore
 
 import (
 	"context"
@@ -8,11 +8,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/storage/statedb"
 )
 
 type localDefinition struct {
-	kind Kind
+	kind config.Kind
 	body map[string]any
 }
 
@@ -21,7 +22,7 @@ type localGroup struct {
 	position int64
 }
 
-func definitionKey(kind Kind, id string) string {
+func definitionKey(kind config.Kind, id string) string {
 	return "/" + string(kind) + "/" + strings.NewReplacer("~", "~0", "/", "~1").Replace(id)
 }
 func localObject(v any) map[string]any { m, _ := v.(map[string]any); return m }
@@ -124,8 +125,8 @@ func storedLocalValue(kind, value string) any {
 	return map[string]any{"$" + kind: value}
 }
 
-func readLocalRows(ctx context.Context, q *statedb.Queries, root string) (*Local, error) {
-	out := EmptyLocal()
+func readLocalRows(ctx context.Context, q *statedb.Queries, root string) (*config.Local, error) {
+	out := config.EmptyLocal()
 	revision, err := q.GetConfigRevision(ctx, root)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, nil
@@ -151,7 +152,7 @@ func readLocalRows(ctx context.Context, q *statedb.Queries, root string) (*Local
 		} else {
 			localMap(out.Document, row.Kind)[row.Name] = body
 		}
-		definitions[row.Key] = localDefinition{kind: Kind(row.Kind), body: body}
+		definitions[row.Key] = localDefinition{kind: config.Kind(row.Kind), body: body}
 	}
 	if err := readLocalResources(ctx, q, root, definitions); err != nil {
 		return nil, err

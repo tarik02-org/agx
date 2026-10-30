@@ -25,7 +25,10 @@ buildGoModule (finalAttrs: {
 
   vendorHash = "sha256-Q8VwW/Ih+EuUhOM16D357oMykKzLpwkvh4oywhq0Db0=";
 
-  subPackages = [ "cmd/agx" ];
+  subPackages = [
+    "cmd/agx"
+    "cmd/agxd"
+  ];
 
   nativeBuildInputs = [ installShellFiles ];
 
@@ -40,13 +43,14 @@ buildGoModule (finalAttrs: {
   ldflags = [
     "-s"
     "-w"
-    "-X github.com/tarik02-org/agx/internal/daemon.Version=${finalAttrs.version}"
+    "-X github.com/tarik02-org/agx/internal/control.Version=${finalAttrs.version}"
   ];
 
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
     "$out/bin/agx" --version >/dev/null
+    "$out/bin/agxd" --version >/dev/null
     runHook postInstallCheck
   '';
 

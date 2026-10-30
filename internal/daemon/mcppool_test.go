@@ -12,14 +12,13 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/auth"
-	"github.com/tarik02-org/agx/internal/platform"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/tarik02-org/agx/internal/mcpruntime"
+	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/secretstore"
 )
 
 // poolOpener opens real sessions to an in-process MCP server and counts opens and closes.
@@ -158,7 +157,7 @@ func TestLogoutAllResetsOrphansWithBrokenConfiguration(t *testing.T) {
 	}
 	s := &Server{
 		paths:   paths,
-		manager: auth.New("", auth.OpenStore(t.TempDir())),
+		manager: auth.New("", secretstore.Open(t.TempDir())),
 		clients: newClientPool(),
 		shared:  mcpruntime.NewShared(t.Context(), "test", nil),
 	}

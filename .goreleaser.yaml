@@ -18,17 +18,27 @@ builds:
     main: ./cmd/agx
     binary: agx
     env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X github.com/tarik02-org/agx/internal/control.Version={{ .Version }}
+  - id: agxd
+    main: ./cmd/agxd
+    binary: agxd
+    env:
       # go-keyring shells out to security(1) on macOS and needs no cgo elsewhere either.
       - CGO_ENABLED=0
     goos: [darwin, linux, windows]
     goarch: [amd64, arm64]
     flags: [-trimpath]
     ldflags:
-      - -s -w -X github.com/tarik02-org/agx/internal/daemon.Version={{ .Version }}
+      - -s -w -X github.com/tarik02-org/agx/internal/control.Version={{ .Version }}
 
 archives:
   - id: agx
-    ids: [agx]
+    ids: [agx, agxd]
     # A nightly's version lives in its release title; its archives are named agx_nightly_*.
     name_template: >-
       {{ .ProjectName }}_{{ if .IsSnapshot }}nightly{{ else }}{{ .Version }}{{ end }}_{{ .Os }}_{{ .Arch }}

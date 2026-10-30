@@ -20,7 +20,7 @@ import (
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/daemon"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
@@ -73,11 +73,11 @@ func (s daemonState) action() daemonAction {
 }
 
 // probeDaemon reads discovery and asks the daemon it names how it is.
-func probeDaemon(ctx context.Context, paths platform.Paths) (daemon.Discovery, *client, daemonState) {
-	d, err := daemon.ReadDiscovery(paths)
+func probeDaemon(ctx context.Context, paths platform.Paths) (control.Discovery, *client, daemonState) {
+	d, err := control.ReadDiscovery(paths)
 	state := daemonState{
 		discovery: err,
-		newer:     newerVersion(daemon.Version, d.Version),
+		newer:     newerVersion(control.Version, d.Version),
 	}
 	if err != nil {
 		return d, nil, state
@@ -156,7 +156,7 @@ const maxDaemonLog = 1 << 20
 // Concurrent starters each spawn one; the startup lock lets one serve, and the others connect to
 // it.
 func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
-	executable, err := os.Executable()
+	executable, err := daemonExecutable()
 	if err != nil {
 		return "", err
 	}
@@ -175,14 +175,11 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 	defer func() { _ = log.Close() }()
 	child, err := platform.StartDetached(func() *exec.Cmd {
 		// The daemon must outlive this command, so its process is not tied to the command's cancellation.
-		child := exec.CommandContext(context.WithoutCancel(ctx), executable, "daemon", "start", "--foreground")
-		// On macOS the executable path is the link this command ran through, such as a shim named
-		// after a harness definition; with that name as argv[0] the child would launch the harness,
-		// which starts a daemon again, without end. The daemon always runs as agx.
-		child.Args[0] = "agx"
-		// The paths travel as environment rather than as --config, which must name an existing file:
-		// a root configuration that does not exist yet is an empty one, as it is for the caller.
-		child.Env = append(os.Environ(), "AGX_CONFIG="+paths.Config, "AGX_CACHE="+paths.Cache)
+		child := exec.CommandContext(context.WithoutCancel(ctx), executable)
+		// The daemon always runs under its own name, including test helpers.
+		child.Args[0] = "agxd"
+		// Keep the caller's derived paths, including state relocated by a --cache override.
+		child.Env = append(os.Environ(), "AGX_CONFIG="+paths.Config, "AGX_CACHE="+paths.Cache, "AGX_STATE="+paths.State)
 		// A daemon started from a launch must not hold that project directory open, nor write
 		// into a harness's protocol streams.
 		child.Dir = paths.Runtime
@@ -268,7 +265,7 @@ func stopDaemon(ctx context.Context, c *client, force bool, grace time.Duration)
 // for grace, or its default grace period, and then lets its MCP servers exit.
 func exitTimeout(grace time.Duration) time.Duration {
 	if grace <= 0 {
-		grace = daemon.ShutdownGrace
+		grace = control.ShutdownGrace
 	}
 	return grace + startupTimeout
 }

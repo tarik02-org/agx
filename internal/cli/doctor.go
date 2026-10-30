@@ -26,7 +26,7 @@ import (
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/daemon"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/shims"
 )
@@ -387,7 +387,7 @@ func definitionChecks(ctx context.Context, c *config.Config, registry adapters.R
 // what it found.
 func connectDaemon(ctx context.Context, paths platform.Paths, enabled bool) (*client, check) {
 	row := check{Group: "daemon", Name: "daemon"}
-	before, _ := daemon.ReadDiscovery(paths)
+	before, _ := control.ReadDiscovery(paths)
 	if !enabled {
 		client, err := newClient(paths)
 		if err != nil {
@@ -410,7 +410,7 @@ func daemonClientCheck(
 	ctx context.Context,
 	paths platform.Paths,
 	c *client,
-	before daemon.Discovery,
+	before control.Discovery,
 	started bool,
 ) (*client, check) {
 	row := check{Group: "daemon", Name: "daemon"}

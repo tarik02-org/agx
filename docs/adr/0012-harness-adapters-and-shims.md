@@ -50,11 +50,11 @@ launch to another daemon), and native installation run for the launch, such as
 Codex's plugin commands, uses it.
 
 `internal/adapters/builtin` is the one explicit list of adapters; nothing
-registers through `init`. The CLI builds the registry once and hands it to the
-daemon, `install`, and harness commands. Configuration cannot import adapters,
+registers through `init`. The client and daemon each build that registry for
+their own commands and runtime. Configuration cannot import adapters,
 which import it, so loading takes a `config.Builtins` value: the built-in names
 with their modes, from the registry, and the agx command names definitions must
-not shadow, from the command tree. Mode validation, `--help`'s harness list,
+not shadow, shared in `internal/control`. Mode validation, `--help`'s harness list,
 and the schema's mode enum all derive from it. Adding a harness means adding a
 package and listing it. A declarative adapter defined in configuration was
 considered and deferred until a harness needs one.

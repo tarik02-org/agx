@@ -17,6 +17,7 @@ import (
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/mcpruntime"
+	"github.com/tarik02-org/agx/internal/secretstore"
 )
 
 const fakeSharedServerEnv = "AGX_TEST_FAKE_SHARED_MCP"
@@ -109,7 +110,7 @@ func (f *sharedFixture) endpoint(root string) *mcpruntime.Endpoint {
 		f.server,
 		nil,
 		nil,
-		auth.New("http://127.0.0.1:1/callback", auth.OpenStore(f.t.TempDir())),
+		auth.New("http://127.0.0.1:1/callback", secretstore.Open(f.t.TempDir())),
 		f.shared,
 		root,
 	)
@@ -286,7 +287,7 @@ func TestSharedServerStopsOnSecretReset(t *testing.T) {
 	f.server.Environment["TOKEN"] = config.Value{Secret: "token"}
 	secrets := map[config.ID]config.Secret{"token": {Kind: "keychain"}}
 	keyring.MockInit()
-	manager := auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir()))
+	manager := auth.New("http://127.0.0.1:1/callback", secretstore.Open(t.TempDir()))
 	if err := manager.Set("token", secrets["token"], []byte("value")); err != nil {
 		t.Fatal(err)
 	}

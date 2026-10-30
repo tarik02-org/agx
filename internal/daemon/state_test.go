@@ -14,6 +14,7 @@ import (
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/storage"
 )
@@ -81,7 +82,12 @@ func TestAttachable(t *testing.T) {
 	}
 	for id, how := range map[string]string{"finished": "finished", "revoked": "revoked"} {
 		var e *connect.Error
-		if _, err := s.attachable(id, "grant", "lifecycle"); !errors.As(err, &e) || e.Meta().Get(EndedHeader) != how {
+		if _, err := s.attachable(
+			id,
+			"grant",
+			"lifecycle",
+		); !errors.As(err, &e) ||
+			e.Meta().Get(control.EndedHeader) != how {
 			t.Errorf("%s launch: %v", id, err)
 		}
 	}

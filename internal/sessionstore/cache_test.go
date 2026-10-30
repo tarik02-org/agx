@@ -1,4 +1,4 @@
-package sessions
+package sessionstore
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/adapters/claude"
 	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/sessions"
 )
 
 func writeTranscript(t *testing.T, root, folder, id, message string) string {
@@ -47,7 +48,7 @@ func TestCatalogTracksChangesAndSeparatesStores(t *testing.T) {
 	cache, state := filepath.Join(dir, "cache"), filepath.Join(dir, "state")
 	registry := adapters.NewRegistry(claude.Adapter{})
 	catalog := NewCatalog(t.Context(), registry, cache, state)
-	refresh := func(c *Catalog, root string, parsed, cached, count int) Listing {
+	refresh := func(c *Catalog, root string, parsed, cached, count int) sessions.Listing {
 		t.Helper()
 		listing, err := c.Refresh(t.Context(), map[string]string{"claude": root})
 		if err != nil || len(listing.Errors) != 0 {
@@ -81,7 +82,7 @@ func TestCatalogTracksChangesAndSeparatesStores(t *testing.T) {
 	listing = refresh(catalog, first, 1, 1, 2)
 	if !slices.ContainsFunc(
 		listing.Entries,
-		func(e Entry) bool { return e.ID == "a" && e.Message == "alpha changed" },
+		func(e sessions.Entry) bool { return e.ID == "a" && e.Message == "alpha changed" },
 	) {
 		t.Fatal("the changed message is missing")
 	}
@@ -213,7 +214,7 @@ func TestCatalogKeepsUnreadableSessionsUntilACompleteScan(t *testing.T) {
 			}
 			if !slices.ContainsFunc(
 				listing.Entries,
-				func(e Entry) bool { return e.ID == "a" && e.Message == "alpha changed" },
+				func(e sessions.Entry) bool { return e.ID == "a" && e.Message == "alpha changed" },
 			) {
 				t.Fatal("readable sessions were not refreshed")
 			}

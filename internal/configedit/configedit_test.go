@@ -11,6 +11,7 @@ import (
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/configedit"
+	"github.com/tarik02-org/agx/internal/configstore"
 	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/storage"
 )
@@ -32,7 +33,7 @@ func workspace(t *testing.T) (platform.Paths, func() *configedit.Session) {
 	}
 	load := func() *configedit.Session {
 		t.Helper()
-		c, err := config.Load(paths.Config, config.Options{Builtins: builtins, State: paths.State, Cache: paths.Cache})
+		c, err := configstore.Load(paths.Config, paths.State, config.Options{Builtins: builtins, Cache: paths.Cache})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -47,7 +48,7 @@ func workspace(t *testing.T) (platform.Paths, func() *configedit.Session) {
 
 func save(t *testing.T, s *configedit.Session) {
 	t.Helper()
-	if changed, err := s.Commit(t.Context()); err != nil || !changed {
+	if changed, err := commit(t.Context(), s); err != nil || !changed {
 		t.Fatalf("commit: %t, %v", changed, err)
 	}
 }
@@ -77,9 +78,9 @@ func TestLocalPersistenceAndRootIsolation(t *testing.T) {
 	if _, err := os.Stat(paths.Config); !os.IsNotExist(err) {
 		t.Fatalf("created YAML: %v", err)
 	}
-	other, err := config.Load(
-		filepath.Join(filepath.Dir(paths.Config), "other.yaml"),
-		config.Options{State: paths.State},
+	other, err := configstore.Load(
+		filepath.Join(filepath.Dir(paths.Config), "other.yaml"), paths.State,
+		config.Options{},
 	)
 	if err != nil || len(other.MCP) != 0 {
 		t.Fatalf("other root: %+v %v", other, err)
@@ -92,12 +93,12 @@ func TestOptimisticConflictAndInvalidChange(t *testing.T) {
 	define(t, first, config.KindInstructions, "one", map[string]any{"text": "One."})
 	define(t, stale, config.KindInstructions, "two", map[string]any{"text": "Two."})
 	save(t, first)
-	if _, err := stale.Commit(t.Context()); err == nil {
+	if _, err := commit(t.Context(), stale); err == nil {
 		t.Fatal("stale edit committed")
 	}
 	broken := load()
 	define(t, broken, config.KindMCPServers, "bad", map[string]any{"url": 5})
-	if _, err := broken.Commit(t.Context()); err == nil {
+	if _, err := commit(t.Context(), broken); err == nil {
 		t.Fatal("invalid definition committed")
 	}
 	c := load().Config
@@ -164,9 +165,9 @@ func TestTaggedValuesAndRevisionInputs(t *testing.T) {
 	define(t, s, config.KindSecrets, "credential", map[string]any{"kind": "keychain"})
 	save(t, s)
 	inputs := &config.Inputs{}
-	c, err := config.Load(
-		paths.Config,
-		config.Options{Builtins: builtins, State: paths.State, Cache: paths.Cache, Inputs: inputs},
+	c, err := configstore.Load(
+		paths.Config, paths.State,
+		config.Options{Builtins: builtins, Cache: paths.Cache, Inputs: inputs},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -238,7 +239,7 @@ func TestCancelledCommit(t *testing.T) {
 	define(t, s, config.KindInstructions, "cancelled", map[string]any{"text": "Do not save."})
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := s.Commit(ctx); !errors.Is(err, context.Canceled) {
+	if _, err := commit(ctx, s); !errors.Is(err, context.Canceled) {
 		t.Fatalf("commit: %v", err)
 	}
 	if _, err := os.Stat(storage.State(paths.State)); !os.IsNotExist(err) {
@@ -254,7 +255,7 @@ func TestConcurrentLocalWriters(t *testing.T) {
 	results := make(chan error, 2)
 	start := make(chan struct{})
 	for _, s := range []*configedit.Session{first, second} {
-		go func() { <-start; _, err := s.Commit(t.Context()); results <- err }()
+		go func() { <-start; _, err := commit(t.Context(), s); results <- err }()
 	}
 	close(start)
 	one, two := <-results, <-results
@@ -293,7 +294,7 @@ func TestInputsNoticeRepairedDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	inputs := &config.Inputs{}
-	_, err := config.Load(paths.Config, config.Options{State: paths.State, Inputs: inputs})
+	_, err := configstore.Load(paths.Config, paths.State, config.Options{Inputs: inputs})
 	if err == nil {
 		t.Fatal("corrupt state loaded")
 	}
@@ -303,7 +304,7 @@ func TestInputsNoticeRepairedDatabase(t *testing.T) {
 	if !inputs.Changed() {
 		t.Fatal("repair did not invalidate cached load failure")
 	}
-	if _, err := config.Load(paths.Config, config.Options{State: paths.State}); err != nil {
+	if _, err := configstore.Load(paths.Config, paths.State, config.Options{}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -426,7 +427,7 @@ func TestReferencedSecretNeedsDependentEdit(t *testing.T) {
 	if err := s.Undefine(config.KindSecrets, "credential"); err == nil {
 		t.Fatal("deleted a referenced secret")
 	}
-	if changed, err := s.Commit(t.Context()); err != nil || changed {
+	if changed, err := commit(t.Context(), s); err != nil || changed {
 		t.Fatalf("rejected deletion changed config: %t %v", changed, err)
 	}
 	define(t, s, config.KindMCPServers, "server", map[string]any{"command": []string{"server"}})
@@ -437,4 +438,10 @@ func TestReferencedSecretNeedsDependentEdit(t *testing.T) {
 	if len(load().Config.Secrets) != 0 {
 		t.Fatal("secret remains after dependent edit")
 	}
+}
+
+func commit(ctx context.Context, s *configedit.Session) (bool, error) {
+	return s.Commit(ctx, func(ctx context.Context, root string, local *config.Local) (int64, error) {
+		return configstore.Write(ctx, s.Paths.State, root, local)
+	})
 }

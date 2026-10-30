@@ -10,14 +10,15 @@ import (
 
 	"github.com/zalando/go-keyring"
 
-	"github.com/tarik02-org/agx/internal/daemon"
+	"github.com/tarik02-org/agx/internal/control"
+	"github.com/tarik02-org/agx/internal/daemoncmd"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
 func TestMain(m *testing.M) {
-	if os.Getenv("AGX_TEST_DAEMON") == "1" && len(os.Args) > 1 && os.Args[1] == "daemon" {
+	if os.Getenv("AGX_TEST_DAEMON") == "1" && filepath.Base(os.Args[0]) == "agxd" {
 		keyring.MockInit()
-		os.Exit(run(append([]string{"agx"}, os.Args[1:]...), os.Stdout))
+		os.Exit(daemoncmd.Run(context.Background(), os.Args[1:], os.Stdout, os.Stderr))
 	}
 	if output := os.Getenv("AGX_TEST_HARNESS_OUTPUT"); output != "" {
 		if err := os.WriteFile(output, []byte(os.Getenv("DEFINED")), 0o600); err != nil {
@@ -43,7 +44,7 @@ func stopTestDaemons(t *testing.T, cache string) {
 			t.Error(err)
 			continue
 		}
-		var discovery daemon.Discovery
+		var discovery control.Discovery
 		if err := json.Unmarshal(data, &discovery); err != nil {
 			t.Error(err)
 			continue

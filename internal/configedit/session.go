@@ -45,7 +45,10 @@ func New(paths platform.Paths, builtins config.Builtins, c *config.Config) (*Ses
 func (s *Session) Changed() bool { return config.Digest(s.Local) != s.original }
 
 // Commit validates the merged result before the revision-checked database write.
-func (s *Session) Commit(ctx context.Context) (bool, error) {
+func (s *Session) Commit(
+	ctx context.Context,
+	write func(context.Context, string, *config.Local) (int64, error),
+) (bool, error) {
 	if !s.Changed() {
 		return false, nil
 	}
@@ -53,7 +56,7 @@ func (s *Session) Commit(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, errorf(ConfigInvalid, "the change would make the configuration invalid: %w", err)
 	}
-	revision, err := config.WriteLocal(ctx, s.Paths.State, s.Root, s.Local)
+	revision, err := write(ctx, s.Root, s.Local)
 	if errors.Is(err, config.ErrConflict) {
 		return false, coded(Conflict, err)
 	}

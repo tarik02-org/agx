@@ -48,9 +48,9 @@ collected. Edits that need changed overlay locks require `agx install` first.
 promotion into declarative configuration; it never mirrors edits into YAML.
 
 Embedded Goose migrations and sqlc queries share the schema source with runtime
-storage (ADR 0028). Opening an existing runtime-only database upgrades it before
-reading local configuration; reading a missing database leaves it absent. No import
-of legacy files or the experimental JSON-in-SQLite layout is provided. Existing YAML remains
+storage (ADR 0028). The unshipped configuration and runtime schemas share one
+initial state migration. Reading a missing database leaves it absent. No import
+of earlier files or experimental SQLite layouts is provided. Existing YAML remains
 an overlay, not imported local data. Credentials remain encrypted under the OS
 keychain master key. `secret logout --all` removes every credential, including
 orphaned definitions, without deleting configuration or launch history.

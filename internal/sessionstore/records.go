@@ -1,4 +1,4 @@
-package sessions
+package sessionstore
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/sessions"
 	"github.com/tarik02-org/agx/internal/storage"
 	"github.com/tarik02-org/agx/internal/storage/statedb"
 )
@@ -109,7 +110,7 @@ func (r Records) transaction(ctx context.Context, change func(*statedb.Queries) 
 // Incomplete scans retain unseen associations; only changed associations are written.
 func (r Records) Match(
 	ctx context.Context,
-	entries []Entry,
+	entries []sessions.Entry,
 	failed map[string]error,
 	now time.Time,
 	stores map[string]string,

@@ -7,7 +7,7 @@ import (
 	"connectrpc.com/connect"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
-	"github.com/tarik02-org/agx/internal/sessions"
+	"github.com/tarik02-org/agx/internal/sessionstore"
 )
 
 func (s *Server) RecordLaunch(
@@ -26,7 +26,7 @@ func (s *Server) RecordLaunch(
 	if _, ok := s.adapters.Adapter(m.Builtin); !ok {
 		return nil, rpcError(connect.CodeInvalidArgument, "unknown built-in harness")
 	}
-	record := sessions.Record{
+	record := sessionstore.Record{
 		Launch:    m.Id,
 		Harness:   m.Harness,
 		Builtin:   m.Builtin,
@@ -43,7 +43,7 @@ func (s *Server) RecordLaunch(
 		end := m.FinishedAt.AsTime()
 		record.Finished = &end
 	}
-	if err := sessions.NewRecords(s.paths.State).Start(record); err != nil {
+	if err := sessionstore.NewRecords(s.paths.State).Start(record); err != nil {
 		return nil, rpcError(connect.CodeInternal, err.Error())
 	}
 	return connect.NewResponse(&v1.RecordLaunchResponse{}), nil

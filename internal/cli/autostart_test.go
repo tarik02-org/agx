@@ -10,7 +10,7 @@ import (
 	"github.com/gofrs/flock"
 
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/daemon"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
@@ -63,7 +63,7 @@ func TestCrashed(t *testing.T) {
 	paths := platform.Paths{Runtime: t.TempDir()}
 	discovery := func(instance string) {
 		t.Helper()
-		b, err := json.Marshal(daemon.Discovery{
+		b, err := json.Marshal(control.Discovery{
 			InstanceID: instance,
 			URL:        "http://127.0.0.1:4000",
 			Token:      "token",

@@ -13,7 +13,7 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/cli/ui"
-	"github.com/tarik02-org/agx/internal/daemon"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
@@ -51,7 +51,7 @@ func (r *refusals) exhausted(err error, now time.Time) bool {
 // is worth retrying with the next one.
 func stopping(err error) bool {
 	var e *connect.Error
-	return errors.As(err, &e) && e.Meta().Get(daemon.StoppingHeader) != ""
+	return errors.As(err, &e) && e.Meta().Get(control.StoppingHeader) != ""
 }
 
 // backoff is the pause before retry attempt n (from 0) with a daemon that is restarting.
@@ -134,7 +134,7 @@ func crashed(paths platform.Paths, instance string) bool {
 	if held, err := lockHeld(paths); err != nil || held {
 		return false
 	}
-	d, err := daemon.ReadDiscovery(paths)
+	d, err := control.ReadDiscovery(paths)
 	if err != nil {
 		return false
 	}
@@ -194,7 +194,7 @@ func (l *lease) attach(ctx context.Context) error {
 // reconnect switches to the daemon the discovery file names when it is another instance than
 // used's, and reports whether it did. A daemon of another version serves launches all the same.
 func (l *lease) reconnect(used *client) bool {
-	d, err := daemon.ReadDiscovery(l.paths)
+	d, err := control.ReadDiscovery(l.paths)
 	if err != nil {
 		return false
 	}
@@ -265,7 +265,7 @@ func (l *lease) renew(ctx context.Context, msg *v1.RenewLaunchRequest) (*v1.Rene
 func ended(err error) string {
 	var e *connect.Error
 	if errors.As(err, &e) {
-		return e.Meta().Get(daemon.EndedHeader)
+		return e.Meta().Get(control.EndedHeader)
 	}
 	return ""
 }

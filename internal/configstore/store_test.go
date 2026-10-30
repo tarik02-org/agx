@@ -1,4 +1,4 @@
-package config_test
+package configstore_test
 
 import (
 	"encoding/json"
@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/configstore"
 )
 
 func TestLocalRelationalRoundTrip(t *testing.T) {
@@ -46,11 +48,11 @@ func TestLocalRelationalRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	revision, err := config.WriteLocal(t.Context(), state, root, local)
+	revision, err := configstore.Write(t.Context(), state, root, local)
 	if err != nil {
 		t.Fatal(err)
 	}
-	persisted, err := config.ReadLocal(t.Context(), state, root)
+	persisted, err := configstore.Read(t.Context(), state, root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +60,7 @@ func TestLocalRelationalRoundTrip(t *testing.T) {
 		persisted.Lock.Packages["kit"].Dependencies[0] != "kit/dependency" {
 		t.Fatalf("persisted lock/revision = %+v", persisted)
 	}
-	after, err := config.Load(root, config.Options{Builtins: builtins, State: state})
+	after, err := configstore.Load(root, state, config.Options{Builtins: builtins})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,10 +101,10 @@ func TestLocalRelationalRoundTrip(t *testing.T) {
 	persisted.Document["bundles"].(map[string]any)["work"] = map[string]any{}
 	persisted.Document["scopes"] = []any{}
 	delete(persisted.Lock.Packages, "kit")
-	if _, err := config.WriteLocal(t.Context(), state, root, persisted); err != nil {
+	if _, err := configstore.Write(t.Context(), state, root, persisted); err != nil {
 		t.Fatal(err)
 	}
-	replacement, err := config.Load(root, config.Options{Builtins: builtins, State: state})
+	replacement, err := configstore.Load(root, state, config.Options{Builtins: builtins})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,10 +124,10 @@ func TestLocalWriteFailureRollsBackDefinitionsAndRevision(t *testing.T) {
 	root, state := filepath.Join(dir, "agx.yaml"), filepath.Join(dir, "state")
 	local := config.EmptyLocal()
 	local.Document["mcp"] = map[string]any{"server": map[string]any{"command": []string{"server"}}}
-	if _, err := config.WriteLocal(t.Context(), state, root, local); err != nil {
+	if _, err := configstore.Write(t.Context(), state, root, local); err != nil {
 		t.Fatal(err)
 	}
-	original, err := config.ReadLocal(t.Context(), state, root)
+	original, err := configstore.Read(t.Context(), state, root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,10 +136,10 @@ func TestLocalWriteFailureRollsBackDefinitionsAndRevision(t *testing.T) {
 		"command":     []string{"changed"},
 		"environment": map[string]any{"INVALID": 42},
 	}
-	if _, err := config.WriteLocal(t.Context(), state, root, invalid); err == nil {
+	if _, err := configstore.Write(t.Context(), state, root, invalid); err == nil {
 		t.Fatal("invalid injected value was stored")
 	}
-	got, err := config.ReadLocal(t.Context(), state, root)
+	got, err := configstore.Read(t.Context(), state, root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +148,7 @@ func TestLocalWriteFailureRollsBackDefinitionsAndRevision(t *testing.T) {
 	}
 	stale := original.Clone()
 	stale.Revision = 0
-	if _, err := config.WriteLocal(t.Context(), state, root, stale); !errors.Is(err, config.ErrConflict) {
+	if _, err := configstore.Write(t.Context(), state, root, stale); !errors.Is(err, config.ErrConflict) {
 		t.Fatalf("stale edit = %v", err)
 	}
 }
@@ -171,10 +173,10 @@ func TestLocalEmptyRequiredFields(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := config.WriteLocal(t.Context(), state, root, local); err != nil {
+			if _, err := configstore.Write(t.Context(), state, root, local); err != nil {
 				t.Fatal(err)
 			}
-			after, err := config.Load(root, config.Options{Builtins: builtins, State: state})
+			after, err := configstore.Load(root, state, config.Options{Builtins: builtins})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -192,12 +194,25 @@ func TestLocalSettingErrorSource(t *testing.T) {
 	local.Document["harnesses"] = map[string]any{"codex": map[string]any{
 		"settings": map[string]any{"model": map[string]any{"$file": filepath.Join(dir, "missing")}},
 	}}
-	if _, err := config.WriteLocal(t.Context(), state, root, local); err != nil {
+	if _, err := configstore.Write(t.Context(), state, root, local); err != nil {
 		t.Fatal(err)
 	}
-	_, err := config.Load(root, config.Options{Builtins: builtins, State: state})
+	_, err := configstore.Load(root, state, config.Options{Builtins: builtins})
 	var source *config.SourceError
 	if !errors.As(err, &source) || !source.Local || source.Line != 0 {
 		t.Fatalf("local settings error has YAML provenance: %v", err)
 	}
+}
+
+var builtins = builtin.Registry().Builtins([]string{"agx", "help", "install", "run"})
+
+func fragment(t *testing.T, dir, content string) string {
+	t.Helper()
+	root := filepath.Join(dir, "agx.yaml")
+	for path, data := range map[string]string{root: "fragments: [main.yaml]\n", filepath.Join(dir, "main.yaml"): content} {
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
 }

@@ -8,7 +8,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/tarik02-org/agx/gen/agx/v1/agxv1connect"
-	"github.com/tarik02-org/agx/internal/daemon"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
@@ -19,7 +19,7 @@ const (
 )
 
 type client struct {
-	discovery daemon.Discovery
+	discovery control.Discovery
 	config    agxv1connect.ConfigurationServiceClient
 	packages  agxv1connect.PackageServiceClient
 	launches  agxv1connect.LaunchServiceClient
@@ -28,14 +28,14 @@ type client struct {
 }
 
 func newClient(paths platform.Paths) (*client, error) {
-	d, err := daemon.ReadDiscovery(paths)
+	d, err := control.ReadDiscovery(paths)
 	if err != nil {
 		return nil, err
 	}
 	return dial(d), nil
 }
 
-func dial(d daemon.Discovery) *client {
+func dial(d control.Discovery) *client {
 	httpClient := &http.Client{
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}
