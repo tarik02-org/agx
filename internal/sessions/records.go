@@ -1,19 +1,14 @@
 package sessions
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"database/sql"
 	"errors"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"slices"
 	"time"
 
-	"github.com/gofrs/flock"
-
-	"github.com/tarik02-org/agx/internal/securefs"
+	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/storage"
+	"github.com/tarik02-org/agx/internal/storage/statedb"
 )
 
 // Record remembers one managed launch, so its sessions resume with the same harness definition.
@@ -33,151 +28,183 @@ type Record struct {
 	Exact bool `json:"exact,omitempty"`
 }
 
-// Harnesses stamp a session when it begins, so a launch that cannot name its sessions claims those
-// of its harness and directory that started while it ran. skew absorbs the gap between the
-// wrapper's clock reading and the harness's.
+// Harnesses that cannot name sessions claim conversations started within their launch window.
 const (
-	skew = 5 * time.Second
-	// maxLaunch closes the window of a launch whose wrapper died before recording its end.
+	skew      = 5 * time.Second
 	maxLaunch = 24 * time.Hour
 )
 
-func (r Record) window() (time.Time, time.Time) {
-	end := r.Started.Add(maxLaunch)
-	if r.Finished != nil {
-		end = *r.Finished
-	}
-	return r.Started.Add(-skew), end.Add(skew)
-}
-
-// Records is the launch record log. Each launch appends a line when it starts and when it
-// finishes, so a write costs the same however many records there are; a listing folds the lines
-// into one per record and rewrites the log, pruned. Losing the last line in a crash only costs a
-// resumption its definition, so appends are not synced.
 type Records struct{ path string }
 
-func NewRecords(state string) Records {
-	return Records{path: filepath.Join(state, "launch-records.jsonl")}
+func NewRecords(state string) Records { return Records{path: storage.State(state)} }
+
+func (r Records) Start(record Record) error {
+	for _, path := range []*string{&record.Store, &record.Directory} {
+		if *path != "" {
+			canonical, err := platform.Canonical(*path)
+			if err != nil {
+				return err
+			}
+			*path = canonical
+		}
+	}
+	return r.transaction(context.Background(), func(q *statedb.Queries) error {
+		var end sql.NullInt64
+		if record.Finished != nil {
+			end = sql.NullInt64{Int64: record.Finished.UnixNano(), Valid: true}
+		}
+		if err := q.StartLaunch(context.Background(), statedb.StartLaunchParams{
+			ID: record.Launch, Harness: record.Harness, Builtin: record.Builtin, Store: record.Store,
+			Directory: record.Directory, Started: record.Started.UnixNano(), Finished: end, Exact: record.Exact,
+		}); err != nil {
+			return err
+		}
+		for _, id := range record.Sessions {
+			if err := q.AddLaunchSession(
+				context.Background(),
+				statedb.AddLaunchSessionParams{Launch: record.Launch, Session: id},
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
-// finishLine is the line Finish appends: a record line without a start.
-type finishLine struct {
-	Launch   string    `json:"launch"`
-	Finished time.Time `json:"finished"`
-}
-
-// Start adds a record for a launch about to spawn its harness.
-func (r Records) Start(record Record) error { return r.append(record) }
-
-// Finish closes the window of a launch.
 func (r Records) Finish(launch string, at time.Time) error {
-	return r.append(finishLine{Launch: launch, Finished: at})
+	return r.transaction(context.Background(), func(q *statedb.Queries) error {
+		return q.FinishLaunch(
+			context.Background(),
+			statedb.FinishLaunchParams{ID: launch, Finished: sql.NullInt64{Int64: at.UnixNano(), Valid: true}},
+		)
+	})
 }
 
-func (r Records) append(line any) error {
-	b, err := json.Marshal(line)
+func (r Records) transaction(ctx context.Context, change func(*statedb.Queries) error) error {
+	db, err := storage.Open(ctx, r.path)
 	if err != nil {
 		return err
 	}
-	unlock, err := r.lock(context.Background())
+	defer func() { _ = db.Close() }()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	defer unlock()
-	return securefs.AppendPrivate(r.path, append(b, '\n'))
-}
-
-func (r Records) lock(ctx context.Context) (func(), error) {
-	if err := os.MkdirAll(filepath.Dir(r.path), 0o700); err != nil {
-		return nil, err
-	}
-	lock := flock.New(r.path + ".lock")
-	var err error
-	if ctx.Done() == nil {
-		err = lock.Lock()
-	} else {
-		_, err = lock.TryLockContext(ctx, 25*time.Millisecond)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return func() { _ = lock.Unlock() }, nil
-}
-
-// update applies change to the records under the lock and rewrites the log with one line per
-// record. A nil result leaves the records unchanged, and the log is rewritten only if it was not
-// already folded.
-func (r Records) update(ctx context.Context, change func([]Record) []Record) error {
-	unlock, err := r.lock(ctx)
-	if err != nil {
+	defer func() { _ = tx.Rollback() }()
+	if err := change(statedb.New(tx)); err != nil {
 		return err
 	}
-	defer unlock()
-	records, folded, err := r.load()
-	if err != nil {
-		return err
-	}
-	changed := change(slices.Clone(records))
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if changed == nil {
-		if folded {
-			return nil
-		}
-		changed = records
-	}
-	var b []byte
-	for _, record := range changed {
-		line, err := json.Marshal(record)
-		if err != nil {
-			return err
-		}
-		b = append(append(b, line...), '\n')
-	}
-	if err := securefs.WritePrivate(r.path, b); err != nil {
-		return err
-	}
-	return nil
+	return tx.Commit()
 }
 
-// load folds the log into records in the order of their first line; folded reports
-// whether the log already holds exactly one line per record.
-func (r Records) load() (records []Record, folded bool, err error) {
-	records = []Record{}
-	byLaunch := map[string]int{}
-	add := func(record Record) {
-		i, ok := byLaunch[record.Launch]
-		if !ok {
-			if record.Started.IsZero() {
-				// The finish of a launch whose start was lost, or of a thread that never bound.
-				return
-			}
-			byLaunch[record.Launch] = len(records)
-			records = append(records, record)
-			return
-		}
-		if record.Finished != nil {
-			records[i].Finished = record.Finished
-		}
-		for _, id := range record.Sessions {
-			if !slices.Contains(records[i].Sessions, id) {
-				records[i].Sessions = append(records[i].Sessions, id)
+// Match assigns sessions through their stored associations, or the latest eligible launch.
+// Incomplete scans retain unseen associations; only changed associations are written.
+func (r Records) Match(
+	ctx context.Context,
+	entries []Entry,
+	failed map[string]error,
+	now time.Time,
+	stores map[string]string,
+) error {
+	canonical := make(map[string]string, len(stores))
+	for builtin, root := range stores {
+		if root != "" {
+			var err error
+			root, err = platform.Canonical(root)
+			if err != nil {
+				return err
 			}
 		}
+		canonical[builtin] = root
 	}
-	// Records only refine resumption, so damaged content is skipped instead of failing launches.
-	b, err := os.ReadFile(r.path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, false, err
-	}
-	lines := 0
-	for line := range bytes.Lines(b) {
-		lines++
-		var record Record
-		if json.Unmarshal(line, &record) == nil && record.Launch != "" {
-			add(record)
+	stores = canonical
+	for i := range entries {
+		if entries[i].Store != "" {
+			root, err := platform.Canonical(entries[i].Store)
+			if err != nil {
+				return err
+			}
+			entries[i].Store = root
 		}
 	}
-	return records, lines == len(records), nil
+
+	return r.transaction(ctx, func(q *statedb.Queries) error {
+		owners := map[[3]string]statedb.ListStoreLaunchSessionsRow{}
+		known := map[string][]statedb.ListStoreLaunchSessionsRow{}
+		for builtin, root := range stores {
+			rows, err := q.ListStoreLaunchSessions(
+				ctx,
+				statedb.ListStoreLaunchSessionsParams{Builtin: builtin, Store: root},
+			)
+			if err != nil {
+				return err
+			}
+			known[builtin] = rows
+			for _, row := range rows {
+				key := [3]string{builtin, root, row.Session}
+				if _, found := owners[key]; !found {
+					owners[key] = row
+				}
+			}
+		}
+		present := map[[3]string]bool{}
+		for i := range entries {
+			e := &entries[i]
+			key := [3]string{e.Builtin, e.Store, e.ID}
+			present[key] = true
+			owner, found := owners[key]
+			if !found {
+				match, err := q.MatchSession(ctx, statedb.MatchSessionParams{
+					Builtin: e.Builtin, Store: e.Store, Directory: e.Directory, SessionStarted: e.Started.UnixNano(),
+					Skew: int64(skew), MaxLaunch: int64(maxLaunch),
+				})
+				if errors.Is(err, sql.ErrNoRows) {
+					continue
+				}
+				if err != nil {
+					return err
+				}
+				owner = statedb.ListStoreLaunchSessionsRow{Launch: match.ID, Harness: match.Harness, Session: e.ID}
+				if err := q.AddLaunchSession(
+					ctx,
+					statedb.AddLaunchSessionParams{Launch: owner.Launch, Session: e.ID},
+				); err != nil {
+					return err
+				}
+				owners[key] = owner
+			}
+			e.Harness, e.Recorded = owner.Harness, true
+		}
+		for builtin, root := range stores {
+			if failed[builtin] != nil {
+				continue
+			}
+			for _, row := range known[builtin] {
+				if !present[[3]string{builtin, root, row.Session}] {
+					if err := q.DeleteLaunchSession(
+						ctx,
+						statedb.DeleteLaunchSessionParams{Launch: row.Launch, Session: row.Session},
+					); err != nil {
+						return err
+					}
+				}
+			}
+			if err := q.PruneLaunches(
+				ctx,
+				statedb.PruneLaunchesParams{
+					Builtin:   builtin,
+					Store:     root,
+					MaxLaunch: int64(maxLaunch),
+					Now:       now.UnixNano(),
+					Skew:      int64(skew),
+				},
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

@@ -681,7 +681,7 @@ func TestStore(t *testing.T) {
 	if got, err := auth.OpenStore(dir).Get("a"); err != nil || got != long {
 		t.Fatalf("Get from another store = %d bytes, %v", len(got), err)
 	}
-	b, err := os.ReadFile(filepath.Join(dir, "secrets.json"))
+	b, err := os.ReadFile(filepath.Join(dir, "state.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

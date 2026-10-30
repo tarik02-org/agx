@@ -1,0 +1,18 @@
+version: "2"
+sql:
+  - engine: sqlite
+    schema: state/0*.sql
+    queries: state/queries.sql
+    gen:
+      go:
+        package: statedb
+        out: statedb
+        emit_empty_slices: true
+  - engine: sqlite
+    schema: cache/0*.sql
+    queries: cache/queries.sql
+    gen:
+      go:
+        package: cachedb
+        out: cachedb
+        emit_empty_slices: true

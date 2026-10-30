@@ -13,8 +13,8 @@ import (
 	"github.com/adrg/xdg"
 )
 
-// Paths locates agx's files. Runtime holds the daemon's discovery, lock, log, and saved state under the
-// cache; State holds data worth keeping when the cache is wiped, such as launch records.
+// Paths locates agx's files. Runtime holds discovery, lock, and log files under the cache;
+// State holds data worth keeping when the cache is wiped.
 type Paths struct {
 	Config, Cache, Runtime, State string
 	canonicalConfig               string

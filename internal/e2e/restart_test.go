@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tarik02-org/agx/internal/storage"
 )
 
 // heldLaunch is a managed launch whose fake harness keeps running after its first tool calls.
@@ -187,21 +189,20 @@ func awaitServing(t *testing.T, endpoint, authorization string) {
 	}
 }
 
-// revoked reports whether the daemon's state file refuses attaching launch id.
+// revoked reports whether durable state refuses reattaching launch id.
 func (e *env) revoked(id string) bool {
 	e.t.Helper()
-	b, err := os.ReadFile(filepath.Join(e.runtimeDir(), "daemon-state.json"))
+	db, err := storage.Open(context.Background(), storage.State(filepath.Join(e.dir, "state")))
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	var state struct {
-		Revoked map[string]time.Time `json:"revoked"`
-	}
-	if err := json.Unmarshal(b, &state); err != nil {
+	defer func() { _ = db.Close() }()
+	var revoked bool
+	if err := db.QueryRowContext(context.Background(), "SELECT EXISTS(SELECT 1 FROM revocations WHERE launch = ?)", id).
+		Scan(&revoked); err != nil {
 		e.t.Fatal(err)
 	}
-	_, ok := state.Revoked[id]
-	return ok
+	return revoked
 }
 
 // launches returns the state of each launch the daemon lists.
@@ -335,7 +336,13 @@ func TestDaemonRestart(t *testing.T) {
 		id := launchID(h.endpoint())
 		// The daemon dies without saving, as when the job of the process that started it closes.
 		killDaemon(t, e)
-		if err := os.Remove(filepath.Join(e.runtimeDir(), "daemon-state.json")); err != nil {
+		db, err := storage.Open(context.Background(), storage.State(filepath.Join(e.dir, "state")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = db.ExecContext(context.Background(), "DELETE FROM daemon_state")
+		_ = db.Close()
+		if err != nil {
 			t.Fatal(err)
 		}
 		// No command runs: the wrapper starts the next daemon, which takes the launch back.

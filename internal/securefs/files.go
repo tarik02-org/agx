@@ -14,6 +14,22 @@ import (
 
 func Token() string { return rand.Text() }
 
+// CreatePrivate leaves an existing file unopened: closing another descriptor can release
+// SQLite's process-wide file locks on Unix.
+func CreatePrivate(path string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, fs.ErrExist) {
+		return makePrivate(path)
+	}
+	if err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return makePrivate(path)
+}
+
 // WritePrivate replaces path atomically with a synced file only the current user can access, for
 // secrets, credentials and state. Directories it creates are private too; existing ones are left
 // as they are, so callers make agx's private directories private with EnsureDir.

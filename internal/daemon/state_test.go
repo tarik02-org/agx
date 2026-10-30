@@ -1,17 +1,22 @@
 package daemon
 
 import (
+	"bytes"
 	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/internal/adapters"
+	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/storage"
 )
 
 func stateServer(t *testing.T) *Server {
@@ -36,17 +41,17 @@ func TestStateKeepsRecentRevocations(t *testing.T) {
 	s.revoked["old"] = now.Add(-revokedRetention - time.Minute)
 	s.revoked["new"] = now.Add(-time.Minute)
 	s.saveState()
-	state, err := loadState(StatePath(s.paths), now)
+	state, err := loadState(s.paths, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := state.Revoked["new"]; state.Port != 4242 || len(state.Revoked) != 1 || !ok {
 		t.Fatalf("state = %+v", state)
 	}
-	if err := os.WriteFile(StatePath(s.paths), []byte("{"), 0o600); err != nil {
+	if err := os.WriteFile(storage.State(s.paths.State), bytes.Repeat([]byte("invalid"), 1024), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if state, err := loadState(StatePath(s.paths), now); err == nil || state.Revoked == nil {
+	if state, err := loadState(s.paths, now); err == nil || state.Revoked == nil {
 		t.Fatalf("invalid state = %+v, %v", state, err)
 	}
 }
@@ -138,5 +143,22 @@ func TestRemoveAbandonedTemporaries(t *testing.T) {
 		if gone := errors.Is(err, fs.ErrNotExist); gone != (name == ".agx-123") {
 			t.Errorf("%s: removed %v", name, gone)
 		}
+	}
+}
+
+func TestServeRejectsCorruptState(t *testing.T) {
+	s := stateServer(t)
+	s.paths.Config = filepath.Join(t.TempDir(), "agx.yaml")
+	if err := os.MkdirAll(s.paths.State, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(storage.State(s.paths.State), bytes.Repeat([]byte("invalid"), 1024), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	close(stop)
+	err := Serve(t.Context(), stop, s.paths, adapters.NewRegistry(), config.Builtins{})
+	if err == nil || !strings.Contains(err.Error(), "load daemon state") {
+		t.Fatalf("corrupt state was accepted: %v", err)
 	}
 }

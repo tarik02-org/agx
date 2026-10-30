@@ -21,12 +21,18 @@ go test ./...                              # unit tests
 go test -tags e2e ./internal/e2e/...       # builds agx and runs it end to end
 golangci-lint fmt ./... && golangci-lint run ./...
 GOOS=windows golangci-lint run ./...
-buf lint && buf generate && go generate ./...   # Protobuf bindings and JSON Schemas
+buf lint && buf generate && go generate ./...   # Protobuf bindings, JSON Schemas, and SQL queries
 nix build .#agx
 ```
 
 Tests isolate `HOME`, the `AGX_*` paths, and the harness stores, and need no
 network. CI also checks that generated code is current.
+
+SQLite queries live under `internal/storage/{state,cache}`. Embedded Goose
+migrations are the schema source for sqlc; `go generate ./internal/storage` uses
+the pinned generator. Generated query code is checked in. Add forward migrations
+with the next version and update `PRAGMA user_version` in the same migration.
+Durable state and disposable cache have independent migration histories.
 
 Release builds set the version that `agx --version` reports and that commands
 compare to decide whether they replace an older daemon:

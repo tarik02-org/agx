@@ -18,7 +18,11 @@ func TestSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("CODEX_HOME", home)
-	index := sessions.OpenIndex(filepath.Join(t.TempDir(), "index.json"))
+	index, err := sessions.OpenIndex(t.Context(), filepath.Join(t.TempDir(), "cache.db"), "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = index.Close() })
 	root, err := (codex.Adapter{}).SessionRoot(".", os.Getenv)
 	if err != nil {
 		t.Fatal(err)
@@ -69,11 +73,12 @@ func TestSessionsWithoutStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	found, err := (codex.Adapter{}).Sessions(
-		context.Background(),
-		sessions.OpenIndex(filepath.Join(t.TempDir(), "index.json")),
-		root,
-	)
+	index, err := sessions.OpenIndex(t.Context(), filepath.Join(t.TempDir(), "cache.db"), "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = index.Close() })
+	found, err := (codex.Adapter{}).Sessions(context.Background(), index, root)
 	if err != nil || len(found) != 0 {
 		t.Fatalf("missing store: %v, %v", found, err)
 	}

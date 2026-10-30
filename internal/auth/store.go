@@ -1,22 +1,20 @@
 package auth
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"sync"
 
-	"github.com/gofrs/flock"
 	"github.com/zalando/go-keyring"
 
-	"github.com/tarik02-org/agx/internal/securefs"
+	"github.com/tarik02-org/agx/internal/storage"
+	"github.com/tarik02-org/agx/internal/storage/statedb"
 )
 
 // masterKeyItem names the OS keychain item holding the secret store's key.
@@ -25,99 +23,85 @@ const masterKeyItem = "master-key"
 // errNotStored reports that the store holds no value under a key.
 var errNotStored = errors.New("not stored")
 
-// Store keeps keychain secrets and OAuth credentials encrypted in a file of the state directory,
-// under one master key that the OS keychain holds. The keychain is asked once per process, values
-// have no size limit, and every change is one locked, atomic write, so processes sharing the store
-// see each other's refreshed tokens. Without the keychain the store can be neither read nor
-// written; there is no plaintext fallback.
+// Store keeps encrypted secrets under a master key held by the OS keychain.
+// Opening is lazy: unrelated commands never open the database or ask the keychain.
 type Store struct {
 	path string
-	// mu serializes this process's access and guards key; the file lock serializes processes.
-	mu  sync.Mutex
-	key []byte
+	mu   sync.Mutex
+	key  []byte
 }
 
-type storeFile struct {
-	// Records maps a key to base64 of an AES-256-GCM nonce and ciphertext, sealed with the key as
-	// additional data, so a record cannot be moved under another key.
-	Records map[string]string `json:"records"`
-}
+func OpenStore(dir string) *Store { return &Store{path: storage.State(dir)} }
 
-// OpenStore returns the store in state directory dir; nothing is read until it is used.
-func OpenStore(dir string) *Store { return &Store{path: filepath.Join(dir, "secrets.json")} }
-
-// Get returns the value under k, or errNotStored.
 func (s *Store) Get(k string) (string, error) {
 	var value string
-	err := s.locked(func(f *storeFile) (bool, error) {
-		sealed, ok := f.Records[k]
-		if !ok {
-			return false, errNotStored
-		}
-		key, err := s.masterKey(f)
+	err := s.locked(func(tx *sql.Tx) error {
+		sealed, err := statedb.New(tx).GetSecret(context.Background(), k)
 		if err != nil {
-			return false, err
+			if errors.Is(err, sql.ErrNoRows) {
+				return errNotStored
+			}
+			return err
+		}
+		key, err := s.masterKey(tx)
+		if err != nil {
+			return err
 		}
 		value, err = unseal(key, k, sealed)
-		return false, err
+		return err
 	})
 	return value, err
 }
 
-// Set stores value under k.
 func (s *Store) Set(k, value string) error {
-	return s.locked(func(f *storeFile) (bool, error) {
-		key, err := s.masterKey(f)
+	return s.locked(func(tx *sql.Tx) error {
+		key, err := s.masterKey(tx)
 		if err != nil {
-			return false, err
+			return err
 		}
-		f.Records[k], err = seal(key, k, value)
-		return err == nil, err
+		sealed, err := seal(key, k, value)
+		if err != nil {
+			return err
+		}
+		err = statedb.New(tx).PutSecret(context.Background(), statedb.PutSecretParams{Key: k, Ciphertext: sealed})
+		return err
 	})
 }
 
-// Delete removes the value under k; a missing value is not an error.
 func (s *Store) Delete(k string) error {
-	return s.locked(func(f *storeFile) (bool, error) {
-		_, ok := f.Records[k]
-		delete(f.Records, k)
-		return ok, nil
+	return s.locked(func(tx *sql.Tx) error {
+		return statedb.New(tx).DeleteSecret(context.Background(), k)
 	})
 }
 
-// locked runs op on the store's contents while holding its locks, and writes them when op
-// reports a change.
-func (s *Store) locked(op func(*storeFile) (bool, error)) error {
+func (s *Store) locked(op func(*sql.Tx) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := securefs.EnsureDir(filepath.Dir(s.path)); err != nil {
-		return err
-	}
-	lock := flock.New(s.path + ".lock")
-	if err := lock.Lock(); err != nil {
-		return fmt.Errorf("cannot lock the secret store: %w", err)
-	}
-	defer func() { _ = lock.Unlock() }()
-	f, err := s.read()
+	db, err := storage.Open(context.Background(), s.path)
 	if err != nil {
 		return err
 	}
-	changed, err := op(f)
-	if err != nil || !changed {
-		return err
-	}
-	b, err := json.MarshalIndent(f, "", "  ")
+	defer func() { _ = db.Close() }()
+	tx, err := db.BeginTx(context.Background(), nil)
 	if err != nil {
 		return err
 	}
-	return securefs.WritePrivate(s.path, append(b, '\n'))
+	defer func() { _ = tx.Rollback() }()
+	if err := op(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // masterKey returns the store's key, asking the keychain only the first time, and creates it for
 // a store that holds nothing yet. s.mu must be held.
-func (s *Store) masterKey(f *storeFile) ([]byte, error) {
+func (s *Store) masterKey(tx *sql.Tx) ([]byte, error) {
 	if s.key != nil {
 		return s.key, nil
+	}
+	populated, err := statedb.New(tx).HasSecrets(context.Background())
+	if err != nil {
+		return nil, err
 	}
 	encoded, err := keychainGet(masterKeyItem)
 	switch {
@@ -130,9 +114,9 @@ func (s *Store) masterKey(f *storeFile) ([]byte, error) {
 		return key, nil
 	case !errors.Is(err, keyring.ErrNotFound):
 		return nil, err
-	case len(f.Records) > 0:
+	case populated:
 		return nil, fmt.Errorf(
-			"the OS keychain has no master key for %s, so its secrets cannot be read; delete it to start over",
+			"the OS keychain has no master key for %s, so its secrets cannot be read; remove the stored credentials with agx secret logout, then store or log in again",
 			s.path,
 		)
 	}
@@ -145,24 +129,6 @@ func (s *Store) masterKey(f *storeFile) ([]byte, error) {
 	}
 	s.key = key
 	return key, nil
-}
-
-func (s *Store) read() (*storeFile, error) {
-	f := &storeFile{Records: map[string]string{}}
-	b, err := os.ReadFile(s.path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return f, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal(b, f); err != nil {
-		return nil, fmt.Errorf("%s does not decode", s.path)
-	}
-	if f.Records == nil {
-		f.Records = map[string]string{}
-	}
-	return f, nil
 }
 
 func seal(key []byte, k, value string) (string, error) {

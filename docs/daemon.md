@@ -145,6 +145,6 @@ A second Ctrl-C or SIGTERM skips the wait.
 | File | Location |
 | --- | --- |
 | Log | `daemon.log` in `runtime/<root-hash>/` in the [cache directory](configuration.md#where-files-live) |
-| Port and revoked launches | `daemon-state.json` beside the log |
+| Port and revoked launches | configuration-scoped rows in `<state>/state.db` |
 
 Both are readable only by you.
