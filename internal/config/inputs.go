@@ -8,7 +8,10 @@ import (
 )
 
 // Inputs records the state of every file and glob a load consulted.
-type Inputs struct{ entries []input }
+type Inputs struct {
+	entries                              []input
+	localState, localRoot, localRevision string
+}
 
 type input struct {
 	path  string
@@ -26,6 +29,9 @@ func (i *Inputs) glob(pattern string, matches []string) {
 
 // Changed reports whether any recorded input differs from its state at load time.
 func (i *Inputs) Changed() bool {
+	if i.localState != "" && localRevision(i.localState, i.localRoot) != i.localRevision {
+		return true
+	}
 	for _, e := range i.entries {
 		if e.glob {
 			if globState(e.path) != e.state {

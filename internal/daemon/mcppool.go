@@ -134,6 +134,10 @@ func (p *clientPool) closeAll() {
 	p.mu.Lock()
 	p.closed = true
 	p.mu.Unlock()
+	p.reset()
+}
+
+func (p *clientPool) reset() {
 	var wg sync.WaitGroup
 	for _, closer := range p.take(func(*pooledClient) bool { return true }) {
 		wg.Go(closer)

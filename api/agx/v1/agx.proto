@@ -6,6 +6,7 @@ option go_package = "github.com/tarik02-org/agx/gen/agx/v1;agxv1";
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
 
 // Control interface. Native MCP traffic uses separate HTTP endpoints.
 service ConfigurationService {
@@ -15,17 +16,15 @@ service ConfigurationService {
   rpc GetConfiguration(GetConfigurationRequest) returns (GetConfigurationResponse);
   // Directories whose path starts with a prefix, for directory pickers.
   rpc CompleteDirectory(CompleteDirectoryRequest) returns (CompleteDirectoryResponse);
-  // Every definition as configured, with the YAML that defines it.
+  // Every configured definition, including mutable local values.
   rpc ListDefinitions(ListDefinitionsRequest) returns (ListDefinitionsResponse);
   // A skill's files, for browsing and editing a local one.
   rpc GetSkill(GetSkillRequest) returns (GetSkillResponse);
-  // One file of a configured skill or instructions definition, or of a configuration fragment.
+  // Read or replace the contents of a configured resource file.
   rpc ReadFile(ReadFileRequest) returns (ReadFileResponse);
-  // Validates a set of changes against the configuration they would produce and returns their
-  // diff; writes nothing.
-  rpc PlanChanges(PlanChangesRequest) returns (PlanChangesResponse);
-  // Writes a planned set of changes atomically, when no file changed since the plan.
-  rpc ApplyChanges(ApplyChangesRequest) returns (ApplyChangesResponse);
+  rpc WriteResourceFile(WriteResourceFileRequest) returns (WriteResourceFileResponse);
+  // Validate and commit semantic local changes in one transaction.
+  rpc UpdateConfiguration(UpdateConfigurationRequest) returns (UpdateConfigurationResponse);
 }
 
 service PackageService {
@@ -108,6 +107,7 @@ message SourceLocation {
   string path = 1;
   uint32 line = 2;
   uint32 column = 3;
+  bool local = 4;
 }
 
 message Diagnostic {
@@ -126,8 +126,7 @@ message Diagnostic {
 message ErrorDetail {
   // Where a configuration that does not load has the problem, when known.
   SourceLocation source = 2;
-  // Writable fragments to choose from when a change needs a target.
-  repeated string files = 3;
+
 }
 
 message Snapshot {
@@ -188,7 +187,8 @@ message GetConfigurationResponse {
   repeated ConfiguredHarness harnesses = 2;
   // Directories scope rules name, sorted, without duplicates.
   repeated string scope_directories = 3;
-  repeated ConfigurationFile files = 4;
+  repeated string overlays = 4;
+  int64 revision = 6;
   // The daemon user's home directory, for showing paths as ~/….
   string home = 5;
 }
@@ -199,14 +199,6 @@ message ConfiguredHarness {
   string base = 3;
   bool hidden = 4;
 }
-message ConfigurationFile {
-  string path = 1;
-  // A symlink, such as one Nix or Home Manager links from /nix/store, or a file agx cannot write.
-  bool read_only = 2;
-  // Where a symlink points; empty otherwise.
-  string link_target = 3;
-}
-
 message CompleteDirectoryRequest {
   // An absolute path or one starting with ~/; the last segment is a name prefix.
   string prefix = 1;
@@ -640,6 +632,8 @@ message SecretStatus {
 
 message LogoutRequest {
   string secret_id = 1;
+  // Remove every credential, including those of deleted definitions.
+  bool all = 2;
 }
 message LogoutResponse {}
 
@@ -657,11 +651,11 @@ message Definition {
   string kind = 1;
   string id = 2;
   SourceLocation source = 3;
-  // The definition's value as written in its file; empty for one a package defines.
-  string yaml = 4;
+  // The local definition's editable value; absent for declarative overlays and packages.
+  google.protobuf.Value value = 4;
   // The package that defines it; empty for configuration fragments.
   string package = 5;
-  // Its file is a symlink or not writable, or a package defines it.
+  // A YAML overlay or package owns the definition.
   bool read_only = 6;
   // What it offers: a skill's or MCP server's description.
   string description = 7;
@@ -691,7 +685,7 @@ message GetSkillResponse {
 }
 
 message ReadFileRequest {
-  // A configuration fragment, or a file of a configured skill or instructions definition.
+  // A file of a configured skill or instructions definition.
   string path = 1;
 }
 message ReadFileResponse {
@@ -702,27 +696,23 @@ message ReadFileResponse {
   bool read_only = 4;
 }
 
-// One change the editor stages; PlanChanges and ApplyChanges take them in order.
+// One semantic local change; applied in order within a transaction.
 message ConfigChange {
   oneof change {
     DefineChange define = 1;
     UndefineChange undefine = 2;
     SelectionChange enable = 3;
     SelectionChange disable = 4;
-    FileWrite write_file = 5;
     PackageSource add_package = 6;
   }
 }
-// Creates or replaces a definition with the given YAML value, in the file that defines it now,
-// or in the request's target fragment for a new one.
+// Creates or replaces a local definition. YAML-owned definitions cannot be changed.
 message DefineChange {
-  reserved 4;
-  reserved "file";
   string kind = 1;
   string id = 2;
-  string yaml = 3;
+  google.protobuf.Value value = 3;
 }
-// Removes a definition and every reference to it.
+// Removes a local definition and its selection references. Change secret injections first.
 message UndefineChange {
   string kind = 1;
   string id = 2;
@@ -736,10 +726,11 @@ message SelectionChange {
   repeated string harnesses = 4;
 }
 // Replaces a file of a local skill or instructions definition.
-message FileWrite {
+message WriteResourceFileRequest {
   string path = 1;
   string content = 2;
 }
+message WriteResourceFileResponse {}
 // Declares a Git package, installs it into the cache, and locks it.
 message PackageSource {
   string id = 1;
@@ -748,33 +739,13 @@ message PackageSource {
   string subdir = 4;
 }
 
-message PlanChangesRequest {
+message UpdateConfigurationRequest {
   repeated ConfigChange changes = 1;
-  // The fragment new definitions, rules, and packages go to: a writable fragment the root
-  // lists, or a new file its globs match. Empty chooses the only writable fragment, or
-  // agx.d/main.yaml when there is none; with several, the plan fails with
-  // FailedPrecondition listing them in ErrorDetail.files.
-  string file = 2;
+  // The revision returned by GetConfiguration. A stale revision aborts the whole change.
+  int64 expected_revision = 2;
 }
-message PlannedFile {
-  string path = 1;
-  // A unified diff from the file's current content.
-  string diff = 2;
-  // SHA-256 of the current content, hex; empty for a new file.
-  string before_sha256 = 3;
-}
-message PlanChangesResponse {
-  repeated PlannedFile files = 1;
-}
-message ApplyChangesRequest {
-  repeated ConfigChange changes = 1;
-  // The files of the plan with the hashes it saw; a file that changed since fails the apply.
-  repeated PlannedFile expected = 2;
-  // The target fragment the plan was made with.
-  string file = 3;
-}
-message ApplyChangesResponse {
-  repeated string written = 1;
+message UpdateConfigurationResponse {
+  int64 revision = 1;
 }
 
 message ListSourceRefsRequest {

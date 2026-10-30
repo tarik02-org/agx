@@ -50,11 +50,14 @@ func (s *Server) install(frozen bool) *v1.InstallResponse {
 		s.paths.Config,
 		s.paths.Cache,
 		s.builtins,
-		packages.Options{Frozen: frozen},
+		packages.Options{Frozen: frozen, State: s.paths.State},
 	)
 	if err == nil && !frozen {
 		var c *config.Config
-		c, err = config.Load(s.paths.Config, config.Options{Builtins: s.builtins, Cache: s.paths.Cache})
+		c, err = config.Load(
+			s.paths.Config,
+			config.Options{Builtins: s.builtins, State: s.paths.State, Cache: s.paths.Cache},
+		)
 		if err == nil {
 			// Skipped installations need no action from the requester; launches warn about them.
 			_, err = s.adapters.Install(s.ctx, c, s.paths.Cache, os.LookupEnv)

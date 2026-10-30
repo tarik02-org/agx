@@ -18,7 +18,11 @@ func configInvalid(message string, err error) *connect.Error {
 	detail := &v1.ErrorDetail{}
 	var located *config.SourceError
 	if errors.As(err, &located) {
-		detail.Source = &v1.SourceLocation{Path: located.Path, Line: uint32(located.Line)} //nolint:gosec // lines fit
+		detail.Source = &v1.SourceLocation{
+			Local: located.Local,
+			Path:  located.Path,
+			Line:  uint32(located.Line),
+		} //nolint:gosec // lines fit
 	}
 	return detailError(connect.CodeFailedPrecondition, detail, message)
 }

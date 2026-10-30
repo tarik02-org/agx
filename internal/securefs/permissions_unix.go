@@ -4,7 +4,7 @@ package securefs
 
 import "os"
 
-func makePrivate(path string) error {
+func MakePrivate(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
 		return err

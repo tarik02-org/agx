@@ -84,9 +84,9 @@ func (sh *Shared) Servers() int {
 }
 
 // Reset stops the shared servers using secret id, so their clients reconnect with the
-// current credential.
+// current credential. An empty ID resets all servers, including removed definitions.
 func (sh *Shared) Reset(id config.ID) {
-	for _, s := range sh.take(func(s *sharedServer) bool { return slices.Contains(s.secrets, id) }) {
+	for _, s := range sh.take(func(s *sharedServer) bool { return id == "" || slices.Contains(s.secrets, id) }) {
 		s.stop()
 	}
 }

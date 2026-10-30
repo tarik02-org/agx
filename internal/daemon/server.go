@@ -214,7 +214,10 @@ func Serve(
 		return err
 	}
 	inputs := &config.Inputs{}
-	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache, Inputs: inputs})
+	c, err := config.Load(
+		paths.Config,
+		config.Options{Builtins: builtins, State: paths.State, Cache: paths.Cache, Inputs: inputs},
+	)
 	if err != nil {
 		return err
 	}
@@ -415,15 +418,15 @@ var selfAuthorized = map[string]bool{
 // startsWork are the procedures a stopping daemon refuses, so that callers retry them with the
 // next daemon.
 var startsWork = map[string]bool{
-	agxv1connect.LaunchServicePrepareLaunchProcedure:       true,
-	agxv1connect.LaunchServiceAttachLaunchProcedure:        true,
-	agxv1connect.LaunchServicePrepareThreadLaunchProcedure: true,
-	agxv1connect.PackageServiceInstallProcedure:            true,
-	agxv1connect.PackageServicePreviewSourceProcedure:      true,
-	agxv1connect.ConfigurationServicePlanChangesProcedure:  true,
-	agxv1connect.ConfigurationServiceApplyChangesProcedure: true,
-	agxv1connect.RuntimeServiceListToolsProcedure:          true,
-	agxv1connect.RuntimeServiceCallToolProcedure:           true,
+	agxv1connect.LaunchServicePrepareLaunchProcedure:              true,
+	agxv1connect.LaunchServiceAttachLaunchProcedure:               true,
+	agxv1connect.LaunchServicePrepareThreadLaunchProcedure:        true,
+	agxv1connect.PackageServiceInstallProcedure:                   true,
+	agxv1connect.PackageServicePreviewSourceProcedure:             true,
+	agxv1connect.ConfigurationServiceUpdateConfigurationProcedure: true,
+	agxv1connect.ConfigurationServiceWriteResourceFileProcedure:   true,
+	agxv1connect.RuntimeServiceListToolsProcedure:                 true,
+	agxv1connect.RuntimeServiceCallToolProcedure:                  true,
 }
 
 // settle waits for the grace period until requests in flight finished, or ctx ends.
@@ -480,7 +483,10 @@ func (s *Server) reload() (*config.Config, error) {
 		return current, nil
 	}
 	inputs = &config.Inputs{}
-	c, err := config.Load(s.paths.Config, config.Options{Builtins: s.builtins, Cache: s.paths.Cache, Inputs: inputs})
+	c, err := config.Load(
+		s.paths.Config,
+		config.Options{Builtins: s.builtins, State: s.paths.State, Cache: s.paths.Cache, Inputs: inputs},
+	)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if (err == nil) != (s.configErr == nil) {
@@ -1012,6 +1018,7 @@ func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 					Change: change,
 					Source: &v1.SourceLocation{
 						Path:   step.Source.Path,
+						Local:  step.Source.Local,
 						Line:   uint32(step.Source.Line),
 						Column: uint32(step.Source.Column),
 					},

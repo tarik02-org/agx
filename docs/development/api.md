@@ -11,7 +11,9 @@ The Go module path is `github.com/tarik02-org/agx`.
 - `ConfigurationService`: validate the daemon's configured root and resolve a
   directory for an optional harness, including provenance and required
   environment names. Its web-UI APIs browse configuration, definitions, skill
-  files, and directories, and plan and apply validated configuration edits.
+  files and directories. `UpdateConfiguration` validates and commits semantic
+  local edits at an expected revision; `WriteResourceFile` separately replaces
+  a configured resource file. YAML configuration editing is removed.
 - `PackageService`: web-UI APIs to install packages, streaming progress and then
   the result, and to preview and inspect Git sources, read preview files, and
   list source refs. The CLI installs in-process instead; both paths share the
@@ -61,6 +63,28 @@ The daemon keeps one client session per launch, or per CLI scope, and server
 else can reach it. Sessions close after five idle minutes, when their launch
 ends, and when the daemon stops; a call whose session broke, as after a login
 reset the endpoint, opens a new one once.
+
+## Local configuration
+
+`GetConfiguration` returns YAML overlay paths and the local configuration
+revision. `ListDefinitions` marks YAML/package definitions read-only; local
+ones include their editable `google.protobuf.Value`, with `source.local` set.
+Injected-value fields use `{"$env":"NAME"}`, `{"$file":"PATH"}`, or
+`{"$secret":"ID"}`; literals remain strings. Definitions may use supported
+scalar shorthand as well as objects. Native settings support only the `$file`
+marker; skill frontmatter stays literal, including marker-shaped objects.
+
+`UpdateConfiguration` accepts an ordered batch and `expected_revision`.
+Validation or a stale revision leaves every local change unwritten. A successful
+response reports the new revision. There are no YAML strings, fragment targets,
+file plans, SHA comparisons, or diff RPCs. Adding a package can populate the
+content cache before commit; cache contents are not part of the configuration
+transaction. Overlay package locks must already be current (`agx install`).
+
+`ReadFile` and `WriteResourceFile` only expose configured skill/instructions
+contents. Package/cache contents are readable but read-only; YAML configuration
+files cannot be read or written through these methods. `Logout` with `all`
+clears stored credentials, including orphans, without deleting local config.
 
 ## Launch flow
 

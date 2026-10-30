@@ -25,7 +25,8 @@ import (
 )
 
 type Manager struct {
-	mu sync.Mutex
+	resetMu sync.RWMutex
+	mu      sync.Mutex
 	// pending maps OAuth state to the current attempts.
 	pending map[string]*Attempt
 	// locks serialize refresh, login storage and logout per credential key.
@@ -312,6 +313,8 @@ func (m *Manager) oauthToken(
 	origin, rejected string,
 ) (string, error) {
 	k := key(id, a)
+	m.resetMu.RLock()
+	defer m.resetMu.RUnlock()
 	lock := m.credentialLock(k)
 	lock.Lock()
 	defer lock.Unlock()
@@ -350,6 +353,8 @@ func (m *Manager) Rotate(ctx context.Context, id config.ID, a config.Secret) (ti
 		return time.Time{}, fmt.Errorf("secret %s uses %s; only OAuth logins can be rotated", id, a.Kind)
 	}
 	k := key(id, a)
+	m.resetMu.RLock()
+	defer m.resetMu.RUnlock()
 	lock := m.credentialLock(k)
 	lock.Lock()
 	defer lock.Unlock()
@@ -460,6 +465,8 @@ func (m *Manager) Set(id config.ID, a config.Secret, secret []byte) error {
 		return fmt.Errorf("secret must not be empty")
 	}
 	k := key(id, a)
+	m.resetMu.RLock()
+	defer m.resetMu.RUnlock()
 	lock := m.credentialLock(k)
 	lock.Lock()
 	defer lock.Unlock()
@@ -474,6 +481,8 @@ func (m *Manager) Logout(id config.ID, a config.Secret) error {
 		return fmt.Errorf("secret %s uses %s and has no stored credential to remove", id, a.Kind)
 	}
 	k := key(id, a)
+	m.resetMu.RLock()
+	defer m.resetMu.RUnlock()
 	lock := m.credentialLock(k)
 	lock.Lock()
 	defer lock.Unlock()
@@ -489,6 +498,20 @@ func (m *Manager) Logout(id config.ID, a config.Secret) error {
 		return fmt.Errorf("secret %s was not removed: %w", id, err)
 	}
 	return nil
+}
+
+// Reset logs out all stored credentials, including definitions no longer configured.
+func (m *Manager) Reset() error {
+	m.resetMu.Lock()
+	defer m.resetMu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range m.pending {
+		m.finishLocked(p, errors.New("logged out while authorizing"))
+	}
+	clear(m.refused)
+	clear(m.required)
+	return m.store.Reset()
 }
 
 // Status reports whether secret a, named id, is usable; secrets resolves the !secret reference

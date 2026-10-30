@@ -1,186 +1,220 @@
 package configedit
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
-	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
-	"go.yaml.in/yaml/v4"
-
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
-// Session gathers edits across fragments, lockfiles, and resource files, then plans them as one
-// change.
+// Session stages semantic changes to one root's local configuration.
 type Session struct {
 	Paths    platform.Paths
 	Builtins config.Builtins
-	// Config is the configuration the edits start from.
-	Config *config.Config
-	// Root is the canonical root configuration.
-	Root string
-	// Dir is the directory the root's fragments are relative to.
-	Dir string
-	// Locks holds lockfiles staged by package installation, by path.
-	Locks map[string][]byte
-	// File, when set, is the fragment new definitions and rules go to.
-	File string
-	// Choose, when set, picks the fragment for new definitions and rules among several writable
-	// ones; it may return a new file. Without it, several fail the edit.
-	Choose func(candidates []string) (string, error)
-	target string
-	files  map[string]*edit.File
-	order  []string
-	// writes holds files of local resources replaced as a whole, by canonical path.
-	writes     map[string][]byte
-	writeOrder []string
+	Config   *config.Config
+	Root     string
+	Local    *config.Local
+	original string
 }
 
-// New starts a session from a loaded configuration.
 func New(paths platform.Paths, builtins config.Builtins, c *config.Config) (*Session, error) {
 	root, err := platform.Canonical(paths.Config)
 	if err != nil {
 		return nil, err
 	}
-	dir, err := config.RootDir(paths.Config)
-	if err != nil {
-		return nil, err
+	local := c.Local
+	if local == nil {
+		local = config.EmptyLocal()
 	}
 	return &Session{
 		Paths:    paths,
 		Builtins: builtins,
 		Config:   c,
 		Root:     root,
-		Dir:      dir,
-		Locks:    map[string][]byte{},
-		files:    map[string]*edit.File{},
-		writes:   map[string][]byte{},
+		Local:    local.Clone(),
+		original: config.Digest(local),
 	}, nil
 }
 
-// Open opens a fragment once per session; a missing root starts from the default configuration.
-func (s *Session) Open(path string) (*edit.File, error) {
-	path, err := platform.Canonical(path)
+func (s *Session) Changed() bool { return config.Digest(s.Local) != s.original }
+
+// Commit validates the merged result before the revision-checked database write.
+func (s *Session) Commit(ctx context.Context) (bool, error) {
+	if !s.Changed() {
+		return false, nil
+	}
+	c, err := s.Load()
 	if err != nil {
-		return nil, err
+		return false, errorf(ConfigInvalid, "the change would make the configuration invalid: %w", err)
 	}
-	if f, ok := s.files[path]; ok {
-		return f, nil
+	revision, err := config.WriteLocal(ctx, s.Paths.State, s.Root, s.Local)
+	if errors.Is(err, config.ErrConflict) {
+		return false, coded(Conflict, err)
 	}
-	if _, ok := s.writes[path]; ok {
-		return nil, errorf(InvalidRequest, "%s is replaced as a file; it cannot also be edited as configuration", path)
-	}
-	seed := ""
-	if path == s.Root {
-		seed = config.DefaultConfig
-	}
-	f, err := edit.Open(path, seed)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
-	s.files[path] = f
-	s.order = append(s.order, path)
-	return f, nil
+	s.Local.Revision = revision
+	c.Local = s.Local.Clone()
+	s.Config, s.original = c, config.Digest(s.Local)
+	return true, nil
 }
 
-// Target is the fragment new definitions and rules go to: File when set, else the only writable
-// fragment, else agx.d/main.yaml in Dir when there is none, else what Choose picks. It
-// must be a writable fragment the root lists, or a new file its globs match. A missing root
-// is created with the default configuration.
-func (s *Session) Target() (string, error) {
-	if s.target != "" {
-		return s.target, nil
+func (s *Session) definitions(kind config.Kind) map[string]any {
+	key := string(kind)
+	values, _ := s.Local.Document[key].(map[string]any)
+	if values == nil {
+		values = map[string]any{}
+		s.Local.Document[key] = values
 	}
-	file := s.File
-	if file == "" {
-		// Candidates are the writable fragments, including ones opened for the edit.
-		candidates := slices.DeleteFunc(s.Fragments(), func(path string) bool {
-			return path == s.Root || edit.Writable(path) != nil
-		})
-		switch {
-		case len(candidates) == 1:
-			file = candidates[0]
-		case len(candidates) == 0:
-			file = filepath.Join(s.Dir, "agx.d", "main.yaml")
-		case s.Choose == nil:
-			names := []string{}
-			for _, path := range candidates {
-				names = append(names, shortPath(path))
-			}
-			return "", &Error{
-				Code:  ChooseFile,
-				Err:   fmt.Errorf("choose the fragment to write to with --file: %s", strings.Join(names, ", ")),
-				Files: candidates,
-			}
-		default:
-			var err error
-			if file, err = s.Choose(candidates); err != nil {
-				return "", err
-			}
-		}
-	}
-	file, err := platform.Canonical(file)
-	if err != nil {
-		return "", err
-	}
-	switch {
-	case file == s.Root:
-		return "", errorf(
-			InvalidRequest,
-			"%s holds fragments and daemon settings only; choose a fragment",
-			shortPath(file),
-		)
-	case !s.Config.Lists(file):
-		return "", errorf(
-			InvalidRequest,
-			"%s is not listed in %s; choose a fragment it lists",
-			shortPath(file),
-			shortPath(s.Root),
-		)
-	}
-	if err := edit.Writable(file); err != nil {
-		return "", coded(ReadOnly, err)
-	}
-	if _, err := os.Stat(s.Root); errors.Is(err, fs.ErrNotExist) {
-		if _, err := s.Open(s.Root); err != nil {
-			return "", err
-		}
-	}
-	s.target = file
-	return file, nil
+	return values
 }
 
-// Fragments lists the configuration's fragments in load order, then files opened for the edit.
-func (s *Session) Fragments() []string {
-	out := slices.Clone(s.Config.Files)
-	for _, path := range s.order {
-		if !slices.Contains(out, path) {
-			out = append(out, path)
+func (s *Session) rule(target Scope) map[string]any {
+	rules, _ := s.Local.Document["scopes"].([]any)
+	for _, item := range rules {
+		rule := item.(map[string]any)
+		directory, _ := rule["directory"].(string)
+		if directory != "" {
+			expanded, _ := config.ExpandHome(directory)
+			directory, _ = platform.Canonical(expanded)
+		}
+		harnesses := stringList(rule["harnesses"])
+		slices.Sort(harnesses)
+		if directory == target.Directory && slices.Equal(harnesses, target.Harnesses) {
+			return rule
+		}
+	}
+	rule := map[string]any{}
+	if target.Directory != "" {
+		rule["directory"] = target.Written
+	}
+	if len(target.Harnesses) > 0 {
+		rule["harnesses"] = list(target.Harnesses)
+	}
+	s.Local.Document["scopes"] = append(rules, rule)
+	return rule
+}
+
+func selection(rule map[string]any, key string) map[string]any {
+	value, _ := rule[key].(map[string]any)
+	if value == nil {
+		value = map[string]any{}
+		rule[key] = value
+	}
+	return value
+}
+
+func stringList(value any) []string {
+	out := []string{}
+	if values, ok := value.([]any); ok {
+		for _, v := range values {
+			if text, ok := v.(string); ok {
+				out = append(out, text)
+			}
 		}
 	}
 	return out
 }
 
-// Overlay renders the session's files without writing them.
-func (s *Session) Overlay() (config.Overlay, error) {
-	overlay := config.Overlay{}
-	for _, path := range s.order {
-		b, err := s.files[path].Render()
-		if err != nil {
-			return nil, err
+func list(values []string) []any {
+	out := make([]any, len(values))
+	for i, v := range values {
+		out[i] = v
+	}
+	return out
+}
+
+func drop(rule map[string]any, action string, kind config.Kind, id string) bool {
+	sel, _ := rule[action].(map[string]any)
+	values := stringList(sel[string(kind)])
+	i := slices.Index(values, id)
+	if i < 0 {
+		return false
+	}
+	sel[string(kind)] = list(slices.Delete(values, i, i+1))
+	return true
+}
+
+func (s *Session) Enable(kind config.Kind, id string, target Scope) (bool, error) {
+	if err := s.checkScope(kind, id, target, true); err != nil {
+		return false, err
+	}
+	rule := s.rule(target)
+	if drop(rule, "remove", kind, id) {
+		return true, nil
+	}
+	return add(rule, "add", kind, id), nil
+}
+
+func (s *Session) Disable(kind config.Kind, id string, target Scope) (bool, error) {
+	if err := s.checkScope(kind, id, target, false); err != nil {
+		return false, err
+	}
+	rule := s.rule(target)
+	if drop(rule, "add", kind, id) {
+		return true, nil
+	}
+	return add(rule, "remove", kind, id), nil
+}
+
+func add(rule map[string]any, action string, kind config.Kind, id string) bool {
+	sel := selection(rule, action)
+	values := stringList(sel[string(kind)])
+	if slices.Contains(values, id) {
+		return false
+	}
+	sel[string(kind)] = list(append(values, id))
+	return true
+}
+
+// references visits local selection entries without changing definition maps.
+func references(value any, kind config.Kind, id string, remove bool) int {
+	count := 0
+	switch value := value.(type) {
+	case map[string]any:
+		for key, child := range value {
+			if key == string(kind) {
+				if entries, ok := child.([]any); ok {
+					kept := []any{}
+					for _, entry := range entries {
+						if text, ok := entry.(string); ok && text == id {
+							count++
+							if remove {
+								continue
+							}
+						}
+						kept = append(kept, entry)
+					}
+					if remove {
+						value[key] = kept
+					}
+				}
+			}
+			count += references(child, kind, id, remove)
 		}
-		overlay[path] = b
+	case []any:
+		for _, child := range value {
+			count += references(child, kind, id, remove)
+		}
 	}
-	for path, b := range s.Locks {
-		overlay[path] = b
+	return count
+}
+
+func cloneValue(value any) (any, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
 	}
-	return overlay, nil
+	var cloned any
+	err = json.Unmarshal(data, &cloned)
+	return cloned, err
 }
 
 // Scope is where an edit enables or disables a resource: a directory, or everywhere.
@@ -232,169 +266,54 @@ func HomeRelative(path string) string {
 	return path
 }
 
-// shortPath names a file in messages: ~ for the home directory, as the CLI shows paths.
-func shortPath(path string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return path
-	}
-	if path == home {
-		return "~"
-	}
-	if rest, ok := strings.CutPrefix(path, home+string(filepath.Separator)); ok {
-		return filepath.Join("~", rest)
-	}
-	return path
-}
-
-// matchingRules visits the rules with the target's directory and harness filter in load order;
-// visit returns true to stop. Rules in files that cannot be written are skipped.
-func (s *Session) matchingRules(target Scope, visit func(*edit.File, edit.Rule) (bool, error)) error {
-	for _, path := range s.Fragments() {
-		if edit.Writable(path) != nil {
+func (s *Session) checkScope(kind config.Kind, id string, target Scope, enable bool) error {
+	for _, rule := range s.Config.Scopes {
+		if rule.Source.Local || rule.Directory != target.Directory {
 			continue
 		}
-		f, err := s.Open(path)
-		if err != nil {
-			return err
+		overlap := len(rule.Harnesses) == 0 || len(target.Harnesses) == 0
+		if !overlap {
+			for _, name := range s.Config.HarnessNames() {
+				h, err := s.Config.Harness(name)
+				if err != nil {
+					return err
+				}
+				applies := func(names []string) bool {
+					return slices.ContainsFunc(names, func(name string) bool { return slices.Contains(h.Chain, name) })
+				}
+				if applies(rule.Harnesses) && applies(target.Harnesses) {
+					overlap = true
+					break
+				}
+			}
 		}
-		for _, r := range f.Rules() {
-			if !r.Matches(target.Directory, target.Harnesses) {
-				continue
-			}
-			if stop, err := visit(f, r); stop || err != nil {
-				return err
-			}
+		if !overlap {
+			continue
+		}
+		selection := rule.Add
+		if enable {
+			selection = rule.Remove
+		}
+		if s.selectionIncludes(selection, kind, config.ID(id)) {
+			return errorf(
+				ReadOnly,
+				"the YAML rule at %s:%d overrides this change; edit that overlay instead",
+				rule.Source.Path,
+				rule.Source.Line,
+			)
 		}
 	}
 	return nil
 }
 
-// Enable selects id in the first rule matching target, or in a new rule in the target fragment,
-// and drops it from that rule's remove list. It returns whether anything changed.
-func (s *Session) Enable(kind config.Kind, id string, target Scope) (bool, error) {
-	changed := false
-	found := false
-	err := s.matchingRules(target, func(f *edit.File, r edit.Rule) (bool, error) {
-		found = true
-		changed = s.include(f, r.Node, kind, id)
-		return true, nil
-	})
-	if err != nil || found {
-		return changed, err
+func (s *Session) selectionIncludes(selection config.Selection, kind config.Kind, id config.ID) bool {
+	if selectionContains(selection, kind, id) {
+		return true
 	}
-	f, err := s.newRuleFile()
-	if err != nil {
-		return false, err
-	}
-	return s.include(f, f.AddRule(target.Written, target.Harnesses), kind, id), nil
-}
-
-func (s *Session) include(f *edit.File, rule *yaml.Node, kind config.Kind, id string) bool {
-	if remove := f.List(edit.Get(rule, "remove"), kind, false); remove != nil {
-		if i := edit.Find(kind, remove, id); i >= 0 {
-			edit.RemoveAt(remove, i)
-			f.Touch(rule)
+	for _, bundle := range selection.Bundles {
+		if s.selectionIncludes(s.Config.Bundles[bundle].Selection, kind, id) {
 			return true
 		}
 	}
-	add := f.List(f.Selection(rule, "add", true), kind, true)
-	if edit.Find(kind, add, id) >= 0 {
-		return false
-	}
-	edit.Append(add, id)
-	return true
-}
-
-// Disable takes id out of the target scope: from the add list of a matching rule that selects it,
-// otherwise by appending it to the remove list of the first matching rule or a new rule in the
-// target fragment, since another rule selects it.
-func (s *Session) Disable(kind config.Kind, id string, target Scope) (bool, error) {
-	changed := false
-	err := s.matchingRules(target, func(f *edit.File, r edit.Rule) (bool, error) {
-		add := f.List(edit.Get(r.Node, "add"), kind, false)
-		i := edit.Find(kind, add, id)
-		if i < 0 {
-			return false, nil
-		}
-		if _, defines := edit.EntryID(kind, add.Content[i]); defines {
-			return true, errorf(
-				Conflict,
-				"%s %s is defined inline in a rule of %s; remove it with agx %s remove %s",
-				kind.Label(), id, f.Path, kind.Command(), id,
-			)
-		}
-		edit.RemoveAt(add, i)
-		f.Touch(r.Node)
-		changed = true
-		return true, nil
-	})
-	if err != nil || changed {
-		return changed, err
-	}
-	var rule *yaml.Node
-	var file *edit.File
-	err = s.matchingRules(target, func(f *edit.File, r edit.Rule) (bool, error) {
-		file, rule = f, r.Node
-		return true, nil
-	})
-	if err != nil {
-		return false, err
-	}
-	if rule == nil {
-		if file, err = s.newRuleFile(); err != nil {
-			return false, err
-		}
-		rule = file.AddRule(target.Written, target.Harnesses)
-	}
-	remove := file.List(file.Selection(rule, "remove", true), kind, true)
-	if edit.Find(kind, remove, id) >= 0 {
-		return false, nil
-	}
-	edit.Append(remove, id)
-	return true, nil
-}
-
-func (s *Session) newRuleFile() (*edit.File, error) {
-	path, err := s.Target()
-	if err != nil {
-		return nil, err
-	}
-	return s.Open(path)
-}
-
-// References lists the entries naming id in every fragment, as "file: where".
-func (s *Session) References(kind config.Kind, id string) ([]string, error) {
-	out := []string{}
-	for _, path := range s.Fragments() {
-		f, err := s.Open(path)
-		if err != nil {
-			return nil, err
-		}
-		for _, r := range f.References(kind, id) {
-			out = append(out, fmt.Sprintf("%s: %s", shortPath(path), r.Where))
-		}
-	}
-	return out, nil
-}
-
-// RemoveReferences drops every entry naming id, refusing when a file holding one cannot be written.
-func (s *Session) RemoveReferences(kind config.Kind, id string) error {
-	for _, path := range s.Fragments() {
-		f, err := s.Open(path)
-		if err != nil {
-			return err
-		}
-		refs := f.References(kind, id)
-		if len(refs) == 0 {
-			continue
-		}
-		if err := edit.Writable(path); err != nil {
-			return errorf(ReadOnly, "cannot remove the references to %s: %w", id, err)
-		}
-		for _, r := range refs {
-			f.Remove(r)
-		}
-	}
-	return nil
+	return false
 }

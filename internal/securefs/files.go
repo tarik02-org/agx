@@ -19,7 +19,7 @@ func Token() string { return rand.Text() }
 func CreatePrivate(path string) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if errors.Is(err, fs.ErrExist) {
-		return makePrivate(path)
+		return MakePrivate(path)
 	}
 	if err != nil {
 		return err
@@ -27,7 +27,7 @@ func CreatePrivate(path string) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return makePrivate(path)
+	return MakePrivate(path)
 }
 
 // WritePrivate replaces path atomically with a synced file only the current user can access, for
@@ -37,7 +37,7 @@ func WritePrivate(path string, data []byte) error {
 	if err := createPrivate(filepath.Dir(path)); err != nil {
 		return err
 	}
-	tmp, err := temporary(filepath.Dir(path), data, true, makePrivate)
+	tmp, err := temporary(filepath.Dir(path), data, true, MakePrivate)
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func AppendPrivate(path string, data []byte) error {
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE|os.O_EXCL, 0o600)
 	if err == nil {
-		err = makePrivate(path)
+		err = MakePrivate(path)
 	} else if errors.Is(err, fs.ErrExist) {
 		f, err = os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
 	}
@@ -311,7 +311,7 @@ func EnsureDir(path string) error {
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return err
 	}
-	return makePrivate(path)
+	return MakePrivate(path)
 }
 
 // createPrivate makes only the directories it creates private.
@@ -332,7 +332,7 @@ func createPrivate(path string) error {
 		return err
 	}
 	for i := len(missing) - 1; i >= 0; i-- {
-		if err := makePrivate(missing[i]); err != nil {
+		if err := MakePrivate(missing[i]); err != nil {
 			return err
 		}
 	}

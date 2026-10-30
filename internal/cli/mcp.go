@@ -18,7 +18,6 @@ import (
 	"github.com/tarik02-org/agx/internal/cli/prompt"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
@@ -97,7 +96,7 @@ func mcpAddCommand(a *app) *cobra.Command {
 					target = ""
 				}
 			}
-			definition := edit.Mapping()
+			definition := map[string]any{}
 			switch load {
 			case "", config.LoadNative, config.LoadOnDemand:
 			default:
@@ -113,7 +112,7 @@ func mcpAddCommand(a *app) *cobra.Command {
 				for _, arg := range command {
 					items = append(items, arg)
 				}
-				edit.Set(definition, "command", edit.Sequence(true, items...))
+				definition["command"] = items
 				if len(headers) > 0 || authValue != "" || clientID != "" {
 					return &usageError{
 						fmt.Errorf("--header, --auth, and --client-id apply to HTTP servers; use --env for stdio"),
@@ -124,10 +123,10 @@ func mcpAddCommand(a *app) *cobra.Command {
 					if err != nil {
 						return err
 					}
-					edit.Set(definition, "environment", environment)
+					definition["environment"] = environment
 				}
 			} else {
-				edit.Set(definition, "url", edit.Scalar(target))
+				definition["url"] = target
 				if len(env) > 0 {
 					return &usageError{fmt.Errorf("--env applies to stdio servers; use --header for HTTP")}
 				}
@@ -139,19 +138,19 @@ func mcpAddCommand(a *app) *cobra.Command {
 					if err != nil {
 						return err
 					}
-					edit.Set(definition, "headers", values)
+					definition["headers"] = values
 				}
 				switch {
 				case clientID != "":
 					if authValue != "" && authValue != "oauth" {
 						return &usageError{fmt.Errorf("--client-id applies only to OAuth; drop --auth %s", authValue)}
 					}
-					edit.Set(definition, "auth", edit.Mapping("kind", "oauth", "client_id", clientID))
+					definition["auth"] = map[string]any{"kind": "oauth", "client_id": clientID}
 				case authValue == "":
 				case authValue == "none" || authValue == "oauth" || authValue == "keychain":
-					edit.Set(definition, "auth", edit.Scalar(authValue))
+					definition["auth"] = authValue
 				case strings.HasPrefix(authValue, "!"):
-					edit.Set(definition, "auth", value(authValue))
+					definition["auth"] = value(authValue)
 				default:
 					return &usageError{
 						fmt.Errorf(
@@ -161,19 +160,15 @@ func mcpAddCommand(a *app) *cobra.Command {
 				}
 			}
 			if description != "" {
-				edit.Set(definition, "description", edit.Scalar(description))
+				definition["description"] = description
 			}
 			if load != "" {
-				edit.Set(definition, "load", edit.Scalar(load))
+				definition["load"] = load
 			}
 			if share != "" {
-				edit.Set(definition, "share", edit.Scalar(share))
+				definition["share"] = share
 			}
-			file, err := s.definitionFile(flags.file)
-			if err != nil {
-				return err
-			}
-			if err := s.define(config.KindMCPServers, id, file, definition); err != nil {
+			if err := s.define(config.KindMCPServers, id, definition); err != nil {
 				return err
 			}
 			if err := s.enableAfterDefine(config.KindMCPServers, id, flags); err != nil {
@@ -308,6 +303,9 @@ func redact(values map[string]config.Value) map[string]config.Value {
 }
 
 func location(c *config.Config, source config.Source) string {
+	if source.Local {
+		return "local"
+	}
 	return ui.ShortPath(source.Path, "") + ":" + strconv.Itoa(source.Line)
 }
 

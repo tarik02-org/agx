@@ -4,10 +4,18 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"connectrpc.com/connect"
+
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/internal/auth"
+	"github.com/tarik02-org/agx/internal/platform"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -119,5 +127,53 @@ func TestClientPool(t *testing.T) {
 	}
 	if _, err := p.acquire(ctx, ctx, "cli\x00echo\x00digest", "", open); err == nil {
 		t.Fatal("a closed pool opened a session")
+	}
+}
+
+func TestClientPoolResetKeepsPoolUsable(t *testing.T) {
+	p := newClientPool()
+	t.Cleanup(p.closeAll)
+	var opened, closed atomic.Int32
+	open := poolOpener(t, &opened, &closed)
+	first, err := p.acquire(t.Context(), t.Context(), "orphan", "", open)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.release(first)
+	p.reset()
+	if closed.Load() != 1 {
+		t.Fatal("reset left an orphaned session open")
+	}
+	second, err := p.acquire(t.Context(), t.Context(), "orphan", "", open)
+	if err != nil || second == first || opened.Load() != 2 {
+		t.Fatalf("reconnect: %v opens=%d", err, opened.Load())
+	}
+	p.release(second)
+}
+
+func TestLogoutAllResetsOrphansWithBrokenConfiguration(t *testing.T) {
+	paths := platform.Paths{Config: filepath.Join(t.TempDir(), "broken.yaml")}
+	if err := os.WriteFile(paths.Config, []byte("broken: ["), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{
+		paths:   paths,
+		manager: auth.New("", auth.OpenStore(t.TempDir())),
+		clients: newClientPool(),
+		shared:  mcpruntime.NewShared(t.Context(), "test", nil),
+	}
+	t.Cleanup(s.clients.closeAll)
+	t.Cleanup(s.shared.Close)
+	var opened, closed atomic.Int32
+	c, err := s.clients.acquire(t.Context(), t.Context(), "deleted-definition", "", poolOpener(t, &opened, &closed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.clients.release(c)
+	if _, err := s.Logout(t.Context(), connect.NewRequest(&v1.LogoutRequest{All: true})); err != nil {
+		t.Fatal(err)
+	}
+	if closed.Load() != 1 {
+		t.Fatal("orphaned session still open")
 	}
 }

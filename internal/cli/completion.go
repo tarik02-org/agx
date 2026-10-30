@@ -309,7 +309,7 @@ func (k *completer) registerCompletions(root *cobra.Command) {
 		"harness":    k.harnessList,
 		"base":       flagValues(k.harnesses),
 		"scope":      completeScope,
-		"file":       yamlFiles,
+		"file":       files,
 		"config":     yamlFiles,
 		"cache":      directories,
 		"executable": files,

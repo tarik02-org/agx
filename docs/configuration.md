@@ -1,10 +1,14 @@
 # Configuration
 
-agx reads one YAML configuration that says which instructions, skills, and MCP
-servers each directory gets: a root file, `agx.yaml`, that lists fragments
-holding the definitions. You can build it entirely with commands such as `agx
-mcp add`, write it by hand, or mix both: the commands keep your comments and
-layout.
+agx combines local configuration managed by its CLI and web UI with declarative
+YAML overlays. Local definitions and scope rules live in `state.db`, keyed by
+the canonical root configuration path. The root YAML file lists overlays and
+holds daemon settings; it may be absent.
+
+YAML overlays take precedence: a same-name definition replaces the entire local
+definition, including harness definitions. Overlay rules follow local rules at
+equal directory specificity. Agx commands change local configuration and refuse
+to edit YAML-owned or package-owned definitions, naming their source.
 
 ## Where files live
 
@@ -12,7 +16,7 @@ layout.
 | --- | --- | --- |
 | Configuration: the root file, with fragments beside it in `agx.d/` | `agx/agx.yaml` in your config directory | `AGX_CONFIG` or `--config` |
 | Cache: installed packages, generated files, daemon log | `agx` in your cache directory | `AGX_CACHE` or `--cache` |
-| State: launch records and encrypted secrets | `agx` in your state directory | `AGX_STATE` |
+| State: local configuration, launch records, encrypted secrets (`state.db`) | `agx` in your state directory | `AGX_STATE` |
 
 The base directories follow the XDG variables (`XDG_CONFIG_HOME`,
 `XDG_CACHE_HOME`, `XDG_STATE_HOME`) and otherwise default to:
@@ -32,20 +36,19 @@ export AGX_CONFIG=/tmp/agx-test/agx.yaml AGX_CACHE=/tmp/agx-test/cache
 ```
 
 `--config` and `--cache` go before the command: `agx --config ./agx.yaml explain`.
-A `--config` file that does not exist is an error, so a typo cannot silently
-give you an empty configuration; only the `add` commands create it. The default
-location and `AGX_CONFIG` may point at a file that does not exist yet: agx then
-reads it as `fragments: [agx.d/*.yaml]`, and the first `add` writes that file with
-`agx.d/main.yaml` beside it.
-Use the same configuration and cache for every agx command in a session; the
-daemon serves one configuration at a time (see [The daemon](daemon.md)).
+An explicit `--config` must name an existing root file or a root with saved local
+configuration; adding a definition also permits a new path. The default location
+and `AGX_CONFIG` may name an absent file, read as `fragments: [agx.d/*.yaml]`.
+Commands save local data without creating YAML. Each canonical root has its own
+daemon (see [The daemon](daemon.md)).
 
 agx does not look for configuration files inside projects. A directory gets its
 resources from rules in your configuration that name it.
 
 ## A first configuration
 
-Definitions and rules go in a fragment, such as `agx.d/main.yaml`:
+For a declarative overlay, write definitions and rules in a fragment such as
+`agx.d/main.yaml`:
 
 ```yaml
 instructions:
@@ -96,8 +99,8 @@ Rules apply from the shallowest directory to the deepest, so more specific
 rules win:
 
 1. Rules without `directory` come first, wherever they are written.
-2. Then directory rules, parents before children. Rules for the same directory
-   keep the order they are written in.
+2. Then directory rules, parents before children. At the same directory, local
+   rules come before YAML rules; each group keeps its configured order.
 3. Within one rule, `add` happens before `remove`.
 
 A deeper rule can remove what a parent added, and an even deeper rule can add
@@ -175,7 +178,7 @@ added.
 ## The root file and fragments
 
 The root file holds only `fragments` and [daemon settings](#daemon-settings);
-everything else lives in the fragments it lists. Relative entries are
+declarative definitions and rules live in the fragments it lists. Relative entries are
 relative to the root file's directory, beside the link when the root is a
 symlink:
 
@@ -197,9 +200,9 @@ Generated configuration belongs in a fragment too. The Home Manager module
 writes the root file only when its settings include `daemon`, and warns at
 activation when an existing root file does not list `agx.d/*.yaml`.
 
-Defining the same ID twice is an error, unless the later definition says
-`override: true`. Harness definitions are the exception: they merge field by
-field across files.
+Within YAML overlays, defining the same ID twice is an error unless the later
+definition says `override: true`. YAML harness definitions merge field by field.
+A YAML definition always replaces a same-name local definition as a whole.
 
 ### Paths
 
@@ -224,7 +227,7 @@ package versions. On a new machine:
 3. Run `agx install --frozen` to install exactly the locked packages.
 4. Run `agx secret login <id>` for each MCP server that uses OAuth, and `agx
    secret set <id>` for each keychain secret. Both stay in each
-   machine's keychain.
+   machine's encrypted secret store.
 
 ## Editing with commands
 
@@ -252,39 +255,34 @@ Options shared by the commands that write:
 | `--scope here` | the current directory and below |
 | `--scope <dir>` | that directory and below; it must exist, except for `unuse` |
 | `--harness <name>` | only for launches of that harness; repeatable |
-| `--file <path>` | the fragment for new definitions and rules, relative to the root file's directory |
 | `--define-only` | define without enabling (`add` commands) |
 | `-y`, `--yes` | write without asking |
 
-On a terminal, each command shows the change as a diff and asks before writing;
-missing arguments are asked for. Without a terminal, it writes without asking,
-and a missing argument is an error.
+On a terminal, missing arguments become prompts and commands ask before saving.
+Without a terminal, commands save without asking and a missing argument is an
+error. Every change is validated against the combined configuration before its
+local definitions, rules, and package locks are committed in one transaction.
+Concurrent edits fail with a conflict and can be retried.
 
-A changed definition stays in the file that defines it, and `use` or `unuse`
-edits a matching rule wherever it is. Anything new goes to the fragment `--file`
-names, which the root must list, or else to the only writable fragment, or to
-a new `agx.d/main.yaml` when there is none. With several, a terminal asks which,
-offering a new file in `agx.d/` too; without one, or with `--json`, the command
-fails with `choose_file` and lists them.
+- A same-directory YAML rule that opposes `use` or `unuse` is reported as
+  read-only, so a command cannot silently save a change that YAML defeats.
+- `unuse` removes an ID from a matching local rule's `add` list, otherwise adds
+  it to `remove`. `use` removes a matching `remove`, otherwise adds it.
+- `remove --force` also removes local references. YAML and package definitions
+  stay read-only; a reference in an overlay may require changing that overlay.
+- `agx skill remove <package-id>` removes a local package, its locks, and the
+  local rules enabling its skills. Other references need `--force`.
+- Local resource files remain ordinary files. The web UI can edit configured
+  skill/instructions contents, including files named by YAML; package/cache
+  contents and configuration files cannot be edited this way.
 
-A few things worth knowing:
-
-- Edits keep comments, blank lines, key order, and quoting. The result is
-  validated before anything is written, so a command never leaves an invalid
-  configuration behind.
-- `unuse` removes the ID from the matching rule's `add` list, or, when a
-  broader rule adds it, adds it to a `remove` list. `use` undoes that.
-- `remove` refuses while other rules or bundles still refer to the definition
-  and lists them; `--force` removes those references too.
-- Files that are read-only, or inside `/nix/store`, are refused, and are not
-  offered as fragments to write to.
-- Definitions that come from packages cannot be removed one by one. `agx skill
-  remove <package-id>` removes a whole package of skills, such as one `skill
-  add` declared, with its lock entries and the rule `add` entries that enable
-  its skills; other references to them still need `--force`.
-
-Anything the commands do not cover, such as bundles or `order`, you write by
-hand.
+`agx config export` prints local definitions and rules as YAML, including
+injection tags. Save it outside the root's overlay globs until you intend to
+make it authoritative. Local relative paths are based at the canonical root's
+directory; exported relative paths need that same base. Package locks of local
+sources live in the database; run `agx install` after promoting them to YAML to
+create portable lockfiles. Bundles and other declarations not covered by CLI
+add commands can be supplied by the web UI or a YAML overlay.
 
 ## Editor support
 

@@ -5,8 +5,14 @@ harness runs.
 
 ## Language
 
-**Fragment**: An importable portion of configuration, such as personal, work,
-or machine-local settings.
+**Local configuration**: Definitions and scope rules managed through agx commands
+or its web UI for one root configuration.
+
+**Overlay**: Declarative configuration that takes precedence over local
+configuration; a same-name definition replaces the local definition as a whole.
+
+**Fragment**: A portion of declarative configuration listed by the root, such as
+personal, work, or machine-specific settings.
 
 **Scope**: A rule that adds resources to, or removes resources from, the
 configuration inherited by a directory and its descendants; a scope without a

@@ -131,7 +131,6 @@ func TestCompletion(t *testing.T) {
 			cobra.ShellCompDirectiveNoFileComp,
 		},
 		{[]string{"use", "fs", "--scope", "./"}, []string{}, cobra.ShellCompDirectiveFilterDirs},
-		{[]string{"use", "fs", "--file", ""}, []string{"yaml", "yml"}, cobra.ShellCompDirectiveFilterFileExt},
 		{[]string{"skill", "add", ""}, []string{}, cobra.ShellCompDirectiveDefault},
 		{[]string{"sessions", ""}, []string{}, cobra.ShellCompDirectiveNoFileComp},
 		{[]string{"daemon", "re"}, []string{"restart\tStop the daemon and start one of this build"}, cobra.ShellCompDirectiveNoFileComp},

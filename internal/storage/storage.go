@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -28,24 +29,42 @@ var migrations embed.FS
 func State(dir string) string { return filepath.Join(dir, "state.db") }
 func Cache(dir string) string { return filepath.Join(dir, "cache.db") }
 
-func Open(ctx context.Context, path string) (*sql.DB, error)      { return open(ctx, path, "state") }
-func OpenCache(ctx context.Context, path string) (*sql.DB, error) { return open(ctx, path, "cache") }
+func Open(ctx context.Context, path string) (*sql.DB, error) { return open(ctx, path, "state", "") }
+func OpenCache(ctx context.Context, path string) (*sql.DB, error) {
+	return open(ctx, path, "cache", "")
+}
 
-func open(ctx context.Context, path, kind string) (*sql.DB, error) {
+// OpenExisting leaves an absent database absent, and upgrades an existing one before use.
+func OpenExisting(ctx context.Context, path string) (*sql.DB, error) {
+	if _, err := os.Stat(path); err != nil {
+		return nil, err
+	}
+	if err := securefs.MakePrivate(filepath.Dir(path)); err != nil {
+		return nil, err
+	}
+	if err := securefs.MakePrivate(path); err != nil {
+		return nil, err
+	}
+	return open(ctx, path, "state", "ro")
+}
+
+func open(ctx context.Context, path, kind, mode string) (*sql.DB, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := securefs.EnsureDir(filepath.Dir(path)); err != nil {
-		return nil, err
-	}
-	if err := securefs.CreatePrivate(path); err != nil {
-		return nil, err
+	if mode == "" {
+		if err := securefs.EnsureDir(filepath.Dir(path)); err != nil {
+			return nil, err
+		}
+		if err := securefs.CreatePrivate(path); err != nil {
+			return nil, err
+		}
 	}
 	schema, err := fs.Sub(migrations, kind)
 	if err != nil {
 		return nil, err
 	}
-	db, err := connect(path, "")
+	db, err := connect(path, mode)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +91,18 @@ func open(ctx context.Context, path, kind string) (*sql.DB, error) {
 	if err := migrate(ctx, path, schema); err != nil {
 		return nil, err
 	}
-	return connect(path, "")
+	db, err = connect(path, mode)
+	if err != nil {
+		return nil, err
+	}
+	if err = db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err == nil && version != latest {
+		err = fmt.Errorf("database schema %d does not match supported schema %d", version, latest)
+	}
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return db, nil
 }
 
 func migrate(ctx context.Context, path string, schema fs.FS) error {
@@ -105,6 +135,7 @@ func connect(path, mode string) (*sql.DB, error) {
 	q := url.Values{"_pragma": {"busy_timeout(5000)", "foreign_keys(ON)"}, "_txlock": {"immediate"}}
 	if mode != "" {
 		q.Set("mode", mode)
+		q.Set("_txlock", "deferred")
 	}
 	u.RawQuery = q.Encode()
 	db, err := sql.Open("sqlite", u.String())

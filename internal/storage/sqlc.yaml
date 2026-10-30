@@ -2,7 +2,7 @@ version: "2"
 sql:
   - engine: sqlite
     schema: state/0*.sql
-    queries: state/queries.sql
+    queries: [state/queries.sql, state/configuration.sql]
     gen:
       go:
         package: statedb

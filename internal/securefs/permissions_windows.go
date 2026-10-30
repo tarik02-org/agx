@@ -6,7 +6,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func makePrivate(path string) error {
+func MakePrivate(path string) error {
 	sid, err := currentSID()
 	if err != nil {
 		return err
@@ -45,7 +45,7 @@ func currentSID() (string, error) {
 	return user.User.Sid.String(), nil
 }
 
-// isPrivate reports whether path's DACL is the one makePrivate sets: protected, with a single
+// isPrivate reports whether path's DACL is the one MakePrivate sets: protected, with a single
 // entry granting owner full access, inherited by files and directories below. Its text form
 // varies, as Windows adds the auto-inherited flag once it has propagated it.
 func isPrivate(path, owner string) bool {

@@ -173,7 +173,7 @@ agx explain
 agx claude
 ```
 
-Every command shows a diff before it writes. Continue with the [getting started guide](docs/getting-started.md).
+Commands save local configuration in SQLite; YAML overlays remain authoritative. Continue with the [getting started guide](docs/getting-started.md).
 
 ## Integrations
 

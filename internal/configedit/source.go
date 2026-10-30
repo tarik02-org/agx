@@ -1,6 +1,7 @@
 package configedit
 
 import (
+	"bytes"
 	"context"
 	"maps"
 	"os"
@@ -9,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/packages"
 )
 
@@ -97,56 +97,52 @@ func (s *Session) DeclarePackage(id config.ID, source Source) (bool, error) {
 		}
 		return false, nil
 	}
-	definition := edit.Mapping("git", source.Git)
+	definition := map[string]any{"git": source.Git}
 	if source.Ref != "" {
-		edit.Set(definition, "ref", edit.Scalar(source.Ref))
+		definition["ref"] = source.Ref
 	}
 	if source.Subdir != "" {
-		edit.Set(definition, "subdir", edit.Scalar(source.Subdir))
+		definition["subdir"] = source.Subdir
 	}
-	file, err := s.Target()
-	if err != nil {
-		return false, err
+	if _, exists := s.definitions(config.KindPackages)[string(id)]; exists {
+		return false, errorf(Conflict, "package %s is already defined", id)
 	}
-	f, err := s.Open(file)
-	if err != nil {
-		return false, err
-	}
-	if f.Definition(config.KindPackages, string(id)) != nil {
-		return false, errorf(
-			Conflict,
-			"package %s is already defined in %s; pass --package to choose another ID",
-			id,
-			file,
-		)
-	}
-	f.Define(config.KindPackages, string(id), definition)
-	return true, nil
+	return true, s.Define(config.KindPackages, string(id), definition)
 }
 
 // Install installs the edited configuration's packages into the cache, keeping the lockfiles it
 // would write in the session.
 func (s *Session) Install(ctx context.Context) error {
-	overlay, err := s.Overlay()
+	result, err := packages.Install(
+		ctx,
+		s.Paths.Config,
+		s.Paths.Cache,
+		s.Builtins,
+		packages.Options{State: s.Paths.State, Local: s.Local, Stage: true},
+	)
 	if err != nil {
 		return err
 	}
-	result, err := packages.Install(ctx, s.Paths.Config, s.Paths.Cache, s.Builtins, packages.Options{
-		Overlay: overlay,
-		Stage:   true,
-	})
-	if err != nil {
-		return err
+	for path, data := range result.Locks {
+		current, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(current, data) {
+			return errorf(Conflict, "overlay package lock %s needs updating; run agx install first", path)
+		}
 	}
-	s.Locks = result.Locks
+	if result.LocalLock != nil {
+		s.Local.Lock = *result.LocalLock
+	}
 	return nil
 }
 
-// Load loads the edited configuration.
 func (s *Session) Load() (*config.Config, error) {
-	overlay, err := s.Overlay()
-	if err != nil {
-		return nil, err
-	}
-	return config.Load(s.Paths.Config, config.Options{Builtins: s.Builtins, Cache: s.Paths.Cache, Overlay: overlay})
+	return config.Load(
+		s.Paths.Config,
+		config.Options{
+			Builtins: s.Builtins,
+			Cache:    s.Paths.Cache,
+			State:    s.Paths.State,
+			Local:    s.Local,
+		},
+	)
 }

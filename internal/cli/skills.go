@@ -12,12 +12,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.yaml.in/yaml/v4"
-
 	"github.com/tarik02-org/agx/internal/cli/prompt"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/configedit"
 )
 
@@ -134,15 +131,6 @@ func (s *session) choose(found []config.FoundSkill, choice skillChoice, where st
 	return out, nil
 }
 
-// writtenPath spells a path for a fragment: relative to the fragment's directory when inside it,
-// else under ~/, else absolute.
-func writtenPath(file, path string) string {
-	if rel, err := filepath.Rel(filepath.Dir(file), path); err == nil && filepath.IsLocal(rel) {
-		return "./" + filepath.ToSlash(rel)
-	}
-	return configedit.HomeRelative(path)
-}
-
 func skillAddCommand(a *app) *cobra.Command {
 	var flags editFlags
 	var choice skillChoice
@@ -173,15 +161,11 @@ func skillAddCommand(a *app) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			file, err := s.definitionFile(flags.file)
-			if err != nil {
-				return err
-			}
 			if source.Local != "" {
 				if ref != "" || subdir != "" || packageID != "" {
 					return &usageError{fmt.Errorf("--ref, --path, and --package apply to Git sources")}
 				}
-				return s.addLocalSkills(source.Local, file, choice, flags)
+				return s.addLocalSkills(source.Local, choice, flags)
 			}
 			source.Ref = cmp.Or(ref, source.Ref)
 			source.Subdir = cmp.Or(subdir, source.Subdir)
@@ -201,7 +185,7 @@ func skillAddCommand(a *app) *cobra.Command {
 }
 
 // addLocalSkills defines path skills for the chosen SKILL.md directories below dir.
-func (s *session) addLocalSkills(dir, file string, choice skillChoice, flags editFlags) error {
+func (s *session) addLocalSkills(dir string, choice skillChoice, flags editFlags) error {
 	found, err := config.FindSkills(dir)
 	if err != nil {
 		return err
@@ -213,7 +197,7 @@ func (s *session) addLocalSkills(dir, file string, choice skillChoice, flags edi
 	for _, skill := range chosen {
 		id := string(skill.ID)
 		path := filepath.Join(dir, filepath.FromSlash(skill.Path))
-		if err := s.define(config.KindSkills, id, file, edit.Mapping("path", writtenPath(file, path))); err != nil {
+		if err := s.define(config.KindSkills, id, map[string]any{"path": configedit.HomeRelative(path)}); err != nil {
 			return err
 		}
 		if err := s.enableAfterDefine(config.KindSkills, id, flags); err != nil {
@@ -310,13 +294,4 @@ func skillRows(c *config.Config) ([]string, [][]string, any) {
 		rows = append(rows, []string{out.ID(string(id)), kind, from, out.Path(location(c, skill.Source))})
 	}
 	return []string{"ID", "KIND", "FROM", "SOURCE"}, rows, c.Skills
-}
-
-// textNode keeps multi-line text readable as a literal block.
-func textNode(text string) *yaml.Node {
-	n := edit.Scalar(text)
-	if strings.Contains(text, "\n") {
-		n.Style = yaml.LiteralStyle
-	}
-	return n
 }

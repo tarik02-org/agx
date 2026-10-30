@@ -1,500 +1,440 @@
 package configedit_test
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"go.yaml.in/yaml/v4"
-
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/configedit"
 	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/storage"
 )
 
-var builtins = builtin.Registry().Builtins([]string{"agx", "help", "install", "run"})
+var builtins = builtin.Registry().Builtins(nil)
 
-// root lists main.yaml and drop-ins in agx.d.
-const root = "fragments: [main.yaml, agx.d/*.yaml]\n"
-
-// workspace is an isolated configuration directory with a skill and instructions on disk, whose
-// root lists main.yaml.
-type workspace struct {
-	dir   string
-	main  string
-	paths platform.Paths
-}
-
-func newWorkspace(t *testing.T, configuration string) *workspace {
+func workspace(t *testing.T) (platform.Paths, func() *configedit.Session) {
 	t.Helper()
 	dir, err := platform.Canonical(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", filepath.Join(dir, "home"))
-	w := &workspace{
-		dir:   dir,
-		paths: platform.Paths{Config: filepath.Join(dir, "agx.yaml"), Cache: filepath.Join(dir, "cache")},
+	t.Setenv("USERPROFILE", filepath.Join(dir, "home"))
+	paths := platform.Paths{
+		Config: filepath.Join(dir, "agx.yaml"),
+		State:  filepath.Join(dir, "state"),
+		Cache:  filepath.Join(dir, "cache"),
 	}
-	for _, name := range []string{"alpha", "beta"} {
-		w.write(t, filepath.Join("skills", name, "SKILL.md"), "---\nname: "+name+"\ndescription: "+name+" skill\n---\n")
-	}
-	w.write(t, "AGENTS.md", "Be brief.\n")
-	w.write(t, "agx.yaml", root)
-	w.main = w.write(t, "main.yaml", configuration)
-	return w
-}
-
-func (w *workspace) write(t *testing.T, rel, content string) string {
-	t.Helper()
-	path := filepath.Join(w.dir, rel)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
-func (w *workspace) read(t *testing.T, rel string) string {
-	t.Helper()
-	b, err := os.ReadFile(filepath.Join(w.dir, rel))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b)
-}
-
-func (w *workspace) session(t *testing.T) *configedit.Session {
-	t.Helper()
-	c, err := config.Load(w.paths.Config, config.Options{Builtins: builtins, Cache: w.paths.Cache})
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := configedit.New(w.paths, builtins, c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s
-}
-
-func node(t *testing.T, text string) *yaml.Node {
-	t.Helper()
-	var doc yaml.Node
-	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
-		t.Fatal(err)
-	}
-	return doc.Content[0]
-}
-
-func plan(t *testing.T, s *configedit.Session) *configedit.Plan {
-	t.Helper()
-	p, err := s.Plan()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
-
-func after(t *testing.T, p *configedit.Plan, path string) string {
-	t.Helper()
-	for _, f := range p.Files {
-		if f.Path == path {
-			return string(f.After)
-		}
-	}
-	t.Fatalf("the plan does not write %s: %+v", path, p.Files)
-	return ""
-}
-
-func wantCode(t *testing.T, err error, want configedit.Code) {
-	t.Helper()
-	var edited *configedit.Error
-	if !errors.As(err, &edited) || edited.Code != want {
-		t.Fatalf("error = %v, want code %s", err, want)
-	}
-}
-
-const base = `# The configuration.
-skills:
-  alpha:
-    path: ./skills/alpha # first
-instructions:
-  agents:
-    path: ./AGENTS.md
-`
-
-func TestDefineCreatesAndReplaces(t *testing.T) {
-	w := newWorkspace(t, base)
-	fragment := w.write(t, "agx.d/10-mcp.yaml", "mcp:\n  fs:\n    command: [server-fs] # local\n")
-	s := w.session(t)
-	s.File = w.main
-	if err := s.Define(config.KindMCPServers, "docs", node(t, "url: https://example.com/mcp\n")); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Define(config.KindSkills, "alpha", node(t, "path: ./skills/beta\n")); err != nil {
-		t.Fatal(err)
-	}
-	// An existing definition is replaced where it is, whatever the target fragment.
-	if err := s.Define(config.KindMCPServers, "fs", node(t, "command: [server-fs, --root, /]\n")); err != nil {
-		t.Fatal(err)
-	}
-	p := plan(t, s)
-	root := after(t, p, w.main)
-	want := `# The configuration.
-skills:
-  alpha:
-    path: ./skills/beta
-instructions:
-  agents:
-    path: ./AGENTS.md
-mcp:
-  docs:
-    url: https://example.com/mcp
-`
-	if root != want {
-		t.Fatalf("root =\n%s\nwant\n%s", root, want)
-	}
-	if got := after(t, p, fragment); !strings.Contains(got, "--root") || strings.Contains(root, "fs:") {
-		t.Fatalf("fragment =\n%s", got)
-	}
-	if _, ok := p.Config.MCP["docs"]; !ok {
-		t.Fatal("the planned configuration lacks the new server")
-	}
-}
-
-func TestDefineRefusesReadOnlyFiles(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root writes read-only files")
-	}
-	w := newWorkspace(t, base)
-	fragment := w.write(t, "agx.d/10-mcp.yaml", "mcp:\n  fs:\n    command: [server-fs]\n")
-	if err := os.Chmod(fragment, 0o444); err != nil {
-		t.Fatal(err)
-	}
-	s := w.session(t)
-	wantCode(t, s.Define(config.KindMCPServers, "fs", node(t, "command: [other]\n")), configedit.ReadOnly)
-	s.File = fragment
-	wantCode(t, s.Define(config.KindMCPServers, "new", node(t, "command: [new]\n")), configedit.ReadOnly)
-	wantCode(t, s.Define("unknown", "x", node(t, "a: b\n")), configedit.InvalidRequest)
-}
-
-func TestUndefineRemovesReferences(t *testing.T) {
-	w := newWorkspace(t, base+`bundles:
-  dev:
-    skills: [alpha]
-    instructions: [agents]
-scopes:
-  - add:
-      skills: [alpha]
-      bundles: [dev]
-`)
-	s := w.session(t)
-	if err := s.Undefine(config.KindSkills, "alpha"); err != nil {
-		t.Fatal(err)
-	}
-	got := after(t, plan(t, s), w.main)
-	if strings.Contains(got, "alpha") {
-		t.Fatalf("references remain:\n%s", got)
-	}
-	if !strings.Contains(got, "instructions: [agents]") || !strings.Contains(got, "bundles: [dev]") {
-		t.Fatalf("unrelated entries went:\n%s", got)
-	}
-	wantCode(t, s.Undefine(config.KindMCPServers, "missing"), configedit.NotFound)
-}
-
-func TestEnableDisable(t *testing.T) {
-	w := newWorkspace(t, base)
-	s := w.session(t)
-	work := filepath.Join(w.dir, "work")
-	if err := os.Mkdir(work, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// Rules spell directories under the home directory with ~/, as on Windows runners' temp.
-	written := configedit.HomeRelative(work)
-	if _, err := s.Enable(config.KindSkills, "alpha", configedit.NewScope("", nil)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.Enable(config.KindInstructions, "agents", configedit.NewScope(work, []string{"codex"})); err != nil {
-		t.Fatal(err)
-	}
-	got := after(t, plan(t, s), w.main)
-	want := base + `scopes:
-  - add:
-      skills: [alpha]
-  - directory: ` + written + `
-    harnesses: [codex]
-    add:
-      instructions: [agents]
-`
-	if got != want {
-		t.Fatalf("enabled =\n%s\nwant\n%s", got, want)
-	}
-	if err := os.WriteFile(w.main, []byte(got), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Disabling what a matching rule selects drops the entry, and the rule it empties.
-	s = w.session(t)
-	if _, err := s.Disable(
-		config.KindInstructions,
-		"agents",
-		configedit.NewScope(work, []string{"codex"}),
-	); err != nil {
-		t.Fatal(err)
-	}
-	// Disabling in a directory what an outer rule selects writes a remove entry.
-	if _, err := s.Disable(config.KindSkills, "alpha", configedit.NewScope(work, nil)); err != nil {
-		t.Fatal(err)
-	}
-	got = after(t, plan(t, s), w.main)
-	want = base + `scopes:
-  - add:
-      skills: [alpha]
-  - directory: ` + written + `
-    remove:
-      skills: [alpha]
-`
-	if got != want {
-		t.Fatalf("disabled =\n%s\nwant\n%s", got, want)
-	}
-}
-
-func TestWriteFile(t *testing.T) {
-	// A skill whose directory is in the cache is not local, though a fragment defines it.
-	w := newWorkspace(
-		t,
-		strings.Replace(base, "skills:\n", "skills:\n  cached:\n    path: ./cache/packages/kit/skill\n", 1),
-	)
-	w.write(t, "cache/packages/kit/skill/SKILL.md", "---\nname: cached\n---\n")
-	s := w.session(t)
-	skillFile := filepath.Join(w.dir, "skills", "alpha", "SKILL.md")
-	if err := s.WriteFile(skillFile, []byte("rewritten\n")); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.WriteFile(filepath.Join(w.dir, "skills", "alpha", "notes", "new.md"), []byte("new\n")); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.WriteFile(filepath.Join(w.dir, "AGENTS.md"), []byte("Be thorough.\n")); err != nil {
-		t.Fatal(err)
-	}
-	wantCode(t, s.WriteFile(filepath.Join(w.dir, "skills", "beta", "SKILL.md"), nil), configedit.InvalidRequest)
-	wantCode(
-		t,
-		s.WriteFile(filepath.Join(w.dir, "skills", "alpha", "..", "beta", "SKILL.md"), nil),
-		configedit.InvalidRequest,
-	)
-	wantCode(t, s.WriteFile(filepath.Join(w.dir, "skills", "alpha"), nil), configedit.InvalidRequest)
-	wantCode(t, s.WriteFile("skills/alpha/SKILL.md", nil), configedit.InvalidRequest)
-	wantCode(t, s.WriteFile(w.main, nil), configedit.InvalidRequest)
-	wantCode(
-		t,
-		s.WriteFile(filepath.Join(w.dir, "cache", "packages", "kit", "skill", "SKILL.md"), nil),
-		configedit.ReadOnly,
-	)
-	// A symlink out of the skill does not reach the file it names.
-	link := filepath.Join(w.dir, "skills", "alpha", "link.md")
-	if err := os.Symlink(filepath.Join(w.dir, "skills", "beta", "SKILL.md"), link); err == nil {
-		wantCode(t, s.WriteFile(link, nil), configedit.InvalidRequest)
-		if err := os.Remove(link); err != nil {
+	load := func() *configedit.Session {
+		t.Helper()
+		c, err := config.Load(paths.Config, config.Options{Builtins: builtins, State: paths.State, Cache: paths.Cache})
+		if err != nil {
 			t.Fatal(err)
 		}
+		s, err := configedit.New(paths, builtins, c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
 	}
-	p := plan(t, s)
-	if len(p.Files) != 3 {
-		t.Fatalf("plan = %+v", p.Files)
-	}
-	if _, err := p.Write(); err != nil {
-		t.Fatal(err)
-	}
-	if got := w.read(t, "skills/alpha/notes/new.md"); got != "new\n" {
-		t.Fatalf("new file = %q", got)
-	}
-	if got := w.read(t, "AGENTS.md"); got != "Be thorough.\n" {
-		t.Fatalf("instructions = %q", got)
+	return paths, load
+}
+
+func save(t *testing.T, s *configedit.Session) {
+	t.Helper()
+	if changed, err := s.Commit(t.Context()); err != nil || !changed {
+		t.Fatalf("commit: %t, %v", changed, err)
 	}
 }
 
-func TestPlanHashesAndApplyConflicts(t *testing.T) {
-	w := newWorkspace(t, base)
-	s := w.session(t)
-	fragment := filepath.Join(w.dir, "agx.d", "20-new.yaml")
-	s.File = fragment
-	if err := s.Define(config.KindMCPServers, "docs", node(t, "url: https://example.com/mcp\n")); err != nil {
+func define(t *testing.T, s *configedit.Session, kind config.Kind, id string, value any) {
+	t.Helper()
+	if err := s.Define(kind, id, value); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestLocalPersistenceAndRootIsolation(t *testing.T) {
+	paths, load := workspace(t)
+	s := load()
+	if _, err := os.Stat(storage.State(paths.State)); !os.IsNotExist(err) {
+		t.Fatalf("read created state: %v", err)
+	}
+	define(t, s, config.KindMCPServers, "docs", map[string]any{"command": []string{"server"}})
 	if _, err := s.Enable(config.KindMCPServers, "docs", configedit.NewScope("", nil)); err != nil {
 		t.Fatal(err)
 	}
-	// An existing definition changes where it is.
-	if err := s.Define(config.KindSkills, "alpha", node(t, "path: ./skills/beta\n")); err != nil {
-		t.Fatal(err)
+	save(t, s)
+	c := load().Config
+	if c.MCP["docs"].Command[0] != "server" || !c.MCP["docs"].Source.Local || len(c.Scopes) != 1 {
+		t.Fatalf("config: %+v", c)
 	}
-	p := plan(t, s)
-	sum := sha256.Sum256([]byte(base))
-	expected := map[string]string{}
-	for _, f := range p.Files {
-		expected[f.Path] = f.BeforeSHA256()
-		switch f.Path {
-		case w.main:
-			if f.BeforeSHA256() != hex.EncodeToString(sum[:]) ||
-				!strings.Contains(f.Diff(), "+    path: ./skills/beta") {
-				t.Fatalf("main: %s\n%s", f.BeforeSHA256(), f.Diff())
-			}
-		case fragment:
-			if f.BeforeSHA256() != "" || !strings.Contains(f.Diff(), "+      mcp: [docs]") {
-				t.Fatalf("new fragment: %q\n%s", f.BeforeSHA256(), f.Diff())
-			}
-		default:
-			t.Fatalf("unexpected file %s", f.Path)
-		}
+	if _, err := os.Stat(paths.Config); !os.IsNotExist(err) {
+		t.Fatalf("created YAML: %v", err)
 	}
-	if err := p.Check(expected); err != nil {
-		t.Fatal(err)
-	}
-	expected[w.main] = strings.Repeat("0", 64)
-	wantCode(t, p.Check(expected), configedit.Conflict)
-	delete(expected, w.main)
-	wantCode(t, p.Check(expected), configedit.Conflict)
-
-	// A file changed after planning fails the write before anything is written.
-	w.write(t, "main.yaml", base+"# edited\n")
-	_, err := p.Write()
-	wantCode(t, err, configedit.Conflict)
-	if _, err := os.Stat(fragment); !os.IsNotExist(err) {
-		t.Fatalf("the new fragment was written: %v", err)
+	other, err := config.Load(
+		filepath.Join(filepath.Dir(paths.Config), "other.yaml"),
+		config.Options{State: paths.State},
+	)
+	if err != nil || len(other.MCP) != 0 {
+		t.Fatalf("other root: %+v %v", other, err)
 	}
 }
 
-func TestInvalidChangeWritesNothing(t *testing.T) {
-	w := newWorkspace(t, base)
-	s := w.session(t)
-	if _, err := s.Enable(config.KindSkills, "missing", configedit.NewScope("", nil)); err != nil {
+func TestOptimisticConflictAndInvalidChange(t *testing.T) {
+	_, load := workspace(t)
+	first, stale := load(), load()
+	define(t, first, config.KindInstructions, "one", map[string]any{"text": "One."})
+	define(t, stale, config.KindInstructions, "two", map[string]any{"text": "Two."})
+	save(t, first)
+	if _, err := stale.Commit(t.Context()); err == nil {
+		t.Fatal("stale edit committed")
+	}
+	broken := load()
+	define(t, broken, config.KindMCPServers, "bad", map[string]any{"url": 5})
+	if _, err := broken.Commit(t.Context()); err == nil {
+		t.Fatal("invalid definition committed")
+	}
+	c := load().Config
+	if len(c.Instructions) != 1 || c.Local.Revision != 1 || len(c.MCP) != 0 {
+		t.Fatalf("rollback failed: %+v", c.Local)
+	}
+}
+
+func TestOverlayPrecedenceAndOwnership(t *testing.T) {
+	paths, load := workspace(t)
+	s := load()
+	define(t, s, config.KindMCPServers, "docs", map[string]any{"command": []string{"local"}, "description": "local"})
+	define(t, s, config.KindHarnesses, "work", map[string]any{"base": "codex", "args": []string{"local"}})
+	save(t, s)
+	if err := os.MkdirAll(filepath.Join(filepath.Dir(paths.Config), "agx.d"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.Plan()
-	wantCode(t, err, configedit.ConfigInvalid)
-	if !strings.Contains(err.Error(), "missing") {
-		t.Fatalf("the error does not name the load problem: %v", err)
+	overlay := filepath.Join(filepath.Dir(paths.Config), "agx.d", "overlay.yaml")
+	data := "mcp:\n  docs:\n    command: [yaml]\nharnesses:\n  work:\n    base: claude\n"
+	if err := os.WriteFile(overlay, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if got := w.read(t, "main.yaml"); got != base {
-		t.Fatalf("configuration changed:\n%s", got)
+	s = load()
+	if s.Config.MCP["docs"].Command[0] != "yaml" || s.Config.MCP["docs"].Description != "" {
+		t.Fatalf("partial overlay: %+v", s.Config.MCP["docs"])
 	}
+	h, err := s.Config.Harness("work")
+	if err != nil || h.Builtin != "claude" || len(h.Args) != 0 {
+		t.Fatalf("harness overlay: %+v %v", h, err)
+	}
+	if err := s.Define(
+		config.KindMCPServers,
+		"docs",
+		map[string]any{"command": []string{"changed"}},
+	); err == nil ||
+		!strings.Contains(err.Error(), overlay) {
+		t.Fatalf("ownership: %v", err)
+	}
+	if err := os.Remove(overlay); err != nil {
+		t.Fatal(err)
+	}
+	if load().Config.MCP["docs"].Command[0] != "local" {
+		t.Fatal("overlay deleted underlying local definition")
+	}
+}
+
+func TestTaggedValuesAndRevisionInputs(t *testing.T) {
+	paths, load := workspace(t)
+	s := load()
+	define(
+		t,
+		s,
+		config.KindMCPServers,
+		"server",
+		map[string]any{
+			"command": []string{"server"},
+			"environment": map[string]any{
+				"TOKEN":  map[string]any{"$env": "TOKEN"},
+				"FILE":   map[string]any{"$file": "credential.txt"},
+				"SECRET": map[string]any{"$secret": "credential"},
+			},
+		},
+	)
+	define(t, s, config.KindSecrets, "credential", map[string]any{"kind": "keychain"})
+	save(t, s)
+	inputs := &config.Inputs{}
+	c, err := config.Load(
+		paths.Config,
+		config.Options{Builtins: builtins, State: paths.State, Cache: paths.Cache, Inputs: inputs},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.MCP["server"].Environment["TOKEN"].Env != "TOKEN" {
+		t.Fatalf("tag: %+v", c.MCP["server"].Environment)
+	}
+	if value := c.MCP["server"].Environment["FILE"]; value.File != filepath.Join(
+		filepath.Dir(c.Root),
+		"credential.txt",
+	) ||
+		!value.Source.Local {
+		t.Fatalf("file tag: %+v", value)
+	}
+	if value := c.MCP["server"].Environment["SECRET"]; value.Secret != "credential" {
+		t.Fatalf("secret tag: %+v", value)
+	}
+	db, err := storage.Open(t.Context(), storage.State(paths.State))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.ExecContext(
+		t.Context(),
+		"INSERT INTO launches VALUES ('irrelevant','codex','codex','store','directory',0,NULL,1)",
+	)
+	_ = db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inputs.Changed() {
+		t.Fatal("unrelated state invalidated configuration")
+	}
+	s = load()
+	define(t, s, config.KindInstructions, "added", map[string]any{"text": "Added."})
+	save(t, s)
+	if !inputs.Changed() {
+		t.Fatal("configuration revision was not watched")
+	}
+	exported, err := s.Local.Export()
+	if err != nil || !strings.Contains(string(exported), "!env TOKEN") {
+		t.Fatalf("export: %s %v", exported, err)
+	}
+}
+
+func TestResourceWriteRestrictions(t *testing.T) {
+	paths, load := workspace(t)
+	file := filepath.Join(filepath.Dir(paths.Config), "AGENTS.md")
+	if err := os.WriteFile(file, []byte("Before."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := load()
+	define(t, s, config.KindInstructions, "agents", map[string]any{"path": file})
+	save(t, s)
+	if err := configedit.WriteFile(load().Config, paths, file, []byte("After.")); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(file)
+	if err != nil || string(data) != "After." {
+		t.Fatalf("file: %s %v", data, err)
+	}
+	if err := configedit.WriteFile(load().Config, paths, paths.Config, []byte("{}")); err == nil {
+		t.Fatal("wrote configuration file")
+	}
+}
+
+func TestCancelledCommit(t *testing.T) {
+	paths, load := workspace(t)
+	s := load()
+	define(t, s, config.KindInstructions, "cancelled", map[string]any{"text": "Do not save."})
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := s.Commit(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("commit: %v", err)
+	}
+	if _, err := os.Stat(storage.State(paths.State)); !os.IsNotExist(err) {
+		t.Fatalf("cancelled write created database: %v", err)
+	}
+}
+
+func TestConcurrentLocalWriters(t *testing.T) {
+	_, load := workspace(t)
+	first, second := load(), load()
+	define(t, first, config.KindInstructions, "first", map[string]any{"text": "First."})
+	define(t, second, config.KindInstructions, "second", map[string]any{"text": "Second."})
+	results := make(chan error, 2)
+	start := make(chan struct{})
+	for _, s := range []*configedit.Session{first, second} {
+		go func() { <-start; _, err := s.Commit(t.Context()); results <- err }()
+	}
+	close(start)
+	one, two := <-results, <-results
+	if (one == nil) == (two == nil) || one != nil && !errors.Is(one, config.ErrConflict) ||
+		two != nil && !errors.Is(two, config.ErrConflict) {
+		t.Fatalf("writers: %v, %v", one, two)
+	}
+	if c := load().Config; len(c.Instructions) != 1 || c.Local.Revision != 1 {
+		t.Fatalf("lost atomicity: %+v", c.Local)
+	}
+}
+
+func TestLocalInlineDefinitionOrigin(t *testing.T) {
+	_, load := workspace(t)
+	s := load()
+	define(
+		t,
+		s,
+		config.KindBundles,
+		"bundle",
+		map[string]any{"instructions": []any{map[string]any{"id": "inline", "text": "Inline."}}},
+	)
+	save(t, s)
+	if source := load().Config.Instructions["inline"].Source; !source.Local || source.Line != 0 {
+		t.Fatalf("inline origin: %+v", source)
+	}
+}
+
+func TestInputsNoticeRepairedDatabase(t *testing.T) {
+	paths, _ := workspace(t)
+	if err := os.MkdirAll(paths.State, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	database := storage.State(paths.State)
+	if err := os.WriteFile(database, []byte(strings.Repeat("invalid", 1000)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inputs := &config.Inputs{}
+	_, err := config.Load(paths.Config, config.Options{State: paths.State, Inputs: inputs})
+	if err == nil {
+		t.Fatal("corrupt state loaded")
+	}
+	if err := os.Remove(database); err != nil {
+		t.Fatal(err)
+	}
+	if !inputs.Changed() {
+		t.Fatal("repair did not invalidate cached load failure")
+	}
+	if _, err := config.Load(paths.Config, config.Options{State: paths.State}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestScopeCannotSilentlyOverrideYAML(t *testing.T) {
+	paths, load := workspace(t)
+	dir := filepath.Join(filepath.Dir(paths.Config), "agx.d")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	overlay := filepath.Join(dir, "rules.yaml")
+	data := "mcp:\n  docs:\n    command: [docs]\nbundles:\n  dev:\n    mcp: [docs]\nscopes:\n  - add:\n      bundles: [dev]\n"
+	if err := os.WriteFile(overlay, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := load()
+	if _, err := s.Disable(
+		config.KindMCPServers,
+		"docs",
+		configedit.NewScope("", nil),
+	); err == nil ||
+		!strings.Contains(err.Error(), overlay) {
+		t.Fatalf("shadowed edit: %v", err)
+	}
+	if _, err := s.Disable(
+		config.KindMCPServers,
+		"docs",
+		configedit.NewScope(filepath.Dir(paths.Config), nil),
+	); err != nil {
+		t.Fatalf("deeper rule: %v", err)
+	}
+	save(t, s)
 }
 
 func TestParseSource(t *testing.T) {
 	for arg, want := range map[string]configedit.Source{
-		"anthropics/skills@v1/document-skills": {
-			Git: "https://github.com/anthropics/skills.git", Ref: "v1", Subdir: "document-skills", Name: "anthropics",
-		},
-		"https://example.com/kit.git": {Git: "https://example.com/kit.git", Name: "kit"},
+		"anthropics/skills@v1/document-skills": {Git: "https://github.com/anthropics/skills.git", Ref: "v1", Subdir: "document-skills", Name: "anthropics"},
+		"https://example.com/kit.git":          {Git: "https://example.com/kit.git", Name: "kit"},
 	} {
 		got, err := configedit.ParseSource(arg, configedit.GitHub, false)
 		if err != nil || got != want {
-			t.Errorf("ParseSource(%q) = %+v, %v; want %+v", arg, got, err, want)
+			t.Fatalf("source %s: %+v %v", arg, got, err)
 		}
 	}
-	_, err := configedit.ParseSource("./skills", configedit.GitHub, false)
-	wantCode(t, err, configedit.InvalidRequest)
+	if _, err := configedit.ParseSource("./skills", configedit.GitHub, false); err == nil {
+		t.Fatal("preview accepted a local path")
+	}
 	if got, err := configedit.ParseSource("./skills", configedit.GitHub, true); err != nil || got.Local != "./skills" {
-		t.Errorf("a local path = %+v, %v", got, err)
+		t.Fatalf("local path: %+v %v", got, err)
 	}
 }
 
-func TestTarget(t *testing.T) {
-	define := func(s *configedit.Session) error {
-		return s.Define(config.KindMCPServers, "docs", node(t, "url: https://example.com/mcp\n"))
+func TestResourceFilesStayWithinDeclaredContent(t *testing.T) {
+	paths, load := workspace(t)
+	root := filepath.Dir(paths.Config)
+	skill := filepath.Join(root, "skill")
+	if err := os.MkdirAll(skill, 0o700); err != nil {
+		t.Fatal(err)
 	}
-	t.Run("the only writable fragment", func(t *testing.T) {
-		w := newWorkspace(t, base)
-		s := w.session(t)
-		if err := define(s); err != nil {
-			t.Fatal(err)
+	if err := os.WriteFile(
+		filepath.Join(skill, "SKILL.md"),
+		[]byte("---\nname: skill\ndescription: d\n---\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	cached := filepath.Join(paths.Cache, "private.md")
+	if err := os.MkdirAll(paths.Cache, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cached, []byte("cached"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := load()
+	define(t, s, config.KindSkills, "skill", map[string]any{"path": skill})
+	define(t, s, config.KindInstructions, "cached", map[string]any{"path": cached})
+	save(t, s)
+	c := load().Config
+	created := filepath.Join(skill, "new.md")
+	if err := configedit.WriteFile(c, paths, created, []byte("New.")); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(created); err != nil || string(data) != "New." {
+		t.Fatalf("new content: %s %v", data, err)
+	}
+	for _, path := range []string{cached, storage.State(paths.State), paths.Config} {
+		if err := configedit.WriteFile(c, paths, path, []byte("Do not write.")); err == nil {
+			t.Fatalf("wrote protected file %s", path)
 		}
-		if got := after(t, plan(t, s), w.main); !strings.Contains(got, "docs:") {
-			t.Fatalf("main =\n%s", got)
-		}
-	})
-	t.Run("none creates agx.d/main.yaml and the missing root", func(t *testing.T) {
-		dir, err := platform.Canonical(t.TempDir())
-		if err != nil {
-			t.Fatal(err)
-		}
-		w := &workspace{
-			dir:   dir,
-			paths: platform.Paths{Config: filepath.Join(dir, "agx.yaml"), Cache: filepath.Join(dir, "cache")},
-		}
-		s := w.session(t)
-		if err := define(s); err != nil {
-			t.Fatal(err)
-		}
-		p := plan(t, s)
-		if len(p.Files) != 2 {
-			t.Fatalf("plan = %+v", p.Files)
-		}
-		if got := after(t, p, s.Root); got != config.DefaultConfig {
-			t.Fatalf("root = %q", got)
-		}
-		if got := after(t, p, filepath.Join(dir, "agx.d", "main.yaml")); !strings.Contains(got, "docs:") {
-			t.Fatalf("main =\n%s", got)
-		}
-	})
-	t.Run("several", func(t *testing.T) {
-		w := newWorkspace(t, base)
-		other := w.write(t, "agx.d/10-other.yaml", "{}\n")
-		s := w.session(t)
-		var edited *configedit.Error
-		if err := define(s); !errors.As(err, &edited) || edited.Code != configedit.ChooseFile ||
-			len(edited.Files) != 2 || edited.Files[0] != w.main || edited.Files[1] != other {
-			t.Fatalf("error = %v (%+v)", err, edited)
-		}
-		var offered []string
-		s.Choose = func(candidates []string) (string, error) {
-			offered = candidates
-			return other, nil
-		}
-		if err := define(s); err != nil {
-			t.Fatal(err)
-		}
-		if len(offered) != 2 {
-			t.Fatalf("offered %q", offered)
-		}
-		if got := after(t, plan(t, s), other); !strings.Contains(got, "docs:") {
-			t.Fatalf("other =\n%s", got)
-		}
-	})
-	t.Run("a requested file", func(t *testing.T) {
-		w := newWorkspace(t, base)
-		w.write(t, "agx.d/10-other.yaml", "{}\n")
-		for _, file := range []string{w.paths.Config, filepath.Join(w.dir, "elsewhere.yaml")} {
-			s := w.session(t)
-			s.File = file
-			wantCode(t, define(s), configedit.InvalidRequest)
-		}
-		s := w.session(t)
-		s.File = filepath.Join(w.dir, "agx.d", "20-new.yaml")
-		if err := define(s); err != nil {
-			t.Fatal(err)
-		}
-		if got := after(t, plan(t, s), s.File); !strings.Contains(got, "docs:") {
-			t.Fatalf("new =\n%s", got)
-		}
-	})
-	t.Run("enable joins the fragment with a matching rule", func(t *testing.T) {
-		w := newWorkspace(t, base)
-		other := w.write(t, "agx.d/10-other.yaml", "scopes:\n  - add:\n      skills: [alpha]\n")
-		s := w.session(t)
-		if _, err := s.Enable(config.KindInstructions, "agents", configedit.NewScope("", nil)); err != nil {
-			t.Fatal(err)
-		}
-		if got := after(t, plan(t, s), other); !strings.Contains(got, "instructions: [agents]") {
-			t.Fatalf("other =\n%s", got)
-		}
-	})
+	}
+	outside := filepath.Join(root, "outside.md")
+	if err := os.WriteFile(outside, []byte("Outside."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(skill, "escape.md")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	if err := configedit.WriteFile(c, paths, link, []byte("Escape.")); err == nil {
+		t.Fatal("wrote outside through symlink")
+	}
+}
+
+func TestReferencedSecretNeedsDependentEdit(t *testing.T) {
+	_, load := workspace(t)
+	s := load()
+	define(t, s, config.KindSecrets, "credential", map[string]any{"kind": "keychain"})
+	define(
+		t,
+		s,
+		config.KindMCPServers,
+		"server",
+		map[string]any{
+			"command":     []string{"server"},
+			"environment": map[string]any{"TOKEN": map[string]any{"$secret": "credential"}},
+		},
+	)
+	save(t, s)
+	s = load()
+	if err := s.Undefine(config.KindSecrets, "credential"); err == nil {
+		t.Fatal("deleted a referenced secret")
+	}
+	if changed, err := s.Commit(t.Context()); err != nil || changed {
+		t.Fatalf("rejected deletion changed config: %t %v", changed, err)
+	}
+	define(t, s, config.KindMCPServers, "server", map[string]any{"command": []string{"server"}})
+	if err := s.Undefine(config.KindSecrets, "credential"); err != nil {
+		t.Fatal(err)
+	}
+	save(t, s)
+	if len(load().Config.Secrets) != 0 {
+		t.Fatal("secret remains after dependent edit")
+	}
 }

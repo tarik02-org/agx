@@ -8,6 +8,11 @@ import (
 	"database/sql"
 )
 
+type Configuration struct {
+	Root     string
+	Revision int64
+}
+
 type DaemonState struct {
 	Configuration string
 	Port          int64
@@ -29,6 +34,206 @@ type LaunchSession struct {
 	Store   string
 	Session string
 	Launch  string
+}
+
+type LocalArgGroup struct {
+	Root     string
+	Key      string
+	Position int64
+}
+
+type LocalArgument struct {
+	Root          string
+	Key           string
+	GroupPosition int64
+	Position      int64
+	ValueKind     string
+	Value         string
+}
+
+type LocalArgumentMode struct {
+	Root          string
+	Key           string
+	GroupPosition int64
+	Position      int64
+	Mode          string
+}
+
+type LocalCommand struct {
+	Root     string
+	Key      string
+	Position int64
+	Value    string
+}
+
+type LocalDefinition struct {
+	Root     string
+	Key      string
+	Kind     string
+	Name     string
+	Parent   sql.NullString
+	Scope    sql.NullInt64
+	Override bool
+}
+
+type LocalDefinitionItem struct {
+	Root      string
+	Key       string
+	Action    string
+	Kind      string
+	Position  int64
+	Reference sql.NullString
+	InlineKey sql.NullString
+}
+
+type LocalEnvironment struct {
+	Root      string
+	Key       string
+	Name      string
+	ValueKind string
+	Value     string
+}
+
+type LocalHarness struct {
+	Root       string
+	Key        string
+	Base       string
+	Executable string
+	Hidden     sql.NullBool
+	Settings   sql.NullString
+}
+
+type LocalHeader struct {
+	Root      string
+	Key       string
+	Name      string
+	ValueKind string
+	Value     string
+}
+
+type LocalInstruction struct {
+	Root      string
+	Key       string
+	Path      sql.NullString
+	Git       sql.NullString
+	Ref       string
+	Hash      string
+	Text      sql.NullString
+	SortOrder int64
+}
+
+type LocalMcp struct {
+	Root         string
+	Key          string
+	Url          string
+	Cwd          string
+	Description  string
+	Load         string
+	ShareType    string
+	ShareIdle    sql.NullString
+	AuthKind     string
+	AuthValue    string
+	InlineSecret sql.NullString
+}
+
+type LocalPackage struct {
+	Root   string
+	Key    string
+	Path   sql.NullString
+	Git    sql.NullString
+	Ref    string
+	Hash   string
+	Subdir string
+}
+
+type LocalPackageDependency struct {
+	Root       string
+	Package    string
+	Position   int64
+	Dependency string
+}
+
+type LocalPackageLock struct {
+	Root       string
+	ID         string
+	Path       string
+	Git        string
+	Ref        string
+	SourceHash string
+	Subdir     string
+	Revision   string
+	Hash       string
+}
+
+type LocalScope struct {
+	Root      string
+	Position  int64
+	Directory string
+}
+
+type LocalScopeHarness struct {
+	Root          string
+	ScopePosition int64
+	Position      int64
+	Name          string
+}
+
+type LocalScopeItem struct {
+	Root          string
+	ScopePosition int64
+	Action        string
+	Kind          string
+	Position      int64
+	Reference     sql.NullString
+	InlineKey     sql.NullString
+}
+
+type LocalSecret struct {
+	Root        string
+	Key         string
+	SecretKind  string
+	File        sql.NullString
+	AgeKeyKind  string
+	AgeKeyValue string
+	Issuer      string
+	ClientID    string
+	Resource    string
+}
+
+type LocalSecretKey struct {
+	Root     string
+	Key      string
+	Position int64
+	Value    string
+}
+
+type LocalSecretScope struct {
+	Root     string
+	Key      string
+	Position int64
+	Value    string
+}
+
+type LocalSkill struct {
+	Root        string
+	Key         string
+	Path        sql.NullString
+	Git         sql.NullString
+	Ref         string
+	Hash        string
+	NativeName  string
+	Description string
+	Content     sql.NullString
+	Frontmatter sql.NullString
+}
+
+type LocalSkillFile struct {
+	Root       string
+	Key        string
+	Name       string
+	Content    string
+	Path       string
+	Executable bool
 }
 
 type Revocation struct {

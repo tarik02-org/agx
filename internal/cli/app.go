@@ -32,7 +32,10 @@ func (a *app) config() (*config.Config, error) {
 		if err != nil {
 			return nil, err
 		}
-		a.configuration, a.configErr = config.Load(root, config.Options{Builtins: a.builtins, Cache: cache})
+		a.configuration, a.configErr = config.Load(
+			root,
+			config.Options{Builtins: a.builtins, State: a.paths.State, Cache: cache},
+		)
 		a.configLoaded = true
 	}
 	return a.configuration, a.configErr
@@ -40,7 +43,7 @@ func (a *app) config() (*config.Config, error) {
 
 func (a *app) fragments() harnessConfig {
 	if a.harnesses.path != a.paths.Config {
-		a.harnesses = loadHarnesses(a.paths.Config, a.builtins)
+		a.harnesses = loadHarnesses(a.paths, a.builtins)
 	}
 	return a.harnesses
 }

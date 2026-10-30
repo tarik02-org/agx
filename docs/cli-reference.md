@@ -48,6 +48,7 @@ go before it.
 
 | Command | Description |
 | --- | --- |
+| `agx config export` | print local definitions and rules as a YAML overlay |
 | `agx config validate` | load and check the whole configuration |
 | `agx config schema [--root\|--package]` | print the JSON Schema for fragments, the root file, or package manifests |
 | `agx explain [dir] [--harness <name>]` | show why each resource is selected or removed |
@@ -75,13 +76,16 @@ go before it.
 | `agx use <id>` | enable a defined resource in a scope |
 | `agx unuse <id>` | disable a resource in a scope |
 
+Configuration commands save local definitions and rules in SQLite. YAML overlays
+remain authoritative and read-only through agx. Results report the saved
+`revision` and semantic changes; file diffs and fragment selection are removed.
+
 Commands that write take:
 
 | Flag | Meaning |
 | --- | --- |
 | `--scope user\|here\|<dir>` | where to enable: everywhere (default), here and below, or a directory |
 | `--harness <name>` | only for these harnesses; repeatable |
-| `--file <path>` | fragment for new definitions and rules, relative to the root file's directory (default: the only writable fragment, `agx.d/main.yaml` when there is none, or asked on a terminal) |
 | `--define-only` | define without enabling (`add` only) |
 | `-y`, `--yes` | write without confirming; implied without a terminal |
 | `--force` | `remove`: also remove the entries that refer to the definition (a package's enabling rule entries go without it) |
@@ -115,6 +119,7 @@ In `--header` and `--env`, a value written `!secret <id>`, `!env NAME`, or
 | `agx secret set <secret-id>` | store a keychain secret read from stdin |
 | `agx secret login <secret-id> [--no-browser]` | log in to an OAuth secret |
 | `agx secret logout <secret-id>` | delete a stored secret or OAuth login |
+| `agx secret logout --all` | delete every stored credential, including deleted definitions; keep configuration |
 | `agx secret rotate <secret-id>` | renew an OAuth secret's access token now |
 
 See [The daemon](daemon.md) and [Secrets](secrets.md).

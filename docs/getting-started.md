@@ -45,7 +45,7 @@ anything:
 agx instructions add --id pnpm --text 'Use pnpm, not npm.'
 ```
 
-agx shows the change as a diff, asks before writing it (on a terminal), and
+agx asks before saving local configuration (on a terminal), and
 writes your configuration file, creating it if needed. Without `--scope`, the
 instructions apply everywhere.
 
@@ -73,7 +73,7 @@ after `--` is the command that starts the server.
 
 A remote server takes a URL instead. GitHub's MCP server, for example, works
 with a [personal access token](https://github.com/settings/personal-access-tokens)
-that agx keeps in the OS keychain:
+that agx keeps encrypted under an OS-keychain master key:
 
 ```sh
 agx mcp add github https://api.githubcopilot.com/mcp/ --auth keychain
@@ -122,7 +122,7 @@ daemon, MCP servers, and secrets, and prints a fix for each problem.
 - Your configuration is `agx/agx.yaml` in your configuration directory
   (`~/.config` on Linux, `~/Library/Application Support` on macOS), which
   lists `agx.d/main.yaml`, where the commands above wrote your definitions.
-  They keep comments and layout; you can also edit the files by hand. See
+  They save local definitions and rules; YAML overlays remain declarative. See
   [Configuration](configuration.md).
 - The first command that needed it started the agx [daemon](daemon.md) in the
   background. It runs your MCP servers and holds their credentials.
