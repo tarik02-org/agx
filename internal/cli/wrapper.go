@@ -20,15 +20,14 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/adapters/claude"
-	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/platform"
-	"github.com/tarik02-org/agx/internal/sessions"
 )
 
 // wrapperPID holds, in a harness's environment, the PID of the agx wrapper that started it. agx
@@ -60,10 +59,10 @@ type harnessConfig struct {
 	err    error
 }
 
-func loadHarnesses(paths platform.Paths, builtins config.Builtins) harnessConfig {
+func loadHarnesses(paths platform.Paths, builtins config.Builtins, local *config.Local) harnessConfig {
 	// Harnesses come only from configuration fragments, so packages need not be installed.
 	path := paths.Config
-	c, err := config.Load(path, config.Options{Builtins: builtins, State: paths.State})
+	c, err := config.Load(path, config.Options{Builtins: builtins, Local: local})
 	if err != nil {
 		return harnessConfig{path: path, config: config.Bare(builtins), err: err}
 	}
@@ -115,16 +114,36 @@ func runHarness(
 		return err
 	}
 	mode := adapter.Classify(args)
+	if mode == config.ModePassthrough && harnesses.err != nil {
+		cmd := exec.CommandContext(ctx, executable, args...)
+		cmd.Env = guardEnviron(os.Environ())
+		return passthrough(cmd)
+	}
 	if mode == config.ModePassthrough {
-		// Without a managed launch there is no daemon to ask, so secrets resolve here when their
-		// kind allows it: command, keychain, or sops.
-		harnessArgs, harnessEnv, err := h.Resolve(mode, os.LookupEnv, func(id config.ID) (string, error) {
-			secret, ok := harnesses.config.Secrets[id]
-			if !ok {
-				return "", fmt.Errorf("unknown secret %s; passthrough commands read only configuration fragments", id)
+		client, err := daemonClient(ctx, paths, autostart(harnesses.config))
+		if err != nil {
+			return err
+		}
+		inputs := map[string]string{}
+		for _, injection := range h.Injections() {
+			if name := harnesses.config.Variable(injection.Value); name != "" {
+				if value, ok := os.LookupEnv(name); ok {
+					inputs[name] = value
+				}
 			}
-			return auth.LocalValue(ctx, auth.OpenStore(paths.State), id, secret, harnesses.config.Secrets, os.LookupEnv)
-		})
+		}
+		resolved, err := client.config.ResolvePassthrough(
+			ctx,
+			connect.NewRequest(
+				&v1.ResolvePassthroughRequest{Harness: name, NativeArguments: args, EnvironmentInputs: inputs},
+			),
+		)
+		var harnessArgs []string
+		var harnessEnv map[string]string
+		if err == nil {
+			harnessArgs, harnessEnv = resolved.Msg.Arguments, resolved.Msg.Environment
+		}
+
 		if err != nil {
 			// Native commands agx does not manage, such as --help or login, still run as the
 			// definition says, so its environment must resolve for them too.
@@ -256,27 +275,6 @@ func runHarness(
 		}
 		return environment[name]
 	})
-	// The record lets the launcher resume this launch's sessions with the same definition.
-	records := sessions.NewRecords(paths.State)
-	record := sessions.Record{
-		Launch:    p.Launch.Id,
-		Harness:   name,
-		Builtin:   h.Builtin,
-		Store:     store,
-		Directory: directory,
-		Started:   time.Now(),
-	}
-	if resumed != "" {
-		record.Sessions = []string{resumed}
-	}
-	if assigned != "" {
-		record.Sessions, record.Exact = []string{assigned}, true
-	}
-	if storeErr != nil {
-		ui.Diagnose(ui.Warn, "cannot locate the session store for resumption: %v", storeErr)
-	} else if err := records.Start(record); err != nil {
-		ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
-	}
 	link := newLease(paths, c, &v1.AttachLaunchRequest{
 		Launch:            p.Launch,
 		Grant:             p.Spawn.EnvironmentOverrides[adapters.GrantEnvironment],
@@ -285,6 +283,26 @@ func runHarness(
 		NativeArguments:   nativeArgs,
 		Executable:        executable,
 	})
+	record := &v1.RecordLaunchRequest{
+		Id:        p.Launch.Id,
+		Harness:   name,
+		Builtin:   h.Builtin,
+		Store:     store,
+		Directory: directory,
+		StartedAt: timestamppb.Now(),
+	}
+	if resumed != "" {
+		record.SessionIds = []string{resumed}
+	}
+	if assigned != "" {
+		record.SessionIds, record.Exact = []string{assigned}, true
+	}
+	if storeErr != nil {
+		ui.Diagnose(ui.Warn, "cannot locate the session store for resumption: %v", storeErr)
+	} else if err := link.record(ctx, record); err != nil {
+		ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
+	}
+
 	finished := make(chan struct{})
 	var wg sync.WaitGroup
 	start := func() {
@@ -397,7 +415,6 @@ func runHarness(
 			harness: name,
 			builtin: h.Builtin,
 			store:   store,
-			records: records,
 		}
 		connect = func(cmd *exec.Cmd) (func(), error) {
 			input, err := cmd.StdinPipe()
@@ -423,6 +440,7 @@ func runHarness(
 		}
 	}
 	runErr := supervise(cmd, start, connect)
+	finishedAt := timestamppb.Now()
 	if serverOutput != nil {
 		_ = serverOutput.Close()
 		if cmd.Process != nil {
@@ -440,8 +458,11 @@ func runHarness(
 	} else if runErr != nil {
 		finish.Outcome = &v1.FinishLaunchRequest_SpawnFailure{SpawnFailure: "native process could not start"}
 	}
-	if err := records.Finish(p.Launch.Id, time.Now()); err != nil {
-		ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
+	record.FinishedAt = finishedAt
+	if storeErr == nil {
+		if err := link.record(context.Background(), record); err != nil {
+			ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
+		}
 	}
 	if err := link.call(func(c *client) error {
 		_, err := c.launches.FinishLaunch(context.Background(), withToken(finish, p.LifecycleToken))

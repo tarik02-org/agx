@@ -277,7 +277,6 @@ func TestConfigSchema(t *testing.T) {
 
 func TestJSONCommands(t *testing.T) {
 	isolate(t, scriptingConfig)
-	t.Setenv("AGX_NO_AUTOSTART", "1")
 	t.Chdir(t.TempDir())
 	// secret set reads stdin before it reaches the daemon.
 	stdin := os.Stdin
@@ -315,6 +314,8 @@ func TestJSONCommands(t *testing.T) {
 		t.Fatalf("shims remove = %+v", shims)
 	}
 
+	okJSON(t, nil, "daemon", "stop", "--force")
+	t.Setenv("AGX_NO_AUTOSTART", "1")
 	// Without a daemon, and with autostart off, daemon-backed commands report it as JSON.
 	for _, args := range [][]string{
 		{"launch", "list"},

@@ -145,16 +145,6 @@ func (c *Catalog) refresh(entry *cachedListing, stores map[string]string) {
 	close(done)
 }
 
-// List performs a fresh local listing when no daemon is available.
-func List(
-	ctx context.Context,
-	registry adapters.Registry,
-	cache, state string,
-	stores map[string]string,
-) (Listing, error) {
-	return NewCatalog(ctx, registry, cache, state).Refresh(ctx, stores)
-}
-
 func (c *Catalog) scan(
 	ctx context.Context,
 	stores map[string]string,

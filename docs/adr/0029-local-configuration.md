@@ -14,7 +14,9 @@ a monotonic revision. Definitions have typed columns and ordered child rows for
 commands, injected values, arguments and selections. Scope rules, harness filters,
 package locks and dependency edges have their own rows. Arbitrary native settings
 and skill frontmatter remain JSON because their schemas belong to other tools.
-Commands and the web UI stage semantic edits. The existing loader validates staged local data together
+Commands and the web UI stage semantic edits; both commit through the daemon.
+The CLI reads local definitions and typed package locks through RPC, and its
+preview session has no state directory from which to open SQLite. The existing loader validates staged local data together
 with packages and YAML before a revision-checked transaction commits. Concurrent
 edits fail instead of losing a writer's changes. Reads use a consistent read-only
 transaction. Writes replace only changed definitions, scope rules and lock entries;

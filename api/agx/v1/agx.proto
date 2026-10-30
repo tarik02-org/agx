@@ -10,6 +10,10 @@ import "google/protobuf/struct.proto";
 
 // Control interface. Native MCP traffic uses separate HTTP endpoints.
 service ConfigurationService {
+  // Managed definitions and package locks for local YAML validation and edit previews.
+  rpc GetLocalConfiguration(GetLocalConfigurationRequest) returns (GetLocalConfigurationResponse);
+  // Resolve native passthrough arguments and environment without creating a managed launch.
+  rpc ResolvePassthrough(ResolvePassthroughRequest) returns (ResolvePassthroughResponse);
   rpc Validate(ValidateRequest) returns (ValidateResponse);
   rpc Resolve(ResolveRequest) returns (ResolveResponse);
   // The configuration as loaded, for browsing it: harnesses, scope directories, and files.
@@ -43,6 +47,8 @@ service PackageService {
 }
 
 service LaunchService {
+  // Management-authorized, idempotent history reporting, independent of active leases.
+  rpc RecordLaunch(RecordLaunchRequest) returns (RecordLaunchResponse);
   rpc PrepareLaunch(PrepareLaunchRequest) returns (PrepareLaunchResponse);
   rpc RenewLaunch(RenewLaunchRequest) returns (RenewLaunchResponse);
   rpc FinishLaunch(FinishLaunchRequest) returns (FinishLaunchResponse);
@@ -214,6 +220,10 @@ message CompleteDirectoryResponse {
 
 message InstallRequest {
   bool frozen = 1;
+  repeated string updates = 2;
+  bool update_all = 3;
+  // The caller performs native installation with its own PATH and harness environment.
+  bool packages_only = 4;
 }
 message InstallResponse {
   oneof state {
@@ -228,6 +238,7 @@ message PackageProgress {
   uint32 total = 3;
 }
 message PackageResult {
+  repeated string warnings = 3;
   repeated string package_ids = 1;
   repeated string lockfiles = 2;
 }
@@ -811,3 +822,43 @@ message ReadPreviewFileResponse {
   // A file larger than 1 MiB or not UTF-8 text is not returned.
   bool binary = 2;
 }
+
+message GetLocalConfigurationRequest {}
+message GetLocalConfigurationResponse {
+  google.protobuf.Struct document = 1;
+  int64 revision = 2;
+  map<string, LocalPackageLock> packages = 3;
+}
+message LocalPackageLock {
+  string path = 1;
+  string git = 2;
+  string ref = 3;
+  string source_hash = 4;
+  string subdir = 5;
+  string revision = 6;
+  string hash = 7;
+  repeated string dependencies = 8;
+}
+message ResolvePassthroughRequest {
+  string harness = 1;
+  repeated string native_arguments = 2;
+  // Sensitive: only variables referenced by this harness are accepted.
+  map<string, string> environment_inputs = 3;
+}
+message ResolvePassthroughResponse {
+  repeated string arguments = 1;
+  // Sensitive: resolved configuration environment, including stored credentials.
+  map<string, string> environment = 2;
+}
+message RecordLaunchRequest {
+  string id = 1;
+  string harness = 2;
+  string builtin = 3;
+  string store = 4;
+  string directory = 5;
+  google.protobuf.Timestamp started_at = 6;
+  google.protobuf.Timestamp finished_at = 7;
+  repeated string session_ids = 8;
+  bool exact = 9;
+}
+message RecordLaunchResponse {}

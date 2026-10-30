@@ -44,6 +44,19 @@ type Lock struct {
 // DefaultConfig is used when the root configuration file does not exist.
 const DefaultConfig = "fragments: [agx.d/*.yaml]\n"
 
+// ReadRoot reads only bootstrap settings, before a daemon can supply managed configuration.
+func ReadRoot(root string, builtins Builtins) (RootFile, error) {
+	b, err := os.ReadFile(root)
+	if errors.Is(err, fs.ErrNotExist) {
+		b, err = []byte(DefaultConfig), nil
+	}
+	if err != nil {
+		return RootFile{}, err
+	}
+	r, _, err := decode[RootFile](root, b, RootSchema, builtins)
+	return r, err
+}
+
 // Options configures Load.
 type Options struct {
 	Builtins Builtins

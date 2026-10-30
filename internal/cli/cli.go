@@ -70,7 +70,7 @@ func run(osArgs []string, stdout io.Writer) int {
 		if err := a.paths.Derive(); err != nil {
 			return err
 		}
-		return checkExplicitConfig(root, cmd, a.paths)
+		return checkExplicitConfig(root, cmd, a)
 	}
 	a.registry = builtin.Registry()
 	// builtins is complete once the command tree is, as definitions cannot shadow its commands.
@@ -231,7 +231,7 @@ func run(osArgs []string, stdout io.Writer) int {
 		if !ui.Stdout.Terminal() || !term.IsTerminal(os.Stdin.Fd()) {
 			return cmd.Help()
 		}
-		return runLauncher(cmd.Context(), a.paths, a.registry, a.harnesses)
+		return runLauncher(cmd.Context(), a)
 	}
 	root.AddCommand(
 		sessionsCommand(a),
@@ -332,8 +332,18 @@ func run(osArgs []string, stdout io.Writer) int {
 	if err := a.paths.Derive(); err != nil {
 		return exitCode(err)
 	}
+	a.completing = completing
+	a.offline = len(args) == 0 && !term.IsTerminal(os.Stdin.Fd()) ||
+		len(args) > 0 &&
+			(args[0] == "--help" || args[0] == "-h" || args[0] == "help" || args[0] == "completion" || args[0] == "man" || args[0] == "config" && len(args) > 1 && args[1] == "schema")
+	if found, _, err := root.Find(
+		args,
+	); err == nil && found != root && !found.DisableFlagParsing &&
+		(slices.Contains(args, "--help") || slices.Contains(args, "-h")) {
+		a.offline = true
+	}
 	versionOnly := len(args) == 1 && (args[0] == "--version" || args[0] == "-v")
-	if !completing && (versionOnly || len(args) > 0 && args[0] == "daemon") {
+	if !completing && (versionOnly || len(args) == 0 || len(args) > 0 && args[0] == "daemon") {
 		a.harnesses = harnessConfig{path: a.paths.Config, config: config.Bare(a.builtins)}
 	} else {
 		a.harnesses = a.fragments()
@@ -437,8 +447,8 @@ const createsConfig = "agx-creates-config"
 
 // checkExplicitConfig rejects a --config file that does not exist: only the default location
 // falls back to the default configuration, so a mistyped path is not silently empty.
-func checkExplicitConfig(root, cmd *cobra.Command, paths platform.Paths) error {
-	path := paths.Config
+func checkExplicitConfig(root, cmd *cobra.Command, a *app) error {
+	path := a.paths.Config
 	if !root.PersistentFlags().Changed("config") ||
 		cmd.Name() == cobra.ShellCompRequestCmd ||
 		cmd.Name() == cobra.ShellCompNoDescRequestCmd {
@@ -452,7 +462,7 @@ func checkExplicitConfig(root, cmd *cobra.Command, paths platform.Paths) error {
 	_, err := os.Stat(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		local, readErr := config.ReadLocal(cmd.Context(), paths.State, path)
+		local, readErr := a.localConfig()
 		if readErr != nil {
 			return readErr
 		}
@@ -493,22 +503,51 @@ func (a *app) installPackages(
 	} else {
 		progress("Installing packages")
 	}
-	result, err := packages.Install(
+	client, err := a.client(ctx)
+	if err != nil {
+		return err
+	}
+	updates := make([]string, len(ids))
+	for i, id := range ids {
+		updates[i] = string(id)
+	}
+	stream, err := client.packages.Install(
 		ctx,
-		a.paths.Config,
-		a.paths.Cache,
-		a.builtins,
-		packages.Options{Frozen: frozen, Updates: ids, UpdateAll: all, State: a.paths.State},
+		connect.NewRequest(&v1.InstallRequest{Frozen: frozen, Updates: updates, UpdateAll: all, PackagesOnly: true}),
 	)
 	if err != nil {
 		return err
 	}
-	a.configLoaded = false
-	c, err := a.config()
-	if err != nil {
+	defer func() { _ = stream.Close() }()
+	result := packages.Result{PackageIDs: []config.ID{}, Lockfiles: []string{}}
+	received := false
+	for stream.Receive() {
+		switch state := stream.Msg().State.(type) {
+		case *v1.InstallResponse_Failure:
+			return errors.New(state.Failure.Summary)
+		case *v1.InstallResponse_Result:
+			received = true
+			result.Lockfiles = append(result.Lockfiles, state.Result.Lockfiles...)
+			for _, id := range state.Result.PackageIds {
+				result.PackageIDs = append(result.PackageIDs, config.ID(id))
+			}
+			for _, warning := range state.Result.Warnings {
+				ui.Diagnose(ui.Warn, "%s", warning)
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
 		return err
 	}
+	if !received {
+		return errors.New("installation ended without a result")
+	}
+	a.configLoaded, a.localLoaded = false, false
 	if !frozen {
+		c, err := a.config()
+		if err != nil {
+			return err
+		}
 		progress("Installing native harness plugins")
 		warnings, err := a.registry.Install(ctx, c, a.paths.Cache, os.LookupEnv)
 		for _, warning := range warnings {
@@ -518,6 +557,7 @@ func (a *app) installPackages(
 			return err
 		}
 	}
+
 	return emit(result, func() error { return printInstalled(result, update) })
 }
 

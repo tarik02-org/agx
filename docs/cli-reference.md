@@ -76,7 +76,8 @@ go before it.
 | `agx use <id>` | enable a defined resource in a scope |
 | `agx unuse <id>` | disable a resource in a scope |
 
-Configuration commands save local definitions and rules in SQLite. YAML overlays
+Configuration commands read and save local definitions and rules through the
+daemon, which owns SQLite access. They require a running daemon or autostart. YAML overlays
 remain authoritative and read-only through agx. Results report the saved
 `revision` and semantic changes; file diffs and fragment selection are removed.
 

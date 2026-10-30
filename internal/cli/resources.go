@@ -189,10 +189,9 @@ func harnessCommand(a *app) *cobra.Command {
 				}
 				definition["environment"] = values
 			}
-			if err := s.Define(config.KindHarnesses, name, definition); err != nil {
+			if err := s.define(config.KindHarnesses, name, definition); err != nil {
 				return err
 			}
-			s.result.Defined = append(s.result.Defined, definitionID{Kind: config.KindHarnesses, ID: name})
 			ok, err := s.commit()
 			if err != nil {
 				return err
@@ -248,6 +247,7 @@ func (s *session) removeHarness(name string, force bool) error {
 	if err := s.RemoveHarness(name, force); err != nil {
 		return err
 	}
+	s.undefine(config.KindHarnesses, name)
 	s.result.Removed = append(s.result.Removed, definitionID{Kind: config.KindHarnesses, ID: name})
 	return nil
 }

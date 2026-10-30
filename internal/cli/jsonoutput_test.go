@@ -71,11 +71,10 @@ func shape(value any) string {
 	return fmt.Sprintf("%T", value)
 }
 
-// TestJSONShapes pins the document of each command that runs without a daemon: renaming,
+// TestJSONShapes pins command result documents: renaming,
 // dropping, or retyping a field changes its shape.
 func TestJSONShapes(t *testing.T) {
 	isolate(t, shapeConfig)
-	t.Setenv("AGX_NO_AUTOSTART", "1")
 	t.Chdir(t.TempDir())
 	source := "{column:number,line:number,path:string}"
 	for _, test := range []struct {
@@ -139,6 +138,8 @@ func TestJSONShapes(t *testing.T) {
 		}
 	}
 
+	okJSON(t, nil, "daemon", "stop", "--force")
+	t.Setenv("AGX_NO_AUTOSTART", "1")
 	var out bytes.Buffer
 	run([]string{"agx", "launch", "list", "--json"}, &out)
 	var document map[string]any
@@ -171,7 +172,6 @@ harnesses:
     environment:
       OPENAI_API_KEY: literal-harness-token
 `)
-	t.Setenv("AGX_NO_AUTOSTART", "1")
 	for _, args := range [][]string{{"mcp", "list"}, {"harness", "list"}} {
 		_, docs := runJSON(t, append([]string{"--json"}, args...)...)
 		if len(docs) != 1 || docs[0].Data == nil {

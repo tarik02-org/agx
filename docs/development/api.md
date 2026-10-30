@@ -10,17 +10,21 @@ The Go module path is `github.com/tarik02-org/agx`.
 
 - `ConfigurationService`: validate the daemon's configured root and resolve a
   directory for an optional harness, including provenance and required
-  environment names. Its web-UI APIs browse configuration, definitions, skill
+  environment names. `GetLocalConfiguration` supplies managed definitions and typed
+  package locks for CLI previews, without exposing a database connection. Its web-UI APIs browse configuration, definitions, skill
   files and directories. `UpdateConfiguration` validates and commits semantic
   local edits at an expected revision; `WriteResourceFile` separately replaces
   a configured resource file. YAML configuration editing is removed.
 - `PackageService`: web-UI APIs to install packages, streaming progress and then
   the result, and to preview and inspect Git sources, read preview files, and
-  list source refs. The CLI installs in-process instead; both paths share the
-  installer lock.
+  list source refs. CLI install/update use the same RPC, including selected updates
+  and update-all. `packages_only` lets the CLI perform native plugin installation
+  with its own PATH and harness environment after the daemon saves package locks.
 - `LaunchService`: prepare, renew, finish, and administratively revoke a launch;
   resolve and prepare thread launches of a process serving many threads; attach
   a launch, with its thread launches, to a daemon that does not hold it.
+  `RecordLaunch` saves idempotent start/completion history independently of leases
+  and configuration loading, so a replacement can record a finished wrapper.
 - `RuntimeService`: inspect redacted daemon, launch, and MCP server state, with
   `WatchRuntime` supplying live views for the web UI;
   `ListSessions` supplying cached and refreshed session history for the caller's
@@ -32,8 +36,14 @@ The Go module path is `github.com/tarik02-org/agx`.
 - `SecretService`: log in with OAuth, set a keychain secret, inspect secret
   state, rotate a credential, and log out.
 
+`ResolvePassthrough` accepts a harness, native arguments classified as passthrough,
+and only the environment inputs that definition references. It returns configured
+arguments and environment to the wrapper; no launch, lease, or MCP endpoints are
+created. This response is sensitive, like `PrepareLaunch`'s spawn environment.
+OAuth secrets remain restricted to HTTP MCP authentication.
+
 There is deliberately no client-facing `GetCredential` RPC. Upstream
-credentials and tool execution remain inside the daemon: `CallTool` returns only
+MCP credentials and tool execution remain inside the daemon: `CallTool` returns only
 the tool's result ([ADR 0022](../adr/0022-on-demand-mcp-calls.md)).
 
 ## Tool calls
@@ -67,7 +77,11 @@ reset the endpoint, opens a new one once.
 ## Local configuration
 
 `GetConfiguration` returns YAML overlay paths and the local configuration
-revision. `ListDefinitions` marks YAML/package definitions read-only; local
+revision. `GetLocalConfiguration` returns the editable local document, revision,
+and typed package locks, including data hidden by YAML overlays. SQL access and
+migrations stay in daemon processes; CLI previews combine this data with YAML
+without a state directory, and commits use `UpdateConfiguration`.
+`ListDefinitions` marks YAML/package definitions read-only; local
 ones include their editable `google.protobuf.Value`, with `source.local` set.
 Injected-value fields use `{"$env":"NAME"}`, `{"$file":"PATH"}`, or
 `{"$secret":"ID"}`; literals remain strings. Definitions may use supported

@@ -23,6 +23,20 @@ additional data. The OS keychain still holds only the master key, requested
 lazily. Database files and their parent directories are private. SQLite stores
 ciphertext, never decrypted credentials.
 
+Only daemon processes open these databases or perform migrations. CLI commands
+obtain managed definitions and locks through RPC, stage YAML validation locally,
+and send semantic changes for the daemon to validate and commit. Native plugin
+installation stays with the caller so its PATH and environment keep deciding
+which native installation is updated. Passthrough environment resolution also
+runs in the daemon. Shell completion never starts a daemon; the terminal picker
+loads configuration and history asynchronously after its first frame.
+
+Wrappers report start and finish history through a management-authorized,
+idempotent RPC independent of active leases or current configuration validity.
+The wrapper captures its exit timestamp before reconnecting; completion can start
+a daemon after a graceful stop or crash. Replaying a start cannot reopen finished
+history. There is no direct-SQLite or history-file fallback in the CLI.
+
 Connections and databases open only when used. Short transactions use SQLite's
 normal rollback journal and a busy timeout; ordinary store operations need no
 application file lock. Embedded Goose migrations define both database schemas, and sqlc generates typed
