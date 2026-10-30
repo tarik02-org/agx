@@ -15,12 +15,12 @@ import (
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
-
 	"google.golang.org/protobuf/types/known/structpb"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/configedit"
+	"github.com/tarik02-org/agx/internal/configstore"
 	"github.com/tarik02-org/agx/internal/packages"
 	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/securefs"
@@ -276,7 +276,9 @@ func (s *Server) UpdateConfiguration(
 			return nil, editError(fmt.Errorf("change %d: %w", i+1, err))
 		}
 	}
-	if _, err := session.Commit(ctx); err != nil {
+	if _, err := session.Commit(ctx, func(ctx context.Context, root string, local *config.Local) (int64, error) {
+		return configstore.Write(ctx, s.paths.State, root, local)
+	}); err != nil {
 		return nil, editError(err)
 	}
 	_, _ = s.reload()

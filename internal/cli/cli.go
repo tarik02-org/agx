@@ -21,7 +21,7 @@ import (
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/daemon"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/packages"
 	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/shims"
@@ -44,7 +44,7 @@ func run(osArgs []string, stdout io.Writer) int {
 	root := &cobra.Command{
 		Use:           "agx",
 		Short:         "Directory-scoped skills, MCP servers, and instructions",
-		Version:       daemon.Version,
+		Version:       control.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -274,12 +274,7 @@ func run(osArgs []string, stdout io.Writer) int {
 		cmd.HelpFunc()(cmd, nil)
 		return nil
 	})
-	reserved := []string{root.Name()}
-	for _, cmd := range root.Commands() {
-		reserved = append(reserved, cmd.Name())
-		reserved = append(reserved, cmd.Aliases...)
-	}
-	a.builtins = a.registry.Builtins(reserved)
+	a.builtins = a.registry.Builtins(control.CommandNames)
 	if name := invokedName(osArgs[0]); name != root.Name() {
 		if err := a.paths.Derive(); err != nil {
 			return exitCode(err)
@@ -575,15 +570,11 @@ func (a *app) installPackages(
 
 func daemonCommand(a *app) *cobra.Command {
 	command := &cobra.Command{Use: "daemon", Short: "Manage the background daemon", GroupID: "runtime"}
-	foreground := false
 	start := &cobra.Command{
 		Use:   "start",
 		Short: "Start the daemon in the background",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if foreground {
-				return serveDaemon(cmd.Context(), a.paths, a.registry, a.builtins)
-			}
 			_, c, state := probeDaemon(cmd.Context(), a.paths)
 			switch state.action() {
 			case useDaemon:
@@ -601,7 +592,6 @@ func daemonCommand(a *app) *cobra.Command {
 			return printDaemonStarted(true, logPath)
 		},
 	}
-	start.Flags().BoolVar(&foreground, "foreground", false, "serve in the foreground")
 	command.AddCommand(start)
 	status := &cobra.Command{
 		Use:   "status",
@@ -663,7 +653,7 @@ func daemonCommand(a *app) *cobra.Command {
 		Short: "Stop the daemon and start one of this build",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := restartDaemon(cmd.Context(), a.paths, a.builtins, force, grace)
+			result, err := restartDaemon(cmd.Context(), a.paths, force, grace)
 			if err != nil {
 				return err
 			}

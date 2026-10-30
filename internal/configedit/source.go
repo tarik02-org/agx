@@ -118,7 +118,7 @@ func (s *Session) Install(ctx context.Context) error {
 		s.Paths.Config,
 		s.Paths.Cache,
 		s.Builtins,
-		packages.Options{State: s.Paths.State, Local: s.Local, Stage: true},
+		packages.Options{Local: s.Local, Stage: true},
 	)
 	if err != nil {
 		return err
@@ -141,7 +141,6 @@ func (s *Session) Load() (*config.Config, error) {
 		config.Options{
 			Builtins: s.Builtins,
 			Cache:    s.Paths.Cache,
-			State:    s.Paths.State,
 			Local:    s.Local,
 		},
 	)

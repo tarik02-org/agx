@@ -9,6 +9,7 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/configstore"
 	"github.com/tarik02-org/agx/internal/packages"
 )
 
@@ -44,6 +45,14 @@ func (s *Server) Install(
 }
 
 func (s *Server) install(request *v1.InstallRequest) *v1.InstallResponse {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	local, err := configstore.Read(s.ctx, s.paths.State, s.paths.Config)
+	if err != nil {
+		return &v1.InstallResponse{
+			State: &v1.InstallResponse_Failure{Failure: diagnostic("install_failed", installFailure(err))},
+		}
+	}
 	frozen := request.Frozen
 	updates := make([]config.ID, len(request.Updates))
 	for i, id := range request.Updates {
@@ -54,14 +63,18 @@ func (s *Server) install(request *v1.InstallRequest) *v1.InstallResponse {
 		s.paths.Config,
 		s.paths.Cache,
 		s.builtins,
-		packages.Options{Frozen: frozen, State: s.paths.State, Updates: updates, UpdateAll: request.UpdateAll},
+		packages.Options{Frozen: frozen, Local: local, Updates: updates, UpdateAll: request.UpdateAll},
 	)
+	if err == nil && result.LocalLock != nil {
+		local.Lock = *result.LocalLock
+		_, err = configstore.Write(s.ctx, s.paths.State, s.paths.Config, local)
+	}
 	warnings := []string{}
 	if err == nil && !frozen && !request.PackagesOnly {
 		var c *config.Config
-		c, err = config.Load(
-			s.paths.Config,
-			config.Options{Builtins: s.builtins, State: s.paths.State, Cache: s.paths.Cache},
+		c, err = configstore.Load(
+			s.paths.Config, s.paths.State,
+			config.Options{Builtins: s.builtins, Cache: s.paths.Cache},
 		)
 		if err == nil {
 			// Skipped installations need no action from the requester; launches warn about them.

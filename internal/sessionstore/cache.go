@@ -1,4 +1,4 @@
-package sessions
+package sessionstore
 
 import (
 	"cmp"
@@ -15,6 +15,7 @@ import (
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/sessions"
 	"github.com/tarik02-org/agx/internal/storage"
 )
 
@@ -31,7 +32,7 @@ type Catalog struct {
 }
 
 type cachedListing struct {
-	listing Listing
+	listing sessions.Listing
 	ready   bool
 	used    time.Time
 	done    chan struct{}
@@ -45,49 +46,26 @@ func NewCatalog(ctx context.Context, registry adapters.Registry, cache, state st
 	}
 }
 
-// Stores resolves paths in the calling shell, before work moves to the daemon.
-func Stores(
-	registry adapters.Registry,
-	directory string,
-	lookup func(string) string,
-) (map[string]string, map[string]error) {
-	roots := map[string]string{}
-	errors := map[string]error{}
-	for _, name := range registry.Names() {
-		adapter, _ := registry.Adapter(name)
-		root, err := adapter.SessionRoot(directory, lookup)
-		if err == nil {
-			root, err = platform.Canonical(root)
-		}
-		if err != nil {
-			errors[name] = err
-		} else {
-			roots[name] = root
-		}
-	}
-	return roots, errors
-}
-
-func cloneListing(listing Listing) Listing {
+func cloneListing(listing sessions.Listing) sessions.Listing {
 	listing.Entries = slices.Clone(listing.Entries)
 	listing.Errors = maps.Clone(listing.Errors)
 	return listing
 }
 
 // Cached returns a completed snapshot without touching the filesystem.
-func (c *Catalog) Cached(stores map[string]string) (Listing, bool) {
+func (c *Catalog) Cached(stores map[string]string) (sessions.Listing, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	entry := c.listings[config.Digest(stores)]
 	if entry == nil || !entry.ready {
-		return Listing{}, false
+		return sessions.Listing{}, false
 	}
 	entry.used = time.Now()
 	return cloneListing(entry.listing), true
 }
 
 // Refresh starts or joins a scan. Cancelling a waiter leaves the shared refresh running.
-func (c *Catalog) Refresh(ctx context.Context, stores map[string]string) (Listing, error) {
+func (c *Catalog) Refresh(ctx context.Context, stores map[string]string) (sessions.Listing, error) {
 	key := config.Digest(stores)
 	c.mu.Lock()
 	entry := c.listings[key]
@@ -114,7 +92,7 @@ func (c *Catalog) Refresh(ctx context.Context, stores map[string]string) (Listin
 	c.mu.Unlock()
 	select {
 	case <-ctx.Done():
-		return Listing{}, ctx.Err()
+		return sessions.Listing{}, ctx.Err()
 	case <-done:
 	}
 	c.mu.Lock()
@@ -125,7 +103,7 @@ func (c *Catalog) Refresh(ctx context.Context, stores map[string]string) (Listin
 func (c *Catalog) refresh(entry *cachedListing, stores map[string]string) {
 	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
 	defer cancel()
-	var listing Listing
+	var listing sessions.Listing
 	var err error
 	select {
 	case c.workers <- struct{}{}:
@@ -148,12 +126,12 @@ func (c *Catalog) refresh(entry *cachedListing, stores map[string]string) {
 func (c *Catalog) scan(
 	ctx context.Context,
 	stores map[string]string,
-	previous Listing,
-) (Listing, error) {
+	previous sessions.Listing,
+) (sessions.Listing, error) {
 	type storeResult struct {
 		name     string
 		sessions []adapters.Session
-		stats    Stats
+		stats    sessions.Stats
 		err      error
 	}
 	names := slices.Sorted(maps.Keys(stores))
@@ -185,9 +163,9 @@ func (c *Catalog) scan(
 	}
 	_ = group.Wait()
 	if err := ctx.Err(); err != nil {
-		return Listing{}, err
+		return sessions.Listing{}, err
 	}
-	listing := Listing{Entries: []Entry{}, Errors: map[string]error{}}
+	listing := sessions.Listing{Entries: []sessions.Entry{}, Errors: map[string]error{}}
 	byKey := map[[2]string]int{}
 	canonical := map[string]string{}
 	for _, result := range results {
@@ -215,7 +193,7 @@ func (c *Catalog) scan(
 				continue
 			}
 			byKey[key] = len(listing.Entries)
-			listing.Entries = append(listing.Entries, Entry{
+			listing.Entries = append(listing.Entries, sessions.Entry{
 				Session: session, Builtin: result.name, Harness: result.name, Store: stores[result.name],
 			})
 		}
@@ -230,9 +208,9 @@ func (c *Catalog) scan(
 		}
 	}
 	if err := NewRecords(c.state).Match(ctx, listing.Entries, listing.Errors, time.Now(), stores); err != nil {
-		return Listing{}, err
+		return sessions.Listing{}, err
 	}
-	slices.SortStableFunc(listing.Entries, func(a, b Entry) int {
+	slices.SortStableFunc(listing.Entries, func(a, b sessions.Entry) int {
 		return cmp.Or(b.Updated.Compare(a.Updated), cmp.Compare(a.Builtin, b.Builtin), cmp.Compare(a.ID, b.ID))
 	})
 	return listing, nil

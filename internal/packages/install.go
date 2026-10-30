@@ -49,7 +49,6 @@ type Result struct {
 }
 
 type Options struct {
-	State string
 	Local *config.Local
 	// Frozen permits no lockfile changes.
 	Frozen bool
@@ -78,7 +77,7 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 	defer func() { _ = lock.Unlock() }()
 	c, err := config.Load(
 		root,
-		config.Options{Builtins: builtins, State: opts.State, Local: opts.Local},
+		config.Options{Builtins: builtins, Local: opts.Local},
 	)
 	if err != nil {
 		return result, err
@@ -274,10 +273,7 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 		}
 	case !frozen:
 		if local, ok := locks[""]; ok {
-			c.Local.Lock = local
-			if _, err := config.WriteLocal(ctx, opts.State, root, c.Local); err != nil {
-				return result, err
-			}
+			result.LocalLock = &local
 			delete(locks, "")
 		}
 		if err := writeLocks(locks); err != nil {

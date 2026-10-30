@@ -1,10 +1,11 @@
-package config
+package configstore
 
 import (
 	"context"
 	"database/sql"
 	"strconv"
 
+	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/storage/statedb"
 )
 
@@ -107,7 +108,7 @@ func writeLocalSelection(
 	action string,
 	selection map[string]any,
 ) error {
-	for _, kind := range SelectionKinds {
+	for _, kind := range config.SelectionKinds {
 		for i, value := range localArray(selection[string(kind)]) {
 			var reference, inline sql.NullString
 			if text, ok := value.(string); ok {

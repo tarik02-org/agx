@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -15,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime/debug"
 	"slices"
 	"sort"
 	"strconv"
@@ -33,49 +31,18 @@ import (
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/configstore"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/mcpruntime"
 	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/secretstore"
 	"github.com/tarik02-org/agx/internal/securefs"
-	"github.com/tarik02-org/agx/internal/sessions"
+	"github.com/tarik02-org/agx/internal/sessionstore"
 	"github.com/tarik02-org/agx/internal/storage"
 )
 
-// Version is set at build time with -ldflags "-X agx/internal/daemon.Version=..."; otherwise it
-// is the main module's version, which go install module@version records.
-var Version = "dev"
-
-func init() {
-	if Version != "dev" {
-		return
-	}
-	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
-		Version = strings.TrimPrefix(info.Main.Version, "v")
-	}
-}
-
-// ErrUnavailable marks ReadDiscovery errors that leave no daemon to reach: it is not running,
-// or its discovery file is invalid.
-var ErrUnavailable = errors.New("daemon unavailable")
-
-// unavailable keeps a discovery error's own message while matching ErrUnavailable.
-type unavailable string
-
-func (u unavailable) Error() string { return string(u) }
-
-func (u unavailable) Is(target error) bool { return target == ErrUnavailable }
-
 // historyRetention keeps ended launches around for status inspection.
 const historyRetention = time.Hour
-
-type Discovery struct {
-	Version    string `json:"version"`
-	InstanceID string `json:"instance_id"`
-	URL        string `json:"url"`
-	Token      string `json:"token"`
-	Config     string `json:"config"`
-	// PID is the daemon's process, for diagnosing one that stopped answering.
-	PID int `json:"pid,omitempty"`
-}
 
 // verifier hashes a launch credential, so the daemon never holds one it could leak.
 func verifier(value string) [32]byte { return sha256.Sum256([]byte(value)) }
@@ -118,7 +85,7 @@ type Server struct {
 	config    *config.Config
 	configErr error
 	inputs    *config.Inputs
-	discovery Discovery
+	discovery control.Discovery
 	manager   *auth.Manager
 	launches  map[string]*launch
 	ctx       context.Context
@@ -131,7 +98,7 @@ type Server struct {
 	revoked map[string]time.Time
 	// attachMu serializes AttachLaunch.
 	attachMu sync.Mutex
-	// grace, when set by a stop, replaces ShutdownGrace.
+	// grace, when set by a stop, replaces control.ShutdownGrace.
 	grace time.Duration
 	drain *drain
 	// stopped is set once a stopping daemon collected its launches; new launches are refused
@@ -146,7 +113,7 @@ type Server struct {
 	changed *notifier
 	// clients pools the daemon's own MCP client sessions for ListTools and CallTool.
 	clients  *clientPool
-	sessions *sessions.Catalog
+	sessions *sessionstore.Catalog
 	// shared runs the stdio MCP servers launches share.
 	shared *mcpruntime.Shared
 	// editMu serializes planning and applying configuration changes, so an apply checks and
@@ -203,7 +170,7 @@ func Serve(
 	// Discovery left behind names the port of a daemon that was killed, which its launches'
 	// harnesses use; the state file names the port of one that stopped.
 	port := 0
-	if previous, err := ReadDiscovery(paths); err == nil {
+	if previous, err := control.ReadDiscovery(paths); err == nil {
 		if u, err := url.Parse(previous.URL); err == nil {
 			port, _ = strconv.Atoi(u.Port())
 		}
@@ -214,9 +181,9 @@ func Serve(
 		return err
 	}
 	inputs := &config.Inputs{}
-	c, err := config.Load(
-		paths.Config,
-		config.Options{Builtins: builtins, State: paths.State, Cache: paths.Cache, Inputs: inputs},
+	c, err := configstore.Load(
+		paths.Config, paths.State,
+		config.Options{Builtins: builtins, Cache: paths.Cache, Inputs: inputs},
 	)
 	configErr := err
 	if err != nil {
@@ -241,8 +208,8 @@ func Serve(
 	// Launches and their MCP servers outlive ctx until shutdown ends them.
 	serverCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
-	discovery := Discovery{
-		Version:    Version,
+	discovery := control.Discovery{
+		Version:    control.Version,
 		InstanceID: securefs.Token(),
 		URL:        "http://" + listener.Addr().String(),
 		Token:      securefs.Token(),
@@ -265,11 +232,11 @@ func Serve(
 		revoked:   state.Revoked,
 		port:      listener.Addr().(*net.TCPAddr).Port,
 		clients:   newClientPool(),
-		sessions:  sessions.NewCatalog(serverCtx, registry, paths.Cache, paths.State),
+		sessions:  sessionstore.NewCatalog(serverCtx, registry, paths.Cache, paths.State),
 		icons:     newMCPIcons(storage.Cache(paths.Cache)),
 		changed:   &notifier{},
 	}
-	s.shared = mcpruntime.NewShared(serverCtx, Version, s.changed.notify)
+	s.shared = mcpruntime.NewShared(serverCtx, control.Version, s.changed.notify)
 	if port != 0 && port != s.port {
 		fmt.Fprintf(
 			os.Stderr,
@@ -291,8 +258,8 @@ func Serve(
 		s.cleanCache(time.Now())
 	})
 	defer sweep.Stop()
-	slog.Info("daemon started", "version", Version, "pid", os.Getpid(), "url", discovery.URL)
-	s.manager = auth.New(discovery.URL+"/oauth/callback", auth.OpenStore(paths.State))
+	slog.Info("daemon started", "version", control.Version, "pid", os.Getpid(), "url", discovery.URL)
+	s.manager = auth.New(discovery.URL+"/oauth/callback", secretstore.Open(paths.State))
 	mux := http.NewServeMux()
 	interceptor := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
@@ -436,7 +403,7 @@ var startsWork = map[string]bool{
 // settle waits for the grace period until requests in flight finished, or ctx ends.
 func (s *Server) settle(ctx context.Context) {
 	s.mu.Lock()
-	grace := ShutdownGrace
+	grace := control.ShutdownGrace
 	if s.grace > 0 {
 		grace = s.grace
 	}
@@ -487,9 +454,9 @@ func (s *Server) reload() (*config.Config, error) {
 		return current, nil
 	}
 	inputs = &config.Inputs{}
-	c, err := config.Load(
-		s.paths.Config,
-		config.Options{Builtins: s.builtins, State: s.paths.State, Cache: s.paths.Cache, Inputs: inputs},
+	c, err := configstore.Load(
+		s.paths.Config, s.paths.State,
+		config.Options{Builtins: s.builtins, Cache: s.paths.Cache, Inputs: inputs},
 	)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -828,7 +795,7 @@ func (s *Server) runtime() *v1.RuntimeView {
 		endpoint *mcpruntime.Endpoint
 	}
 	s.mu.Lock()
-	view := &v1.RuntimeView{DaemonInstanceId: s.discovery.InstanceID, Version: Version}
+	view := &v1.RuntimeView{DaemonInstanceId: s.discovery.InstanceID, Version: control.Version}
 	if s.configErr != nil {
 		view.Diagnostics = append(
 			view.Diagnostics,
@@ -1036,32 +1003,6 @@ func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 	}
 	out.Settings = harnessSettings(s)
 	return out
-}
-
-// ReadDiscovery reads the authenticated endpoint for this configuration.
-func ReadDiscovery(paths platform.Paths) (Discovery, error) {
-	var d Discovery
-	path := filepath.Join(paths.Runtime, "daemon.json")
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return d, unavailable("daemon unavailable; run agx daemon start")
-	}
-	if err := json.Unmarshal(b, &d); err != nil {
-		return d, unavailable("invalid daemon discovery; restart the daemon")
-	}
-	u, err := url.Parse(d.URL)
-	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.User != nil || u.Path != "" ||
-		u.RawQuery != "" ||
-		u.Fragment != "" ||
-		d.Token == "" ||
-		d.InstanceID == "" {
-		return d, unavailable("invalid daemon discovery")
-	}
-	port, err := strconv.Atoi(u.Port())
-	if err != nil || port < 1 || port > 65535 {
-		return d, unavailable("invalid daemon port")
-	}
-	return d, nil
 }
 
 // removeDiscovery deletes the discovery file. On Windows a command reading it at that moment

@@ -59,6 +59,11 @@ func isolate(t *testing.T, configuration string) string {
 		t.Setenv(name, value)
 	}
 	t.Setenv("AGX_TEST_DAEMON", "1")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AGX_DAEMON", executable)
 	t.Cleanup(func() { stopTestDaemons(t, filepath.Join(dir, "cache")) })
 	return fragment
 }

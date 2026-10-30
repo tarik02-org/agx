@@ -1,8 +1,9 @@
-package config
+package configstore
 
 import (
 	"context"
 
+	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/storage/statedb"
 )
 
@@ -192,7 +193,7 @@ func readLocalSelections(
 	ctx context.Context,
 	q *statedb.Queries,
 	root string,
-	out *Local,
+	out *config.Local,
 	defs map[string]localDefinition,
 ) error {
 	rows, err := q.ListLocalScopes(ctx, root)
@@ -220,7 +221,7 @@ func readLocalSelections(
 	for _, r := range selections {
 		node := defs[r.Key]
 		target := node.body
-		if node.kind != KindBundles {
+		if node.kind != config.KindBundles {
 			target = localMap(target, r.Action)
 		}
 		var value any = r.Reference.String

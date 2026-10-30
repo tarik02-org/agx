@@ -8,6 +8,7 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/configstore"
 )
 
 func (s *Server) GetLocalConfiguration(
@@ -19,7 +20,7 @@ func (s *Server) GetLocalConfiguration(
 	if err == nil {
 		local = c.Local
 	} else {
-		local, err = config.ReadLocal(ctx, s.paths.State, s.paths.Config)
+		local, err = configstore.Read(ctx, s.paths.State, s.paths.Config)
 	}
 	if err != nil {
 		return nil, configError(err)

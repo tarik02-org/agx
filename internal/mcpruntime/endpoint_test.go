@@ -19,6 +19,7 @@ import (
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/mcpruntime"
+	"github.com/tarik02-org/agx/internal/secretstore"
 )
 
 func TestSopsFailureNeedsAuth(t *testing.T) {
@@ -59,7 +60,7 @@ func TestSopsFailureNeedsAuth(t *testing.T) {
 		server,
 		secrets,
 		nil,
-		auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir())),
+		auth.New("http://127.0.0.1:1/callback", secretstore.Open(t.TempDir())),
 		nil,
 		"",
 	)
@@ -101,7 +102,7 @@ func TestEnvironmentAuth(t *testing.T) {
 		server,
 		nil,
 		map[string]string{"REMOTE_TOKEN": "env-token"},
-		auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir())),
+		auth.New("http://127.0.0.1:1/callback", secretstore.Open(t.TempDir())),
 		nil,
 		"",
 	)
@@ -166,7 +167,7 @@ func TestRemoteRefreshesRejectedToken(t *testing.T) {
 		manager.Callback(w, r)
 	}))
 	t.Cleanup(callback.Close)
-	manager = auth.New(callback.URL+"/oauth/callback", auth.OpenStore(t.TempDir()))
+	manager = auth.New(callback.URL+"/oauth/callback", secretstore.Open(t.TempDir()))
 	secret := config.Secret{Kind: "oauth", Issuer: upstream.URL, ClientID: "public-fixture"}
 	attempt, err := manager.Begin(t.Context(), "token", secret, upstream.URL+"/mcp")
 	if err != nil {

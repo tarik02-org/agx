@@ -1,6 +1,6 @@
 # The daemon
 
-agx keeps a small background process, the daemon, running as you. It:
+The `agx` client starts `agxd`, a background daemon running as you. It:
 
 - runs your local MCP servers and connects to remote ones;
 - holds MCP credentials and OAuth tokens, and refreshes them;
@@ -45,6 +45,12 @@ nightly commit counts compared when the base versions are equal. Unknown
 versions such as `dev` are unordered. A daemon that is too busy to answer in
 time is left running. `agx daemon status` only reports its state.
 
+The client finds `agxd` beside the real `agx` executable, following symlinks and
+Windows shim targets. Install or upgrade both binaries together. To use another
+location, set `AGX_DAEMON` to the absolute path of `agxd`; there is no PATH search.
+Local help, version, schema and YAML-only validation work without the helper.
+Harness launches still require a daemon.
+
 ## Its environment
 
 The daemon inherits the environment of the command that started it. That
@@ -62,7 +68,8 @@ To run the daemon under a service manager such as launchd or systemd, start it
 in the foreground:
 
 ```sh
-agx daemon start --foreground
+agxd
+# or: agxd --config /path/to/agx.yaml --cache /path/to/cache
 ```
 
 and turn off automatic starting in the root `agx.yaml`, so commands fail instead
@@ -76,8 +83,9 @@ daemon:
 `AGX_NO_AUTOSTART=1` in the environment does the same for one shell.
 
 Each canonical root configuration path gets its own daemon within a cache.
-Discovery, the lock, log, and saved port and revocations live in
-`<cache>/runtime/<root-hash>/`, where `root-hash` is a short hash of that path.
+Discovery, the lock and log live in `<cache>/runtime/<root-hash>/`, where
+`root-hash` is a short hash of that path. The saved port and revocations live in
+configuration-scoped rows in `<state>/state.db`.
 Configurations can run at the same time and share the package and artifact cache.
 
 Starting is safe to race. A starting daemon takes its runtime directory's lock before it

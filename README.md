@@ -160,8 +160,14 @@ installs a `<name>` link to agx (`link`) and pins its `executable` to the packag
 
 ```sh
 go install github.com/tarik02-org/agx/cmd/agx@latest
+go install github.com/tarik02-org/agx/cmd/agxd@latest
 ```
 </details>
+
+Install `agx` and `agxd` from the same version into the same directory. Release
+archives and Nix packages include both. `agx` is the client; `agxd` owns the
+database and runs in the background. See [daemon setup](docs/daemon.md) for a
+custom executable location or service manager.
 
 ## Get started
 

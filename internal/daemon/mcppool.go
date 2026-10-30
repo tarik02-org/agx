@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/mcpruntime"
 )
 
@@ -169,7 +170,7 @@ func connectHandler(ctx context.Context, handler http.Handler) (*mcp.ClientSessi
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = server.Serve(listener) }()
 	transport := &http.Transport{DialContext: listener.dial, ForceAttemptHTTP2: false}
-	client := mcp.NewClient(&mcp.Implementation{Name: "agx", Version: Version}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "agx", Version: control.Version}, nil)
 	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
 		Endpoint:             "http://agx.invalid/",
 		HTTPClient:           &http.Client{Transport: transport},

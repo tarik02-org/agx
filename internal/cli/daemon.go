@@ -5,53 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
-	"os/signal"
 	"time"
 
-	"github.com/charmbracelet/x/term"
-
-	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/cli/ui"
-	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/daemon"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/platform"
 )
-
-// serveDaemon serves the daemon in this process. The first stop signal shuts it down
-// gracefully, keeping its launches for the next daemon; a second one shuts it down at once.
-func serveDaemon(
-	ctx context.Context,
-	paths platform.Paths,
-	registry adapters.Registry,
-	builtins config.Builtins,
-) error {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, platform.StopSignals(term.IsTerminal(os.Stdin.Fd()))...)
-	defer signal.Stop(signals)
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	stop := make(chan struct{})
-	go func() {
-		select {
-		case <-signals:
-		case <-ctx.Done():
-			return
-		}
-		close(stop)
-		select {
-		case <-signals:
-			cancel()
-		case <-ctx.Done():
-		}
-	}()
-	return daemon.Serve(ctx, stop, paths, registry, builtins)
-}
 
 // daemonGone reports whether err says no daemon answers: none runs, or it just exited.
 func daemonGone(err error) bool {
 	var dial *net.OpError
-	return errors.Is(err, daemon.ErrUnavailable) || errors.As(err, &dial) && dial.Op == "dial"
+	return errors.Is(err, control.ErrUnavailable) || errors.As(err, &dial) && dial.Op == "dial"
 }
 
 // daemonRestarted is the daemon restart document.
@@ -70,11 +34,10 @@ type daemonRestarted struct {
 func restartDaemon(
 	ctx context.Context,
 	paths platform.Paths,
-	builtins config.Builtins,
 	force bool,
 	grace time.Duration,
 ) (daemonRestarted, error) {
-	result := daemonRestarted{Version: daemon.Version}
+	result := daemonRestarted{Version: control.Version}
 	c, err := newClient(paths)
 	if err == nil {
 		result.KeptLaunches, err = stopDaemon(ctx, c, force, grace)
@@ -104,7 +67,7 @@ func printDaemonStarted(started bool, logPath string) error {
 		Started bool   `json:"started"`
 		Version string `json:"version"`
 		Log     string `json:"log"`
-	}{started, daemon.Version, logPath}
+	}{started, control.Version, logPath}
 	return emit(document, func() error {
 		out := ui.Stdout
 		message := "Daemon started."

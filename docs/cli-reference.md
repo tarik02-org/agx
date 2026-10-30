@@ -110,7 +110,8 @@ In `--header` and `--env`, a value written `!secret <id>`, `!env NAME`, or
 | Command | Description |
 | --- | --- |
 | `agx doctor [dir] [--all]` | check configuration, harnesses, daemon, MCP servers, secrets, and shims |
-| `agx daemon start [--foreground]` | start the daemon |
+| `agx daemon start` | start the daemon |
+| `agxd [--config path] [--cache path]` | serve in the foreground; also accepts `--version` |
 | `agx daemon status` | show whether it runs, its version, and its launches |
 | `agx daemon stop [--force] [--timeout <duration>]` | stop it, keeping running launches unless `--force` |
 | `agx daemon restart [--force] [--timeout <duration>]` | stop it and start this version |

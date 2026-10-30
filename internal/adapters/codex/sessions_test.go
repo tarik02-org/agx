@@ -9,7 +9,7 @@ import (
 
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/adapters/codex"
-	"github.com/tarik02-org/agx/internal/sessions"
+	"github.com/tarik02-org/agx/internal/sessionstore"
 )
 
 func TestSessions(t *testing.T) {
@@ -18,7 +18,7 @@ func TestSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("CODEX_HOME", home)
-	index, err := sessions.OpenIndex(t.Context(), filepath.Join(t.TempDir(), "cache.db"), "codex")
+	index, err := sessionstore.OpenIndex(t.Context(), filepath.Join(t.TempDir(), "cache.db"), "codex")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestSessionsWithoutStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	index, err := sessions.OpenIndex(t.Context(), filepath.Join(t.TempDir(), "cache.db"), "codex")
+	index, err := sessionstore.OpenIndex(t.Context(), filepath.Join(t.TempDir(), "cache.db"), "codex")
 	if err != nil {
 		t.Fatal(err)
 	}

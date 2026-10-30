@@ -8,7 +8,6 @@ import (
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/securefs"
-	"github.com/tarik02-org/agx/internal/storage"
 )
 
 // WriteFile replaces a file of a local skill or instructions definition: one inside the
@@ -43,7 +42,7 @@ func ContentFile(c *config.Config, paths platform.Paths, path string) (local, fo
 		return false, false
 	}
 	if paths.State != "" {
-		database, err := platform.Canonical(storage.State(paths.State))
+		database, err := platform.Canonical(filepath.Join(paths.State, "state.db"))
 		if err == nil &&
 			(path == database || path == database+"-journal" || path == database+"-wal" || path == database+"-shm" || path == database+".migrate.lock") {
 			return false, false

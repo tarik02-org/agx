@@ -23,7 +23,11 @@ additional data. The OS keychain still holds only the master key, requested
 lazily. Database files and their parent directories are private. SQLite stores
 ciphertext, never decrypted credentials.
 
-Only daemon processes open these databases or perform migrations. CLI commands
+Only `agxd` daemon processes open these databases or perform migrations. The
+`agx` client has no SQLite or Goose dependency. Persistence lives in
+`configstore`, `secretstore` and `sessionstore`, separate from configuration
+loading, authentication and session models so a future local runtime can reuse
+the core without durable storage. CLI commands
 obtain managed definitions and locks through RPC, stage YAML validation locally,
 and send semantic changes for the daemon to validate and commit. Native plugin
 installation stays with the caller so its PATH and environment keep deciding
@@ -49,8 +53,10 @@ and the daemon ownership lock remain files, because callers need them before
 connecting. Resource contents, immutable artifacts, and portable package
 lockfiles remain files as well.
 
-Earlier JSON/JSONL stores and experimental SQLite layouts have no compatibility
-reader or import;
+The unshipped runtime and configuration schemas are squashed into one initial
+state migration. Future released upgrades use forward migrations. Earlier
+JSON/JSONL stores and experimental SQLite layouts have no compatibility reader
+or import;
 existing logins and launch associations must be recreated. Cache data rebuilds
 from harness stores. A corrupt durable database is an error, not a reason to
 silently replace credentials or revocations.

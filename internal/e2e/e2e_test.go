@@ -31,7 +31,7 @@ const (
 )
 
 // binaries holds the executables TestMain builds; tools is the directory of those found on PATH.
-var binaries struct{ agx, oldAgx, harness, mcp, tools string }
+var binaries struct{ agx, oldAgx, daemon, oldDaemon, harness, mcp, tools string }
 
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "agx-e2e-bin-")
@@ -45,7 +45,28 @@ func TestMain(m *testing.M) {
 		}
 		return filepath.Join(dir, name)
 	}
-	binaries.agx, binaries.oldAgx = exe("agx"), exe("agx-old")
+	binaries.agx, binaries.oldAgx = filepath.Join(
+		dir,
+		"current",
+		filepath.Base(exe("agx")),
+	), filepath.Join(
+		dir,
+		"old",
+		filepath.Base(exe("agx")),
+	)
+	binaries.daemon, binaries.oldDaemon = filepath.Join(
+		filepath.Dir(binaries.agx),
+		filepath.Base(exe("agxd")),
+	), filepath.Join(
+		filepath.Dir(binaries.oldAgx),
+		filepath.Base(exe("agxd")),
+	)
+	for _, bin := range []string{binaries.agx, binaries.oldAgx} {
+		if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
 	binaries.harness, binaries.mcp = exe("fakeharness"), exe("fakemcp")
 	binaries.tools = filepath.Join(dir, "tools")
 	sops := filepath.Join(binaries.tools, filepath.Base(exe("sops")))
@@ -53,10 +74,12 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	const versionFlag = "-ldflags=-X github.com/tarik02-org/agx/internal/daemon.Version="
+	const versionFlag = "-ldflags=-X github.com/tarik02-org/agx/internal/control.Version="
 	for _, b := range [][]string{
 		{binaries.agx, versionFlag + version, "github.com/tarik02-org/agx/cmd/agx"},
 		{binaries.oldAgx, versionFlag + oldVersion, "github.com/tarik02-org/agx/cmd/agx"},
+		{binaries.daemon, versionFlag + version, "github.com/tarik02-org/agx/cmd/agxd"},
+		{binaries.oldDaemon, versionFlag + oldVersion, "github.com/tarik02-org/agx/cmd/agxd"},
 		{binaries.harness, "./testdata/fakeharness"},
 		{binaries.mcp, "./testdata/fakemcp"},
 		{sops, "../auth/testdata/fakesops"},

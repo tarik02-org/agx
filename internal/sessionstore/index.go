@@ -1,7 +1,7 @@
 // Package sessions lists the harnesses' own sessions for the launcher and agx sessions: it
 // caches what adapters parse from their stores, and remembers which harness definition started
 // each session.
-package sessions
+package sessionstore
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/tarik02-org/agx/internal/adapters"
+	"github.com/tarik02-org/agx/internal/sessions"
 	"github.com/tarik02-org/agx/internal/storage"
 	"github.com/tarik02-org/agx/internal/storage/cachedb"
 )
@@ -31,15 +32,8 @@ type Index struct {
 	original map[string]indexEntry
 	seen     map[string]bool
 	changed  map[string]bool
-	stats    Stats
+	stats    sessions.Stats
 	err      error
-}
-
-// Stats counts what one listing did with session files.
-type Stats struct {
-	Parsed    int `json:"parsed"`
-	Cached    int `json:"cached"`
-	Malformed int `json:"malformed"`
 }
 
 type indexEntry struct {
@@ -169,7 +163,7 @@ func (x *Index) cached(path string, info fs.FileInfo) (session adapters.Session,
 		cached.Modified != info.ModTime().UnixNano() {
 		return adapters.Session{}, false, false
 	}
-	x.count(func(s *Stats) {
+	x.count(func(s *sessions.Stats) {
 		s.Cached++
 		if cached.Malformed {
 			s.Malformed++
@@ -181,13 +175,13 @@ func (x *Index) cached(path string, info fs.FileInfo) (session adapters.Session,
 	return *cached.Session, true, true
 }
 
-func (x *Index) count(update func(*Stats)) {
+func (x *Index) count(update func(*sessions.Stats)) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	update(&x.stats)
 }
 
-func (x *Index) Stats() Stats {
+func (x *Index) Stats() sessions.Stats {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	return x.stats

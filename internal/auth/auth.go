@@ -17,7 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zalando/go-keyring"
 	"golang.org/x/oauth2"
 
 	"github.com/tarik02-org/agx/internal/config"
@@ -42,7 +41,7 @@ type Manager struct {
 	// and MCP server start resolves them.
 	helpers  map[string]helperValue
 	callback string
-	store    *Store
+	store    Store
 }
 
 // helperTTL is how long a command secret's value is reused before its command runs again.
@@ -82,7 +81,7 @@ type Status struct {
 
 // New returns a manager whose OAuth logins return to callback and whose stored secrets live in
 // store.
-func New(callback string, store *Store) *Manager {
+func New(callback string, store Store) *Manager {
 	return &Manager{
 		store:    store,
 		pending:  map[string]*Attempt{},
@@ -184,7 +183,7 @@ func (m *Manager) ForgetHelpers() {
 // the caller's environment.
 func LocalValue(
 	ctx context.Context,
-	store *Store,
+	store Store,
 	id config.ID,
 	s config.Secret,
 	secrets map[config.ID]config.Secret,
@@ -199,7 +198,7 @@ func LocalValue(
 		})
 	case "keychain":
 		value, err := store.Get(key(id, s))
-		if errors.Is(err, errNotStored) {
+		if errors.Is(err, ErrNotStored) {
 			return "", fmt.Errorf("keychain secret %s is not stored; store it with agx secret set %s", id, id)
 		} else if err != nil {
 			return "", fmt.Errorf("keychain secret %s: %w", id, err)
@@ -377,7 +376,7 @@ func (m *Manager) Rotate(ctx context.Context, id config.ID, a config.Secret) (ti
 func (m *Manager) stored(k string, id config.ID) (credential, error) {
 	var saved credential
 	data, err := m.store.Get(k)
-	if errors.Is(err, errNotStored) {
+	if errors.Is(err, ErrNotStored) {
 		return credential{}, fmt.Errorf("secret %s needs login; run agx secret login %s: %w", id, id, ErrNoCredential)
 	}
 	if err != nil {
@@ -563,9 +562,9 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 		}
 		data, err := m.store.Get(k)
 		switch {
-		case errors.Is(err, errNotStored) && a.Implicit && !required:
+		case errors.Is(err, ErrNotStored) && a.Implicit && !required:
 			// On-demand OAuth needs no login until its server asks for one.
-		case errors.Is(err, errNotStored):
+		case errors.Is(err, ErrNotStored):
 			s.State = "needs_login"
 		case err != nil:
 			s.State = "unavailable"
@@ -646,50 +645,4 @@ func SystemEnvironment() []string {
 		}
 	}
 	return env
-}
-
-// keychainTimeout bounds an OS keychain call, which blocks while the keychain is locked or shows
-// an access prompt, so callers get an explanation before their own deadline instead of a timeout.
-var keychainTimeout = 10 * time.Second
-
-// keychainAdvice tells how to proceed after an OS keychain failure.
-const keychainAdvice = "unlock the OS keychain (or start its secret service) and retry, " +
-	"or use a secret of kind command or sops instead"
-
-func keychainGet(k string) (string, error) {
-	return keychainCall(func() (string, error) { return keyring.Get("agx", k) })
-}
-
-func keychainSet(k, value string) error {
-	_, err := keychainCall(func() (struct{}, error) { return struct{}{}, keyring.Set("agx", k, value) })
-	return err
-}
-
-// keychainCall runs op with keychainTimeout. A call that times out keeps running in the
-// background, as keychain APIs cannot be cancelled; its result is discarded.
-func keychainCall[T any](op func() (T, error)) (T, error) {
-	type result struct {
-		value T
-		err   error
-	}
-	done := make(chan result, 1)
-	go func() {
-		value, err := op()
-		done <- result{value, err}
-	}()
-	timer := time.NewTimer(keychainTimeout)
-	defer timer.Stop()
-	select {
-	case r := <-done:
-		if r.err != nil && !errors.Is(r.err, keyring.ErrNotFound) {
-			return r.value, fmt.Errorf("cannot use the OS keychain: %w; %s", r.err, keychainAdvice)
-		}
-		return r.value, r.err
-	case <-timer.C:
-		var zero T
-		return zero, fmt.Errorf(
-			"the OS keychain did not answer within %s; it may be locked or waiting for an access prompt: %s",
-			keychainTimeout, keychainAdvice,
-		)
-	}
 }

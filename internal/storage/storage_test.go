@@ -61,11 +61,11 @@ func TestConcurrentInitialization(t *testing.T) {
 
 func TestMigrationsPreserveStateAndRollbackFailure(t *testing.T) {
 	path := State(t.TempDir())
-	initial, err := fs.ReadFile(migrations, "state/001_runtime.sql")
+	initial, err := fs.ReadFile(migrations, "state/001_state.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	base := fstest.MapFS{"001_runtime.sql": &fstest.MapFile{Data: initial}}
+	base := fstest.MapFS{"001_state.sql": &fstest.MapFile{Data: initial}}
 	if err := migrate(t.Context(), path, base); err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestMigrationsPreserveStateAndRollbackFailure(t *testing.T) {
 	}
 	_ = db.Close()
 	schema := fstest.MapFS{
-		"001_runtime.sql": &fstest.MapFile{Data: initial},
+		"001_state.sql": &fstest.MapFile{Data: initial},
 		"002_upgrade.sql": &fstest.MapFile{
 			Data: []byte(
 				"-- +goose Up\nALTER TABLE secrets ADD COLUMN label TEXT NOT NULL DEFAULT '';\nPRAGMA user_version = 2;\n",
@@ -225,7 +225,7 @@ func testDatabasePermissions(t *testing.T, readOnly bool) {
 	}
 }
 
-func TestReadUpgradesExistingButLeavesMissingDatabaseAbsent(t *testing.T) {
+func TestReadExistingLeavesMissingDatabaseAbsent(t *testing.T) {
 	path := State(t.TempDir())
 	if _, err := OpenExisting(t.Context(), path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("absent read = %v", err)
@@ -233,11 +233,11 @@ func TestReadUpgradesExistingButLeavesMissingDatabaseAbsent(t *testing.T) {
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("read created database: %v", err)
 	}
-	initial, err := fs.ReadFile(migrations, "state/001_runtime.sql")
+	initial, err := fs.ReadFile(migrations, "state/001_state.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	schema := fstest.MapFS{"001_runtime.sql": &fstest.MapFile{Data: initial}}
+	schema := fstest.MapFS{"001_state.sql": &fstest.MapFile{Data: initial}}
 	if err := migrate(t.Context(), path, schema); err != nil {
 		t.Fatal(err)
 	}
@@ -260,14 +260,14 @@ func TestReadUpgradesExistingButLeavesMissingDatabaseAbsent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if ciphertext != "encrypted" {
-		t.Fatalf("upgrade changed credential: %q", ciphertext)
+		t.Fatalf("read changed credential: %q", ciphertext)
 	}
 	var count int
 	if err := db.QueryRowContext(t.Context(), "SELECT count(*) FROM configurations").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 0 {
-		t.Fatal("upgrade invented a local configuration")
+		t.Fatal("read invented a local configuration")
 	}
 	if _, err := db.ExecContext(t.Context(), "DELETE FROM secrets"); err == nil {
 		t.Fatal("read connection permits writes")

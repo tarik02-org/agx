@@ -1,4 +1,4 @@
-package sessions
+package sessionstore
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/sessions"
 	"github.com/tarik02-org/agx/internal/storage"
 	"github.com/tarik02-org/agx/internal/storage/statedb"
 )
@@ -24,8 +25,8 @@ var start = time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 
 func at(minutes int) time.Time { return start.Add(time.Duration(minutes) * time.Minute) }
 
-func entry(builtin, id, dir string, started time.Time) Entry {
-	return Entry{
+func entry(builtin, id, dir string, started time.Time) sessions.Entry {
+	return sessions.Entry{
 		Session: adapters.Session{ID: id, Directory: dir, Started: started, Updated: started},
 		Builtin: builtin,
 		Harness: builtin,
@@ -65,7 +66,7 @@ func TestMatchAssignsSessionsToLaunches(t *testing.T) {
 			Exact:     true,
 		},
 	}
-	entries := []Entry{
+	entries := []sessions.Entry{
 		entry("codex", "a", "/work", at(5)),
 		entry("codex", "b", "/work", at(15)),
 		entry("codex", "c", "/other", at(15)),
@@ -171,7 +172,7 @@ func TestMatchPrunesRecords(t *testing.T) {
 }
 
 func TestSearch(t *testing.T) {
-	entries := []Entry{
+	entries := []sessions.Entry{
 		{
 			Session: adapters.Session{ID: "1", Title: "Fix flaky login test", Directory: "/work/app"},
 			Builtin: "codex",
@@ -199,25 +200,25 @@ func TestSearch(t *testing.T) {
 		{"zzzqqq", []string{}},
 	} {
 		got := []string{}
-		for _, e := range Search(entries, tt.query) {
+		for _, e := range sessions.Search(entries, tt.query) {
 			got = append(got, e.ID)
 		}
 		slices.Sort(got)
 		if !slices.Equal(got, tt.want) {
-			t.Errorf("Search(%q) = %v, want %v", tt.query, got, tt.want)
+			t.Errorf("sessions.Search(%q) = %v, want %v", tt.query, got, tt.want)
 		}
 	}
 }
 
 func TestWithin(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "work")
-	entries := []Entry{
+	entries := []sessions.Entry{
 		{Session: adapters.Session{ID: "here", Directory: root}},
 		{Session: adapters.Session{ID: "below", Directory: filepath.Join(root, "sub")}},
 		{Session: adapters.Session{ID: "sibling", Directory: root + "-other"}},
 	}
 	got := []string{}
-	for _, e := range Within(entries, root) {
+	for _, e := range sessions.Within(entries, root) {
 		got = append(got, e.ID)
 	}
 	if !slices.Equal(got, []string{"here", "below"}) {
@@ -499,7 +500,7 @@ func seedRecords(t *testing.T, records []Record) Records {
 	return saved
 }
 
-func canonicalEntries(t *testing.T, entries []Entry) {
+func canonicalEntries(t *testing.T, entries []sessions.Entry) {
 	t.Helper()
 	for i := range entries {
 		dir, err := platform.Canonical(entries[i].Directory)
@@ -563,7 +564,7 @@ func TestResumedSessionUsesLatestLaunchInItsStore(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	entries := []Entry{entry("codex", "same", "/work", at(0)), entry("claude", "same", "/work", at(0))}
+	entries := []sessions.Entry{entry("codex", "same", "/work", at(0)), entry("claude", "same", "/work", at(0))}
 	if err := records.Match(
 		t.Context(),
 		entries,

@@ -9,8 +9,9 @@ import (
 
 // Inputs records the state of every file and glob a load consulted.
 type Inputs struct {
-	entries                              []input
-	localState, localRoot, localRevision string
+	entries        []input
+	revision       func() string
+	loadedRevision string
 }
 
 type input struct {
@@ -29,7 +30,7 @@ func (i *Inputs) glob(pattern string, matches []string) {
 
 // Changed reports whether any recorded input differs from its state at load time.
 func (i *Inputs) Changed() bool {
-	if i.localState != "" && localRevision(i.localState, i.localRoot) != i.localRevision {
+	if i.revision != nil && i.revision() != i.loadedRevision {
 		return true
 	}
 	for _, e := range i.entries {
@@ -76,4 +77,9 @@ func globFiles(pattern string) ([]string, error) {
 	// there, after it here. Loading sorts whole paths, and a different order would read as a change.
 	slices.Sort(files)
 	return files, nil
+}
+
+// TrackRevision includes externally loaded configuration in change detection.
+func (i *Inputs) TrackRevision(loaded string, read func() string) {
+	i.loadedRevision, i.revision = loaded, read
 }

@@ -3,7 +3,6 @@ package config
 import (
 	"bytes"
 	"cmp"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -60,7 +59,6 @@ func ReadRoot(root string, builtins Builtins) (RootFile, error) {
 // Options configures Load.
 type Options struct {
 	Builtins Builtins
-	State    string
 	Local    *Local
 	// Cache is the package cache. Without it, Load reads only configuration fragments, without
 	// loading packages or validating the result.
@@ -185,17 +183,8 @@ func isGlob(path string) bool { return strings.ContainsAny(path, "*?[") }
 func Load(root string, opts Options) (*Config, error) {
 	inputs, cache := cmp.Or(opts.Inputs, &Inputs{}), opts.Cache
 	local := opts.Local
-	inputs.localState, inputs.localRoot = opts.State, root
 	if local == nil {
-		var err error
-		local, err = ReadLocal(context.Background(), opts.State, root)
-		if err != nil {
-			inputs.localRevision = "error:" + err.Error()
-			return nil, fmt.Errorf("load local configuration: %w", err)
-		}
-	}
-	if opts.State != "" {
-		inputs.localState, inputs.localRoot, inputs.localRevision = opts.State, root, fmt.Sprint(local.Revision)
+		local = EmptyLocal()
 	}
 	c, err := read(root, opts.Builtins, inputs, local)
 	if err != nil || cache == "" {

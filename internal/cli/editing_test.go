@@ -7,6 +7,7 @@ import (
 
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/configstore"
 )
 
 func TestUseUndoesUnuse(t *testing.T) {
@@ -19,12 +20,12 @@ func TestUseUndoesUnuse(t *testing.T) {
 	t.Chdir(work)
 	okJSON(t, nil, "unuse", "docs", "--scope", "here")
 	okJSON(t, nil, "use", "docs", "--scope", "here")
-	c, err := config.Load(
-		os.Getenv("AGX_CONFIG"),
+	c, err := configstore.Load(
+		os.Getenv("AGX_CONFIG"), os.Getenv("AGX_STATE"),
 		config.Options{
 			Builtins: builtin.Registry().Builtins(nil),
-			State:    os.Getenv("AGX_STATE"),
-			Cache:    os.Getenv("AGX_CACHE"),
+
+			Cache: os.Getenv("AGX_CACHE"),
 		},
 	)
 	if err != nil {

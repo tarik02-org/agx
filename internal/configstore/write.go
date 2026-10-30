@@ -1,4 +1,4 @@
-package config
+package configstore
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/storage/statedb"
 )
 
@@ -13,7 +14,7 @@ func writeLocalDefinition(
 	ctx context.Context,
 	q *statedb.Queries,
 	root, key string,
-	kind Kind,
+	kind config.Kind,
 	name string,
 	parent sql.NullString,
 	scope sql.NullInt64,
@@ -34,7 +35,7 @@ func writeLocalDefinition(
 		return err
 	}
 	switch kind {
-	case KindSkills:
+	case config.KindSkills:
 		frontmatter, err := localJSON(m["frontmatter"])
 		if err != nil {
 			return err
@@ -72,7 +73,7 @@ func writeLocalDefinition(
 				return err
 			}
 		}
-	case KindInstructions:
+	case config.KindInstructions:
 		if err := q.InsertLocalInstruction(
 			ctx,
 			statedb.InsertLocalInstructionParams{
@@ -88,7 +89,7 @@ func writeLocalDefinition(
 		); err != nil {
 			return err
 		}
-	case KindPackages:
+	case config.KindPackages:
 		if err := q.InsertLocalPackage(
 			ctx,
 			statedb.InsertLocalPackageParams{
@@ -103,7 +104,7 @@ func writeLocalDefinition(
 		); err != nil {
 			return err
 		}
-	case KindHarnesses:
+	case config.KindHarnesses:
 		hidden, present := m["hidden"].(bool)
 		settings, err := localJSON(m["settings"])
 		if err != nil {
@@ -138,11 +139,11 @@ func writeLocalDefinition(
 				return err
 			}
 		}
-	case KindMCPServers:
+	case config.KindMCPServers:
 		if err := writeLocalMCP(ctx, q, root, key, m); err != nil {
 			return err
 		}
-	case KindSecrets:
+	case config.KindSecrets:
 		ageKind, ageValue := "literal", ""
 		if value, found := m["age_key"]; found {
 			var err error
@@ -189,7 +190,7 @@ func writeLocalDefinition(
 				return err
 			}
 		}
-	case KindBundles:
+	case config.KindBundles:
 		if err := writeLocalSelection(ctx, q, root, key, sql.NullInt64{}, "add", m); err != nil {
 			return err
 		}
@@ -218,7 +219,7 @@ func writeLocalMCP(ctx context.Context, q *statedb.Queries, root, key string, m 
 				q,
 				root,
 				inline.String,
-				KindSecrets,
+				config.KindSecrets,
 				"",
 				sql.NullString{String: key, Valid: true},
 				sql.NullInt64{},

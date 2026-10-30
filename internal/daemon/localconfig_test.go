@@ -14,8 +14,11 @@ import (
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/configstore"
 	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/secretstore"
 	"github.com/tarik02-org/agx/internal/sessions"
+	"github.com/tarik02-org/agx/internal/sessionstore"
 )
 
 func TestResolvePassthroughUsesDaemonCredentialsAndCallerEnvironment(t *testing.T) {
@@ -26,7 +29,7 @@ func TestResolvePassthroughUsesDaemonCredentialsAndCallerEnvironment(t *testing.
 	)
 	s.adapters = builtin.Registry()
 	s.builtins = s.adapters.Builtins(nil)
-	s.manager = auth.New("", auth.OpenStore(s.paths.State))
+	s.manager = auth.New("", secretstore.Open(s.paths.State))
 	if err := s.manager.Set("token", config.Secret{Kind: "keychain"}, []byte("stored-token")); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +109,7 @@ func TestLaunchHistoryReportSurvivesDaemonReplacement(t *testing.T) {
 			Store:   request.Store,
 		},
 	}
-	if err := sessions.NewRecords(s.paths.State).
+	if err := sessionstore.NewRecords(s.paths.State).
 		Match(t.Context(), entries, nil, now, map[string]string{"claude": request.Store}); err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +133,7 @@ func TestGetLocalConfigurationPreservesDefinitionsAndLocks(t *testing.T) {
 		Hash:         "content-hash",
 		Dependencies: []config.ID{"kit/dependency"},
 	}
-	if _, err := config.WriteLocal(t.Context(), s.paths.State, s.paths.Config, local); err != nil {
+	if _, err := configstore.Write(t.Context(), s.paths.State, s.paths.Config, local); err != nil {
 		t.Fatal(err)
 	}
 	response, err := s.GetLocalConfiguration(t.Context(), connect.NewRequest(&v1.GetLocalConfigurationRequest{}))

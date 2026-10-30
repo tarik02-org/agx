@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/configstore"
 )
 
 // skillRepository commits a repository holding the skills alpha and beta.
@@ -81,7 +82,7 @@ func TestRemoveSkillPackage(t *testing.T) {
 	okJSON(t, nil, "skill", "add", "file://"+filepath.ToSlash(repo), "--all")
 	local = readLocal(t)
 	local.Document["bundles"] = map[string]any{"dev": map[string]any{"skills": []string{"kit/beta"}}}
-	if _, err := config.WriteLocal(t.Context(), os.Getenv("AGX_STATE"), os.Getenv("AGX_CONFIG"), local); err != nil {
+	if _, err := configstore.Write(t.Context(), os.Getenv("AGX_STATE"), os.Getenv("AGX_CONFIG"), local); err != nil {
 		t.Fatal(err)
 	}
 	d = failJSON(t, 1, "skill", "remove", "kit", "--json")
@@ -102,7 +103,7 @@ func TestRemoveSkillPackage(t *testing.T) {
 
 func readLocal(t *testing.T) *config.Local {
 	t.Helper()
-	local, err := config.ReadLocal(t.Context(), os.Getenv("AGX_STATE"), os.Getenv("AGX_CONFIG"))
+	local, err := configstore.Read(t.Context(), os.Getenv("AGX_STATE"), os.Getenv("AGX_CONFIG"))
 	if err != nil {
 		t.Fatal(err)
 	}
