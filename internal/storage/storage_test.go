@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -60,18 +61,22 @@ func TestConcurrentInitialization(t *testing.T) {
 
 func TestMigrationsPreserveStateAndRollbackFailure(t *testing.T) {
 	path := State(t.TempDir())
-	db, err := Open(t.Context(), path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(t.Context(), "INSERT INTO secrets VALUES ('credential', 'ciphertext')"); err != nil {
-		t.Fatal(err)
-	}
-	_ = db.Close()
 	initial, err := fs.ReadFile(migrations, "state/001_runtime.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
+	base := fstest.MapFS{"001_runtime.sql": &fstest.MapFile{Data: initial}}
+	if err := migrate(t.Context(), path, base); err != nil {
+		t.Fatal(err)
+	}
+	db, err := connect(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), "INSERT INTO secrets VALUES ('credential','ciphertext')"); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
 	schema := fstest.MapFS{
 		"001_runtime.sql": &fstest.MapFile{Data: initial},
 		"002_upgrade.sql": &fstest.MapFile{
@@ -118,6 +123,9 @@ func TestMigrationsPreserveStateAndRollbackFailure(t *testing.T) {
 	}
 	if count != 1 || version != 2 {
 		t.Fatalf("failed migration lost state: count=%d version=%d", count, version)
+	}
+	if _, err := db.ExecContext(t.Context(), "PRAGMA user_version = 99999"); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := Open(t.Context(), path); err == nil {
 		t.Fatal("an older client accepted a newer database")
@@ -179,6 +187,14 @@ func TestCancelledMigrationWaitKeepsState(t *testing.T) {
 }
 
 func TestOpenRestoresPrivatePermissions(t *testing.T) {
+	for _, readOnly := range []bool{false, true} {
+		t.Run(fmt.Sprint(readOnly), func(t *testing.T) {
+			testDatabasePermissions(t, readOnly)
+		})
+	}
+}
+
+func testDatabasePermissions(t *testing.T, readOnly bool) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix permission bits")
 	}
@@ -191,7 +207,11 @@ func TestOpenRestoresPrivatePermissions(t *testing.T) {
 	if err := os.Chmod(path, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	db, err = Open(t.Context(), path)
+	if readOnly {
+		db, err = OpenExisting(t.Context(), path)
+	} else {
+		db, err = Open(t.Context(), path)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,5 +222,54 @@ func TestOpenRestoresPrivatePermissions(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("database permissions = %v", info.Mode())
+	}
+}
+
+func TestReadUpgradesExistingButLeavesMissingDatabaseAbsent(t *testing.T) {
+	path := State(t.TempDir())
+	if _, err := OpenExisting(t.Context(), path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("absent read = %v", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("read created database: %v", err)
+	}
+	initial, err := fs.ReadFile(migrations, "state/001_runtime.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := fstest.MapFS{"001_runtime.sql": &fstest.MapFile{Data: initial}}
+	if err := migrate(t.Context(), path, schema); err != nil {
+		t.Fatal(err)
+	}
+	db, err := connect(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), "INSERT INTO secrets VALUES ('credential','encrypted')"); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	db, err = OpenExisting(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var ciphertext string
+	if err := db.QueryRowContext(t.Context(), "SELECT ciphertext FROM secrets WHERE key='credential'").
+		Scan(&ciphertext); err != nil {
+		t.Fatal(err)
+	}
+	if ciphertext != "encrypted" {
+		t.Fatalf("upgrade changed credential: %q", ciphertext)
+	}
+	var count int
+	if err := db.QueryRowContext(t.Context(), "SELECT count(*) FROM configurations").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("upgrade invented a local configuration")
+	}
+	if _, err := db.ExecContext(t.Context(), "DELETE FROM secrets"); err == nil {
+		t.Fatal("read connection permits writes")
 	}
 }

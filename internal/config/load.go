@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -46,54 +47,17 @@ const DefaultConfig = "fragments: [agx.d/*.yaml]\n"
 // Options configures Load.
 type Options struct {
 	Builtins Builtins
+	State    string
+	Local    *Local
 	// Cache is the package cache. Without it, Load reads only configuration fragments, without
 	// loading packages or validating the result.
 	Cache string
-	// Overlay replaces fragments and lockfiles while loading.
-	Overlay Overlay
 	// Inputs, when set, records the files loading read, including after a failure, so callers
 	// can skip reloading until one of them changes.
 	Inputs *Inputs
 }
 
-// Overlay maps canonical paths to contents that replace those files while loading, so an edit
-// can be validated before anything is written.
-type Overlay map[string][]byte
-
-func (o Overlay) readFile(path string) ([]byte, error) {
-	if b, ok := o[path]; ok {
-		return b, nil
-	}
-	return os.ReadFile(path)
-}
-
-func (o Overlay) exists(path string) (bool, error) {
-	if _, ok := o[path]; ok {
-		return true, nil
-	}
-	_, err := os.Stat(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	}
-	return err == nil, err
-}
-
-// glob adds overlay files matching pattern, such as a new drop-in fragment, to the files on disk.
-func (o Overlay) glob(pattern string) ([]string, error) {
-	files, err := globFiles(pattern)
-	if err != nil {
-		return nil, err
-	}
-	for path := range o {
-		if matched, _ := filepath.Match(pattern, path); matched && !slices.Contains(files, path) {
-			files = append(files, path)
-		}
-	}
-	slices.Sort(files)
-	return files, nil
-}
-
-func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Config, error) {
+func read(root string, builtins Builtins, inputs *Inputs, local *Local) (*Config, error) {
 	dir, err := RootDir(root)
 	if err != nil {
 		return nil, err
@@ -104,6 +68,7 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 	}
 	c := &Config{
 		Root:          root,
+		Local:         local,
 		Packages:      map[ID]Package{},
 		Skills:        map[ID]Skill{},
 		Instructions:  map[ID]Instructions{},
@@ -114,8 +79,17 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 		PackageHashes: map[ID]string{},
 		builtins:      builtins,
 	}
+	if local != nil && len(local.Document) > 0 {
+		d, at, err := local.decode(root, builtins)
+		if err != nil {
+			return nil, err
+		}
+		if err := c.merge(d, at, root, "", false); err != nil {
+			return nil, err
+		}
+	}
 	inputs.file(root)
-	b, err := overlay.readFile(root)
+	b, err := os.ReadFile(root)
 	if errors.Is(err, fs.ErrNotExist) {
 		b, err = []byte(DefaultConfig), nil
 	}
@@ -140,14 +114,13 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 			return nil, errorAt(at, "fragment %w", err)
 		}
 		p = relative(dir, p)
-		c.fragments = append(c.fragments, p)
 		files := []string{p}
 		if isGlob(entry) {
-			if files, err = overlay.glob(p); err != nil {
+			if files, err = globFiles(p); err != nil {
 				return nil, errorAt(at, "fragment %s: %w", entry, err)
 			}
 			inputs.glob(p, files)
-		} else if found, err := overlay.exists(p); err == nil && !found {
+		} else if _, err := os.Stat(p); errors.Is(err, fs.ErrNotExist) {
 			return nil, errorAt(at, "fragment %s: %s does not exist", entry, p)
 		}
 		for _, path := range files {
@@ -159,7 +132,7 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 			}
 			seen[path] = true
 			inputs.file(path)
-			b, err := overlay.readFile(path)
+			b, err := os.ReadFile(path)
 			if err != nil {
 				return nil, err
 			}
@@ -191,23 +164,27 @@ func RootDir(root string) (string, error) {
 	return platform.Canonical(filepath.Dir(abs))
 }
 
-// Lists reports whether the root lists path: one of its fragment paths, or a match of one of
-// its globs.
-func (c *Config) Lists(path string) bool {
-	return slices.ContainsFunc(c.fragments, func(pattern string) bool {
-		matched, _ := filepath.Match(pattern, path)
-		return pattern == path || matched
-	})
-}
-
 // isGlob reports whether a fragment entry is a pattern rather than a literal path.
 func isGlob(path string) bool { return strings.ContainsAny(path, "*?[") }
 
 // Load reads the configuration fragments from root and, given a cache, the installed packages
 // they declare, and validates the result.
 func Load(root string, opts Options) (*Config, error) {
-	inputs, overlay, cache := cmp.Or(opts.Inputs, &Inputs{}), opts.Overlay, opts.Cache
-	c, err := read(root, opts.Builtins, inputs, overlay)
+	inputs, cache := cmp.Or(opts.Inputs, &Inputs{}), opts.Cache
+	local := opts.Local
+	inputs.localState, inputs.localRoot = opts.State, root
+	if local == nil {
+		var err error
+		local, err = ReadLocal(context.Background(), opts.State, root)
+		if err != nil {
+			inputs.localRevision = "error:" + err.Error()
+			return nil, fmt.Errorf("load local configuration: %w", err)
+		}
+	}
+	if opts.State != "" {
+		inputs.localState, inputs.localRoot, inputs.localRevision = opts.State, root, fmt.Sprint(local.Revision)
+	}
+	c, err := read(root, opts.Builtins, inputs, local)
 	if err != nil || cache == "" {
 		return c, err
 	}
@@ -236,8 +213,10 @@ func Load(root string, opts Options) (*Config, error) {
 				return "", fmt.Errorf("package %s: %w", id, err)
 			}
 		case !p.Pinned():
-			inputs.file(p.Lockfile)
-			lock, err := ReadLock(p.Lockfile, overlay)
+			if !p.Local {
+				inputs.file(p.Lockfile)
+			}
+			lock, err := c.PackageLock(p)
 			var newer *securefs.NewerFormatError
 			switch {
 			case errors.As(err, &newer):
@@ -477,6 +456,7 @@ func (c *Config) dependencies(id ID, d Document) []ID {
 		// Configuration overrides of a dependency keep their own lockfile.
 		if value := c.Packages[qualified]; value.Manifest {
 			value.Lockfile = lockfile
+			value.Local = c.Packages[id].Local
 			c.Packages[qualified] = value
 		}
 		deps = append(deps, qualified)
@@ -484,6 +464,7 @@ func (c *Config) dependencies(id ID, d Document) []ID {
 	for name, p := range c.Packages {
 		if p.Anonymous && p.Parent == id {
 			p.Lockfile = lockfile
+			p.Local = c.Packages[id].Local
 			c.Packages[name] = p
 			deps = append(deps, name)
 		}
@@ -703,6 +684,9 @@ func (m *merger) conflict(kind Kind, id ID, p prior, override, inline bool, at S
 			locate(p.source),
 		)
 	}
+	if p.exists && p.source.Local && !at.Local && !m.manifest {
+		override = true
+	}
 	if p.exists && !override {
 		return false, errorAt(
 			at, "conflicting definition of %s %s, also defined at %s; set override: true",
@@ -764,6 +748,10 @@ func (m *merger) expand(path string) (string, error) {
 // package files must stay inside the package, as resource paths do.
 func (m *merger) place(v Value) (Value, error) {
 	v.Source.Path = m.path
+	v.Source.Local = m.at.at().Local
+	if v.Source.Local {
+		v.Source.Line, v.Source.Column = 0, 0
+	}
 	if v.Secret != "" {
 		v.Secret = qualify(m.ns, v.Secret)
 	}
@@ -782,13 +770,17 @@ func (m *merger) placePackage(name ID, p *Package, at Source) error {
 	p.Manifest = m.manifest
 	// The lockfile beside a fragment records the unpinned packages it declares.
 	p.Lockfile = filepath.Join(m.base, "agx.lock.json")
+	p.Local = at.Local
+	if p.Local {
+		p.Lockfile = ""
+	}
 	if p.Path != "" {
 		var err error
 		p.Path, err = m.file(p.Path)
 		if err != nil {
 			return errorAt(at, "package %s: %w", name, err)
 		}
-		p.LockPath = slashRel(filepath.Dir(p.Lockfile), p.Path)
+		p.LockPath = slashRel(m.base, p.Path)
 	}
 	if filepath.IsAbs(p.Subdir) || strings.HasPrefix(filepath.Clean(p.Subdir), "..") {
 		return errorAt(at, "invalid subdir for %s", name)
@@ -807,7 +799,7 @@ func (m *merger) placePackage(name ID, p *Package, at Source) error {
 				return errorAt(at, "package %s: %w", name, err)
 			}
 			p.Git = relative(m.base, git)
-			p.LockPath = slashRel(filepath.Dir(p.Lockfile), p.Git)
+			p.LockPath = slashRel(m.base, p.Git)
 		}
 	}
 	return nil
@@ -1301,10 +1293,10 @@ func relative(base, path string) string {
 	return filepath.Join(base, path)
 }
 
-// ReadLock reads a lockfile, or its replacement in overlay.
-func ReadLock(path string, overlay Overlay) (Lock, error) {
+// ReadLock reads a portable package lockfile.
+func ReadLock(path string) (Lock, error) {
 	var lock Lock
-	b, err := overlay.readFile(path)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return lock, err
 	}

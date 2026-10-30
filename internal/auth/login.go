@@ -59,6 +59,7 @@ func (m *Manager) Begin(ctx context.Context, id config.ID, a config.Secret, serv
 		ID: securefs.Token(), SecretID: id, state: securefs.Token(), definition: a,
 		origin: origin, Expires: time.Now().Add(5 * time.Minute), done: make(chan struct{}), cancel: cancel,
 	}
+	m.resetMu.RLock()
 	m.mu.Lock()
 	m.expireLocked(time.Now())
 	for _, old := range m.pending {
@@ -68,6 +69,7 @@ func (m *Manager) Begin(ctx context.Context, id config.ID, a config.Secret, serv
 	}
 	m.pending[p.state] = p
 	m.mu.Unlock()
+	m.resetMu.RUnlock()
 	prepared, err := m.begin(beginCtx, id, a, serverURL, origin)
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -492,6 +494,8 @@ func (m *Manager) Callback(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusInternalServerError, errors.New("cannot encode credential"))
 		return
 	}
+	m.resetMu.RLock()
+	defer m.resetMu.RUnlock()
 	lock := m.credentialLock(k)
 	lock.Lock()
 	defer lock.Unlock()

@@ -358,3 +358,20 @@ func TestStopProcess(t *testing.T) {
 	}
 	eventually(t, "the session ended", func() bool { return len(e.Processes()) == 0 })
 }
+
+func TestSharedResetAllKeepsRuntimeUsable(t *testing.T) {
+	f := newSharedFixture(t, config.ShareGlobal)
+	e := f.endpoint(t.TempDir())
+	first := connect(t, e)
+	call(t, first, tool("pid"))
+	f.shared.Reset("")
+	if got := f.shared.Servers(); got != 0 {
+		t.Fatalf("servers after reset all: %d", got)
+	}
+	// A new endpoint can start a fresh process after every old definition was reset.
+	replacement := connect(t, f.endpoint(t.TempDir()))
+	call(t, replacement, tool("pid"))
+	if got := f.shared.Servers(); got != 1 {
+		t.Fatalf("servers after reconnect: %d", got)
+	}
+}

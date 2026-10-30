@@ -735,3 +735,59 @@ func TestCommandSecretReused(t *testing.T) {
 		t.Errorf("after a reload = %q", got)
 	}
 }
+
+func TestResetCredentialsPreservesConfiguration(t *testing.T) {
+	keyring.MockInit()
+	dir := t.TempDir()
+	store := auth.OpenStore(dir)
+	manager := auth.New("", store)
+	secret := config.Secret{Kind: "keychain"}
+	if err := manager.Set("orphaned", secret, []byte("private")); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(dir, "agx.yaml")
+	local := config.EmptyLocal()
+	local.Document["instructions"] = map[string]any{"style": map[string]any{"text": "Keep me."}}
+	if _, err := config.WriteLocal(t.Context(), dir, root, local); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Reset(); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.ReadLocal(t.Context(), dir, root)
+	if err != nil || loaded.Revision != 1 || loaded.Document["instructions"] == nil {
+		t.Fatalf("local config lost: %+v %v", loaded, err)
+	}
+	if state := manager.Status("orphaned", secret, nil).State; state != "needs_login" {
+		t.Fatalf("credential after reset: %s", state)
+	}
+	if err := manager.Set("new", secret, []byte("replacement")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResetCancelsPendingLogin(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	manager, callback := newManager(t)
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	attempt, err := manager.Begin(t.Context(), "fixture", secret, p.URL+"/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Reset(); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Wait(t.Context(), attempt); err == nil {
+		t.Fatal("pending login survived reset")
+	}
+	if code := get(
+		t,
+		callback+"?state="+query(t, attempt).Get("state")+"&code=fixture",
+	); code != http.StatusBadRequest {
+		t.Fatalf("cancelled callback: %d", code)
+	}
+	if state := manager.Status("fixture", secret, nil).State; state != "needs_login" {
+		t.Fatalf("credential after callback: %s", state)
+	}
+}

@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
@@ -97,9 +96,8 @@ func TestJSONEdits(t *testing.T) {
 
 	var added editDocument
 	okJSON(t, &added, "mcp", "add", "docs", "https://docs.example/mcp", "--auth", "none")
-	if len(added.Files) != 1 || added.Files[0].Path == "" ||
-		!strings.Contains(added.Files[0].Diff, "+  docs:") {
-		t.Fatalf("files = %+v", added.Files)
+	if added.Revision != 1 {
+		t.Fatalf("revision: %d", added.Revision)
 	}
 	if len(added.Defined) != 1 || added.Defined[0] != (definitionID{"mcp", "docs"}) ||
 		len(added.Enabled) != 1 || added.Scope == nil || added.Scope.Directory != "" ||
@@ -111,8 +109,8 @@ func TestJSONEdits(t *testing.T) {
 	t.Cleanup(server.Close)
 	var registered editDocument
 	okJSON(t, &registered, "mcp", "add", "gh", server.URL+"/mcp", "--client-id", "fixture-client", "--define-only")
-	if len(registered.Files) != 1 || !strings.Contains(registered.Files[0].Diff, "+      client_id: fixture-client") {
-		t.Fatalf("mcp add --client-id = %+v", registered.Files)
+	if registered.Revision != 2 {
+		t.Fatalf("mcp add --client-id: %+v", registered)
 	}
 
 	var stdio editDocument
@@ -123,17 +121,17 @@ func TestJSONEdits(t *testing.T) {
 
 	var used editDocument
 	okJSON(t, &used, "use", "local", "--scope", "here", "--harness", "codex")
-	if used.Scope == nil || used.Scope.Directory == "" || len(used.Scope.Harnesses) != 1 || len(used.Files) != 1 {
+	if used.Scope == nil || used.Scope.Directory == "" || len(used.Scope.Harnesses) != 1 || used.Revision == 0 {
 		t.Fatalf("use = %+v", used)
 	}
 	var again editDocument
 	okJSON(t, &again, "use", "local", "--scope", "here", "--harness", "codex")
-	if len(again.Files) != 0 || len(again.Enabled) != 1 {
+	if again.Revision != used.Revision || len(again.Enabled) != 1 {
 		t.Fatalf("use without a change = %+v", again)
 	}
 	var unused editDocument
 	okJSON(t, &unused, "unuse", "docs", "--scope", "here")
-	if len(unused.Disabled) != 1 || len(unused.Files) != 1 {
+	if len(unused.Disabled) != 1 || unused.Revision == 0 {
 		t.Fatalf("unuse = %+v", unused)
 	}
 
@@ -171,7 +169,7 @@ func TestJSONEdits(t *testing.T) {
 	failJSON(t, 1, "mcp", "remove", "local", "--json")
 	var removed editDocument
 	okJSON(t, &removed, "mcp", "remove", "local", "--force")
-	if len(removed.Removed) != 1 || len(removed.Files) != 1 {
+	if len(removed.Removed) != 1 || removed.Revision == 0 {
 		t.Fatalf("mcp remove = %+v", removed)
 	}
 	okJSON(t, nil, "skill", "remove", "deploy", "--force")
@@ -190,7 +188,7 @@ func TestJSONEdits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), "docs:") || strings.Contains(string(b), "local:") {
+	if string(b) != scriptingConfig {
 		t.Fatalf("configuration after the edits:\n%s", b)
 	}
 }
@@ -243,51 +241,17 @@ func TestMissingPaths(t *testing.T) {
 	if !strings.Contains(d.Message, canonical+" does not exist") {
 		t.Fatalf("missing --config: %s", d.Message)
 	}
-	// Adding a definition creates the named root, importing the fragment it writes.
+	// Local configuration needs no YAML files, even for an explicit new root.
 	created := filepath.Join(dir, "created.yaml")
 	okJSON(t, nil, "--config", created, "instructions", "add", "--id", "x", "--text", "hi")
-	if b, err := os.ReadFile(created); err != nil || string(b) != config.DefaultConfig {
-		t.Fatalf("created root: %v\n%s", err, b)
+	if _, err := os.Stat(created); !os.IsNotExist(err) {
+		t.Fatalf("created YAML: %v", err)
 	}
-	if b, err := os.ReadFile(
-		filepath.Join(dir, "agx.d", "main.yaml"),
-	); err != nil ||
-		!strings.Contains(string(b), "x:") {
-		t.Fatalf("created fragment: %v\n%s", err, b)
-	}
+	okJSON(t, nil, "--config", created, "config", "validate")
 	d = failJSON(t, 1, "explain", filepath.Join(dir, "nope"), "--json")
 	if !strings.Contains(d.Message, "does not exist") {
 		t.Fatalf("missing directory: %s", d.Message)
 	}
-}
-
-// With several writable fragments, an adding command needs --file, relative to the root.
-func TestChooseFile(t *testing.T) {
-	first := isolate(t, "{}\n")
-	second := filepath.Join(filepath.Dir(first), "other.yaml")
-	if err := os.WriteFile(second, []byte("{}\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	d := failJSON(t, 1, "instructions", "add", "--id", "x", "--text", "hi", "--json")
-	if !strings.Contains(d.Message, "main.yaml") || !strings.Contains(d.Message, "other.yaml") {
-		t.Fatalf("choose_file error: %s", d.Message)
-	}
-	t.Chdir(t.TempDir())
-	var added editDocument
-	okJSON(t, &added, "instructions", "add", "--id", "x", "--text", "hi", "--file", "agx.d/other.yaml")
-	if len(added.Files) != 1 || !strings.HasSuffix(added.Files[0].Path, "other.yaml") {
-		t.Fatalf("instructions add --file = %+v", added.Files)
-	}
-	failJSON(t, 1, "instructions",
-		"add",
-		"--id",
-		"y",
-		"--text",
-		"hi",
-		"--file",
-		"agx.yaml",
-		"--json",
-	)
 }
 
 func TestConfigSchema(t *testing.T) {

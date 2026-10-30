@@ -55,12 +55,15 @@ func (s *Server) secret(id string) (config.Secret, error) {
 // resetUsers ends the sessions of active MCP servers using a secret, so they reconnect with
 // the current credential.
 func (s *Server) resetUsers(id config.ID) {
+	if id == "" {
+		s.clients.reset()
+	}
 	s.shared.Reset(id)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, l := range s.launches {
 		for serverID, e := range l.endpoints {
-			if slices.Contains(l.snapshot.Config.MCP[serverID].Secrets(), id) {
+			if id == "" || slices.Contains(l.snapshot.Config.MCP[serverID].Secrets(), id) {
 				go e.Reset()
 			}
 		}
@@ -136,6 +139,16 @@ func (s *Server) Logout(
 	ctx context.Context,
 	req *connect.Request[v1.LogoutRequest],
 ) (*connect.Response[v1.LogoutResponse], error) {
+	if req.Msg.All {
+		if req.Msg.SecretId != "" {
+			return nil, rpcError(connect.CodeInvalidArgument, "give a secret ID or all, not both")
+		}
+		if err := s.manager.Reset(); err != nil {
+			return nil, rpcError(connect.CodeFailedPrecondition, err.Error())
+		}
+		s.resetUsers("")
+		return connect.NewResponse(&v1.LogoutResponse{}), nil
+	}
 	secret, err := s.secret(req.Msg.SecretId)
 	if err != nil {
 		return nil, err

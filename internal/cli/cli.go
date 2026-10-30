@@ -70,7 +70,7 @@ func run(osArgs []string, stdout io.Writer) int {
 		if err := a.paths.Derive(); err != nil {
 			return err
 		}
-		return checkExplicitConfig(root, cmd, a.paths.Config)
+		return checkExplicitConfig(root, cmd, a.paths)
 	}
 	a.registry = builtin.Registry()
 	// builtins is complete once the command tree is, as definitions cannot shadow its commands.
@@ -114,6 +114,24 @@ func run(osArgs []string, stdout io.Writer) int {
 		},
 	}
 	configCmd.AddCommand(validate)
+	configCmd.AddCommand(
+		&cobra.Command{
+			Use:   "export",
+			Short: "Print local configuration as a YAML overlay",
+			Args:  cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				c, err := a.config()
+				if err != nil {
+					return err
+				}
+				data, err := c.Local.Export()
+				if err != nil {
+					return err
+				}
+				return emit(c.Local.Document, func() error { _, err := cmd.OutOrStdout().Write(data); return err })
+			},
+		},
+	)
 	schemaRoot, schemaManifest := false, false
 	schemaCmd := &cobra.Command{
 		Use:   "schema",
@@ -419,7 +437,8 @@ const createsConfig = "agx-creates-config"
 
 // checkExplicitConfig rejects a --config file that does not exist: only the default location
 // falls back to the default configuration, so a mistyped path is not silently empty.
-func checkExplicitConfig(root, cmd *cobra.Command, path string) error {
+func checkExplicitConfig(root, cmd *cobra.Command, paths platform.Paths) error {
+	path := paths.Config
 	if !root.PersistentFlags().Changed("config") ||
 		cmd.Name() == cobra.ShellCompRequestCmd ||
 		cmd.Name() == cobra.ShellCompNoDescRequestCmd {
@@ -433,6 +452,13 @@ func checkExplicitConfig(root, cmd *cobra.Command, path string) error {
 	_, err := os.Stat(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
+		local, readErr := config.ReadLocal(cmd.Context(), paths.State, path)
+		if readErr != nil {
+			return readErr
+		}
+		if local.Revision > 0 {
+			return nil
+		}
 		return fmt.Errorf(
 			"configuration file %s does not exist; create it, or omit --config to use the default location",
 			path,
@@ -472,7 +498,7 @@ func (a *app) installPackages(
 		a.paths.Config,
 		a.paths.Cache,
 		a.builtins,
-		packages.Options{Frozen: frozen, Updates: ids, UpdateAll: all},
+		packages.Options{Frozen: frozen, Updates: ids, UpdateAll: all, State: a.paths.State},
 	)
 	if err != nil {
 		return err
@@ -774,22 +800,33 @@ func secretCommand(a *app) *cobra.Command {
 		},
 	}
 	command.AddCommand(set)
+	logoutAll := false
 	logout := &cobra.Command{
-		Use:   "logout <secret-id>",
+		Use:   "logout [secret-id]",
 		Short: "Delete a stored secret or OAuth login",
-		Args:  cobra.ExactArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			if logoutAll && len(args) == 0 || !logoutAll && len(args) == 1 {
+				return nil
+			}
+			return errors.New("give a secret ID or --all")
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := a.client(cmd.Context())
 			if err != nil {
 				return err
 			}
-			response, err := c.secrets.Logout(cmd.Context(), connect.NewRequest(&v1.LogoutRequest{SecretId: args[0]}))
+			request := &v1.LogoutRequest{All: logoutAll}
+			if len(args) > 0 {
+				request.SecretId = args[0]
+			}
+			response, err := c.secrets.Logout(cmd.Context(), connect.NewRequest(request))
 			if err != nil {
 				return explainSecretTimeout(err)
 			}
 			return emit(response.Msg, func() error { return nil })
 		},
 	}
+	logout.Flags().BoolVar(&logoutAll, "all", false, "delete all stored credentials, including removed definitions")
 	command.AddCommand(logout)
 	rotate := &cobra.Command{
 		Use:   "rotate <secret-id>",

@@ -1,6 +1,9 @@
 # Edit configuration from the CLI
 
-Status: accepted.
+Status: superseded by [ADR 0029](0029-local-configuration.md).
+
+The command features remain; the YAML editing engine, diff previews and fragment
+placement described below have been removed.
 
 Configuration stays hand-written YAML; commands edit it for the common cases.
 
@@ -8,7 +11,7 @@ Configuration stays hand-written YAML; commands edit it for the common cases.
 agx mcp add github https://api.githubcopilot.com/mcp
 agx mcp add fs -- npx -y @modelcontextprotocol/server-filesystem .
 agx mcp add docs https://docs.example/mcp --header 'X-Key=!secret docs' --auth none
-agx mcp list | remove <id> | login <id> | test <id>
+agx mcp list | remove <id> | login <id> | tools <id>
 
 agx skill add ./skills/deploy
 agx skill add anthropics/skills                   # several skills: pick interactively

@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/tarik02-org/agx/internal/config"
 )
 
 // skillRepository commits a repository holding the skills alpha and beta.
@@ -46,9 +48,9 @@ func TestRemoveSkillPackage(t *testing.T) {
 
 	var added editDocument
 	okJSON(t, &added, "skill", "add", "file://"+filepath.ToSlash(repo), "--skill", "alpha")
-	lockfile := filepath.Join(filepath.Dir(path), "agx.lock.json")
-	if lock, err := os.ReadFile(lockfile); err != nil || !strings.Contains(string(lock), `"kit"`) {
-		t.Fatalf("lockfile after skill add: %v\n%s", err, lock)
+	local := readLocal(t)
+	if _, ok := local.Lock.Packages["kit"]; !ok {
+		t.Fatal("package has no database lock")
 	}
 
 	d := failJSON(t, 1, "skill", "remove", "kit/alpha", "--json")
@@ -70,19 +72,16 @@ func TestRemoveSkillPackage(t *testing.T) {
 	if strings.Contains(string(content), "kit") {
 		t.Fatalf("configuration still names the package:\n%s", content)
 	}
-	if lock, err := os.ReadFile(lockfile); err != nil || strings.Contains(string(lock), `"kit"`) {
-		t.Fatalf("lockfile after removal: %v\n%s", err, lock)
+	if _, ok := readLocal(t).Lock.Packages["kit"]; ok {
+		t.Fatal("removed package lock remains")
 	}
 	okJSON(t, nil, "config", "validate")
 
 	// A reference skill add did not write still needs --force.
 	okJSON(t, nil, "skill", "add", "file://"+filepath.ToSlash(repo), "--all")
-	content, err = os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bundle := string(content) + "bundles:\n  dev:\n    skills: [kit/beta]\n"
-	if err := os.WriteFile(path, []byte(bundle), 0o644); err != nil {
+	local = readLocal(t)
+	local.Document["bundles"] = map[string]any{"dev": map[string]any{"skills": []string{"kit/beta"}}}
+	if _, err := config.WriteLocal(t.Context(), os.Getenv("AGX_STATE"), os.Getenv("AGX_CONFIG"), local); err != nil {
 		t.Fatal(err)
 	}
 	d = failJSON(t, 1, "skill", "remove", "kit", "--json")
@@ -99,4 +98,13 @@ func TestRemoveSkillPackage(t *testing.T) {
 		t.Fatalf("configuration after forced removal: %v\n%s", err, content)
 	}
 	okJSON(t, nil, "config", "validate")
+}
+
+func readLocal(t *testing.T) *config.Local {
+	t.Helper()
+	local, err := config.ReadLocal(t.Context(), os.Getenv("AGX_STATE"), os.Getenv("AGX_CONFIG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return local
 }

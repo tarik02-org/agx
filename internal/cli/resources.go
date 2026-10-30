@@ -13,7 +13,6 @@ import (
 
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/configedit"
 )
 
@@ -33,10 +32,6 @@ func instructionsCommand(a *app) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			file, err := s.definitionFile(flags.file)
-			if err != nil {
-				return err
-			}
 			path := ""
 			if len(args) > 0 {
 				path = args[0]
@@ -49,14 +44,14 @@ func instructionsCommand(a *app) *cobra.Command {
 					return err
 				}
 			}
-			definition := edit.Mapping()
+			definition := map[string]any{}
 			if text != "" {
 				if id == "" {
 					if id, err = s.ask("ID:", "conventions", nil); err != nil {
 						return err
 					}
 				}
-				edit.Set(definition, "text", textNode(text))
+				definition["text"] = text
 			} else {
 				expanded, err := config.ExpandHome(path)
 				if err != nil {
@@ -75,9 +70,9 @@ func instructionsCommand(a *app) *cobra.Command {
 					base := filepath.Base(abs)
 					id = strings.TrimSuffix(base, filepath.Ext(base))
 				}
-				edit.Set(definition, "path", edit.Scalar(writtenPath(file, abs)))
+				definition["path"] = configedit.HomeRelative(abs)
 			}
-			if err := s.define(config.KindInstructions, id, file, definition); err != nil {
+			if err := s.define(config.KindInstructions, id, definition); err != nil {
 				return err
 			}
 			if err := s.enableAfterDefine(config.KindInstructions, id, flags); err != nil {
@@ -176,33 +171,27 @@ func harnessCommand(a *app) *cobra.Command {
 			if slices.Contains(s.Config.HarnessNames(), name) {
 				return fmt.Errorf("harness %s already exists; edit its definition instead", name)
 			}
-			definition := edit.Mapping("base", base)
+			definition := map[string]any{"base": base}
 			if executable != "" {
-				edit.Set(definition, "executable", edit.Scalar(executable))
+				definition["executable"] = executable
 			}
 			if len(native) > 0 {
 				items := []any{}
 				for _, arg := range native {
 					items = append(items, arg)
 				}
-				edit.Set(definition, "args", edit.Sequence(true, items...))
+				definition["args"] = items
 			}
 			if len(env) > 0 {
 				values, err := pairs("env", env)
 				if err != nil {
 					return err
 				}
-				edit.Set(definition, "environment", values)
+				definition["environment"] = values
 			}
-			file, err := s.definitionFile(flags.file)
-			if err != nil {
+			if err := s.Define(config.KindHarnesses, name, definition); err != nil {
 				return err
 			}
-			f, err := s.Open(file)
-			if err != nil {
-				return err
-			}
-			f.Define(config.KindHarnesses, name, definition)
 			s.result.Defined = append(s.result.Defined, definitionID{Kind: config.KindHarnesses, ID: name})
 			ok, err := s.commit()
 			if err != nil {
@@ -215,7 +204,6 @@ func harnessCommand(a *app) *cobra.Command {
 		},
 	}
 	flags.registerYes(add)
-	flags.registerFile(add)
 	add.Flags().StringVar(&base, "base", "", "harness this definition extends")
 	add.Flags().StringVar(&executable, "executable", "", "absolute path of the native executable")
 	add.Flags().
@@ -303,9 +291,6 @@ func useCommands(a *app) []*cobra.Command {
 				if err != nil {
 					return err
 				}
-				if err := s.useFile(flags.file); err != nil {
-					return err
-				}
 				var changed bool
 				if use {
 					changed, err = s.enable(kind, id, target)
@@ -332,7 +317,6 @@ func useCommands(a *app) []*cobra.Command {
 		cmd.Flags().StringVar(&flags.scope, "scope", "user",
 			"user (everywhere), here (this directory), or a directory")
 		cmd.Flags().StringSliceVar(&flags.harnesses, "harness", nil, "only for these harnesses (repeatable)")
-		flags.registerFile(cmd)
 		cmd.Flags().StringVar(&kind, "kind", "", "skills, instructions, mcp, or bundles, when the ID names several")
 		flags.registerYes(cmd)
 		out = append(out, cmd)

@@ -144,7 +144,7 @@ func printExplain(snapshot *config.Snapshot) error {
 		for _, i := range snapshot.Injections {
 			b.WriteString(
 				out.Label(i.Target) + " = " + out.Value(i.Text) + "  " +
-					out.Muted(short.location(i.Source.Path, i.Source.Line)) + "\n",
+					out.Muted(explainSource(short, i.Source)) + "\n",
 			)
 		}
 	}
@@ -153,7 +153,7 @@ func printExplain(snapshot *config.Snapshot) error {
 		for _, setting := range settings {
 			b.WriteString(
 				settingLine(out, setting) + "  " +
-					out.Muted(short.location(setting.Source.Path, setting.Source.Line)) + "\n",
+					out.Muted(explainSource(short, setting.Source)) + "\n",
 			)
 		}
 	}
@@ -178,7 +178,7 @@ func compactStep(out *ui.Printer, short pathShortener, directory string, step co
 	} else if step.Directory != directory {
 		parts = append(parts, out.Muted("from ")+scopeLabel(out, short.path(step.Directory)))
 	}
-	parts = append(parts, out.Muted(short.location(step.Source.Path, step.Source.Line)))
+	parts = append(parts, out.Muted(explainSource(short, step.Source)))
 	return strings.Join(parts, " ")
 }
 
@@ -485,4 +485,11 @@ func explainSettings(snapshot *config.Snapshot) []explainedSetting {
 func settingLine(out *ui.Printer, s explainedSetting) string {
 	b, _ := json.Marshal(s.Value)
 	return out.Label(config.FormatSettingPath(s.Path)) + " = " + out.Value(string(b))
+}
+
+func explainSource(short pathShortener, source config.Source) string {
+	if source.Local {
+		return "local"
+	}
+	return short.location(source.Path, source.Line)
 }

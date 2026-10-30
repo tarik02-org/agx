@@ -112,7 +112,7 @@ func TestJSONShapes(t *testing.T) {
 		{[]string{"daemon", "stop"}, "{kept_launches:number,running:bool}"},
 		{
 			[]string{"use", "fs"},
-			"{defined:null,disabled:null,enabled:[{id:string,kind:string}],files:null,removed:null," +
+			"{defined:null,disabled:null,enabled:[{id:string,kind:string}],removed:null,revision:number," +
 				"scope:{directory:string,harnesses:null}}",
 		},
 	} {

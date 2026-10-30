@@ -60,9 +60,10 @@ type harnessConfig struct {
 	err    error
 }
 
-func loadHarnesses(path string, builtins config.Builtins) harnessConfig {
+func loadHarnesses(paths platform.Paths, builtins config.Builtins) harnessConfig {
 	// Harnesses come only from configuration fragments, so packages need not be installed.
-	c, err := config.Load(path, config.Options{Builtins: builtins})
+	path := paths.Config
+	c, err := config.Load(path, config.Options{Builtins: builtins, State: paths.State})
 	if err != nil {
 		return harnessConfig{path: path, config: config.Bare(builtins), err: err}
 	}

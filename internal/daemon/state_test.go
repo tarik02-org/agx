@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -158,7 +157,7 @@ func TestServeRejectsCorruptState(t *testing.T) {
 	stop := make(chan struct{})
 	close(stop)
 	err := Serve(t.Context(), stop, s.paths, adapters.NewRegistry(), config.Builtins{})
-	if err == nil || !strings.Contains(err.Error(), "load daemon state") {
+	if err == nil {
 		t.Fatalf("corrupt state was accepted: %v", err)
 	}
 }

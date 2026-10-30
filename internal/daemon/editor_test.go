@@ -1,9 +1,7 @@
 package daemon
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"os"
 	"os/exec"
@@ -13,6 +11,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/auth"
@@ -105,13 +104,13 @@ func TestListDefinitions(t *testing.T) {
 		t.Fatalf("definitions = %v, want %v", order, want)
 	}
 	alpha := byKey["skills/alpha"]
-	if alpha.Yaml != "path: ./skills/alpha # local\n" || alpha.Description != "Alpha skill." ||
-		alpha.Path != filepath.Join(dir, "skills", "alpha") || alpha.ReadOnly || alpha.Package != "" ||
+	if alpha.Description != "Alpha skill." ||
+		alpha.Path != filepath.Join(dir, "skills", "alpha") || !alpha.ReadOnly || alpha.Package != "" ||
 		alpha.Source.Path != filepath.Join(dir, "main.yaml") || alpha.Source.Line != 2 {
 		t.Fatalf("alpha = %+v", alpha)
 	}
 	if docs := byKey["mcp/docs"]; docs.Description != "Library docs." ||
-		!strings.Contains(docs.Yaml, "url: https://example.com/mcp") {
+		!docs.ReadOnly {
 		t.Fatalf("docs = %+v", docs)
 	}
 	if agents := byKey["instructions/agents"]; agents.Path != filepath.Join(dir, "AGENTS.md") {
@@ -148,12 +147,8 @@ func TestReadFileRestrictions(t *testing.T) {
 		}
 		return response.Msg, nil
 	}
-	if got, err := read(
-		filepath.Join(dir, "main.yaml"),
-	); err != nil || got.Content != strings.Replace(editorConfig, "skills:\n", "skills:\n  cached:\n    path: ./cache/kit/skill\n", 1) ||
-		got.ReadOnly {
-		t.Fatalf("fragment = %+v, %v", got, err)
-	}
+	_, err := read(filepath.Join(dir, "main.yaml"))
+	wantCode(t, err, connect.CodeInvalidArgument)
 	if got, err := read(
 		filepath.Join(dir, "skills", "alpha", "scripts", "run.sh"),
 	); err != nil || got.Content != "echo\n" ||
@@ -180,136 +175,106 @@ func TestReadFileRestrictions(t *testing.T) {
 		_, err := read(path)
 		wantCode(t, err, connect.CodeInvalidArgument)
 	}
-	_, err := read(filepath.Join(dir, "skills", "alpha", "missing.md"))
+	_, err = read(filepath.Join(dir, "skills", "alpha", "missing.md"))
 	wantCode(t, err, connect.CodeNotFound)
 }
 
-func define(kind, id, yaml string) *v1.ConfigChange {
-	return &v1.ConfigChange{Change: &v1.ConfigChange_Define{Define: &v1.DefineChange{Kind: kind, Id: id, Yaml: yaml}}}
+func define(kind, id string, value any) *v1.ConfigChange {
+	parsed, err := structpb.NewValue(value)
+	if err != nil {
+		panic(err)
+	}
+	return &v1.ConfigChange{
+		Change: &v1.ConfigChange_Define{Define: &v1.DefineChange{Kind: kind, Id: id, Value: parsed}},
+	}
 }
 
 func enable(kind config.Kind, id string) *v1.ConfigChange {
 	return &v1.ConfigChange{Change: &v1.ConfigChange_Enable{Enable: &v1.SelectionChange{Kind: string(kind), Id: id}}}
 }
 
-func TestPlanAndApplyChanges(t *testing.T) {
+func TestUpdateConfiguration(t *testing.T) {
 	s, dir := editorServer(t, editorConfig)
 	changes := []*v1.ConfigChange{
-		define("mcp", "search", "url: https://example.com/search\n"),
+		define("mcp", "search", map[string]any{"command": []any{"search"}}),
 		enable("mcp", "search"),
-		{Change: &v1.ConfigChange_WriteFile{WriteFile: &v1.FileWrite{
-			Path:    filepath.Join(dir, "skills", "alpha", "SKILL.md"),
-			Content: "---\nname: alpha\ndescription: Edited.\n---\n",
-		}}},
 	}
-	planned, err := s.PlanChanges(t.Context(), connect.NewRequest(&v1.PlanChangesRequest{Changes: changes}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	files := planned.Msg.Files
-	main := filepath.Join(dir, "main.yaml")
-	sum := sha256.Sum256([]byte(editorConfig))
-	if len(files) != 2 || files[0].Path != main || files[0].BeforeSha256 != hex.EncodeToString(sum[:]) ||
-		!strings.Contains(files[0].Diff, "+  search:") || !strings.Contains(files[0].Diff, "+      mcp: [search]") ||
-		!strings.Contains(files[1].Diff, "+description: Edited.") {
-		t.Fatalf("plan = %+v", files)
-	}
-	if b, _ := os.ReadFile(main); string(b) != editorConfig {
-		t.Fatal("planning wrote the configuration")
-	}
-
-	// A file changed since the plan fails the apply.
-	stale := []*v1.PlannedFile{{Path: files[0].Path, BeforeSha256: strings.Repeat("0", 64)}, files[1]}
-	_, err = s.ApplyChanges(t.Context(), connect.NewRequest(&v1.ApplyChangesRequest{Changes: changes, Expected: stale}))
-	wantCode(t, err, connect.CodeAborted)
-
-	applied, err := s.ApplyChanges(
-		t.Context(),
-		connect.NewRequest(&v1.ApplyChangesRequest{Changes: changes, Expected: files}),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(applied.Msg.Written) != 2 {
-		t.Fatalf("written = %v", applied.Msg.Written)
-	}
-	c, err := s.reload()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := c.MCP["search"]; !ok {
-		t.Fatal("the daemon did not reload the applied configuration")
-	}
-
-	// Replaying the applied plan finds the files changed.
-	_, err = s.ApplyChanges(t.Context(), connect.NewRequest(&v1.ApplyChangesRequest{Changes: changes, Expected: files}))
-	wantCode(t, err, connect.CodeAborted)
-
-	undefine := &v1.ConfigChange{
-		Change: &v1.ConfigChange_Undefine{Undefine: &v1.UndefineChange{Kind: "skills", Id: "alpha"}},
-	}
-	planned, err = s.PlanChanges(
-		t.Context(),
-		connect.NewRequest(&v1.PlanChangesRequest{Changes: []*v1.ConfigChange{undefine}}),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(planned.Msg.Files) != 1 || !strings.Contains(planned.Msg.Files[0].Diff, "-    skills: [alpha]") {
-		t.Fatalf("undefine plan = %+v", planned.Msg.Files)
-	}
-
-	for name, test := range map[string]struct {
-		change *v1.ConfigChange
-		want   connect.Code
-	}{
-		"invalid":     {define("mcp", "bad", "url: 5\ncommand: [x]\n"), connect.CodeFailedPrecondition},
-		"unknown tag": {define("mcp", "bad", "url: !shell whoami\n"), connect.CodeInvalidArgument},
-		"sequence":    {define("mcp", "bad", "[a, b]\n"), connect.CodeInvalidArgument},
-		"unknown":     {enable("skills", "missing"), connect.CodeFailedPrecondition},
-		"outside": {&v1.ConfigChange{Change: &v1.ConfigChange_WriteFile{WriteFile: &v1.FileWrite{
-			Path: filepath.Join(dir, "elsewhere.md"),
-		}}}, connect.CodeInvalidArgument},
-		"empty": {&v1.ConfigChange{}, connect.CodeInvalidArgument},
-	} {
-		_, err := s.PlanChanges(
+	update := func(revision int64, changes []*v1.ConfigChange) (*v1.UpdateConfigurationResponse, error) {
+		response, err := s.UpdateConfiguration(
 			t.Context(),
-			connect.NewRequest(&v1.PlanChangesRequest{Changes: []*v1.ConfigChange{test.change}}),
+			connect.NewRequest(&v1.UpdateConfigurationRequest{Changes: changes, ExpectedRevision: revision}),
 		)
-		if err == nil {
-			t.Fatalf("%s: planned", name)
+		if err != nil {
+			return nil, err
 		}
-		if got := connect.CodeOf(err); got != test.want {
-			t.Errorf("%s: %v: reason %v, want %v", name, err, got, test.want)
+		return response.Msg, nil
+	}
+	got, err := update(0, changes)
+	if err != nil || got.Revision != 1 {
+		t.Fatalf("update: %+v %v", got, err)
+	}
+	_, err = update(0, []*v1.ConfigChange{define("instructions", "stale", map[string]any{"text": "stale"})})
+	wantCode(t, err, connect.CodeAborted)
+	_, err = update(
+		1,
+		[]*v1.ConfigChange{
+			define("instructions", "valid", map[string]any{"text": "valid"}),
+			define("mcp", "bad", map[string]any{"url": 5}),
+		},
+	)
+	wantCode(t, err, connect.CodeFailedPrecondition)
+	c, err := s.reload()
+	if err != nil || len(c.Instructions) != 1 || len(c.MCP) != 2 || c.Local.Revision != 1 {
+		t.Fatalf("rollback: %+v %v", c, err)
+	}
+	_, err = update(1, []*v1.ConfigChange{define("mcp", "docs", map[string]any{"command": []any{"changed"}})})
+	wantCode(t, err, connect.CodeFailedPrecondition)
+	if data, _ := os.ReadFile(filepath.Join(dir, "main.yaml")); string(data) != editorConfig {
+		t.Fatal("changed YAML overlay")
+	}
+	definitions, err := s.ListDefinitions(t.Context(), connect.NewRequest(&v1.ListDefinitionsRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, d := range definitions.Msg.Definitions {
+		if d.Id == "search" {
+			found = true
+			if d.ReadOnly || !d.Source.Local || d.Value.GetStructValue().Fields["command"] == nil {
+				t.Fatalf("local definition: %+v", d)
+			}
 		}
+	}
+	if !found {
+		t.Fatal("local definition not listed")
+	}
+	// A fresh daemon reads the same definitions and revision.
+	replacement := &Server{paths: s.paths, builtins: s.builtins, manager: auth.New("", nil)}
+	restored, err := replacement.GetConfiguration(t.Context(), connect.NewRequest(&v1.GetConfigurationRequest{}))
+	if err != nil || restored.Msg.Revision != 1 {
+		t.Fatalf("restart: %+v %v", restored, err)
 	}
 }
 
-func TestPlanChangesChoosesFile(t *testing.T) {
+func TestWriteResourceFile(t *testing.T) {
 	s, dir := editorServer(t, editorConfig)
-	other := filepath.Join(dir, "agx.d", "10-other.yaml")
-	writeFile(t, other, "{}\n")
-	changes := []*v1.ConfigChange{define("mcp", "search", "url: https://example.com/search\n")}
-	_, err := s.PlanChanges(t.Context(), connect.NewRequest(&v1.PlanChangesRequest{Changes: changes}))
-	var rpc *connect.Error
-	if !errors.As(err, &rpc) || rpc.Code() != connect.CodeFailedPrecondition {
-		t.Fatalf("error = %v", err)
-	}
-	wantCode(t, err, connect.CodeFailedPrecondition)
-	value, _ := rpc.Details()[0].Value()
-	if files := value.(*v1.ErrorDetail).Files; !slices.Equal(files, []string{filepath.Join(dir, "main.yaml"), other}) {
-		t.Fatalf("files = %q", files)
-	}
-	planned, err := s.PlanChanges(
+	path := filepath.Join(dir, "AGENTS.md")
+	_, err := s.WriteResourceFile(
 		t.Context(),
-		connect.NewRequest(&v1.PlanChangesRequest{Changes: changes, File: other}),
+		connect.NewRequest(&v1.WriteResourceFileRequest{Path: path, Content: "Updated."}),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if files := planned.Msg.Files; len(files) != 1 || files[0].Path != other {
-		t.Fatalf("plan = %+v", files)
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "Updated." {
+		t.Fatalf("resource: %s %v", data, err)
 	}
+	_, err = s.WriteResourceFile(
+		t.Context(),
+		connect.NewRequest(&v1.WriteResourceFileRequest{Path: filepath.Join(dir, "main.yaml"), Content: "{}"}),
+	)
+	wantCode(t, err, connect.CodeInvalidArgument)
 }
 
 // skillRepository commits a repository holding the skills alpha and beta.
@@ -388,17 +353,10 @@ func TestPreviewSource(t *testing.T) {
 		{Change: &v1.ConfigChange_AddPackage{AddPackage: msg.Package}},
 		enable("skills", "kit/alpha"),
 	}
-	planned, err := s.PlanChanges(t.Context(), connect.NewRequest(&v1.PlanChangesRequest{Changes: changes}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(planned.Msg.Files) != 2 || !strings.HasSuffix(planned.Msg.Files[1].Path, "agx.lock.json") ||
-		planned.Msg.Files[1].BeforeSha256 != "" || !strings.Contains(planned.Msg.Files[0].Diff, "+      skills: [kit/alpha]") {
-		t.Fatalf("plan = %+v", planned.Msg.Files)
-	}
-	if _, err := s.ApplyChanges(t.Context(), connect.NewRequest(&v1.ApplyChangesRequest{
-		Changes: changes, Expected: planned.Msg.Files,
-	})); err != nil {
+	if _, err := s.UpdateConfiguration(
+		t.Context(),
+		connect.NewRequest(&v1.UpdateConfigurationRequest{Changes: changes}),
+	); err != nil {
 		t.Fatal(err)
 	}
 	c, err := s.reload()

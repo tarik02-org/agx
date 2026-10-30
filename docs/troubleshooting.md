@@ -119,8 +119,10 @@ The daemon writes `daemon.log` in its configuration's hashed runtime directory:
 
 ## Starting over
 
-To reset agx without touching your configuration, stop the daemon and delete the
-cache directory, then reinstall:
+To rebuild disposable caches, stop the daemon and delete the cache directory,
+then reinstall. Preserve the state directory: `state.db` holds local configuration,
+credentials, and launch history. With an overridden cache, state may live in
+`<cache>/state`; preserve that subdirectory before clearing its parent:
 
 ```sh
 agx daemon stop --force
@@ -128,5 +130,6 @@ rm -rf ~/.cache/agx          # ~/Library/Caches/agx on macOS
 agx install
 ```
 
-Stored secrets and OAuth logins live in the OS keychain and survive this; remove
-them with `agx secret logout <id>`.
+Stored secrets and OAuth logins live encrypted in `state.db` and survive cache
+rebuilds. Remove one with `agx secret logout <id>`, or every stored credential
+with `agx secret logout --all`, which preserves configuration and launch history.

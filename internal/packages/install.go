@@ -41,21 +41,21 @@ func (m marked) Is(target error) bool { return target == m.kind }
 func mark(kind, err error) error { return marked{err: err, kind: kind} }
 
 type Result struct {
-	PackageIDs []config.ID `json:"package_ids"`
-	Lockfiles  []string    `json:"lockfiles"`
+	LocalLock  *config.Lock `json:"-"`
+	PackageIDs []config.ID  `json:"package_ids"`
+	Lockfiles  []string     `json:"lockfiles"`
 	// Locks holds the encoded lockfiles by path when Options.Stage leaves them unwritten.
 	Locks map[string][]byte `json:"-"`
 }
 
 type Options struct {
+	State string
+	Local *config.Local
 	// Frozen permits no lockfile changes.
 	Frozen bool
 	// Updates advances these packages; UpdateAll advances every one.
 	Updates   []config.ID
 	UpdateAll bool
-	// Overlay replaces configuration fragments and lockfiles, so an edit can be installed
-	// before it is written.
-	Overlay config.Overlay
 	// Stage returns the lockfiles in Result.Locks instead of writing them.
 	Stage bool
 }
@@ -76,7 +76,10 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 		return result, err
 	}
 	defer func() { _ = lock.Unlock() }()
-	c, err := config.Load(root, config.Options{Builtins: builtins, Overlay: opts.Overlay})
+	c, err := config.Load(
+		root,
+		config.Options{Builtins: builtins, State: opts.State, Local: opts.Local},
+	)
 	if err != nil {
 		return result, err
 	}
@@ -102,7 +105,7 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 		pinned := p.Pinned()
 		l, ok := locks[p.Lockfile]
 		if !ok {
-			l, err = config.ReadLock(p.Lockfile, opts.Overlay)
+			l, err = c.PackageLock(p)
 			switch {
 			case err == nil:
 				locks[p.Lockfile] = l
@@ -251,12 +254,18 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 				delete(l.Packages, id)
 			}
 		}
-		result.Lockfiles = append(result.Lockfiles, path)
+		if path != "" {
+			result.Lockfiles = append(result.Lockfiles, path)
+		}
 	}
 	switch {
 	case opts.Stage:
 		result.Locks = map[string][]byte{}
 		for path, l := range locks {
+			if path == "" {
+				result.LocalLock = &l
+				continue
+			}
 			b, err := EncodeLock(l)
 			if err != nil {
 				return result, err
@@ -264,6 +273,13 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 			result.Locks[path] = b
 		}
 	case !frozen:
+		if local, ok := locks[""]; ok {
+			c.Local.Lock = local
+			if _, err := config.WriteLocal(ctx, opts.State, root, c.Local); err != nil {
+				return result, err
+			}
+			delete(locks, "")
+		}
 		if err := writeLocks(locks); err != nil {
 			return result, err
 		}

@@ -230,7 +230,7 @@ func (m *merger) harnesses(d Document) error {
 			h.Executable = filepath.Clean(executable)
 		}
 		def, exists := c.Harnesses[name]
-		if h.Override || !exists {
+		if h.Override || !exists || def.Source.Local && !at().Local {
 			def = HarnessDefinition{
 				Source:         at(),
 				Environment:    map[string]Value{},

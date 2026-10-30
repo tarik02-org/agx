@@ -34,16 +34,6 @@ func TestFragmentsLoadInOrder(t *testing.T) {
 	if !slices.Equal(c.Files, want) {
 		t.Fatalf("files = %q, want %q", c.Files, want)
 	}
-	for path, listed := range map[string]bool{
-		first:                                   true,
-		filepath.Join(dir, "agx.d", "new.yaml"): true,
-		filepath.Join(dir, "none.d", "x.yaml"):  true,
-		filepath.Join(dir, "other", "x.yaml"):   false,
-	} {
-		if got := c.Lists(canonical(t, path)); got != listed {
-			t.Errorf("Lists(%s) = %v, want %v", path, got, listed)
-		}
-	}
 }
 
 // A load's inputs stay unchanged until a file changes, also when one directory's name starts
@@ -727,7 +717,7 @@ func TestFormatVersions(t *testing.T) {
 		wantError(t, err, tt.want)
 	}
 	lock := write(t, filepath.Join(dir, "agx.lock.json"), `{"version":2,"packages":{},"sources":{}}`)
-	_, err := config.ReadLock(lock, nil)
+	_, err := config.ReadLock(lock)
 	wantError(t, err, "uses format version 2, but this agx reads only version 1")
 }
 

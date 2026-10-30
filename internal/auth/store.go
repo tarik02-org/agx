@@ -74,6 +74,17 @@ func (s *Store) Delete(k string) error {
 	})
 }
 
+// Reset removes credentials without touching configuration or other durable state.
+func (s *Store) Reset() error {
+	return s.locked(func(tx *sql.Tx) error {
+		err := statedb.New(tx).ResetSecrets(context.Background())
+		if err == nil {
+			s.key = nil
+		}
+		return err
+	})
+}
+
 func (s *Store) locked(op func(*sql.Tx) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -116,7 +127,7 @@ func (s *Store) masterKey(tx *sql.Tx) ([]byte, error) {
 		return nil, err
 	case populated:
 		return nil, fmt.Errorf(
-			"the OS keychain has no master key for %s, so its secrets cannot be read; remove the stored credentials with agx secret logout, then store or log in again",
+			"the OS keychain has no master key for %s, so its secrets cannot be read; remove the stored credentials with agx secret logout --all, then store or log in again",
 			s.path,
 		)
 	}

@@ -172,8 +172,9 @@ agx update team        # just one
 ```
 
 - `install` fetches packages and Git skills and instructions, then records the
-  exact commit or content hash in `agx.lock.json` next to the configuration
-  file that declares them. Commit lockfiles along with the configuration.
+  exact commit or content hash in the local configuration database for
+  CLI/UI-managed sources, or in `agx.lock.json` next to the YAML overlay that
+  declares them. Commit portable lockfiles along with YAML configuration.
 - `install` hashes what it copies into the cache, and other commands trust an
   installed package without reading it again. `agx doctor` hashes installed
   packages again and names any cache entry that changed since.

@@ -23,18 +23,8 @@ fragments existed.
   lists fragments, so there are no cycles, and a file matched twice, or the root matched by its own
   glob, loads once. Relative entries are relative to the root as given, so a root linked into
   the Nix store loads the fragments beside the link. Package manifests are unchanged.
-- **Where edits go**: a changed or removed definition stays in the file that defines it, and
-  `use`/`unuse` edit the first writable matching rule. Anything new goes to the target
-  fragment: `--file` (relative to the root's directory; it must be a writable fragment the
-  root lists, or a new file its globs match), else the only writable fragment, else a
-  new `agx.d/main.yaml` (with the root, when it is missing). With several, a terminal picks
-  one, or a new file in `agx.d/`; without a terminal, or with `--json`, the command fails
-  with `choose_file` listing them. A new rule no longer goes beside its definition: that
-  fragment is often generated or read-only, and the target rule keeps one answer.
-- **API**: `PlanChangesRequest.file` and `ApplyChangesRequest.file` name the target for the
-  whole request, replacing `DefineChange.file`. Without one and with several candidates the
-  plan fails with `FAILED_PRECONDITION` and the candidates in
-  `ErrorDetail.files`.
+- **Local edits**: superseded by [ADR 0029](0029-local-configuration.md). Commands
+  and the web UI save local configuration; fragments are declarative overlays.
 - **Home Manager** writes `programs.agx.settings` to its drop-in, and `settings.daemon` to a
   root file holding `fragments: [agx.d/*.yaml]` and those settings.
 

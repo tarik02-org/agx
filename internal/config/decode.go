@@ -48,8 +48,19 @@ func decode[T any](path string, data []byte, file SchemaKind, builtins Builtins)
 	if err := dec.Decode(new(yaml.Node)); !errors.Is(err, io.EOF) {
 		return d, nil, &SourceError{Path: path, Err: errors.New("expected one YAML document")}
 	}
+	return decodeNode[T](path, data, &root, file, builtins)
+}
+
+func decodeNode[T any](
+	path string,
+	data []byte,
+	root *yaml.Node,
+	file SchemaKind,
+	builtins Builtins,
+) (T, positions, error) {
+	var d T
 	at := positions{"": {Path: path, Line: 1, Column: 1}}
-	value, err := toJSON(path, &root, nil, at)
+	value, err := toJSON(path, root, nil, at)
 	if err != nil {
 		return d, nil, err
 	}
@@ -61,10 +72,10 @@ func decode[T any](path string, data []byte, file SchemaKind, builtins Builtins)
 		return d, nil, s.explain(file, at, err)
 	}
 	if err := root.Load(&d, yaml.WithKnownFields()); err != nil {
-		forgetTags(&root)
+		forgetTags(root)
 		return d, nil, yamlError(path, data, err)
 	}
-	if err := checkTags(&root); err != nil {
+	if err := checkTags(root); err != nil {
 		return d, nil, yamlError(path, data, err)
 	}
 	return d, at, nil

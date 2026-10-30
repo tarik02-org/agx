@@ -67,6 +67,7 @@ func JoinKinds(kinds []Kind) string {
 }
 
 type Source struct {
+	Local  bool   `json:"local,omitempty"`
 	Path   string `json:"path"`
 	Line   int    `json:"line"`
 	Column int    `json:"column"`
@@ -79,6 +80,7 @@ type Package struct {
 	Hash     string `yaml:"hash"     json:"hash,omitempty"   jsonschema_description:"Content hash verified at install; pins the source without a lock entry."`
 	Subdir   string `yaml:"subdir"   json:"subdir,omitempty" jsonschema_description:"Package root within the source."`
 	Override bool   `yaml:"override" json:"-"                jsonschema_description:"Replace an existing definition."`
+	Local    bool   `yaml:"-"        json:"-"`
 	Lockfile string `yaml:"-"        json:"-"`
 	Source   Source `yaml:"-"        json:"-"`
 	// Manifest marks definitions from package manifests rather than configuration fragments.
@@ -304,6 +306,7 @@ type Document struct {
 }
 
 type Config struct {
+	Local         *Local                       `json:"-"`
 	Root          string                       `json:"root"`
 	Packages      map[ID]Package               `json:"packages"`
 	Skills        map[ID]Skill                 `json:"skills"`
@@ -323,9 +326,7 @@ type Config struct {
 	// rootDefinitions maps definitions from configuration fragments to their override flag,
 	// so package manifests merged later cannot replace them.
 	rootDefinitions map[string]bool
-	// fragments holds the root's fragment entries, resolved: absolute paths and glob patterns.
-	fragments []string
-	builtins  Builtins
+	builtins        Builtins
 }
 
 // MissingPackage is a package that is not installed. Root is the declared package the warning

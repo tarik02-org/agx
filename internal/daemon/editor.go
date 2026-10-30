@@ -16,11 +16,10 @@ import (
 
 	"connectrpc.com/connect"
 
-	"go.yaml.in/yaml/v4"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/configedit"
 	"github.com/tarik02-org/agx/internal/packages"
 	"github.com/tarik02-org/agx/internal/platform"
@@ -92,16 +91,12 @@ func names[V any](m map[config.ID]V) []string {
 type describer struct {
 	c     *config.Config
 	icons *mcpIcons
-	files map[string]*edit.File
-	modes map[string]*v1.ConfigurationFile
 }
 
 func newDescriber(c *config.Config, icons *mcpIcons) *describer {
 	return &describer{
 		c:     c,
 		icons: icons,
-		files: map[string]*edit.File{},
-		modes: map[string]*v1.ConfigurationFile{},
 	}
 }
 
@@ -112,15 +107,17 @@ func (d *describer) definition(kind config.Kind, id string) *v1.Definition {
 		Id:   id,
 		Source: &v1.SourceLocation{
 			Path:   at.Source.Path,
+			Local:  at.Source.Local,
 			Line:   uint32(at.Source.Line),   //nolint:gosec // lines fit
 			Column: uint32(at.Source.Column), //nolint:gosec // columns fit
 		},
 		Package: string(configedit.Owner(d.c, at.Source, id)),
 	}
-	fragment := slices.Contains(d.c.Files, at.Source.Path)
-	out.ReadOnly = !fragment || at.Inline || d.mode(at.Source.Path).ReadOnly
-	if fragment && !at.Inline {
-		out.Yaml = d.yaml(at.Source.Path, kind, id)
+	out.ReadOnly = !at.Source.Local || at.Inline
+	if at.Source.Local && !at.Inline {
+		if definitions, ok := d.c.Local.Document[string(kind)].(map[string]any); ok {
+			out.Value, _ = structpb.NewValue(definitions[id])
+		}
 	}
 	switch kind {
 	case config.KindSkills:
@@ -142,39 +139,6 @@ func (d *describer) definition(kind config.Kind, id string) *v1.Definition {
 	default:
 	}
 	return out
-}
-
-func (d *describer) mode(path string) *v1.ConfigurationFile {
-	if m, ok := d.modes[path]; ok {
-		return m
-	}
-	m := configurationFile(path)
-	d.modes[path] = m
-	return m
-}
-
-// yaml renders a definition's value as its fragment holds it; empty when it cannot be found.
-func (d *describer) yaml(path string, kind config.Kind, id string) string {
-	f, ok := d.files[path]
-	if !ok {
-		var err error
-		if f, err = edit.Open(path, ""); err != nil {
-			f = nil
-		}
-		d.files[path] = f
-	}
-	if f == nil {
-		return ""
-	}
-	node := f.Definition(kind, id)
-	if node == nil {
-		return ""
-	}
-	b, err := yaml.Dump(node, yaml.WithV4Defaults(), yaml.WithIndent(2), yaml.WithLineWidth(-1))
-	if err != nil {
-		return ""
-	}
-	return string(b)
 }
 
 func (s *Server) GetSkill(
@@ -249,16 +213,9 @@ func (s *Server) ReadFile(
 	if err != nil {
 		return nil, rpcError(connect.CodeInvalidArgument, err.Error())
 	}
-	readOnly := false
-	if !slices.Contains(c.Files, path) {
-		local, found := configedit.ContentFile(c, s.paths.Cache, path)
-		if !found {
-			return nil, rpcError(
-				connect.CodeInvalidArgument,
-				req.Msg.Path+" is not a configuration fragment or a file of a configured skill or instructions definition",
-			)
-		}
-		readOnly = !local
+	local, found := configedit.ContentFile(c, s.paths, path)
+	if !found {
+		return nil, rpcError(connect.CodeInvalidArgument, "path is not a configured resource file")
 	}
 	content, binary, err := readText(path)
 	if err != nil {
@@ -268,7 +225,7 @@ func (s *Server) ReadFile(
 		Path:     path,
 		Content:  content,
 		Binary:   binary,
-		ReadOnly: readOnly || configurationFile(requested).ReadOnly || configurationFile(path).ReadOnly,
+		ReadOnly: !local,
 	}
 	return connect.NewResponse(out), nil
 }
@@ -297,85 +254,49 @@ func readText(path string) (string, bool, error) {
 	return string(b), false, nil
 }
 
-func (s *Server) PlanChanges(
+func (s *Server) UpdateConfiguration(
 	ctx context.Context,
-	req *connect.Request[v1.PlanChangesRequest],
-) (*connect.Response[v1.PlanChangesResponse], error) {
+	req *connect.Request[v1.UpdateConfigurationRequest],
+) (*connect.Response[v1.UpdateConfigurationResponse], error) {
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
-	plan, err := s.plan(ctx, req.Msg.Changes, req.Msg.File)
-	if err != nil {
-		return nil, err
-	}
-	out := &v1.PlanChangesResponse{Files: []*v1.PlannedFile{}}
-	for _, f := range plan.Files {
-		out.Files = append(out.Files, &v1.PlannedFile{Path: f.Path, Diff: f.Diff(), BeforeSha256: f.BeforeSHA256()})
-	}
-	return connect.NewResponse(out), nil
-}
-
-func (s *Server) ApplyChanges(
-	ctx context.Context,
-	req *connect.Request[v1.ApplyChangesRequest],
-) (*connect.Response[v1.ApplyChangesResponse], error) {
-	expected := map[string]string{}
-	for _, f := range req.Msg.Expected {
-		if _, ok := expected[f.Path]; ok {
-			return nil, rpcError(connect.CodeInvalidArgument, "expected names "+f.Path+" twice")
-		}
-		expected[f.Path] = f.BeforeSha256
-	}
-	s.editMu.Lock()
-	defer s.editMu.Unlock()
-	plan, err := s.plan(ctx, req.Msg.Changes, req.Msg.File)
-	if err != nil {
-		return nil, err
-	}
-	if err := plan.Check(expected); err != nil {
-		return nil, editError(err)
-	}
-	written, err := plan.Write()
-	// The configuration's inputs changed, so this loads what was written.
-	_, _ = s.reload()
-	if err != nil {
-		var edited *configedit.Error
-		if errors.As(err, &edited) {
-			return nil, editError(err)
-		}
-		return nil, rpcError(
-			connect.CodeInternal,
-			fmt.Sprintf("writing the change failed after %d of %d files: %v", len(written), len(plan.Files), err),
-		)
-	}
-	return connect.NewResponse(&v1.ApplyChangesResponse{Written: written}), nil
-}
-
-// plan applies changes in order to a session over the current configuration and plans it; new
-// definitions and rules go to file.
-func (s *Server) plan(ctx context.Context, changes []*v1.ConfigChange, file string) (*configedit.Plan, error) {
 	c, err := s.reload()
 	if err != nil {
 		return nil, configError(err)
 	}
+	if c.Local.Revision != req.Msg.ExpectedRevision {
+		return nil, rpcError(connect.CodeAborted, config.ErrConflict.Error())
+	}
 	session, err := configedit.New(s.paths, s.builtins, c)
 	if err != nil {
-		return nil, rpcError(connect.CodeInternal, err.Error())
+		return nil, editError(err)
 	}
-	if file != "" {
-		if session.File, err = absoluteFile(file); err != nil {
-			return nil, editError(err)
-		}
-	}
-	for i, change := range changes {
+	for i, change := range req.Msg.Changes {
 		if err := s.change(ctx, session, change); err != nil {
 			return nil, editError(fmt.Errorf("change %d: %w", i+1, err))
 		}
 	}
-	plan, err := session.Plan()
-	if err != nil {
+	if _, err := session.Commit(ctx); err != nil {
 		return nil, editError(err)
 	}
-	return plan, nil
+	_, _ = s.reload()
+	return connect.NewResponse(&v1.UpdateConfigurationResponse{Revision: session.Local.Revision}), nil
+}
+
+func (s *Server) WriteResourceFile(
+	_ context.Context,
+	req *connect.Request[v1.WriteResourceFileRequest],
+) (*connect.Response[v1.WriteResourceFileResponse], error) {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	c, err := s.reload()
+	if err != nil {
+		return nil, configError(err)
+	}
+	if err := configedit.WriteFile(c, s.paths, req.Msg.Path, []byte(req.Msg.Content)); err != nil {
+		return nil, editError(err)
+	}
+	return connect.NewResponse(&v1.WriteResourceFileResponse{}), nil
 }
 
 func (s *Server) change(
@@ -386,19 +307,16 @@ func (s *Server) change(
 	switch change := change.Change.(type) {
 	case *v1.ConfigChange_Define:
 		d := change.Define
-		value, err := definitionValue(d.Yaml)
-		if err != nil {
-			return err
+		if d.Value == nil {
+			return invalidf("definition needs a value")
 		}
-		return session.Define(config.Kind(d.Kind), d.Id, value)
+		return session.Define(config.Kind(d.Kind), d.Id, d.Value.AsInterface())
 	case *v1.ConfigChange_Undefine:
 		return session.Undefine(config.Kind(change.Undefine.Kind), change.Undefine.Id)
 	case *v1.ConfigChange_Enable:
 		return selectionChange(session, change.Enable, true)
 	case *v1.ConfigChange_Disable:
 		return selectionChange(session, change.Disable, false)
-	case *v1.ConfigChange_WriteFile:
-		return session.WriteFile(change.WriteFile.Path, []byte(change.WriteFile.Content))
 	case *v1.ConfigChange_AddPackage:
 		p := change.AddPackage
 		if p.Git == "" {
@@ -465,52 +383,6 @@ func selectionChange(session *configedit.Session, c *v1.SelectionChange, enable 
 	return err
 }
 
-// absoluteFile resolves a fragment path a change names.
-func absoluteFile(path string) (string, error) {
-	expanded, err := config.ExpandHome(path)
-	if err != nil || !filepath.IsAbs(expanded) {
-		return "", invalidf("file must be absolute or start with ~/: %s", path)
-	}
-	return platform.Canonical(expanded)
-}
-
-// allowedTags are the tags a definition may use besides YAML's own.
-var allowedTags = []string{"!env", "!file", "!secret"}
-
-// definitionValue parses a definition's YAML: a mapping or a scalar, tagged only with agx's tags.
-func definitionValue(text string) (*yaml.Node, error) {
-	var doc yaml.Node
-	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
-		return nil, invalidf("definition YAML: %v", err)
-	}
-	if doc.Kind != yaml.DocumentNode || len(doc.Content) != 1 {
-		return nil, invalidf("definition YAML is empty")
-	}
-	value := doc.Content[0]
-	if value.Kind != yaml.MappingNode && value.Kind != yaml.ScalarNode {
-		return nil, invalidf("a definition is a mapping or a scalar")
-	}
-	var check func(*yaml.Node) error
-	check = func(n *yaml.Node) error {
-		if n.Kind == yaml.AliasNode || n.Anchor != "" {
-			return invalidf("definition YAML may not use anchors or aliases")
-		}
-		if strings.HasPrefix(n.Tag, "!") && !strings.HasPrefix(n.Tag, "!!") && !slices.Contains(allowedTags, n.Tag) {
-			return invalidf("definition YAML uses tag %s; only %s are allowed", n.Tag, strings.Join(allowedTags, ", "))
-		}
-		for _, child := range n.Content {
-			if err := check(child); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if err := check(value); err != nil {
-		return nil, err
-	}
-	return value, nil
-}
-
 // editError maps edit failures to Connect codes and configuration diagnostics.
 func editError(err error) error {
 	var connectErr *connect.Error
@@ -530,12 +402,7 @@ func editError(err error) error {
 			return rpcError(connect.CodeNotFound, err.Error())
 		case configedit.InvalidRequest:
 			return rpcError(connect.CodeInvalidArgument, err.Error())
-		case configedit.ChooseFile:
-			return detailError(
-				connect.CodeFailedPrecondition,
-				&v1.ErrorDetail{Files: edited.Files},
-				err.Error(),
-			)
+
 		}
 	}
 	switch {
@@ -674,8 +541,6 @@ func (s *Server) PreviewSource(
 		}
 		id = config.ID(fmt.Sprintf("%s-%d", base, n))
 	}
-	// The preview is never written, so any writable fragment can hold the package.
-	session.Choose = func(candidates []string) (string, error) { return candidates[0], nil }
 	if _, err := session.DeclarePackage(id, source); err != nil {
 		return nil, editError(err)
 	}
