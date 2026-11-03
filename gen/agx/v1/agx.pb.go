@@ -122,6 +122,55 @@ func (ResolutionStep_Change) EnumDescriptor() ([]byte, []int) {
 	return file_agx_v1_agx_proto_rawDescGZIP(), []int{5, 0}
 }
 
+type Launch_Kind int32
+
+const (
+	Launch_KIND_UNSPECIFIED Launch_Kind = 0
+	Launch_KIND_PROCESS     Launch_Kind = 1
+	Launch_KIND_RESOURCES   Launch_Kind = 2
+)
+
+// Enum value maps for Launch_Kind.
+var (
+	Launch_Kind_name = map[int32]string{
+		0: "KIND_UNSPECIFIED",
+		1: "KIND_PROCESS",
+		2: "KIND_RESOURCES",
+	}
+	Launch_Kind_value = map[string]int32{
+		"KIND_UNSPECIFIED": 0,
+		"KIND_PROCESS":     1,
+		"KIND_RESOURCES":   2,
+	}
+)
+
+func (x Launch_Kind) Enum() *Launch_Kind {
+	p := new(Launch_Kind)
+	*p = x
+	return p
+}
+
+func (x Launch_Kind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Launch_Kind) Descriptor() protoreflect.EnumDescriptor {
+	return file_agx_v1_agx_proto_enumTypes[2].Descriptor()
+}
+
+func (Launch_Kind) Type() protoreflect.EnumType {
+	return &file_agx_v1_agx_proto_enumTypes[2]
+}
+
+func (x Launch_Kind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Launch_Kind.Descriptor instead.
+func (Launch_Kind) EnumDescriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{32, 0}
+}
+
 type Launch_State int32
 
 const (
@@ -164,11 +213,11 @@ func (x Launch_State) String() string {
 }
 
 func (Launch_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_agx_v1_agx_proto_enumTypes[2].Descriptor()
+	return file_agx_v1_agx_proto_enumTypes[3].Descriptor()
 }
 
 func (Launch_State) Type() protoreflect.EnumType {
-	return &file_agx_v1_agx_proto_enumTypes[2]
+	return &file_agx_v1_agx_proto_enumTypes[3]
 }
 
 func (x Launch_State) Number() protoreflect.EnumNumber {
@@ -177,7 +226,7 @@ func (x Launch_State) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Launch_State.Descriptor instead.
 func (Launch_State) EnumDescriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{24, 0}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{32, 1}
 }
 
 type McpRuntime_State int32
@@ -219,11 +268,11 @@ func (x McpRuntime_State) String() string {
 }
 
 func (McpRuntime_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_agx_v1_agx_proto_enumTypes[3].Descriptor()
+	return file_agx_v1_agx_proto_enumTypes[4].Descriptor()
 }
 
 func (McpRuntime_State) Type() protoreflect.EnumType {
-	return &file_agx_v1_agx_proto_enumTypes[3]
+	return &file_agx_v1_agx_proto_enumTypes[4]
 }
 
 func (x McpRuntime_State) Number() protoreflect.EnumNumber {
@@ -232,7 +281,7 @@ func (x McpRuntime_State) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use McpRuntime_State.Descriptor instead.
 func (McpRuntime_State) EnumDescriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{39, 0}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{47, 0}
 }
 
 type McpTools_Load int32
@@ -268,11 +317,11 @@ func (x McpTools_Load) String() string {
 }
 
 func (McpTools_Load) Descriptor() protoreflect.EnumDescriptor {
-	return file_agx_v1_agx_proto_enumTypes[4].Descriptor()
+	return file_agx_v1_agx_proto_enumTypes[5].Descriptor()
 }
 
 func (McpTools_Load) Type() protoreflect.EnumType {
-	return &file_agx_v1_agx_proto_enumTypes[4]
+	return &file_agx_v1_agx_proto_enumTypes[5]
 }
 
 func (x McpTools_Load) Number() protoreflect.EnumNumber {
@@ -281,7 +330,7 @@ func (x McpTools_Load) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use McpTools_Load.Descriptor instead.
 func (McpTools_Load) EnumDescriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{58, 0}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{66, 0}
 }
 
 type LoginFinished_Outcome int32
@@ -320,11 +369,11 @@ func (x LoginFinished_Outcome) String() string {
 }
 
 func (LoginFinished_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_agx_v1_agx_proto_enumTypes[5].Descriptor()
+	return file_agx_v1_agx_proto_enumTypes[6].Descriptor()
 }
 
 func (LoginFinished_Outcome) Type() protoreflect.EnumType {
-	return &file_agx_v1_agx_proto_enumTypes[5]
+	return &file_agx_v1_agx_proto_enumTypes[6]
 }
 
 func (x LoginFinished_Outcome) Number() protoreflect.EnumNumber {
@@ -333,7 +382,7 @@ func (x LoginFinished_Outcome) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LoginFinished_Outcome.Descriptor instead.
 func (LoginFinished_Outcome) EnumDescriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{65, 0}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{73, 0}
 }
 
 type SecretStatus_State int32
@@ -378,11 +427,11 @@ func (x SecretStatus_State) String() string {
 }
 
 func (SecretStatus_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_agx_v1_agx_proto_enumTypes[6].Descriptor()
+	return file_agx_v1_agx_proto_enumTypes[7].Descriptor()
 }
 
 func (SecretStatus_State) Type() protoreflect.EnumType {
-	return &file_agx_v1_agx_proto_enumTypes[6]
+	return &file_agx_v1_agx_proto_enumTypes[7]
 }
 
 func (x SecretStatus_State) Number() protoreflect.EnumNumber {
@@ -391,7 +440,7 @@ func (x SecretStatus_State) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SecretStatus_State.Descriptor instead.
 func (SecretStatus_State) EnumDescriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{70, 0}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{78, 0}
 }
 
 type ResourceRef struct {
@@ -1819,6 +1868,547 @@ func (x *PrepareLaunchRequest) GetExecutable() string {
 	return ""
 }
 
+type ResolveResourcesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Absolute directory in the configuration's scope namespace. The consumer maps its workspace
+	// into this namespace; this directory need not exist on the daemon's host.
+	Directory string `protobuf:"bytes,1,opt,name=directory,proto3" json:"directory,omitempty"`
+	// Optional registered consumer or harness definition. Process settings are not applied.
+	Harness       string `protobuf:"bytes,2,opt,name=harness,proto3" json:"harness,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveResourcesRequest) Reset() {
+	*x = ResolveResourcesRequest{}
+	mi := &file_agx_v1_agx_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveResourcesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveResourcesRequest) ProtoMessage() {}
+
+func (x *ResolveResourcesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agx_v1_agx_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveResourcesRequest.ProtoReflect.Descriptor instead.
+func (*ResolveResourcesRequest) Descriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ResolveResourcesRequest) GetDirectory() string {
+	if x != nil {
+		return x.Directory
+	}
+	return ""
+}
+
+func (x *ResolveResourcesRequest) GetHarness() string {
+	if x != nil {
+		return x.Harness
+	}
+	return ""
+}
+
+type ResolveResourcesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Snapshot      *Snapshot              `protobuf:"bytes,1,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
+	Traces        []*ResourceTrace       `protobuf:"bytes,2,rep,name=traces,proto3" json:"traces,omitempty"`
+	Diagnostics   []*Diagnostic          `protobuf:"bytes,3,rep,name=diagnostics,proto3" json:"diagnostics,omitempty"`
+	Settings      []*HarnessSetting      `protobuf:"bytes,4,rep,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveResourcesResponse) Reset() {
+	*x = ResolveResourcesResponse{}
+	mi := &file_agx_v1_agx_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveResourcesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveResourcesResponse) ProtoMessage() {}
+
+func (x *ResolveResourcesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agx_v1_agx_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveResourcesResponse.ProtoReflect.Descriptor instead.
+func (*ResolveResourcesResponse) Descriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ResolveResourcesResponse) GetSnapshot() *Snapshot {
+	if x != nil {
+		return x.Snapshot
+	}
+	return nil
+}
+
+func (x *ResolveResourcesResponse) GetTraces() []*ResourceTrace {
+	if x != nil {
+		return x.Traces
+	}
+	return nil
+}
+
+func (x *ResolveResourcesResponse) GetDiagnostics() []*Diagnostic {
+	if x != nil {
+		return x.Diagnostics
+	}
+	return nil
+}
+
+func (x *ResolveResourcesResponse) GetSettings() []*HarnessSetting {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+type PrepareResourcesRequest struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	SnapshotId string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	Directory  string                 `protobuf:"bytes,2,opt,name=directory,proto3" json:"directory,omitempty"`
+	Harness    string                 `protobuf:"bytes,3,opt,name=harness,proto3" json:"harness,omitempty"`
+	// Sensitive: only the resource environment names declared by ResolveResources are accepted.
+	EnvironmentInputs map[string]string `protobuf:"bytes,4,rep,name=environment_inputs,json=environmentInputs,proto3" json:"environment_inputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Optional execution directory on the daemon's host, separate from the consumer's scope
+	// directory. Required for MCP servers that inherit cwd or share per directory/repository.
+	McpDirectory  string `protobuf:"bytes,5,opt,name=mcp_directory,json=mcpDirectory,proto3" json:"mcp_directory,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareResourcesRequest) Reset() {
+	*x = PrepareResourcesRequest{}
+	mi := &file_agx_v1_agx_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareResourcesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareResourcesRequest) ProtoMessage() {}
+
+func (x *PrepareResourcesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agx_v1_agx_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareResourcesRequest.ProtoReflect.Descriptor instead.
+func (*PrepareResourcesRequest) Descriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *PrepareResourcesRequest) GetSnapshotId() string {
+	if x != nil {
+		return x.SnapshotId
+	}
+	return ""
+}
+
+func (x *PrepareResourcesRequest) GetDirectory() string {
+	if x != nil {
+		return x.Directory
+	}
+	return ""
+}
+
+func (x *PrepareResourcesRequest) GetHarness() string {
+	if x != nil {
+		return x.Harness
+	}
+	return ""
+}
+
+func (x *PrepareResourcesRequest) GetEnvironmentInputs() map[string]string {
+	if x != nil {
+		return x.EnvironmentInputs
+	}
+	return nil
+}
+
+func (x *PrepareResourcesRequest) GetMcpDirectory() string {
+	if x != nil {
+		return x.McpDirectory
+	}
+	return ""
+}
+
+type PrepareResourcesResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A running resource lease, renewed, finished and reattached through LaunchService.
+	Launch  *Launch          `protobuf:"bytes,1,opt,name=launch,proto3" json:"launch,omitempty"`
+	Content *ResourceContent `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	Mcp     []*McpEndpoint   `protobuf:"bytes,3,rep,name=mcp,proto3" json:"mcp,omitempty"`
+	// Sensitive: authorizes only this lease's MCP access.
+	Grant string `protobuf:"bytes,4,opt,name=grant,proto3" json:"grant,omitempty"`
+	// Sensitive: held by the integration for renewal and release.
+	LifecycleToken    string `protobuf:"bytes,5,opt,name=lifecycle_token,json=lifecycleToken,proto3" json:"lifecycle_token,omitempty"`
+	RenewAfterSeconds uint32 `protobuf:"varint,6,opt,name=renew_after_seconds,json=renewAfterSeconds,proto3" json:"renew_after_seconds,omitempty"`
+	// Canonical daemon-side directory, retained for AttachLaunch; empty when unnecessary.
+	McpDirectory  string `protobuf:"bytes,7,opt,name=mcp_directory,json=mcpDirectory,proto3" json:"mcp_directory,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareResourcesResponse) Reset() {
+	*x = PrepareResourcesResponse{}
+	mi := &file_agx_v1_agx_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareResourcesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareResourcesResponse) ProtoMessage() {}
+
+func (x *PrepareResourcesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agx_v1_agx_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareResourcesResponse.ProtoReflect.Descriptor instead.
+func (*PrepareResourcesResponse) Descriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *PrepareResourcesResponse) GetLaunch() *Launch {
+	if x != nil {
+		return x.Launch
+	}
+	return nil
+}
+
+func (x *PrepareResourcesResponse) GetContent() *ResourceContent {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
+func (x *PrepareResourcesResponse) GetMcp() []*McpEndpoint {
+	if x != nil {
+		return x.Mcp
+	}
+	return nil
+}
+
+func (x *PrepareResourcesResponse) GetGrant() string {
+	if x != nil {
+		return x.Grant
+	}
+	return ""
+}
+
+func (x *PrepareResourcesResponse) GetLifecycleToken() string {
+	if x != nil {
+		return x.LifecycleToken
+	}
+	return ""
+}
+
+func (x *PrepareResourcesResponse) GetRenewAfterSeconds() uint32 {
+	if x != nil {
+		return x.RenewAfterSeconds
+	}
+	return 0
+}
+
+func (x *PrepareResourcesResponse) GetMcpDirectory() string {
+	if x != nil {
+		return x.McpDirectory
+	}
+	return ""
+}
+
+type ResourceContent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Skills        []*SkillContent        `protobuf:"bytes,1,rep,name=skills,proto3" json:"skills,omitempty"`
+	Instructions  string                 `protobuf:"bytes,2,opt,name=instructions,proto3" json:"instructions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceContent) Reset() {
+	*x = ResourceContent{}
+	mi := &file_agx_v1_agx_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceContent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceContent) ProtoMessage() {}
+
+func (x *ResourceContent) ProtoReflect() protoreflect.Message {
+	mi := &file_agx_v1_agx_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceContent.ProtoReflect.Descriptor instead.
+func (*ResourceContent) Descriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ResourceContent) GetSkills() []*SkillContent {
+	if x != nil {
+		return x.Skills
+	}
+	return nil
+}
+
+func (x *ResourceContent) GetInstructions() string {
+	if x != nil {
+		return x.Instructions
+	}
+	return ""
+}
+
+type SkillContent struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name  string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// Identifies the exact file content, relative paths and executable permissions.
+	Digest string          `protobuf:"bytes,3,opt,name=digest,proto3" json:"digest,omitempty"`
+	Files  []*ResourceFile `protobuf:"bytes,4,rep,name=files,proto3" json:"files,omitempty"`
+	// Relative slash-separated paths, including empty directories.
+	Directories   []string `protobuf:"bytes,5,rep,name=directories,proto3" json:"directories,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SkillContent) Reset() {
+	*x = SkillContent{}
+	mi := &file_agx_v1_agx_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SkillContent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SkillContent) ProtoMessage() {}
+
+func (x *SkillContent) ProtoReflect() protoreflect.Message {
+	mi := &file_agx_v1_agx_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SkillContent.ProtoReflect.Descriptor instead.
+func (*SkillContent) Descriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *SkillContent) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SkillContent) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SkillContent) GetDigest() string {
+	if x != nil {
+		return x.Digest
+	}
+	return ""
+}
+
+func (x *SkillContent) GetFiles() []*ResourceFile {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+func (x *SkillContent) GetDirectories() []string {
+	if x != nil {
+		return x.Directories
+	}
+	return nil
+}
+
+type ResourceFile struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Relative slash-separated path within the skill; never a daemon filesystem path.
+	Path          string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Content       []byte `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	Executable    bool   `protobuf:"varint,3,opt,name=executable,proto3" json:"executable,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceFile) Reset() {
+	*x = ResourceFile{}
+	mi := &file_agx_v1_agx_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceFile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceFile) ProtoMessage() {}
+
+func (x *ResourceFile) ProtoReflect() protoreflect.Message {
+	mi := &file_agx_v1_agx_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceFile.ProtoReflect.Descriptor instead.
+func (*ResourceFile) Descriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *ResourceFile) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ResourceFile) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
+func (x *ResourceFile) GetExecutable() bool {
+	if x != nil {
+		return x.Executable
+	}
+	return false
+}
+
+type McpEndpoint struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *McpEndpoint) Reset() {
+	*x = McpEndpoint{}
+	mi := &file_agx_v1_agx_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *McpEndpoint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*McpEndpoint) ProtoMessage() {}
+
+func (x *McpEndpoint) ProtoReflect() protoreflect.Message {
+	mi := &file_agx_v1_agx_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use McpEndpoint.ProtoReflect.Descriptor instead.
+func (*McpEndpoint) Descriptor() ([]byte, []int) {
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *McpEndpoint) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *McpEndpoint) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
 type PrepareLaunchResponse struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Launch *Launch                `protobuf:"bytes,1,opt,name=launch,proto3" json:"launch,omitempty"`
@@ -1834,7 +2424,7 @@ type PrepareLaunchResponse struct {
 
 func (x *PrepareLaunchResponse) Reset() {
 	*x = PrepareLaunchResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[22]
+	mi := &file_agx_v1_agx_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1846,7 +2436,7 @@ func (x *PrepareLaunchResponse) String() string {
 func (*PrepareLaunchResponse) ProtoMessage() {}
 
 func (x *PrepareLaunchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[22]
+	mi := &file_agx_v1_agx_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1859,7 +2449,7 @@ func (x *PrepareLaunchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareLaunchResponse.ProtoReflect.Descriptor instead.
 func (*PrepareLaunchResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{22}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *PrepareLaunchResponse) GetLaunch() *Launch {
@@ -1914,7 +2504,7 @@ type SpawnPlan struct {
 
 func (x *SpawnPlan) Reset() {
 	*x = SpawnPlan{}
-	mi := &file_agx_v1_agx_proto_msgTypes[23]
+	mi := &file_agx_v1_agx_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1926,7 +2516,7 @@ func (x *SpawnPlan) String() string {
 func (*SpawnPlan) ProtoMessage() {}
 
 func (x *SpawnPlan) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[23]
+	mi := &file_agx_v1_agx_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1939,7 +2529,7 @@ func (x *SpawnPlan) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SpawnPlan.ProtoReflect.Descriptor instead.
 func (*SpawnPlan) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{23}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *SpawnPlan) GetArguments() []string {
@@ -1990,14 +2580,15 @@ type Launch struct {
 	// Set for a thread launch: the launch of the harness process serving the thread.
 	ParentLaunchId string `protobuf:"bytes,8,opt,name=parent_launch_id,json=parentLaunchId,proto3" json:"parent_launch_id,omitempty"`
 	// Native session the launch serves, once the wrapper reports it; a thread launch's thread.
-	SessionId     string `protobuf:"bytes,9,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	SessionId     string      `protobuf:"bytes,9,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Kind          Launch_Kind `protobuf:"varint,10,opt,name=kind,proto3,enum=agx.v1.Launch_Kind" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Launch) Reset() {
 	*x = Launch{}
-	mi := &file_agx_v1_agx_proto_msgTypes[24]
+	mi := &file_agx_v1_agx_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2009,7 +2600,7 @@ func (x *Launch) String() string {
 func (*Launch) ProtoMessage() {}
 
 func (x *Launch) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[24]
+	mi := &file_agx_v1_agx_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2022,7 +2613,7 @@ func (x *Launch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Launch.ProtoReflect.Descriptor instead.
 func (*Launch) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{24}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *Launch) GetId() string {
@@ -2088,6 +2679,13 @@ func (x *Launch) GetSessionId() string {
 	return ""
 }
 
+func (x *Launch) GetKind() Launch_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return Launch_KIND_UNSPECIFIED
+}
+
 type ResolveThreadRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ParentLaunchId string                 `protobuf:"bytes,1,opt,name=parent_launch_id,json=parentLaunchId,proto3" json:"parent_launch_id,omitempty"`
@@ -2101,7 +2699,7 @@ type ResolveThreadRequest struct {
 
 func (x *ResolveThreadRequest) Reset() {
 	*x = ResolveThreadRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[25]
+	mi := &file_agx_v1_agx_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2113,7 +2711,7 @@ func (x *ResolveThreadRequest) String() string {
 func (*ResolveThreadRequest) ProtoMessage() {}
 
 func (x *ResolveThreadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[25]
+	mi := &file_agx_v1_agx_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2126,7 +2724,7 @@ func (x *ResolveThreadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveThreadRequest.ProtoReflect.Descriptor instead.
 func (*ResolveThreadRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{25}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ResolveThreadRequest) GetParentLaunchId() string {
@@ -2161,7 +2759,7 @@ type ResolveThreadResponse struct {
 
 func (x *ResolveThreadResponse) Reset() {
 	*x = ResolveThreadResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[26]
+	mi := &file_agx_v1_agx_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2173,7 +2771,7 @@ func (x *ResolveThreadResponse) String() string {
 func (*ResolveThreadResponse) ProtoMessage() {}
 
 func (x *ResolveThreadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[26]
+	mi := &file_agx_v1_agx_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2186,7 +2784,7 @@ func (x *ResolveThreadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveThreadResponse.ProtoReflect.Descriptor instead.
 func (*ResolveThreadResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{26}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ResolveThreadResponse) GetSnapshot() *Snapshot {
@@ -2216,7 +2814,7 @@ type PrepareThreadLaunchRequest struct {
 
 func (x *PrepareThreadLaunchRequest) Reset() {
 	*x = PrepareThreadLaunchRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[27]
+	mi := &file_agx_v1_agx_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2228,7 +2826,7 @@ func (x *PrepareThreadLaunchRequest) String() string {
 func (*PrepareThreadLaunchRequest) ProtoMessage() {}
 
 func (x *PrepareThreadLaunchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[27]
+	mi := &file_agx_v1_agx_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2241,7 +2839,7 @@ func (x *PrepareThreadLaunchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareThreadLaunchRequest.ProtoReflect.Descriptor instead.
 func (*PrepareThreadLaunchRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{27}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *PrepareThreadLaunchRequest) GetParentLaunchId() string {
@@ -2286,7 +2884,7 @@ type PrepareThreadLaunchResponse struct {
 
 func (x *PrepareThreadLaunchResponse) Reset() {
 	*x = PrepareThreadLaunchResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[28]
+	mi := &file_agx_v1_agx_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2298,7 +2896,7 @@ func (x *PrepareThreadLaunchResponse) String() string {
 func (*PrepareThreadLaunchResponse) ProtoMessage() {}
 
 func (x *PrepareThreadLaunchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[28]
+	mi := &file_agx_v1_agx_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2311,7 +2909,7 @@ func (x *PrepareThreadLaunchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareThreadLaunchResponse.ProtoReflect.Descriptor instead.
 func (*PrepareThreadLaunchResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{28}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *PrepareThreadLaunchResponse) GetLaunch() *Launch {
@@ -2356,7 +2954,7 @@ type ThreadPlan struct {
 
 func (x *ThreadPlan) Reset() {
 	*x = ThreadPlan{}
-	mi := &file_agx_v1_agx_proto_msgTypes[29]
+	mi := &file_agx_v1_agx_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2368,7 +2966,7 @@ func (x *ThreadPlan) String() string {
 func (*ThreadPlan) ProtoMessage() {}
 
 func (x *ThreadPlan) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[29]
+	mi := &file_agx_v1_agx_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2381,7 +2979,7 @@ func (x *ThreadPlan) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ThreadPlan.ProtoReflect.Descriptor instead.
 func (*ThreadPlan) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{29}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ThreadPlan) GetConfigJson() string {
@@ -2421,7 +3019,7 @@ type RenewLaunchRequest struct {
 
 func (x *RenewLaunchRequest) Reset() {
 	*x = RenewLaunchRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[30]
+	mi := &file_agx_v1_agx_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2433,7 +3031,7 @@ func (x *RenewLaunchRequest) String() string {
 func (*RenewLaunchRequest) ProtoMessage() {}
 
 func (x *RenewLaunchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[30]
+	mi := &file_agx_v1_agx_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2446,7 +3044,7 @@ func (x *RenewLaunchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewLaunchRequest.ProtoReflect.Descriptor instead.
 func (*RenewLaunchRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{30}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *RenewLaunchRequest) GetLaunchId() string {
@@ -2486,7 +3084,7 @@ type RenewLaunchResponse struct {
 
 func (x *RenewLaunchResponse) Reset() {
 	*x = RenewLaunchResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[31]
+	mi := &file_agx_v1_agx_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2498,7 +3096,7 @@ func (x *RenewLaunchResponse) String() string {
 func (*RenewLaunchResponse) ProtoMessage() {}
 
 func (x *RenewLaunchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[31]
+	mi := &file_agx_v1_agx_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2511,7 +3109,7 @@ func (x *RenewLaunchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewLaunchResponse.ProtoReflect.Descriptor instead.
 func (*RenewLaunchResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{31}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *RenewLaunchResponse) GetExpiresAt() *timestamppb.Timestamp {
@@ -2537,14 +3135,16 @@ type AttachLaunchRequest struct {
 	// The native executable the launch was prepared with.
 	Executable string `protobuf:"bytes,6,opt,name=executable,proto3" json:"executable,omitempty"`
 	// For a process serving threads, its active thread launches.
-	Threads       []*AttachedThread `protobuf:"bytes,7,rep,name=threads,proto3" json:"threads,omitempty"`
+	Threads []*AttachedThread `protobuf:"bytes,7,rep,name=threads,proto3" json:"threads,omitempty"`
+	// Daemon-side execution directory used when preparing a resource lease.
+	McpDirectory  string `protobuf:"bytes,8,opt,name=mcp_directory,json=mcpDirectory,proto3" json:"mcp_directory,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AttachLaunchRequest) Reset() {
 	*x = AttachLaunchRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[32]
+	mi := &file_agx_v1_agx_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2556,7 +3156,7 @@ func (x *AttachLaunchRequest) String() string {
 func (*AttachLaunchRequest) ProtoMessage() {}
 
 func (x *AttachLaunchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[32]
+	mi := &file_agx_v1_agx_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2569,7 +3169,7 @@ func (x *AttachLaunchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachLaunchRequest.ProtoReflect.Descriptor instead.
 func (*AttachLaunchRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{32}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *AttachLaunchRequest) GetLaunch() *Launch {
@@ -2621,6 +3221,13 @@ func (x *AttachLaunchRequest) GetThreads() []*AttachedThread {
 	return nil
 }
 
+func (x *AttachLaunchRequest) GetMcpDirectory() string {
+	if x != nil {
+		return x.McpDirectory
+	}
+	return ""
+}
+
 type AttachedThread struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The thread launch as PrepareThreadLaunch returned it, with the thread it serves once bound.
@@ -2635,7 +3242,7 @@ type AttachedThread struct {
 
 func (x *AttachedThread) Reset() {
 	*x = AttachedThread{}
-	mi := &file_agx_v1_agx_proto_msgTypes[33]
+	mi := &file_agx_v1_agx_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2647,7 +3254,7 @@ func (x *AttachedThread) String() string {
 func (*AttachedThread) ProtoMessage() {}
 
 func (x *AttachedThread) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[33]
+	mi := &file_agx_v1_agx_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2660,7 +3267,7 @@ func (x *AttachedThread) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachedThread.ProtoReflect.Descriptor instead.
 func (*AttachedThread) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{33}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *AttachedThread) GetLaunch() *Launch {
@@ -2693,7 +3300,7 @@ type AttachLaunchResponse struct {
 
 func (x *AttachLaunchResponse) Reset() {
 	*x = AttachLaunchResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[34]
+	mi := &file_agx_v1_agx_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2705,7 +3312,7 @@ func (x *AttachLaunchResponse) String() string {
 func (*AttachLaunchResponse) ProtoMessage() {}
 
 func (x *AttachLaunchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[34]
+	mi := &file_agx_v1_agx_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2718,7 +3325,7 @@ func (x *AttachLaunchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachLaunchResponse.ProtoReflect.Descriptor instead.
 func (*AttachLaunchResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{34}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *AttachLaunchResponse) GetExpiresAt() *timestamppb.Timestamp {
@@ -2737,6 +3344,7 @@ type FinishLaunchRequest struct {
 	//	*FinishLaunchRequest_SignalName
 	//	*FinishLaunchRequest_SpawnFailure
 	//	*FinishLaunchRequest_ThreadClosed
+	//	*FinishLaunchRequest_ResourcesReleased
 	Outcome       isFinishLaunchRequest_Outcome `protobuf_oneof:"outcome"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2744,7 +3352,7 @@ type FinishLaunchRequest struct {
 
 func (x *FinishLaunchRequest) Reset() {
 	*x = FinishLaunchRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[35]
+	mi := &file_agx_v1_agx_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2756,7 +3364,7 @@ func (x *FinishLaunchRequest) String() string {
 func (*FinishLaunchRequest) ProtoMessage() {}
 
 func (x *FinishLaunchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[35]
+	mi := &file_agx_v1_agx_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2769,7 +3377,7 @@ func (x *FinishLaunchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FinishLaunchRequest.ProtoReflect.Descriptor instead.
 func (*FinishLaunchRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{35}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *FinishLaunchRequest) GetLaunchId() string {
@@ -2822,6 +3430,15 @@ func (x *FinishLaunchRequest) GetThreadClosed() bool {
 	return false
 }
 
+func (x *FinishLaunchRequest) GetResourcesReleased() bool {
+	if x != nil {
+		if x, ok := x.Outcome.(*FinishLaunchRequest_ResourcesReleased); ok {
+			return x.ResourcesReleased
+		}
+	}
+	return false
+}
+
 type isFinishLaunchRequest_Outcome interface {
 	isFinishLaunchRequest_Outcome()
 }
@@ -2843,6 +3460,11 @@ type FinishLaunchRequest_ThreadClosed struct {
 	ThreadClosed bool `protobuf:"varint,5,opt,name=thread_closed,json=threadClosed,proto3,oneof"`
 }
 
+type FinishLaunchRequest_ResourcesReleased struct {
+	// The integration released its configuration resources without a process exit.
+	ResourcesReleased bool `protobuf:"varint,6,opt,name=resources_released,json=resourcesReleased,proto3,oneof"`
+}
+
 func (*FinishLaunchRequest_ExitCode) isFinishLaunchRequest_Outcome() {}
 
 func (*FinishLaunchRequest_SignalName) isFinishLaunchRequest_Outcome() {}
@@ -2850,6 +3472,8 @@ func (*FinishLaunchRequest_SignalName) isFinishLaunchRequest_Outcome() {}
 func (*FinishLaunchRequest_SpawnFailure) isFinishLaunchRequest_Outcome() {}
 
 func (*FinishLaunchRequest_ThreadClosed) isFinishLaunchRequest_Outcome() {}
+
+func (*FinishLaunchRequest_ResourcesReleased) isFinishLaunchRequest_Outcome() {}
 
 type FinishLaunchResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2859,7 +3483,7 @@ type FinishLaunchResponse struct {
 
 func (x *FinishLaunchResponse) Reset() {
 	*x = FinishLaunchResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[36]
+	mi := &file_agx_v1_agx_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2871,7 +3495,7 @@ func (x *FinishLaunchResponse) String() string {
 func (*FinishLaunchResponse) ProtoMessage() {}
 
 func (x *FinishLaunchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[36]
+	mi := &file_agx_v1_agx_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2884,7 +3508,7 @@ func (x *FinishLaunchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FinishLaunchResponse.ProtoReflect.Descriptor instead.
 func (*FinishLaunchResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{36}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{44}
 }
 
 type RevokeLaunchRequest struct {
@@ -2896,7 +3520,7 @@ type RevokeLaunchRequest struct {
 
 func (x *RevokeLaunchRequest) Reset() {
 	*x = RevokeLaunchRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[37]
+	mi := &file_agx_v1_agx_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2908,7 +3532,7 @@ func (x *RevokeLaunchRequest) String() string {
 func (*RevokeLaunchRequest) ProtoMessage() {}
 
 func (x *RevokeLaunchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[37]
+	mi := &file_agx_v1_agx_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2921,7 +3545,7 @@ func (x *RevokeLaunchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeLaunchRequest.ProtoReflect.Descriptor instead.
 func (*RevokeLaunchRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{37}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *RevokeLaunchRequest) GetLaunchId() string {
@@ -2939,7 +3563,7 @@ type RevokeLaunchResponse struct {
 
 func (x *RevokeLaunchResponse) Reset() {
 	*x = RevokeLaunchResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[38]
+	mi := &file_agx_v1_agx_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2951,7 +3575,7 @@ func (x *RevokeLaunchResponse) String() string {
 func (*RevokeLaunchResponse) ProtoMessage() {}
 
 func (x *RevokeLaunchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[38]
+	mi := &file_agx_v1_agx_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2964,7 +3588,7 @@ func (x *RevokeLaunchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeLaunchResponse.ProtoReflect.Descriptor instead.
 func (*RevokeLaunchResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{38}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{46}
 }
 
 type McpRuntime struct {
@@ -2979,7 +3603,7 @@ type McpRuntime struct {
 
 func (x *McpRuntime) Reset() {
 	*x = McpRuntime{}
-	mi := &file_agx_v1_agx_proto_msgTypes[39]
+	mi := &file_agx_v1_agx_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2991,7 +3615,7 @@ func (x *McpRuntime) String() string {
 func (*McpRuntime) ProtoMessage() {}
 
 func (x *McpRuntime) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[39]
+	mi := &file_agx_v1_agx_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3004,7 +3628,7 @@ func (x *McpRuntime) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use McpRuntime.ProtoReflect.Descriptor instead.
 func (*McpRuntime) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{39}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *McpRuntime) GetLaunchId() string {
@@ -3048,7 +3672,7 @@ type RuntimeView struct {
 
 func (x *RuntimeView) Reset() {
 	*x = RuntimeView{}
-	mi := &file_agx_v1_agx_proto_msgTypes[40]
+	mi := &file_agx_v1_agx_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3060,7 +3684,7 @@ func (x *RuntimeView) String() string {
 func (*RuntimeView) ProtoMessage() {}
 
 func (x *RuntimeView) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[40]
+	mi := &file_agx_v1_agx_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3073,7 +3697,7 @@ func (x *RuntimeView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeView.ProtoReflect.Descriptor instead.
 func (*RuntimeView) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{40}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *RuntimeView) GetDaemonInstanceId() string {
@@ -3121,7 +3745,7 @@ type GetRuntimeRequest struct {
 
 func (x *GetRuntimeRequest) Reset() {
 	*x = GetRuntimeRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[41]
+	mi := &file_agx_v1_agx_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3133,7 +3757,7 @@ func (x *GetRuntimeRequest) String() string {
 func (*GetRuntimeRequest) ProtoMessage() {}
 
 func (x *GetRuntimeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[41]
+	mi := &file_agx_v1_agx_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3146,7 +3770,7 @@ func (x *GetRuntimeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRuntimeRequest.ProtoReflect.Descriptor instead.
 func (*GetRuntimeRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{41}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *GetRuntimeRequest) GetProbeOnly() bool {
@@ -3168,7 +3792,7 @@ type ListSessionsRequest struct {
 
 func (x *ListSessionsRequest) Reset() {
 	*x = ListSessionsRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[42]
+	mi := &file_agx_v1_agx_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3180,7 +3804,7 @@ func (x *ListSessionsRequest) String() string {
 func (*ListSessionsRequest) ProtoMessage() {}
 
 func (x *ListSessionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[42]
+	mi := &file_agx_v1_agx_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3193,7 +3817,7 @@ func (x *ListSessionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSessionsRequest.ProtoReflect.Descriptor instead.
 func (*ListSessionsRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{42}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ListSessionsRequest) GetStores() map[string]string {
@@ -3227,7 +3851,7 @@ type StoredSession struct {
 
 func (x *StoredSession) Reset() {
 	*x = StoredSession{}
-	mi := &file_agx_v1_agx_proto_msgTypes[43]
+	mi := &file_agx_v1_agx_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3239,7 +3863,7 @@ func (x *StoredSession) String() string {
 func (*StoredSession) ProtoMessage() {}
 
 func (x *StoredSession) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[43]
+	mi := &file_agx_v1_agx_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3252,7 +3876,7 @@ func (x *StoredSession) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StoredSession.ProtoReflect.Descriptor instead.
 func (*StoredSession) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{43}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *StoredSession) GetId() string {
@@ -3333,7 +3957,7 @@ type ListSessionsResponse struct {
 
 func (x *ListSessionsResponse) Reset() {
 	*x = ListSessionsResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[44]
+	mi := &file_agx_v1_agx_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3345,7 +3969,7 @@ func (x *ListSessionsResponse) String() string {
 func (*ListSessionsResponse) ProtoMessage() {}
 
 func (x *ListSessionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[44]
+	mi := &file_agx_v1_agx_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3358,7 +3982,7 @@ func (x *ListSessionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSessionsResponse.ProtoReflect.Descriptor instead.
 func (*ListSessionsResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{44}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ListSessionsResponse) GetSessions() []*StoredSession {
@@ -3412,7 +4036,7 @@ type GetRuntimeResponse struct {
 
 func (x *GetRuntimeResponse) Reset() {
 	*x = GetRuntimeResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[45]
+	mi := &file_agx_v1_agx_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3424,7 +4048,7 @@ func (x *GetRuntimeResponse) String() string {
 func (*GetRuntimeResponse) ProtoMessage() {}
 
 func (x *GetRuntimeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[45]
+	mi := &file_agx_v1_agx_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3437,7 +4061,7 @@ func (x *GetRuntimeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRuntimeResponse.ProtoReflect.Descriptor instead.
 func (*GetRuntimeResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{45}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *GetRuntimeResponse) GetRuntime() *RuntimeView {
@@ -3455,7 +4079,7 @@ type WatchRuntimeRequest struct {
 
 func (x *WatchRuntimeRequest) Reset() {
 	*x = WatchRuntimeRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[46]
+	mi := &file_agx_v1_agx_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3467,7 +4091,7 @@ func (x *WatchRuntimeRequest) String() string {
 func (*WatchRuntimeRequest) ProtoMessage() {}
 
 func (x *WatchRuntimeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[46]
+	mi := &file_agx_v1_agx_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3480,7 +4104,7 @@ func (x *WatchRuntimeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchRuntimeRequest.ProtoReflect.Descriptor instead.
 func (*WatchRuntimeRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{46}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{54}
 }
 
 type WatchRuntimeResponse struct {
@@ -3492,7 +4116,7 @@ type WatchRuntimeResponse struct {
 
 func (x *WatchRuntimeResponse) Reset() {
 	*x = WatchRuntimeResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[47]
+	mi := &file_agx_v1_agx_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3504,7 +4128,7 @@ func (x *WatchRuntimeResponse) String() string {
 func (*WatchRuntimeResponse) ProtoMessage() {}
 
 func (x *WatchRuntimeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[47]
+	mi := &file_agx_v1_agx_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3517,7 +4141,7 @@ func (x *WatchRuntimeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchRuntimeResponse.ProtoReflect.Descriptor instead.
 func (*WatchRuntimeResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{47}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *WatchRuntimeResponse) GetRuntime() *RuntimeView {
@@ -3548,7 +4172,7 @@ type McpCallScope struct {
 
 func (x *McpCallScope) Reset() {
 	*x = McpCallScope{}
-	mi := &file_agx_v1_agx_proto_msgTypes[48]
+	mi := &file_agx_v1_agx_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3560,7 +4184,7 @@ func (x *McpCallScope) String() string {
 func (*McpCallScope) ProtoMessage() {}
 
 func (x *McpCallScope) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[48]
+	mi := &file_agx_v1_agx_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3573,7 +4197,7 @@ func (x *McpCallScope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use McpCallScope.ProtoReflect.Descriptor instead.
 func (*McpCallScope) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{48}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *McpCallScope) GetLaunchId() string {
@@ -3616,7 +4240,7 @@ type ListMcpProcessesRequest struct {
 
 func (x *ListMcpProcessesRequest) Reset() {
 	*x = ListMcpProcessesRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[49]
+	mi := &file_agx_v1_agx_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3628,7 +4252,7 @@ func (x *ListMcpProcessesRequest) String() string {
 func (*ListMcpProcessesRequest) ProtoMessage() {}
 
 func (x *ListMcpProcessesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[49]
+	mi := &file_agx_v1_agx_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3641,7 +4265,7 @@ func (x *ListMcpProcessesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMcpProcessesRequest.ProtoReflect.Descriptor instead.
 func (*ListMcpProcessesRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{49}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *ListMcpProcessesRequest) GetCwd() string {
@@ -3668,7 +4292,7 @@ type ListMcpProcessesResponse struct {
 
 func (x *ListMcpProcessesResponse) Reset() {
 	*x = ListMcpProcessesResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[50]
+	mi := &file_agx_v1_agx_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3680,7 +4304,7 @@ func (x *ListMcpProcessesResponse) String() string {
 func (*ListMcpProcessesResponse) ProtoMessage() {}
 
 func (x *ListMcpProcessesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[50]
+	mi := &file_agx_v1_agx_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3693,7 +4317,7 @@ func (x *ListMcpProcessesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMcpProcessesResponse.ProtoReflect.Descriptor instead.
 func (*ListMcpProcessesResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{50}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *ListMcpProcessesResponse) GetProcesses() []*McpProcess {
@@ -3727,7 +4351,7 @@ type McpProcess struct {
 
 func (x *McpProcess) Reset() {
 	*x = McpProcess{}
-	mi := &file_agx_v1_agx_proto_msgTypes[51]
+	mi := &file_agx_v1_agx_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3739,7 +4363,7 @@ func (x *McpProcess) String() string {
 func (*McpProcess) ProtoMessage() {}
 
 func (x *McpProcess) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[51]
+	mi := &file_agx_v1_agx_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3752,7 +4376,7 @@ func (x *McpProcess) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use McpProcess.ProtoReflect.Descriptor instead.
 func (*McpProcess) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{51}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *McpProcess) GetMcpId() string {
@@ -3827,7 +4451,7 @@ type StopMcpProcessRequest struct {
 
 func (x *StopMcpProcessRequest) Reset() {
 	*x = StopMcpProcessRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[52]
+	mi := &file_agx_v1_agx_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3839,7 +4463,7 @@ func (x *StopMcpProcessRequest) String() string {
 func (*StopMcpProcessRequest) ProtoMessage() {}
 
 func (x *StopMcpProcessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[52]
+	mi := &file_agx_v1_agx_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3852,7 +4476,7 @@ func (x *StopMcpProcessRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopMcpProcessRequest.ProtoReflect.Descriptor instead.
 func (*StopMcpProcessRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{52}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *StopMcpProcessRequest) GetPid() int64 {
@@ -3870,7 +4494,7 @@ type StopMcpProcessResponse struct {
 
 func (x *StopMcpProcessResponse) Reset() {
 	*x = StopMcpProcessResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[53]
+	mi := &file_agx_v1_agx_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3882,7 +4506,7 @@ func (x *StopMcpProcessResponse) String() string {
 func (*StopMcpProcessResponse) ProtoMessage() {}
 
 func (x *StopMcpProcessResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[53]
+	mi := &file_agx_v1_agx_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3895,7 +4519,7 @@ func (x *StopMcpProcessResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopMcpProcessResponse.ProtoReflect.Descriptor instead.
 func (*StopMcpProcessResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{53}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{61}
 }
 
 type StopRequest struct {
@@ -3909,7 +4533,7 @@ type StopRequest struct {
 
 func (x *StopRequest) Reset() {
 	*x = StopRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[54]
+	mi := &file_agx_v1_agx_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3921,7 +4545,7 @@ func (x *StopRequest) String() string {
 func (*StopRequest) ProtoMessage() {}
 
 func (x *StopRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[54]
+	mi := &file_agx_v1_agx_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3934,7 +4558,7 @@ func (x *StopRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopRequest.ProtoReflect.Descriptor instead.
 func (*StopRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{54}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *StopRequest) GetForce() bool {
@@ -3961,7 +4585,7 @@ type StopResponse struct {
 
 func (x *StopResponse) Reset() {
 	*x = StopResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[55]
+	mi := &file_agx_v1_agx_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3973,7 +4597,7 @@ func (x *StopResponse) String() string {
 func (*StopResponse) ProtoMessage() {}
 
 func (x *StopResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[55]
+	mi := &file_agx_v1_agx_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3986,7 +4610,7 @@ func (x *StopResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopResponse.ProtoReflect.Descriptor instead.
 func (*StopResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{55}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *StopResponse) GetKeptLaunches() uint32 {
@@ -4008,7 +4632,7 @@ type ListToolsRequest struct {
 
 func (x *ListToolsRequest) Reset() {
 	*x = ListToolsRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[56]
+	mi := &file_agx_v1_agx_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4020,7 +4644,7 @@ func (x *ListToolsRequest) String() string {
 func (*ListToolsRequest) ProtoMessage() {}
 
 func (x *ListToolsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[56]
+	mi := &file_agx_v1_agx_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4033,7 +4657,7 @@ func (x *ListToolsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListToolsRequest.ProtoReflect.Descriptor instead.
 func (*ListToolsRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{56}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *ListToolsRequest) GetScope() *McpCallScope {
@@ -4059,7 +4683,7 @@ type ListToolsResponse struct {
 
 func (x *ListToolsResponse) Reset() {
 	*x = ListToolsResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[57]
+	mi := &file_agx_v1_agx_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4071,7 +4695,7 @@ func (x *ListToolsResponse) String() string {
 func (*ListToolsResponse) ProtoMessage() {}
 
 func (x *ListToolsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[57]
+	mi := &file_agx_v1_agx_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4084,7 +4708,7 @@ func (x *ListToolsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListToolsResponse.ProtoReflect.Descriptor instead.
 func (*ListToolsResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{57}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *ListToolsResponse) GetServers() []*McpTools {
@@ -4114,7 +4738,7 @@ type McpTools struct {
 
 func (x *McpTools) Reset() {
 	*x = McpTools{}
-	mi := &file_agx_v1_agx_proto_msgTypes[58]
+	mi := &file_agx_v1_agx_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4126,7 +4750,7 @@ func (x *McpTools) String() string {
 func (*McpTools) ProtoMessage() {}
 
 func (x *McpTools) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[58]
+	mi := &file_agx_v1_agx_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4139,7 +4763,7 @@ func (x *McpTools) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use McpTools.ProtoReflect.Descriptor instead.
 func (*McpTools) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{58}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *McpTools) GetMcpId() string {
@@ -4220,7 +4844,7 @@ type McpTool struct {
 
 func (x *McpTool) Reset() {
 	*x = McpTool{}
-	mi := &file_agx_v1_agx_proto_msgTypes[59]
+	mi := &file_agx_v1_agx_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4232,7 +4856,7 @@ func (x *McpTool) String() string {
 func (*McpTool) ProtoMessage() {}
 
 func (x *McpTool) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[59]
+	mi := &file_agx_v1_agx_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4245,7 +4869,7 @@ func (x *McpTool) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use McpTool.ProtoReflect.Descriptor instead.
 func (*McpTool) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{59}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *McpTool) GetName() string {
@@ -4296,7 +4920,7 @@ type CallToolRequest struct {
 
 func (x *CallToolRequest) Reset() {
 	*x = CallToolRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[60]
+	mi := &file_agx_v1_agx_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4308,7 +4932,7 @@ func (x *CallToolRequest) String() string {
 func (*CallToolRequest) ProtoMessage() {}
 
 func (x *CallToolRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[60]
+	mi := &file_agx_v1_agx_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4321,7 +4945,7 @@ func (x *CallToolRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallToolRequest.ProtoReflect.Descriptor instead.
 func (*CallToolRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{60}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *CallToolRequest) GetScope() *McpCallScope {
@@ -4366,7 +4990,7 @@ type CallToolResponse struct {
 
 func (x *CallToolResponse) Reset() {
 	*x = CallToolResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[61]
+	mi := &file_agx_v1_agx_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4378,7 +5002,7 @@ func (x *CallToolResponse) String() string {
 func (*CallToolResponse) ProtoMessage() {}
 
 func (x *CallToolResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[61]
+	mi := &file_agx_v1_agx_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4391,7 +5015,7 @@ func (x *CallToolResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallToolResponse.ProtoReflect.Descriptor instead.
 func (*CallToolResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{61}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *CallToolResponse) GetIsError() bool {
@@ -4425,7 +5049,7 @@ type LoginRequest struct {
 
 func (x *LoginRequest) Reset() {
 	*x = LoginRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[62]
+	mi := &file_agx_v1_agx_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4437,7 +5061,7 @@ func (x *LoginRequest) String() string {
 func (*LoginRequest) ProtoMessage() {}
 
 func (x *LoginRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[62]
+	mi := &file_agx_v1_agx_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4450,7 +5074,7 @@ func (x *LoginRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginRequest.ProtoReflect.Descriptor instead.
 func (*LoginRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{62}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *LoginRequest) GetSecretId() string {
@@ -4473,7 +5097,7 @@ type LoginResponse struct {
 
 func (x *LoginResponse) Reset() {
 	*x = LoginResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[63]
+	mi := &file_agx_v1_agx_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4485,7 +5109,7 @@ func (x *LoginResponse) String() string {
 func (*LoginResponse) ProtoMessage() {}
 
 func (x *LoginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[63]
+	mi := &file_agx_v1_agx_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4498,7 +5122,7 @@ func (x *LoginResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginResponse.ProtoReflect.Descriptor instead.
 func (*LoginResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{63}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *LoginResponse) GetEvent() isLoginResponse_Event {
@@ -4555,7 +5179,7 @@ type LoginStarted struct {
 
 func (x *LoginStarted) Reset() {
 	*x = LoginStarted{}
-	mi := &file_agx_v1_agx_proto_msgTypes[64]
+	mi := &file_agx_v1_agx_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4567,7 +5191,7 @@ func (x *LoginStarted) String() string {
 func (*LoginStarted) ProtoMessage() {}
 
 func (x *LoginStarted) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[64]
+	mi := &file_agx_v1_agx_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4580,7 +5204,7 @@ func (x *LoginStarted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginStarted.ProtoReflect.Descriptor instead.
 func (*LoginStarted) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{64}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *LoginStarted) GetAuthorizationUrl() string {
@@ -4616,7 +5240,7 @@ type LoginFinished struct {
 
 func (x *LoginFinished) Reset() {
 	*x = LoginFinished{}
-	mi := &file_agx_v1_agx_proto_msgTypes[65]
+	mi := &file_agx_v1_agx_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4628,7 +5252,7 @@ func (x *LoginFinished) String() string {
 func (*LoginFinished) ProtoMessage() {}
 
 func (x *LoginFinished) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[65]
+	mi := &file_agx_v1_agx_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4641,7 +5265,7 @@ func (x *LoginFinished) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginFinished.ProtoReflect.Descriptor instead.
 func (*LoginFinished) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{65}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *LoginFinished) GetOutcome() LoginFinished_Outcome {
@@ -4669,7 +5293,7 @@ type SetSecretRequest struct {
 
 func (x *SetSecretRequest) Reset() {
 	*x = SetSecretRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[66]
+	mi := &file_agx_v1_agx_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4681,7 +5305,7 @@ func (x *SetSecretRequest) String() string {
 func (*SetSecretRequest) ProtoMessage() {}
 
 func (x *SetSecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[66]
+	mi := &file_agx_v1_agx_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4694,7 +5318,7 @@ func (x *SetSecretRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSecretRequest.ProtoReflect.Descriptor instead.
 func (*SetSecretRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{66}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *SetSecretRequest) GetSecretId() string {
@@ -4719,7 +5343,7 @@ type SetSecretResponse struct {
 
 func (x *SetSecretResponse) Reset() {
 	*x = SetSecretResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[67]
+	mi := &file_agx_v1_agx_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4731,7 +5355,7 @@ func (x *SetSecretResponse) String() string {
 func (*SetSecretResponse) ProtoMessage() {}
 
 func (x *SetSecretResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[67]
+	mi := &file_agx_v1_agx_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4744,7 +5368,7 @@ func (x *SetSecretResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSecretResponse.ProtoReflect.Descriptor instead.
 func (*SetSecretResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{67}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{75}
 }
 
 type GetSecretStatusRequest struct {
@@ -4757,7 +5381,7 @@ type GetSecretStatusRequest struct {
 
 func (x *GetSecretStatusRequest) Reset() {
 	*x = GetSecretStatusRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[68]
+	mi := &file_agx_v1_agx_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4769,7 +5393,7 @@ func (x *GetSecretStatusRequest) String() string {
 func (*GetSecretStatusRequest) ProtoMessage() {}
 
 func (x *GetSecretStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[68]
+	mi := &file_agx_v1_agx_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4782,7 +5406,7 @@ func (x *GetSecretStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSecretStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetSecretStatusRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{68}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *GetSecretStatusRequest) GetSecretId() string {
@@ -4801,7 +5425,7 @@ type GetSecretStatusResponse struct {
 
 func (x *GetSecretStatusResponse) Reset() {
 	*x = GetSecretStatusResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[69]
+	mi := &file_agx_v1_agx_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4813,7 +5437,7 @@ func (x *GetSecretStatusResponse) String() string {
 func (*GetSecretStatusResponse) ProtoMessage() {}
 
 func (x *GetSecretStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[69]
+	mi := &file_agx_v1_agx_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4826,7 +5450,7 @@ func (x *GetSecretStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSecretStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetSecretStatusResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{69}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *GetSecretStatusResponse) GetStatuses() []*SecretStatus {
@@ -4857,7 +5481,7 @@ type SecretStatus struct {
 
 func (x *SecretStatus) Reset() {
 	*x = SecretStatus{}
-	mi := &file_agx_v1_agx_proto_msgTypes[70]
+	mi := &file_agx_v1_agx_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4869,7 +5493,7 @@ func (x *SecretStatus) String() string {
 func (*SecretStatus) ProtoMessage() {}
 
 func (x *SecretStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[70]
+	mi := &file_agx_v1_agx_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4882,7 +5506,7 @@ func (x *SecretStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SecretStatus.ProtoReflect.Descriptor instead.
 func (*SecretStatus) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{70}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *SecretStatus) GetSecretId() string {
@@ -4952,7 +5576,7 @@ type LogoutRequest struct {
 
 func (x *LogoutRequest) Reset() {
 	*x = LogoutRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[71]
+	mi := &file_agx_v1_agx_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4964,7 +5588,7 @@ func (x *LogoutRequest) String() string {
 func (*LogoutRequest) ProtoMessage() {}
 
 func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[71]
+	mi := &file_agx_v1_agx_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4977,7 +5601,7 @@ func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogoutRequest.ProtoReflect.Descriptor instead.
 func (*LogoutRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{71}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *LogoutRequest) GetSecretId() string {
@@ -5002,7 +5626,7 @@ type LogoutResponse struct {
 
 func (x *LogoutResponse) Reset() {
 	*x = LogoutResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[72]
+	mi := &file_agx_v1_agx_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5014,7 +5638,7 @@ func (x *LogoutResponse) String() string {
 func (*LogoutResponse) ProtoMessage() {}
 
 func (x *LogoutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[72]
+	mi := &file_agx_v1_agx_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5027,7 +5651,7 @@ func (x *LogoutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogoutResponse.ProtoReflect.Descriptor instead.
 func (*LogoutResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{72}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{80}
 }
 
 type RotateSecretRequest struct {
@@ -5039,7 +5663,7 @@ type RotateSecretRequest struct {
 
 func (x *RotateSecretRequest) Reset() {
 	*x = RotateSecretRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[73]
+	mi := &file_agx_v1_agx_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5051,7 +5675,7 @@ func (x *RotateSecretRequest) String() string {
 func (*RotateSecretRequest) ProtoMessage() {}
 
 func (x *RotateSecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[73]
+	mi := &file_agx_v1_agx_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5064,7 +5688,7 @@ func (x *RotateSecretRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotateSecretRequest.ProtoReflect.Descriptor instead.
 func (*RotateSecretRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{73}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *RotateSecretRequest) GetSecretId() string {
@@ -5084,7 +5708,7 @@ type RotateSecretResponse struct {
 
 func (x *RotateSecretResponse) Reset() {
 	*x = RotateSecretResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[74]
+	mi := &file_agx_v1_agx_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5096,7 +5720,7 @@ func (x *RotateSecretResponse) String() string {
 func (*RotateSecretResponse) ProtoMessage() {}
 
 func (x *RotateSecretResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[74]
+	mi := &file_agx_v1_agx_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5109,7 +5733,7 @@ func (x *RotateSecretResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotateSecretResponse.ProtoReflect.Descriptor instead.
 func (*RotateSecretResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{74}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *RotateSecretResponse) GetExpiresAt() *timestamppb.Timestamp {
@@ -5148,7 +5772,7 @@ type Definition struct {
 
 func (x *Definition) Reset() {
 	*x = Definition{}
-	mi := &file_agx_v1_agx_proto_msgTypes[75]
+	mi := &file_agx_v1_agx_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5160,7 +5784,7 @@ func (x *Definition) String() string {
 func (*Definition) ProtoMessage() {}
 
 func (x *Definition) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[75]
+	mi := &file_agx_v1_agx_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5173,7 +5797,7 @@ func (x *Definition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Definition.ProtoReflect.Descriptor instead.
 func (*Definition) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{75}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *Definition) GetKind() string {
@@ -5254,7 +5878,7 @@ type ListDefinitionsRequest struct {
 
 func (x *ListDefinitionsRequest) Reset() {
 	*x = ListDefinitionsRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[76]
+	mi := &file_agx_v1_agx_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5266,7 +5890,7 @@ func (x *ListDefinitionsRequest) String() string {
 func (*ListDefinitionsRequest) ProtoMessage() {}
 
 func (x *ListDefinitionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[76]
+	mi := &file_agx_v1_agx_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5279,7 +5903,7 @@ func (x *ListDefinitionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDefinitionsRequest.ProtoReflect.Descriptor instead.
 func (*ListDefinitionsRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{76}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{84}
 }
 
 type ListDefinitionsResponse struct {
@@ -5291,7 +5915,7 @@ type ListDefinitionsResponse struct {
 
 func (x *ListDefinitionsResponse) Reset() {
 	*x = ListDefinitionsResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[77]
+	mi := &file_agx_v1_agx_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5303,7 +5927,7 @@ func (x *ListDefinitionsResponse) String() string {
 func (*ListDefinitionsResponse) ProtoMessage() {}
 
 func (x *ListDefinitionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[77]
+	mi := &file_agx_v1_agx_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5316,7 +5940,7 @@ func (x *ListDefinitionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDefinitionsResponse.ProtoReflect.Descriptor instead.
 func (*ListDefinitionsResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{77}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *ListDefinitionsResponse) GetDefinitions() []*Definition {
@@ -5335,7 +5959,7 @@ type GetSkillRequest struct {
 
 func (x *GetSkillRequest) Reset() {
 	*x = GetSkillRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[78]
+	mi := &file_agx_v1_agx_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5347,7 +5971,7 @@ func (x *GetSkillRequest) String() string {
 func (*GetSkillRequest) ProtoMessage() {}
 
 func (x *GetSkillRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[78]
+	mi := &file_agx_v1_agx_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5360,7 +5984,7 @@ func (x *GetSkillRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSkillRequest.ProtoReflect.Descriptor instead.
 func (*GetSkillRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{78}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *GetSkillRequest) GetSkillId() string {
@@ -5383,7 +6007,7 @@ type GetSkillResponse struct {
 
 func (x *GetSkillResponse) Reset() {
 	*x = GetSkillResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[79]
+	mi := &file_agx_v1_agx_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5395,7 +6019,7 @@ func (x *GetSkillResponse) String() string {
 func (*GetSkillResponse) ProtoMessage() {}
 
 func (x *GetSkillResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[79]
+	mi := &file_agx_v1_agx_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5408,7 +6032,7 @@ func (x *GetSkillResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSkillResponse.ProtoReflect.Descriptor instead.
 func (*GetSkillResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{79}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *GetSkillResponse) GetDefinition() *Definition {
@@ -5442,7 +6066,7 @@ type ReadFileRequest struct {
 
 func (x *ReadFileRequest) Reset() {
 	*x = ReadFileRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[80]
+	mi := &file_agx_v1_agx_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5454,7 +6078,7 @@ func (x *ReadFileRequest) String() string {
 func (*ReadFileRequest) ProtoMessage() {}
 
 func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[80]
+	mi := &file_agx_v1_agx_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5467,7 +6091,7 @@ func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadFileRequest.ProtoReflect.Descriptor instead.
 func (*ReadFileRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{80}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *ReadFileRequest) GetPath() string {
@@ -5490,7 +6114,7 @@ type ReadFileResponse struct {
 
 func (x *ReadFileResponse) Reset() {
 	*x = ReadFileResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[81]
+	mi := &file_agx_v1_agx_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5502,7 +6126,7 @@ func (x *ReadFileResponse) String() string {
 func (*ReadFileResponse) ProtoMessage() {}
 
 func (x *ReadFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[81]
+	mi := &file_agx_v1_agx_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5515,7 +6139,7 @@ func (x *ReadFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadFileResponse.ProtoReflect.Descriptor instead.
 func (*ReadFileResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{81}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *ReadFileResponse) GetPath() string {
@@ -5563,7 +6187,7 @@ type ConfigChange struct {
 
 func (x *ConfigChange) Reset() {
 	*x = ConfigChange{}
-	mi := &file_agx_v1_agx_proto_msgTypes[82]
+	mi := &file_agx_v1_agx_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5575,7 +6199,7 @@ func (x *ConfigChange) String() string {
 func (*ConfigChange) ProtoMessage() {}
 
 func (x *ConfigChange) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[82]
+	mi := &file_agx_v1_agx_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5588,7 +6212,7 @@ func (x *ConfigChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigChange.ProtoReflect.Descriptor instead.
 func (*ConfigChange) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{82}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *ConfigChange) GetChange() isConfigChange_Change {
@@ -5689,7 +6313,7 @@ type DefineChange struct {
 
 func (x *DefineChange) Reset() {
 	*x = DefineChange{}
-	mi := &file_agx_v1_agx_proto_msgTypes[83]
+	mi := &file_agx_v1_agx_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5701,7 +6325,7 @@ func (x *DefineChange) String() string {
 func (*DefineChange) ProtoMessage() {}
 
 func (x *DefineChange) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[83]
+	mi := &file_agx_v1_agx_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5714,7 +6338,7 @@ func (x *DefineChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DefineChange.ProtoReflect.Descriptor instead.
 func (*DefineChange) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{83}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *DefineChange) GetKind() string {
@@ -5749,7 +6373,7 @@ type UndefineChange struct {
 
 func (x *UndefineChange) Reset() {
 	*x = UndefineChange{}
-	mi := &file_agx_v1_agx_proto_msgTypes[84]
+	mi := &file_agx_v1_agx_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5761,7 +6385,7 @@ func (x *UndefineChange) String() string {
 func (*UndefineChange) ProtoMessage() {}
 
 func (x *UndefineChange) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[84]
+	mi := &file_agx_v1_agx_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5774,7 +6398,7 @@ func (x *UndefineChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UndefineChange.ProtoReflect.Descriptor instead.
 func (*UndefineChange) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{84}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *UndefineChange) GetKind() string {
@@ -5805,7 +6429,7 @@ type SelectionChange struct {
 
 func (x *SelectionChange) Reset() {
 	*x = SelectionChange{}
-	mi := &file_agx_v1_agx_proto_msgTypes[85]
+	mi := &file_agx_v1_agx_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5817,7 +6441,7 @@ func (x *SelectionChange) String() string {
 func (*SelectionChange) ProtoMessage() {}
 
 func (x *SelectionChange) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[85]
+	mi := &file_agx_v1_agx_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5830,7 +6454,7 @@ func (x *SelectionChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SelectionChange.ProtoReflect.Descriptor instead.
 func (*SelectionChange) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{85}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *SelectionChange) GetKind() string {
@@ -5872,7 +6496,7 @@ type WriteResourceFileRequest struct {
 
 func (x *WriteResourceFileRequest) Reset() {
 	*x = WriteResourceFileRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[86]
+	mi := &file_agx_v1_agx_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5884,7 +6508,7 @@ func (x *WriteResourceFileRequest) String() string {
 func (*WriteResourceFileRequest) ProtoMessage() {}
 
 func (x *WriteResourceFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[86]
+	mi := &file_agx_v1_agx_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5897,7 +6521,7 @@ func (x *WriteResourceFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteResourceFileRequest.ProtoReflect.Descriptor instead.
 func (*WriteResourceFileRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{86}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *WriteResourceFileRequest) GetPath() string {
@@ -5922,7 +6546,7 @@ type WriteResourceFileResponse struct {
 
 func (x *WriteResourceFileResponse) Reset() {
 	*x = WriteResourceFileResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[87]
+	mi := &file_agx_v1_agx_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5934,7 +6558,7 @@ func (x *WriteResourceFileResponse) String() string {
 func (*WriteResourceFileResponse) ProtoMessage() {}
 
 func (x *WriteResourceFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[87]
+	mi := &file_agx_v1_agx_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5947,7 +6571,7 @@ func (x *WriteResourceFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteResourceFileResponse.ProtoReflect.Descriptor instead.
 func (*WriteResourceFileResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{87}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{95}
 }
 
 // Declares a Git package, installs it into the cache, and locks it.
@@ -5963,7 +6587,7 @@ type PackageSource struct {
 
 func (x *PackageSource) Reset() {
 	*x = PackageSource{}
-	mi := &file_agx_v1_agx_proto_msgTypes[88]
+	mi := &file_agx_v1_agx_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5975,7 +6599,7 @@ func (x *PackageSource) String() string {
 func (*PackageSource) ProtoMessage() {}
 
 func (x *PackageSource) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[88]
+	mi := &file_agx_v1_agx_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5988,7 +6612,7 @@ func (x *PackageSource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PackageSource.ProtoReflect.Descriptor instead.
 func (*PackageSource) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{88}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *PackageSource) GetId() string {
@@ -6030,7 +6654,7 @@ type UpdateConfigurationRequest struct {
 
 func (x *UpdateConfigurationRequest) Reset() {
 	*x = UpdateConfigurationRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[89]
+	mi := &file_agx_v1_agx_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6042,7 +6666,7 @@ func (x *UpdateConfigurationRequest) String() string {
 func (*UpdateConfigurationRequest) ProtoMessage() {}
 
 func (x *UpdateConfigurationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[89]
+	mi := &file_agx_v1_agx_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6055,7 +6679,7 @@ func (x *UpdateConfigurationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateConfigurationRequest.ProtoReflect.Descriptor instead.
 func (*UpdateConfigurationRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{89}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *UpdateConfigurationRequest) GetChanges() []*ConfigChange {
@@ -6081,7 +6705,7 @@ type UpdateConfigurationResponse struct {
 
 func (x *UpdateConfigurationResponse) Reset() {
 	*x = UpdateConfigurationResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[90]
+	mi := &file_agx_v1_agx_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6093,7 +6717,7 @@ func (x *UpdateConfigurationResponse) String() string {
 func (*UpdateConfigurationResponse) ProtoMessage() {}
 
 func (x *UpdateConfigurationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[90]
+	mi := &file_agx_v1_agx_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6106,7 +6730,7 @@ func (x *UpdateConfigurationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateConfigurationResponse.ProtoReflect.Descriptor instead.
 func (*UpdateConfigurationResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{90}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *UpdateConfigurationResponse) GetRevision() int64 {
@@ -6126,7 +6750,7 @@ type ListSourceRefsRequest struct {
 
 func (x *ListSourceRefsRequest) Reset() {
 	*x = ListSourceRefsRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[91]
+	mi := &file_agx_v1_agx_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6138,7 +6762,7 @@ func (x *ListSourceRefsRequest) String() string {
 func (*ListSourceRefsRequest) ProtoMessage() {}
 
 func (x *ListSourceRefsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[91]
+	mi := &file_agx_v1_agx_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6151,7 +6775,7 @@ func (x *ListSourceRefsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSourceRefsRequest.ProtoReflect.Descriptor instead.
 func (*ListSourceRefsRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{91}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *ListSourceRefsRequest) GetGit() string {
@@ -6171,7 +6795,7 @@ type ListSourceRefsResponse struct {
 
 func (x *ListSourceRefsResponse) Reset() {
 	*x = ListSourceRefsResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[92]
+	mi := &file_agx_v1_agx_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6183,7 +6807,7 @@ func (x *ListSourceRefsResponse) String() string {
 func (*ListSourceRefsResponse) ProtoMessage() {}
 
 func (x *ListSourceRefsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[92]
+	mi := &file_agx_v1_agx_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6196,7 +6820,7 @@ func (x *ListSourceRefsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSourceRefsResponse.ProtoReflect.Descriptor instead.
 func (*ListSourceRefsResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{92}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *ListSourceRefsResponse) GetRefs() []*SourceRef {
@@ -6221,7 +6845,7 @@ type SourceRef struct {
 
 func (x *SourceRef) Reset() {
 	*x = SourceRef{}
-	mi := &file_agx_v1_agx_proto_msgTypes[93]
+	mi := &file_agx_v1_agx_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6233,7 +6857,7 @@ func (x *SourceRef) String() string {
 func (*SourceRef) ProtoMessage() {}
 
 func (x *SourceRef) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[93]
+	mi := &file_agx_v1_agx_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6246,7 +6870,7 @@ func (x *SourceRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceRef.ProtoReflect.Descriptor instead.
 func (*SourceRef) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{93}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *SourceRef) GetName() string {
@@ -6291,7 +6915,7 @@ type InspectSourceRequest struct {
 
 func (x *InspectSourceRequest) Reset() {
 	*x = InspectSourceRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[94]
+	mi := &file_agx_v1_agx_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6303,7 +6927,7 @@ func (x *InspectSourceRequest) String() string {
 func (*InspectSourceRequest) ProtoMessage() {}
 
 func (x *InspectSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[94]
+	mi := &file_agx_v1_agx_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6316,7 +6940,7 @@ func (x *InspectSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectSourceRequest.ProtoReflect.Descriptor instead.
 func (*InspectSourceRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{94}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *InspectSourceRequest) GetGit() string {
@@ -6354,7 +6978,7 @@ type InspectSourceResponse struct {
 
 func (x *InspectSourceResponse) Reset() {
 	*x = InspectSourceResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[95]
+	mi := &file_agx_v1_agx_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6366,7 +6990,7 @@ func (x *InspectSourceResponse) String() string {
 func (*InspectSourceResponse) ProtoMessage() {}
 
 func (x *InspectSourceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[95]
+	mi := &file_agx_v1_agx_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6379,7 +7003,7 @@ func (x *InspectSourceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectSourceResponse.ProtoReflect.Descriptor instead.
 func (*InspectSourceResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{95}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *InspectSourceResponse) GetRevision() string {
@@ -6413,7 +7037,7 @@ type PreviewSourceRequest struct {
 
 func (x *PreviewSourceRequest) Reset() {
 	*x = PreviewSourceRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[96]
+	mi := &file_agx_v1_agx_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6425,7 +7049,7 @@ func (x *PreviewSourceRequest) String() string {
 func (*PreviewSourceRequest) ProtoMessage() {}
 
 func (x *PreviewSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[96]
+	mi := &file_agx_v1_agx_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6438,7 +7062,7 @@ func (x *PreviewSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreviewSourceRequest.ProtoReflect.Descriptor instead.
 func (*PreviewSourceRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{96}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *PreviewSourceRequest) GetSource() string {
@@ -6460,7 +7084,7 @@ type PreviewSourceResponse struct {
 
 func (x *PreviewSourceResponse) Reset() {
 	*x = PreviewSourceResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[97]
+	mi := &file_agx_v1_agx_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6472,7 +7096,7 @@ func (x *PreviewSourceResponse) String() string {
 func (*PreviewSourceResponse) ProtoMessage() {}
 
 func (x *PreviewSourceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[97]
+	mi := &file_agx_v1_agx_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6485,7 +7109,7 @@ func (x *PreviewSourceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreviewSourceResponse.ProtoReflect.Descriptor instead.
 func (*PreviewSourceResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{97}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *PreviewSourceResponse) GetPreviewId() string {
@@ -6522,7 +7146,7 @@ type PreviewSkill struct {
 
 func (x *PreviewSkill) Reset() {
 	*x = PreviewSkill{}
-	mi := &file_agx_v1_agx_proto_msgTypes[98]
+	mi := &file_agx_v1_agx_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6534,7 +7158,7 @@ func (x *PreviewSkill) String() string {
 func (*PreviewSkill) ProtoMessage() {}
 
 func (x *PreviewSkill) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[98]
+	mi := &file_agx_v1_agx_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6547,7 +7171,7 @@ func (x *PreviewSkill) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreviewSkill.ProtoReflect.Descriptor instead.
 func (*PreviewSkill) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{98}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *PreviewSkill) GetName() string {
@@ -6590,7 +7214,7 @@ type ReadPreviewFileRequest struct {
 
 func (x *ReadPreviewFileRequest) Reset() {
 	*x = ReadPreviewFileRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[99]
+	mi := &file_agx_v1_agx_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6602,7 +7226,7 @@ func (x *ReadPreviewFileRequest) String() string {
 func (*ReadPreviewFileRequest) ProtoMessage() {}
 
 func (x *ReadPreviewFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[99]
+	mi := &file_agx_v1_agx_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6615,7 +7239,7 @@ func (x *ReadPreviewFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadPreviewFileRequest.ProtoReflect.Descriptor instead.
 func (*ReadPreviewFileRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{99}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *ReadPreviewFileRequest) GetPreviewId() string {
@@ -6650,7 +7274,7 @@ type ReadPreviewFileResponse struct {
 
 func (x *ReadPreviewFileResponse) Reset() {
 	*x = ReadPreviewFileResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[100]
+	mi := &file_agx_v1_agx_proto_msgTypes[108]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6662,7 +7286,7 @@ func (x *ReadPreviewFileResponse) String() string {
 func (*ReadPreviewFileResponse) ProtoMessage() {}
 
 func (x *ReadPreviewFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[100]
+	mi := &file_agx_v1_agx_proto_msgTypes[108]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6675,7 +7299,7 @@ func (x *ReadPreviewFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadPreviewFileResponse.ProtoReflect.Descriptor instead.
 func (*ReadPreviewFileResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{100}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{108}
 }
 
 func (x *ReadPreviewFileResponse) GetContent() string {
@@ -6700,7 +7324,7 @@ type GetLocalConfigurationRequest struct {
 
 func (x *GetLocalConfigurationRequest) Reset() {
 	*x = GetLocalConfigurationRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[101]
+	mi := &file_agx_v1_agx_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6712,7 +7336,7 @@ func (x *GetLocalConfigurationRequest) String() string {
 func (*GetLocalConfigurationRequest) ProtoMessage() {}
 
 func (x *GetLocalConfigurationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[101]
+	mi := &file_agx_v1_agx_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6725,7 +7349,7 @@ func (x *GetLocalConfigurationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLocalConfigurationRequest.ProtoReflect.Descriptor instead.
 func (*GetLocalConfigurationRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{101}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{109}
 }
 
 type GetLocalConfigurationResponse struct {
@@ -6739,7 +7363,7 @@ type GetLocalConfigurationResponse struct {
 
 func (x *GetLocalConfigurationResponse) Reset() {
 	*x = GetLocalConfigurationResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[102]
+	mi := &file_agx_v1_agx_proto_msgTypes[110]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6751,7 +7375,7 @@ func (x *GetLocalConfigurationResponse) String() string {
 func (*GetLocalConfigurationResponse) ProtoMessage() {}
 
 func (x *GetLocalConfigurationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[102]
+	mi := &file_agx_v1_agx_proto_msgTypes[110]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6764,7 +7388,7 @@ func (x *GetLocalConfigurationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLocalConfigurationResponse.ProtoReflect.Descriptor instead.
 func (*GetLocalConfigurationResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{102}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{110}
 }
 
 func (x *GetLocalConfigurationResponse) GetDocument() *structpb.Struct {
@@ -6804,7 +7428,7 @@ type LocalPackageLock struct {
 
 func (x *LocalPackageLock) Reset() {
 	*x = LocalPackageLock{}
-	mi := &file_agx_v1_agx_proto_msgTypes[103]
+	mi := &file_agx_v1_agx_proto_msgTypes[111]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6816,7 +7440,7 @@ func (x *LocalPackageLock) String() string {
 func (*LocalPackageLock) ProtoMessage() {}
 
 func (x *LocalPackageLock) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[103]
+	mi := &file_agx_v1_agx_proto_msgTypes[111]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6829,7 +7453,7 @@ func (x *LocalPackageLock) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LocalPackageLock.ProtoReflect.Descriptor instead.
 func (*LocalPackageLock) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{103}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{111}
 }
 
 func (x *LocalPackageLock) GetPath() string {
@@ -6900,7 +7524,7 @@ type ResolvePassthroughRequest struct {
 
 func (x *ResolvePassthroughRequest) Reset() {
 	*x = ResolvePassthroughRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[104]
+	mi := &file_agx_v1_agx_proto_msgTypes[112]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6912,7 +7536,7 @@ func (x *ResolvePassthroughRequest) String() string {
 func (*ResolvePassthroughRequest) ProtoMessage() {}
 
 func (x *ResolvePassthroughRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[104]
+	mi := &file_agx_v1_agx_proto_msgTypes[112]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6925,7 +7549,7 @@ func (x *ResolvePassthroughRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolvePassthroughRequest.ProtoReflect.Descriptor instead.
 func (*ResolvePassthroughRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{104}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{112}
 }
 
 func (x *ResolvePassthroughRequest) GetHarness() string {
@@ -6960,7 +7584,7 @@ type ResolvePassthroughResponse struct {
 
 func (x *ResolvePassthroughResponse) Reset() {
 	*x = ResolvePassthroughResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[105]
+	mi := &file_agx_v1_agx_proto_msgTypes[113]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6972,7 +7596,7 @@ func (x *ResolvePassthroughResponse) String() string {
 func (*ResolvePassthroughResponse) ProtoMessage() {}
 
 func (x *ResolvePassthroughResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[105]
+	mi := &file_agx_v1_agx_proto_msgTypes[113]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6985,7 +7609,7 @@ func (x *ResolvePassthroughResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolvePassthroughResponse.ProtoReflect.Descriptor instead.
 func (*ResolvePassthroughResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{105}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{113}
 }
 
 func (x *ResolvePassthroughResponse) GetArguments() []string {
@@ -7019,7 +7643,7 @@ type RecordLaunchRequest struct {
 
 func (x *RecordLaunchRequest) Reset() {
 	*x = RecordLaunchRequest{}
-	mi := &file_agx_v1_agx_proto_msgTypes[106]
+	mi := &file_agx_v1_agx_proto_msgTypes[114]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7031,7 +7655,7 @@ func (x *RecordLaunchRequest) String() string {
 func (*RecordLaunchRequest) ProtoMessage() {}
 
 func (x *RecordLaunchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[106]
+	mi := &file_agx_v1_agx_proto_msgTypes[114]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7044,7 +7668,7 @@ func (x *RecordLaunchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordLaunchRequest.ProtoReflect.Descriptor instead.
 func (*RecordLaunchRequest) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{106}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{114}
 }
 
 func (x *RecordLaunchRequest) GetId() string {
@@ -7118,7 +7742,7 @@ type RecordLaunchResponse struct {
 
 func (x *RecordLaunchResponse) Reset() {
 	*x = RecordLaunchResponse{}
-	mi := &file_agx_v1_agx_proto_msgTypes[107]
+	mi := &file_agx_v1_agx_proto_msgTypes[115]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7130,7 +7754,7 @@ func (x *RecordLaunchResponse) String() string {
 func (*RecordLaunchResponse) ProtoMessage() {}
 
 func (x *RecordLaunchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agx_v1_agx_proto_msgTypes[107]
+	mi := &file_agx_v1_agx_proto_msgTypes[115]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7143,7 +7767,7 @@ func (x *RecordLaunchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordLaunchResponse.ProtoReflect.Descriptor instead.
 func (*RecordLaunchResponse) Descriptor() ([]byte, []int) {
-	return file_agx_v1_agx_proto_rawDescGZIP(), []int{107}
+	return file_agx_v1_agx_proto_rawDescGZIP(), []int{115}
 }
 
 var File_agx_v1_agx_proto protoreflect.FileDescriptor
@@ -7262,7 +7886,51 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"executable\x1aD\n" +
 	"\x16EnvironmentInputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xdd\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"Q\n" +
+	"\x17ResolveResourcesRequest\x12\x1c\n" +
+	"\tdirectory\x18\x01 \x01(\tR\tdirectory\x12\x18\n" +
+	"\aharness\x18\x02 \x01(\tR\aharness\"\xe1\x01\n" +
+	"\x18ResolveResourcesResponse\x12,\n" +
+	"\bsnapshot\x18\x01 \x01(\v2\x10.agx.v1.SnapshotR\bsnapshot\x12-\n" +
+	"\x06traces\x18\x02 \x03(\v2\x15.agx.v1.ResourceTraceR\x06traces\x124\n" +
+	"\vdiagnostics\x18\x03 \x03(\v2\x12.agx.v1.DiagnosticR\vdiagnostics\x122\n" +
+	"\bsettings\x18\x04 \x03(\v2\x16.agx.v1.HarnessSettingR\bsettings\"\xc4\x02\n" +
+	"\x17PrepareResourcesRequest\x12\x1f\n" +
+	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
+	"snapshotId\x12\x1c\n" +
+	"\tdirectory\x18\x02 \x01(\tR\tdirectory\x12\x18\n" +
+	"\aharness\x18\x03 \x01(\tR\aharness\x12e\n" +
+	"\x12environment_inputs\x18\x04 \x03(\v26.agx.v1.PrepareResourcesRequest.EnvironmentInputsEntryR\x11environmentInputs\x12#\n" +
+	"\rmcp_directory\x18\x05 \x01(\tR\fmcpDirectory\x1aD\n" +
+	"\x16EnvironmentInputsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb0\x02\n" +
+	"\x18PrepareResourcesResponse\x12&\n" +
+	"\x06launch\x18\x01 \x01(\v2\x0e.agx.v1.LaunchR\x06launch\x121\n" +
+	"\acontent\x18\x02 \x01(\v2\x17.agx.v1.ResourceContentR\acontent\x12%\n" +
+	"\x03mcp\x18\x03 \x03(\v2\x13.agx.v1.McpEndpointR\x03mcp\x12\x14\n" +
+	"\x05grant\x18\x04 \x01(\tR\x05grant\x12'\n" +
+	"\x0flifecycle_token\x18\x05 \x01(\tR\x0elifecycleToken\x12.\n" +
+	"\x13renew_after_seconds\x18\x06 \x01(\rR\x11renewAfterSeconds\x12#\n" +
+	"\rmcp_directory\x18\a \x01(\tR\fmcpDirectory\"c\n" +
+	"\x0fResourceContent\x12,\n" +
+	"\x06skills\x18\x01 \x03(\v2\x14.agx.v1.SkillContentR\x06skills\x12\"\n" +
+	"\finstructions\x18\x02 \x01(\tR\finstructions\"\x98\x01\n" +
+	"\fSkillContent\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
+	"\x06digest\x18\x03 \x01(\tR\x06digest\x12*\n" +
+	"\x05files\x18\x04 \x03(\v2\x14.agx.v1.ResourceFileR\x05files\x12 \n" +
+	"\vdirectories\x18\x05 \x03(\tR\vdirectories\"\\\n" +
+	"\fResourceFile\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
+	"\acontent\x18\x02 \x01(\fR\acontent\x12\x1e\n" +
+	"\n" +
+	"executable\x18\x03 \x01(\bR\n" +
+	"executable\"/\n" +
+	"\vMcpEndpoint\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\"\xdd\x01\n" +
 	"\x15PrepareLaunchResponse\x12&\n" +
 	"\x06launch\x18\x01 \x01(\v2\x0e.agx.v1.LaunchR\x06launch\x12'\n" +
 	"\x05spawn\x18\x02 \x01(\v2\x11.agx.v1.SpawnPlanR\x05spawn\x12'\n" +
@@ -7277,7 +7945,7 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x18initialize_system_prompt\x18\x05 \x01(\tR\x16initializeSystemPrompt\x1aG\n" +
 	"\x19EnvironmentOverridesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb6\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa3\x04\n" +
 	"\x06Launch\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vsnapshot_id\x18\x02 \x01(\tR\n" +
@@ -7290,7 +7958,13 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x04mode\x18\a \x01(\tR\x04mode\x12(\n" +
 	"\x10parent_launch_id\x18\b \x01(\tR\x0eparentLaunchId\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\t \x01(\tR\tsessionId\"\x7f\n" +
+	"session_id\x18\t \x01(\tR\tsessionId\x12'\n" +
+	"\x04kind\x18\n" +
+	" \x01(\x0e2\x13.agx.v1.Launch.KindR\x04kind\"B\n" +
+	"\x04Kind\x12\x14\n" +
+	"\x10KIND_UNSPECIFIED\x10\x00\x12\x10\n" +
+	"\fKIND_PROCESS\x10\x01\x12\x12\n" +
+	"\x0eKIND_RESOURCES\x10\x02\"\x7f\n" +
 	"\x05State\x12\x15\n" +
 	"\x11STATE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eSTATE_PREPARED\x10\x01\x12\x11\n" +
@@ -7335,7 +8009,7 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"wrapperPid\"P\n" +
 	"\x13RenewLaunchResponse\x129\n" +
 	"\n" +
-	"expires_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xa2\x03\n" +
+	"expires_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xc7\x03\n" +
 	"\x13AttachLaunchRequest\x12&\n" +
 	"\x06launch\x18\x01 \x01(\v2\x0e.agx.v1.LaunchR\x06launch\x12\x14\n" +
 	"\x05grant\x18\x02 \x01(\tR\x05grant\x12'\n" +
@@ -7345,7 +8019,8 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\n" +
 	"executable\x18\x06 \x01(\tR\n" +
 	"executable\x120\n" +
-	"\athreads\x18\a \x03(\v2\x16.agx.v1.AttachedThreadR\athreads\x1aD\n" +
+	"\athreads\x18\a \x03(\v2\x16.agx.v1.AttachedThreadR\athreads\x12#\n" +
+	"\rmcp_directory\x18\b \x01(\tR\fmcpDirectory\x1aD\n" +
 	"\x16EnvironmentInputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xf2\x01\n" +
@@ -7358,14 +8033,15 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"Q\n" +
 	"\x14AttachLaunchResponse\x129\n" +
 	"\n" +
-	"expires_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xcd\x01\n" +
+	"expires_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xfe\x01\n" +
 	"\x13FinishLaunchRequest\x12\x1b\n" +
 	"\tlaunch_id\x18\x01 \x01(\tR\blaunchId\x12\x1d\n" +
 	"\texit_code\x18\x02 \x01(\x05H\x00R\bexitCode\x12!\n" +
 	"\vsignal_name\x18\x03 \x01(\tH\x00R\n" +
 	"signalName\x12%\n" +
 	"\rspawn_failure\x18\x04 \x01(\tH\x00R\fspawnFailure\x12%\n" +
-	"\rthread_closed\x18\x05 \x01(\bH\x00R\fthreadClosedB\t\n" +
+	"\rthread_closed\x18\x05 \x01(\bH\x00R\fthreadClosed\x12/\n" +
+	"\x12resources_released\x18\x06 \x01(\bH\x00R\x11resourcesReleasedB\t\n" +
 	"\aoutcome\"\x16\n" +
 	"\x14FinishLaunchResponse\"2\n" +
 	"\x13RevokeLaunchRequest\x12\x1b\n" +
@@ -7722,7 +8398,10 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\fRevokeLaunch\x12\x1b.agx.v1.RevokeLaunchRequest\x1a\x1c.agx.v1.RevokeLaunchResponse\x12L\n" +
 	"\rResolveThread\x12\x1c.agx.v1.ResolveThreadRequest\x1a\x1d.agx.v1.ResolveThreadResponse\x12^\n" +
 	"\x13PrepareThreadLaunch\x12\".agx.v1.PrepareThreadLaunchRequest\x1a#.agx.v1.PrepareThreadLaunchResponse\x12I\n" +
-	"\fAttachLaunch\x12\x1b.agx.v1.AttachLaunchRequest\x1a\x1c.agx.v1.AttachLaunchResponse2\xcb\x04\n" +
+	"\fAttachLaunch\x12\x1b.agx.v1.AttachLaunchRequest\x1a\x1c.agx.v1.AttachLaunchResponse2\xbf\x01\n" +
+	"\x0fResourceService\x12U\n" +
+	"\x10ResolveResources\x12\x1f.agx.v1.ResolveResourcesRequest\x1a .agx.v1.ResolveResourcesResponse\x12U\n" +
+	"\x10PrepareResources\x12\x1f.agx.v1.PrepareResourcesRequest\x1a .agx.v1.PrepareResourcesResponse2\xcb\x04\n" +
 	"\x0eRuntimeService\x12C\n" +
 	"\n" +
 	"GetRuntime\x12\x19.agx.v1.GetRuntimeRequest\x1a\x1a.agx.v1.GetRuntimeResponse\x12K\n" +
@@ -7752,308 +8431,333 @@ func file_agx_v1_agx_proto_rawDescGZIP() []byte {
 	return file_agx_v1_agx_proto_rawDescData
 }
 
-var file_agx_v1_agx_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_agx_v1_agx_proto_msgTypes = make([]protoimpl.MessageInfo, 119)
+var file_agx_v1_agx_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
+var file_agx_v1_agx_proto_msgTypes = make([]protoimpl.MessageInfo, 128)
 var file_agx_v1_agx_proto_goTypes = []any{
 	(Diagnostic_Severity)(0),              // 0: agx.v1.Diagnostic.Severity
 	(ResolutionStep_Change)(0),            // 1: agx.v1.ResolutionStep.Change
-	(Launch_State)(0),                     // 2: agx.v1.Launch.State
-	(McpRuntime_State)(0),                 // 3: agx.v1.McpRuntime.State
-	(McpTools_Load)(0),                    // 4: agx.v1.McpTools.Load
-	(LoginFinished_Outcome)(0),            // 5: agx.v1.LoginFinished.Outcome
-	(SecretStatus_State)(0),               // 6: agx.v1.SecretStatus.State
-	(*ResourceRef)(nil),                   // 7: agx.v1.ResourceRef
-	(*SourceLocation)(nil),                // 8: agx.v1.SourceLocation
-	(*Diagnostic)(nil),                    // 9: agx.v1.Diagnostic
-	(*ErrorDetail)(nil),                   // 10: agx.v1.ErrorDetail
-	(*Snapshot)(nil),                      // 11: agx.v1.Snapshot
-	(*ResolutionStep)(nil),                // 12: agx.v1.ResolutionStep
-	(*ResourceTrace)(nil),                 // 13: agx.v1.ResourceTrace
-	(*ValidateRequest)(nil),               // 14: agx.v1.ValidateRequest
-	(*ValidateResponse)(nil),              // 15: agx.v1.ValidateResponse
-	(*ResolveRequest)(nil),                // 16: agx.v1.ResolveRequest
-	(*ResolveResponse)(nil),               // 17: agx.v1.ResolveResponse
-	(*HarnessSetting)(nil),                // 18: agx.v1.HarnessSetting
-	(*GetConfigurationRequest)(nil),       // 19: agx.v1.GetConfigurationRequest
-	(*GetConfigurationResponse)(nil),      // 20: agx.v1.GetConfigurationResponse
-	(*ConfiguredHarness)(nil),             // 21: agx.v1.ConfiguredHarness
-	(*CompleteDirectoryRequest)(nil),      // 22: agx.v1.CompleteDirectoryRequest
-	(*CompleteDirectoryResponse)(nil),     // 23: agx.v1.CompleteDirectoryResponse
-	(*InstallRequest)(nil),                // 24: agx.v1.InstallRequest
-	(*InstallResponse)(nil),               // 25: agx.v1.InstallResponse
-	(*PackageProgress)(nil),               // 26: agx.v1.PackageProgress
-	(*PackageResult)(nil),                 // 27: agx.v1.PackageResult
-	(*PrepareLaunchRequest)(nil),          // 28: agx.v1.PrepareLaunchRequest
-	(*PrepareLaunchResponse)(nil),         // 29: agx.v1.PrepareLaunchResponse
-	(*SpawnPlan)(nil),                     // 30: agx.v1.SpawnPlan
-	(*Launch)(nil),                        // 31: agx.v1.Launch
-	(*ResolveThreadRequest)(nil),          // 32: agx.v1.ResolveThreadRequest
-	(*ResolveThreadResponse)(nil),         // 33: agx.v1.ResolveThreadResponse
-	(*PrepareThreadLaunchRequest)(nil),    // 34: agx.v1.PrepareThreadLaunchRequest
-	(*PrepareThreadLaunchResponse)(nil),   // 35: agx.v1.PrepareThreadLaunchResponse
-	(*ThreadPlan)(nil),                    // 36: agx.v1.ThreadPlan
-	(*RenewLaunchRequest)(nil),            // 37: agx.v1.RenewLaunchRequest
-	(*RenewLaunchResponse)(nil),           // 38: agx.v1.RenewLaunchResponse
-	(*AttachLaunchRequest)(nil),           // 39: agx.v1.AttachLaunchRequest
-	(*AttachedThread)(nil),                // 40: agx.v1.AttachedThread
-	(*AttachLaunchResponse)(nil),          // 41: agx.v1.AttachLaunchResponse
-	(*FinishLaunchRequest)(nil),           // 42: agx.v1.FinishLaunchRequest
-	(*FinishLaunchResponse)(nil),          // 43: agx.v1.FinishLaunchResponse
-	(*RevokeLaunchRequest)(nil),           // 44: agx.v1.RevokeLaunchRequest
-	(*RevokeLaunchResponse)(nil),          // 45: agx.v1.RevokeLaunchResponse
-	(*McpRuntime)(nil),                    // 46: agx.v1.McpRuntime
-	(*RuntimeView)(nil),                   // 47: agx.v1.RuntimeView
-	(*GetRuntimeRequest)(nil),             // 48: agx.v1.GetRuntimeRequest
-	(*ListSessionsRequest)(nil),           // 49: agx.v1.ListSessionsRequest
-	(*StoredSession)(nil),                 // 50: agx.v1.StoredSession
-	(*ListSessionsResponse)(nil),          // 51: agx.v1.ListSessionsResponse
-	(*GetRuntimeResponse)(nil),            // 52: agx.v1.GetRuntimeResponse
-	(*WatchRuntimeRequest)(nil),           // 53: agx.v1.WatchRuntimeRequest
-	(*WatchRuntimeResponse)(nil),          // 54: agx.v1.WatchRuntimeResponse
-	(*McpCallScope)(nil),                  // 55: agx.v1.McpCallScope
-	(*ListMcpProcessesRequest)(nil),       // 56: agx.v1.ListMcpProcessesRequest
-	(*ListMcpProcessesResponse)(nil),      // 57: agx.v1.ListMcpProcessesResponse
-	(*McpProcess)(nil),                    // 58: agx.v1.McpProcess
-	(*StopMcpProcessRequest)(nil),         // 59: agx.v1.StopMcpProcessRequest
-	(*StopMcpProcessResponse)(nil),        // 60: agx.v1.StopMcpProcessResponse
-	(*StopRequest)(nil),                   // 61: agx.v1.StopRequest
-	(*StopResponse)(nil),                  // 62: agx.v1.StopResponse
-	(*ListToolsRequest)(nil),              // 63: agx.v1.ListToolsRequest
-	(*ListToolsResponse)(nil),             // 64: agx.v1.ListToolsResponse
-	(*McpTools)(nil),                      // 65: agx.v1.McpTools
-	(*McpTool)(nil),                       // 66: agx.v1.McpTool
-	(*CallToolRequest)(nil),               // 67: agx.v1.CallToolRequest
-	(*CallToolResponse)(nil),              // 68: agx.v1.CallToolResponse
-	(*LoginRequest)(nil),                  // 69: agx.v1.LoginRequest
-	(*LoginResponse)(nil),                 // 70: agx.v1.LoginResponse
-	(*LoginStarted)(nil),                  // 71: agx.v1.LoginStarted
-	(*LoginFinished)(nil),                 // 72: agx.v1.LoginFinished
-	(*SetSecretRequest)(nil),              // 73: agx.v1.SetSecretRequest
-	(*SetSecretResponse)(nil),             // 74: agx.v1.SetSecretResponse
-	(*GetSecretStatusRequest)(nil),        // 75: agx.v1.GetSecretStatusRequest
-	(*GetSecretStatusResponse)(nil),       // 76: agx.v1.GetSecretStatusResponse
-	(*SecretStatus)(nil),                  // 77: agx.v1.SecretStatus
-	(*LogoutRequest)(nil),                 // 78: agx.v1.LogoutRequest
-	(*LogoutResponse)(nil),                // 79: agx.v1.LogoutResponse
-	(*RotateSecretRequest)(nil),           // 80: agx.v1.RotateSecretRequest
-	(*RotateSecretResponse)(nil),          // 81: agx.v1.RotateSecretResponse
-	(*Definition)(nil),                    // 82: agx.v1.Definition
-	(*ListDefinitionsRequest)(nil),        // 83: agx.v1.ListDefinitionsRequest
-	(*ListDefinitionsResponse)(nil),       // 84: agx.v1.ListDefinitionsResponse
-	(*GetSkillRequest)(nil),               // 85: agx.v1.GetSkillRequest
-	(*GetSkillResponse)(nil),              // 86: agx.v1.GetSkillResponse
-	(*ReadFileRequest)(nil),               // 87: agx.v1.ReadFileRequest
-	(*ReadFileResponse)(nil),              // 88: agx.v1.ReadFileResponse
-	(*ConfigChange)(nil),                  // 89: agx.v1.ConfigChange
-	(*DefineChange)(nil),                  // 90: agx.v1.DefineChange
-	(*UndefineChange)(nil),                // 91: agx.v1.UndefineChange
-	(*SelectionChange)(nil),               // 92: agx.v1.SelectionChange
-	(*WriteResourceFileRequest)(nil),      // 93: agx.v1.WriteResourceFileRequest
-	(*WriteResourceFileResponse)(nil),     // 94: agx.v1.WriteResourceFileResponse
-	(*PackageSource)(nil),                 // 95: agx.v1.PackageSource
-	(*UpdateConfigurationRequest)(nil),    // 96: agx.v1.UpdateConfigurationRequest
-	(*UpdateConfigurationResponse)(nil),   // 97: agx.v1.UpdateConfigurationResponse
-	(*ListSourceRefsRequest)(nil),         // 98: agx.v1.ListSourceRefsRequest
-	(*ListSourceRefsResponse)(nil),        // 99: agx.v1.ListSourceRefsResponse
-	(*SourceRef)(nil),                     // 100: agx.v1.SourceRef
-	(*InspectSourceRequest)(nil),          // 101: agx.v1.InspectSourceRequest
-	(*InspectSourceResponse)(nil),         // 102: agx.v1.InspectSourceResponse
-	(*PreviewSourceRequest)(nil),          // 103: agx.v1.PreviewSourceRequest
-	(*PreviewSourceResponse)(nil),         // 104: agx.v1.PreviewSourceResponse
-	(*PreviewSkill)(nil),                  // 105: agx.v1.PreviewSkill
-	(*ReadPreviewFileRequest)(nil),        // 106: agx.v1.ReadPreviewFileRequest
-	(*ReadPreviewFileResponse)(nil),       // 107: agx.v1.ReadPreviewFileResponse
-	(*GetLocalConfigurationRequest)(nil),  // 108: agx.v1.GetLocalConfigurationRequest
-	(*GetLocalConfigurationResponse)(nil), // 109: agx.v1.GetLocalConfigurationResponse
-	(*LocalPackageLock)(nil),              // 110: agx.v1.LocalPackageLock
-	(*ResolvePassthroughRequest)(nil),     // 111: agx.v1.ResolvePassthroughRequest
-	(*ResolvePassthroughResponse)(nil),    // 112: agx.v1.ResolvePassthroughResponse
-	(*RecordLaunchRequest)(nil),           // 113: agx.v1.RecordLaunchRequest
-	(*RecordLaunchResponse)(nil),          // 114: agx.v1.RecordLaunchResponse
-	nil,                                   // 115: agx.v1.PrepareLaunchRequest.EnvironmentInputsEntry
-	nil,                                   // 116: agx.v1.SpawnPlan.EnvironmentOverridesEntry
-	nil,                                   // 117: agx.v1.PrepareThreadLaunchRequest.EnvironmentInputsEntry
-	nil,                                   // 118: agx.v1.AttachLaunchRequest.EnvironmentInputsEntry
-	nil,                                   // 119: agx.v1.AttachedThread.EnvironmentInputsEntry
-	nil,                                   // 120: agx.v1.ListSessionsRequest.StoresEntry
-	nil,                                   // 121: agx.v1.ListSessionsResponse.ErrorsEntry
-	nil,                                   // 122: agx.v1.McpCallScope.EnvironmentInputsEntry
-	nil,                                   // 123: agx.v1.GetLocalConfigurationResponse.PackagesEntry
-	nil,                                   // 124: agx.v1.ResolvePassthroughRequest.EnvironmentInputsEntry
-	nil,                                   // 125: agx.v1.ResolvePassthroughResponse.EnvironmentEntry
-	(*timestamppb.Timestamp)(nil),         // 126: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),           // 127: google.protobuf.Duration
-	(*structpb.Value)(nil),                // 128: google.protobuf.Value
-	(*structpb.Struct)(nil),               // 129: google.protobuf.Struct
+	(Launch_Kind)(0),                      // 2: agx.v1.Launch.Kind
+	(Launch_State)(0),                     // 3: agx.v1.Launch.State
+	(McpRuntime_State)(0),                 // 4: agx.v1.McpRuntime.State
+	(McpTools_Load)(0),                    // 5: agx.v1.McpTools.Load
+	(LoginFinished_Outcome)(0),            // 6: agx.v1.LoginFinished.Outcome
+	(SecretStatus_State)(0),               // 7: agx.v1.SecretStatus.State
+	(*ResourceRef)(nil),                   // 8: agx.v1.ResourceRef
+	(*SourceLocation)(nil),                // 9: agx.v1.SourceLocation
+	(*Diagnostic)(nil),                    // 10: agx.v1.Diagnostic
+	(*ErrorDetail)(nil),                   // 11: agx.v1.ErrorDetail
+	(*Snapshot)(nil),                      // 12: agx.v1.Snapshot
+	(*ResolutionStep)(nil),                // 13: agx.v1.ResolutionStep
+	(*ResourceTrace)(nil),                 // 14: agx.v1.ResourceTrace
+	(*ValidateRequest)(nil),               // 15: agx.v1.ValidateRequest
+	(*ValidateResponse)(nil),              // 16: agx.v1.ValidateResponse
+	(*ResolveRequest)(nil),                // 17: agx.v1.ResolveRequest
+	(*ResolveResponse)(nil),               // 18: agx.v1.ResolveResponse
+	(*HarnessSetting)(nil),                // 19: agx.v1.HarnessSetting
+	(*GetConfigurationRequest)(nil),       // 20: agx.v1.GetConfigurationRequest
+	(*GetConfigurationResponse)(nil),      // 21: agx.v1.GetConfigurationResponse
+	(*ConfiguredHarness)(nil),             // 22: agx.v1.ConfiguredHarness
+	(*CompleteDirectoryRequest)(nil),      // 23: agx.v1.CompleteDirectoryRequest
+	(*CompleteDirectoryResponse)(nil),     // 24: agx.v1.CompleteDirectoryResponse
+	(*InstallRequest)(nil),                // 25: agx.v1.InstallRequest
+	(*InstallResponse)(nil),               // 26: agx.v1.InstallResponse
+	(*PackageProgress)(nil),               // 27: agx.v1.PackageProgress
+	(*PackageResult)(nil),                 // 28: agx.v1.PackageResult
+	(*PrepareLaunchRequest)(nil),          // 29: agx.v1.PrepareLaunchRequest
+	(*ResolveResourcesRequest)(nil),       // 30: agx.v1.ResolveResourcesRequest
+	(*ResolveResourcesResponse)(nil),      // 31: agx.v1.ResolveResourcesResponse
+	(*PrepareResourcesRequest)(nil),       // 32: agx.v1.PrepareResourcesRequest
+	(*PrepareResourcesResponse)(nil),      // 33: agx.v1.PrepareResourcesResponse
+	(*ResourceContent)(nil),               // 34: agx.v1.ResourceContent
+	(*SkillContent)(nil),                  // 35: agx.v1.SkillContent
+	(*ResourceFile)(nil),                  // 36: agx.v1.ResourceFile
+	(*McpEndpoint)(nil),                   // 37: agx.v1.McpEndpoint
+	(*PrepareLaunchResponse)(nil),         // 38: agx.v1.PrepareLaunchResponse
+	(*SpawnPlan)(nil),                     // 39: agx.v1.SpawnPlan
+	(*Launch)(nil),                        // 40: agx.v1.Launch
+	(*ResolveThreadRequest)(nil),          // 41: agx.v1.ResolveThreadRequest
+	(*ResolveThreadResponse)(nil),         // 42: agx.v1.ResolveThreadResponse
+	(*PrepareThreadLaunchRequest)(nil),    // 43: agx.v1.PrepareThreadLaunchRequest
+	(*PrepareThreadLaunchResponse)(nil),   // 44: agx.v1.PrepareThreadLaunchResponse
+	(*ThreadPlan)(nil),                    // 45: agx.v1.ThreadPlan
+	(*RenewLaunchRequest)(nil),            // 46: agx.v1.RenewLaunchRequest
+	(*RenewLaunchResponse)(nil),           // 47: agx.v1.RenewLaunchResponse
+	(*AttachLaunchRequest)(nil),           // 48: agx.v1.AttachLaunchRequest
+	(*AttachedThread)(nil),                // 49: agx.v1.AttachedThread
+	(*AttachLaunchResponse)(nil),          // 50: agx.v1.AttachLaunchResponse
+	(*FinishLaunchRequest)(nil),           // 51: agx.v1.FinishLaunchRequest
+	(*FinishLaunchResponse)(nil),          // 52: agx.v1.FinishLaunchResponse
+	(*RevokeLaunchRequest)(nil),           // 53: agx.v1.RevokeLaunchRequest
+	(*RevokeLaunchResponse)(nil),          // 54: agx.v1.RevokeLaunchResponse
+	(*McpRuntime)(nil),                    // 55: agx.v1.McpRuntime
+	(*RuntimeView)(nil),                   // 56: agx.v1.RuntimeView
+	(*GetRuntimeRequest)(nil),             // 57: agx.v1.GetRuntimeRequest
+	(*ListSessionsRequest)(nil),           // 58: agx.v1.ListSessionsRequest
+	(*StoredSession)(nil),                 // 59: agx.v1.StoredSession
+	(*ListSessionsResponse)(nil),          // 60: agx.v1.ListSessionsResponse
+	(*GetRuntimeResponse)(nil),            // 61: agx.v1.GetRuntimeResponse
+	(*WatchRuntimeRequest)(nil),           // 62: agx.v1.WatchRuntimeRequest
+	(*WatchRuntimeResponse)(nil),          // 63: agx.v1.WatchRuntimeResponse
+	(*McpCallScope)(nil),                  // 64: agx.v1.McpCallScope
+	(*ListMcpProcessesRequest)(nil),       // 65: agx.v1.ListMcpProcessesRequest
+	(*ListMcpProcessesResponse)(nil),      // 66: agx.v1.ListMcpProcessesResponse
+	(*McpProcess)(nil),                    // 67: agx.v1.McpProcess
+	(*StopMcpProcessRequest)(nil),         // 68: agx.v1.StopMcpProcessRequest
+	(*StopMcpProcessResponse)(nil),        // 69: agx.v1.StopMcpProcessResponse
+	(*StopRequest)(nil),                   // 70: agx.v1.StopRequest
+	(*StopResponse)(nil),                  // 71: agx.v1.StopResponse
+	(*ListToolsRequest)(nil),              // 72: agx.v1.ListToolsRequest
+	(*ListToolsResponse)(nil),             // 73: agx.v1.ListToolsResponse
+	(*McpTools)(nil),                      // 74: agx.v1.McpTools
+	(*McpTool)(nil),                       // 75: agx.v1.McpTool
+	(*CallToolRequest)(nil),               // 76: agx.v1.CallToolRequest
+	(*CallToolResponse)(nil),              // 77: agx.v1.CallToolResponse
+	(*LoginRequest)(nil),                  // 78: agx.v1.LoginRequest
+	(*LoginResponse)(nil),                 // 79: agx.v1.LoginResponse
+	(*LoginStarted)(nil),                  // 80: agx.v1.LoginStarted
+	(*LoginFinished)(nil),                 // 81: agx.v1.LoginFinished
+	(*SetSecretRequest)(nil),              // 82: agx.v1.SetSecretRequest
+	(*SetSecretResponse)(nil),             // 83: agx.v1.SetSecretResponse
+	(*GetSecretStatusRequest)(nil),        // 84: agx.v1.GetSecretStatusRequest
+	(*GetSecretStatusResponse)(nil),       // 85: agx.v1.GetSecretStatusResponse
+	(*SecretStatus)(nil),                  // 86: agx.v1.SecretStatus
+	(*LogoutRequest)(nil),                 // 87: agx.v1.LogoutRequest
+	(*LogoutResponse)(nil),                // 88: agx.v1.LogoutResponse
+	(*RotateSecretRequest)(nil),           // 89: agx.v1.RotateSecretRequest
+	(*RotateSecretResponse)(nil),          // 90: agx.v1.RotateSecretResponse
+	(*Definition)(nil),                    // 91: agx.v1.Definition
+	(*ListDefinitionsRequest)(nil),        // 92: agx.v1.ListDefinitionsRequest
+	(*ListDefinitionsResponse)(nil),       // 93: agx.v1.ListDefinitionsResponse
+	(*GetSkillRequest)(nil),               // 94: agx.v1.GetSkillRequest
+	(*GetSkillResponse)(nil),              // 95: agx.v1.GetSkillResponse
+	(*ReadFileRequest)(nil),               // 96: agx.v1.ReadFileRequest
+	(*ReadFileResponse)(nil),              // 97: agx.v1.ReadFileResponse
+	(*ConfigChange)(nil),                  // 98: agx.v1.ConfigChange
+	(*DefineChange)(nil),                  // 99: agx.v1.DefineChange
+	(*UndefineChange)(nil),                // 100: agx.v1.UndefineChange
+	(*SelectionChange)(nil),               // 101: agx.v1.SelectionChange
+	(*WriteResourceFileRequest)(nil),      // 102: agx.v1.WriteResourceFileRequest
+	(*WriteResourceFileResponse)(nil),     // 103: agx.v1.WriteResourceFileResponse
+	(*PackageSource)(nil),                 // 104: agx.v1.PackageSource
+	(*UpdateConfigurationRequest)(nil),    // 105: agx.v1.UpdateConfigurationRequest
+	(*UpdateConfigurationResponse)(nil),   // 106: agx.v1.UpdateConfigurationResponse
+	(*ListSourceRefsRequest)(nil),         // 107: agx.v1.ListSourceRefsRequest
+	(*ListSourceRefsResponse)(nil),        // 108: agx.v1.ListSourceRefsResponse
+	(*SourceRef)(nil),                     // 109: agx.v1.SourceRef
+	(*InspectSourceRequest)(nil),          // 110: agx.v1.InspectSourceRequest
+	(*InspectSourceResponse)(nil),         // 111: agx.v1.InspectSourceResponse
+	(*PreviewSourceRequest)(nil),          // 112: agx.v1.PreviewSourceRequest
+	(*PreviewSourceResponse)(nil),         // 113: agx.v1.PreviewSourceResponse
+	(*PreviewSkill)(nil),                  // 114: agx.v1.PreviewSkill
+	(*ReadPreviewFileRequest)(nil),        // 115: agx.v1.ReadPreviewFileRequest
+	(*ReadPreviewFileResponse)(nil),       // 116: agx.v1.ReadPreviewFileResponse
+	(*GetLocalConfigurationRequest)(nil),  // 117: agx.v1.GetLocalConfigurationRequest
+	(*GetLocalConfigurationResponse)(nil), // 118: agx.v1.GetLocalConfigurationResponse
+	(*LocalPackageLock)(nil),              // 119: agx.v1.LocalPackageLock
+	(*ResolvePassthroughRequest)(nil),     // 120: agx.v1.ResolvePassthroughRequest
+	(*ResolvePassthroughResponse)(nil),    // 121: agx.v1.ResolvePassthroughResponse
+	(*RecordLaunchRequest)(nil),           // 122: agx.v1.RecordLaunchRequest
+	(*RecordLaunchResponse)(nil),          // 123: agx.v1.RecordLaunchResponse
+	nil,                                   // 124: agx.v1.PrepareLaunchRequest.EnvironmentInputsEntry
+	nil,                                   // 125: agx.v1.PrepareResourcesRequest.EnvironmentInputsEntry
+	nil,                                   // 126: agx.v1.SpawnPlan.EnvironmentOverridesEntry
+	nil,                                   // 127: agx.v1.PrepareThreadLaunchRequest.EnvironmentInputsEntry
+	nil,                                   // 128: agx.v1.AttachLaunchRequest.EnvironmentInputsEntry
+	nil,                                   // 129: agx.v1.AttachedThread.EnvironmentInputsEntry
+	nil,                                   // 130: agx.v1.ListSessionsRequest.StoresEntry
+	nil,                                   // 131: agx.v1.ListSessionsResponse.ErrorsEntry
+	nil,                                   // 132: agx.v1.McpCallScope.EnvironmentInputsEntry
+	nil,                                   // 133: agx.v1.GetLocalConfigurationResponse.PackagesEntry
+	nil,                                   // 134: agx.v1.ResolvePassthroughRequest.EnvironmentInputsEntry
+	nil,                                   // 135: agx.v1.ResolvePassthroughResponse.EnvironmentEntry
+	(*timestamppb.Timestamp)(nil),         // 136: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),           // 137: google.protobuf.Duration
+	(*structpb.Value)(nil),                // 138: google.protobuf.Value
+	(*structpb.Struct)(nil),               // 139: google.protobuf.Struct
 }
 var file_agx_v1_agx_proto_depIdxs = []int32{
 	0,   // 0: agx.v1.Diagnostic.severity:type_name -> agx.v1.Diagnostic.Severity
-	8,   // 1: agx.v1.Diagnostic.source:type_name -> agx.v1.SourceLocation
-	8,   // 2: agx.v1.ErrorDetail.source:type_name -> agx.v1.SourceLocation
-	7,   // 3: agx.v1.Snapshot.resources:type_name -> agx.v1.ResourceRef
+	9,   // 1: agx.v1.Diagnostic.source:type_name -> agx.v1.SourceLocation
+	9,   // 2: agx.v1.ErrorDetail.source:type_name -> agx.v1.SourceLocation
+	8,   // 3: agx.v1.Snapshot.resources:type_name -> agx.v1.ResourceRef
 	1,   // 4: agx.v1.ResolutionStep.change:type_name -> agx.v1.ResolutionStep.Change
-	8,   // 5: agx.v1.ResolutionStep.source:type_name -> agx.v1.SourceLocation
-	7,   // 6: agx.v1.ResourceTrace.resource:type_name -> agx.v1.ResourceRef
-	12,  // 7: agx.v1.ResourceTrace.steps:type_name -> agx.v1.ResolutionStep
-	9,   // 8: agx.v1.ValidateResponse.diagnostics:type_name -> agx.v1.Diagnostic
-	11,  // 9: agx.v1.ResolveResponse.snapshot:type_name -> agx.v1.Snapshot
-	13,  // 10: agx.v1.ResolveResponse.traces:type_name -> agx.v1.ResourceTrace
-	9,   // 11: agx.v1.ResolveResponse.diagnostics:type_name -> agx.v1.Diagnostic
-	18,  // 12: agx.v1.ResolveResponse.settings:type_name -> agx.v1.HarnessSetting
-	8,   // 13: agx.v1.HarnessSetting.source:type_name -> agx.v1.SourceLocation
-	21,  // 14: agx.v1.GetConfigurationResponse.harnesses:type_name -> agx.v1.ConfiguredHarness
-	26,  // 15: agx.v1.InstallResponse.progress:type_name -> agx.v1.PackageProgress
-	27,  // 16: agx.v1.InstallResponse.result:type_name -> agx.v1.PackageResult
-	9,   // 17: agx.v1.InstallResponse.failure:type_name -> agx.v1.Diagnostic
-	115, // 18: agx.v1.PrepareLaunchRequest.environment_inputs:type_name -> agx.v1.PrepareLaunchRequest.EnvironmentInputsEntry
-	31,  // 19: agx.v1.PrepareLaunchResponse.launch:type_name -> agx.v1.Launch
-	30,  // 20: agx.v1.PrepareLaunchResponse.spawn:type_name -> agx.v1.SpawnPlan
-	116, // 21: agx.v1.SpawnPlan.environment_overrides:type_name -> agx.v1.SpawnPlan.EnvironmentOverridesEntry
-	2,   // 22: agx.v1.Launch.state:type_name -> agx.v1.Launch.State
-	126, // 23: agx.v1.Launch.expires_at:type_name -> google.protobuf.Timestamp
-	11,  // 24: agx.v1.ResolveThreadResponse.snapshot:type_name -> agx.v1.Snapshot
-	117, // 25: agx.v1.PrepareThreadLaunchRequest.environment_inputs:type_name -> agx.v1.PrepareThreadLaunchRequest.EnvironmentInputsEntry
-	31,  // 26: agx.v1.PrepareThreadLaunchResponse.launch:type_name -> agx.v1.Launch
-	36,  // 27: agx.v1.PrepareThreadLaunchResponse.thread:type_name -> agx.v1.ThreadPlan
-	126, // 28: agx.v1.RenewLaunchResponse.expires_at:type_name -> google.protobuf.Timestamp
-	31,  // 29: agx.v1.AttachLaunchRequest.launch:type_name -> agx.v1.Launch
-	118, // 30: agx.v1.AttachLaunchRequest.environment_inputs:type_name -> agx.v1.AttachLaunchRequest.EnvironmentInputsEntry
-	40,  // 31: agx.v1.AttachLaunchRequest.threads:type_name -> agx.v1.AttachedThread
-	31,  // 32: agx.v1.AttachedThread.launch:type_name -> agx.v1.Launch
-	119, // 33: agx.v1.AttachedThread.environment_inputs:type_name -> agx.v1.AttachedThread.EnvironmentInputsEntry
-	126, // 34: agx.v1.AttachLaunchResponse.expires_at:type_name -> google.protobuf.Timestamp
-	3,   // 35: agx.v1.McpRuntime.state:type_name -> agx.v1.McpRuntime.State
-	9,   // 36: agx.v1.McpRuntime.diagnostics:type_name -> agx.v1.Diagnostic
-	31,  // 37: agx.v1.RuntimeView.launches:type_name -> agx.v1.Launch
-	46,  // 38: agx.v1.RuntimeView.mcp_servers:type_name -> agx.v1.McpRuntime
-	9,   // 39: agx.v1.RuntimeView.diagnostics:type_name -> agx.v1.Diagnostic
-	120, // 40: agx.v1.ListSessionsRequest.stores:type_name -> agx.v1.ListSessionsRequest.StoresEntry
-	126, // 41: agx.v1.StoredSession.started_at:type_name -> google.protobuf.Timestamp
-	126, // 42: agx.v1.StoredSession.updated_at:type_name -> google.protobuf.Timestamp
-	50,  // 43: agx.v1.ListSessionsResponse.sessions:type_name -> agx.v1.StoredSession
-	121, // 44: agx.v1.ListSessionsResponse.errors:type_name -> agx.v1.ListSessionsResponse.ErrorsEntry
-	47,  // 45: agx.v1.GetRuntimeResponse.runtime:type_name -> agx.v1.RuntimeView
-	47,  // 46: agx.v1.WatchRuntimeResponse.runtime:type_name -> agx.v1.RuntimeView
-	122, // 47: agx.v1.McpCallScope.environment_inputs:type_name -> agx.v1.McpCallScope.EnvironmentInputsEntry
-	58,  // 48: agx.v1.ListMcpProcessesResponse.processes:type_name -> agx.v1.McpProcess
-	126, // 49: agx.v1.McpProcess.started_at:type_name -> google.protobuf.Timestamp
-	126, // 50: agx.v1.McpProcess.stops_at:type_name -> google.protobuf.Timestamp
-	127, // 51: agx.v1.StopRequest.grace:type_name -> google.protobuf.Duration
-	55,  // 52: agx.v1.ListToolsRequest.scope:type_name -> agx.v1.McpCallScope
-	65,  // 53: agx.v1.ListToolsResponse.servers:type_name -> agx.v1.McpTools
-	4,   // 54: agx.v1.McpTools.load:type_name -> agx.v1.McpTools.Load
-	3,   // 55: agx.v1.McpTools.state:type_name -> agx.v1.McpRuntime.State
-	66,  // 56: agx.v1.McpTools.tools:type_name -> agx.v1.McpTool
-	55,  // 57: agx.v1.CallToolRequest.scope:type_name -> agx.v1.McpCallScope
-	71,  // 58: agx.v1.LoginResponse.started:type_name -> agx.v1.LoginStarted
-	72,  // 59: agx.v1.LoginResponse.finished:type_name -> agx.v1.LoginFinished
-	126, // 60: agx.v1.LoginStarted.expires_at:type_name -> google.protobuf.Timestamp
-	5,   // 61: agx.v1.LoginFinished.outcome:type_name -> agx.v1.LoginFinished.Outcome
-	77,  // 62: agx.v1.GetSecretStatusResponse.statuses:type_name -> agx.v1.SecretStatus
-	6,   // 63: agx.v1.SecretStatus.state:type_name -> agx.v1.SecretStatus.State
-	126, // 64: agx.v1.SecretStatus.expires_at:type_name -> google.protobuf.Timestamp
-	9,   // 65: agx.v1.SecretStatus.diagnostics:type_name -> agx.v1.Diagnostic
-	126, // 66: agx.v1.RotateSecretResponse.expires_at:type_name -> google.protobuf.Timestamp
-	8,   // 67: agx.v1.Definition.source:type_name -> agx.v1.SourceLocation
-	128, // 68: agx.v1.Definition.value:type_name -> google.protobuf.Value
-	82,  // 69: agx.v1.ListDefinitionsResponse.definitions:type_name -> agx.v1.Definition
-	82,  // 70: agx.v1.GetSkillResponse.definition:type_name -> agx.v1.Definition
-	90,  // 71: agx.v1.ConfigChange.define:type_name -> agx.v1.DefineChange
-	91,  // 72: agx.v1.ConfigChange.undefine:type_name -> agx.v1.UndefineChange
-	92,  // 73: agx.v1.ConfigChange.enable:type_name -> agx.v1.SelectionChange
-	92,  // 74: agx.v1.ConfigChange.disable:type_name -> agx.v1.SelectionChange
-	95,  // 75: agx.v1.ConfigChange.add_package:type_name -> agx.v1.PackageSource
-	128, // 76: agx.v1.DefineChange.value:type_name -> google.protobuf.Value
-	89,  // 77: agx.v1.UpdateConfigurationRequest.changes:type_name -> agx.v1.ConfigChange
-	100, // 78: agx.v1.ListSourceRefsResponse.refs:type_name -> agx.v1.SourceRef
-	95,  // 79: agx.v1.PreviewSourceResponse.package:type_name -> agx.v1.PackageSource
-	105, // 80: agx.v1.PreviewSourceResponse.skills:type_name -> agx.v1.PreviewSkill
-	129, // 81: agx.v1.GetLocalConfigurationResponse.document:type_name -> google.protobuf.Struct
-	123, // 82: agx.v1.GetLocalConfigurationResponse.packages:type_name -> agx.v1.GetLocalConfigurationResponse.PackagesEntry
-	124, // 83: agx.v1.ResolvePassthroughRequest.environment_inputs:type_name -> agx.v1.ResolvePassthroughRequest.EnvironmentInputsEntry
-	125, // 84: agx.v1.ResolvePassthroughResponse.environment:type_name -> agx.v1.ResolvePassthroughResponse.EnvironmentEntry
-	126, // 85: agx.v1.RecordLaunchRequest.started_at:type_name -> google.protobuf.Timestamp
-	126, // 86: agx.v1.RecordLaunchRequest.finished_at:type_name -> google.protobuf.Timestamp
-	110, // 87: agx.v1.GetLocalConfigurationResponse.PackagesEntry.value:type_name -> agx.v1.LocalPackageLock
-	108, // 88: agx.v1.ConfigurationService.GetLocalConfiguration:input_type -> agx.v1.GetLocalConfigurationRequest
-	111, // 89: agx.v1.ConfigurationService.ResolvePassthrough:input_type -> agx.v1.ResolvePassthroughRequest
-	14,  // 90: agx.v1.ConfigurationService.Validate:input_type -> agx.v1.ValidateRequest
-	16,  // 91: agx.v1.ConfigurationService.Resolve:input_type -> agx.v1.ResolveRequest
-	19,  // 92: agx.v1.ConfigurationService.GetConfiguration:input_type -> agx.v1.GetConfigurationRequest
-	22,  // 93: agx.v1.ConfigurationService.CompleteDirectory:input_type -> agx.v1.CompleteDirectoryRequest
-	83,  // 94: agx.v1.ConfigurationService.ListDefinitions:input_type -> agx.v1.ListDefinitionsRequest
-	85,  // 95: agx.v1.ConfigurationService.GetSkill:input_type -> agx.v1.GetSkillRequest
-	87,  // 96: agx.v1.ConfigurationService.ReadFile:input_type -> agx.v1.ReadFileRequest
-	93,  // 97: agx.v1.ConfigurationService.WriteResourceFile:input_type -> agx.v1.WriteResourceFileRequest
-	96,  // 98: agx.v1.ConfigurationService.UpdateConfiguration:input_type -> agx.v1.UpdateConfigurationRequest
-	24,  // 99: agx.v1.PackageService.Install:input_type -> agx.v1.InstallRequest
-	103, // 100: agx.v1.PackageService.PreviewSource:input_type -> agx.v1.PreviewSourceRequest
-	106, // 101: agx.v1.PackageService.ReadPreviewFile:input_type -> agx.v1.ReadPreviewFileRequest
-	98,  // 102: agx.v1.PackageService.ListSourceRefs:input_type -> agx.v1.ListSourceRefsRequest
-	101, // 103: agx.v1.PackageService.InspectSource:input_type -> agx.v1.InspectSourceRequest
-	113, // 104: agx.v1.LaunchService.RecordLaunch:input_type -> agx.v1.RecordLaunchRequest
-	28,  // 105: agx.v1.LaunchService.PrepareLaunch:input_type -> agx.v1.PrepareLaunchRequest
-	37,  // 106: agx.v1.LaunchService.RenewLaunch:input_type -> agx.v1.RenewLaunchRequest
-	42,  // 107: agx.v1.LaunchService.FinishLaunch:input_type -> agx.v1.FinishLaunchRequest
-	44,  // 108: agx.v1.LaunchService.RevokeLaunch:input_type -> agx.v1.RevokeLaunchRequest
-	32,  // 109: agx.v1.LaunchService.ResolveThread:input_type -> agx.v1.ResolveThreadRequest
-	34,  // 110: agx.v1.LaunchService.PrepareThreadLaunch:input_type -> agx.v1.PrepareThreadLaunchRequest
-	39,  // 111: agx.v1.LaunchService.AttachLaunch:input_type -> agx.v1.AttachLaunchRequest
-	48,  // 112: agx.v1.RuntimeService.GetRuntime:input_type -> agx.v1.GetRuntimeRequest
-	53,  // 113: agx.v1.RuntimeService.WatchRuntime:input_type -> agx.v1.WatchRuntimeRequest
-	49,  // 114: agx.v1.RuntimeService.ListSessions:input_type -> agx.v1.ListSessionsRequest
-	63,  // 115: agx.v1.RuntimeService.ListTools:input_type -> agx.v1.ListToolsRequest
-	67,  // 116: agx.v1.RuntimeService.CallTool:input_type -> agx.v1.CallToolRequest
-	56,  // 117: agx.v1.RuntimeService.ListMcpProcesses:input_type -> agx.v1.ListMcpProcessesRequest
-	59,  // 118: agx.v1.RuntimeService.StopMcpProcess:input_type -> agx.v1.StopMcpProcessRequest
-	61,  // 119: agx.v1.RuntimeService.Stop:input_type -> agx.v1.StopRequest
-	69,  // 120: agx.v1.SecretService.Login:input_type -> agx.v1.LoginRequest
-	73,  // 121: agx.v1.SecretService.SetSecret:input_type -> agx.v1.SetSecretRequest
-	75,  // 122: agx.v1.SecretService.GetSecretStatus:input_type -> agx.v1.GetSecretStatusRequest
-	78,  // 123: agx.v1.SecretService.Logout:input_type -> agx.v1.LogoutRequest
-	80,  // 124: agx.v1.SecretService.RotateSecret:input_type -> agx.v1.RotateSecretRequest
-	109, // 125: agx.v1.ConfigurationService.GetLocalConfiguration:output_type -> agx.v1.GetLocalConfigurationResponse
-	112, // 126: agx.v1.ConfigurationService.ResolvePassthrough:output_type -> agx.v1.ResolvePassthroughResponse
-	15,  // 127: agx.v1.ConfigurationService.Validate:output_type -> agx.v1.ValidateResponse
-	17,  // 128: agx.v1.ConfigurationService.Resolve:output_type -> agx.v1.ResolveResponse
-	20,  // 129: agx.v1.ConfigurationService.GetConfiguration:output_type -> agx.v1.GetConfigurationResponse
-	23,  // 130: agx.v1.ConfigurationService.CompleteDirectory:output_type -> agx.v1.CompleteDirectoryResponse
-	84,  // 131: agx.v1.ConfigurationService.ListDefinitions:output_type -> agx.v1.ListDefinitionsResponse
-	86,  // 132: agx.v1.ConfigurationService.GetSkill:output_type -> agx.v1.GetSkillResponse
-	88,  // 133: agx.v1.ConfigurationService.ReadFile:output_type -> agx.v1.ReadFileResponse
-	94,  // 134: agx.v1.ConfigurationService.WriteResourceFile:output_type -> agx.v1.WriteResourceFileResponse
-	97,  // 135: agx.v1.ConfigurationService.UpdateConfiguration:output_type -> agx.v1.UpdateConfigurationResponse
-	25,  // 136: agx.v1.PackageService.Install:output_type -> agx.v1.InstallResponse
-	104, // 137: agx.v1.PackageService.PreviewSource:output_type -> agx.v1.PreviewSourceResponse
-	107, // 138: agx.v1.PackageService.ReadPreviewFile:output_type -> agx.v1.ReadPreviewFileResponse
-	99,  // 139: agx.v1.PackageService.ListSourceRefs:output_type -> agx.v1.ListSourceRefsResponse
-	102, // 140: agx.v1.PackageService.InspectSource:output_type -> agx.v1.InspectSourceResponse
-	114, // 141: agx.v1.LaunchService.RecordLaunch:output_type -> agx.v1.RecordLaunchResponse
-	29,  // 142: agx.v1.LaunchService.PrepareLaunch:output_type -> agx.v1.PrepareLaunchResponse
-	38,  // 143: agx.v1.LaunchService.RenewLaunch:output_type -> agx.v1.RenewLaunchResponse
-	43,  // 144: agx.v1.LaunchService.FinishLaunch:output_type -> agx.v1.FinishLaunchResponse
-	45,  // 145: agx.v1.LaunchService.RevokeLaunch:output_type -> agx.v1.RevokeLaunchResponse
-	33,  // 146: agx.v1.LaunchService.ResolveThread:output_type -> agx.v1.ResolveThreadResponse
-	35,  // 147: agx.v1.LaunchService.PrepareThreadLaunch:output_type -> agx.v1.PrepareThreadLaunchResponse
-	41,  // 148: agx.v1.LaunchService.AttachLaunch:output_type -> agx.v1.AttachLaunchResponse
-	52,  // 149: agx.v1.RuntimeService.GetRuntime:output_type -> agx.v1.GetRuntimeResponse
-	54,  // 150: agx.v1.RuntimeService.WatchRuntime:output_type -> agx.v1.WatchRuntimeResponse
-	51,  // 151: agx.v1.RuntimeService.ListSessions:output_type -> agx.v1.ListSessionsResponse
-	64,  // 152: agx.v1.RuntimeService.ListTools:output_type -> agx.v1.ListToolsResponse
-	68,  // 153: agx.v1.RuntimeService.CallTool:output_type -> agx.v1.CallToolResponse
-	57,  // 154: agx.v1.RuntimeService.ListMcpProcesses:output_type -> agx.v1.ListMcpProcessesResponse
-	60,  // 155: agx.v1.RuntimeService.StopMcpProcess:output_type -> agx.v1.StopMcpProcessResponse
-	62,  // 156: agx.v1.RuntimeService.Stop:output_type -> agx.v1.StopResponse
-	70,  // 157: agx.v1.SecretService.Login:output_type -> agx.v1.LoginResponse
-	74,  // 158: agx.v1.SecretService.SetSecret:output_type -> agx.v1.SetSecretResponse
-	76,  // 159: agx.v1.SecretService.GetSecretStatus:output_type -> agx.v1.GetSecretStatusResponse
-	79,  // 160: agx.v1.SecretService.Logout:output_type -> agx.v1.LogoutResponse
-	81,  // 161: agx.v1.SecretService.RotateSecret:output_type -> agx.v1.RotateSecretResponse
-	125, // [125:162] is the sub-list for method output_type
-	88,  // [88:125] is the sub-list for method input_type
-	88,  // [88:88] is the sub-list for extension type_name
-	88,  // [88:88] is the sub-list for extension extendee
-	0,   // [0:88] is the sub-list for field type_name
+	9,   // 5: agx.v1.ResolutionStep.source:type_name -> agx.v1.SourceLocation
+	8,   // 6: agx.v1.ResourceTrace.resource:type_name -> agx.v1.ResourceRef
+	13,  // 7: agx.v1.ResourceTrace.steps:type_name -> agx.v1.ResolutionStep
+	10,  // 8: agx.v1.ValidateResponse.diagnostics:type_name -> agx.v1.Diagnostic
+	12,  // 9: agx.v1.ResolveResponse.snapshot:type_name -> agx.v1.Snapshot
+	14,  // 10: agx.v1.ResolveResponse.traces:type_name -> agx.v1.ResourceTrace
+	10,  // 11: agx.v1.ResolveResponse.diagnostics:type_name -> agx.v1.Diagnostic
+	19,  // 12: agx.v1.ResolveResponse.settings:type_name -> agx.v1.HarnessSetting
+	9,   // 13: agx.v1.HarnessSetting.source:type_name -> agx.v1.SourceLocation
+	22,  // 14: agx.v1.GetConfigurationResponse.harnesses:type_name -> agx.v1.ConfiguredHarness
+	27,  // 15: agx.v1.InstallResponse.progress:type_name -> agx.v1.PackageProgress
+	28,  // 16: agx.v1.InstallResponse.result:type_name -> agx.v1.PackageResult
+	10,  // 17: agx.v1.InstallResponse.failure:type_name -> agx.v1.Diagnostic
+	124, // 18: agx.v1.PrepareLaunchRequest.environment_inputs:type_name -> agx.v1.PrepareLaunchRequest.EnvironmentInputsEntry
+	12,  // 19: agx.v1.ResolveResourcesResponse.snapshot:type_name -> agx.v1.Snapshot
+	14,  // 20: agx.v1.ResolveResourcesResponse.traces:type_name -> agx.v1.ResourceTrace
+	10,  // 21: agx.v1.ResolveResourcesResponse.diagnostics:type_name -> agx.v1.Diagnostic
+	19,  // 22: agx.v1.ResolveResourcesResponse.settings:type_name -> agx.v1.HarnessSetting
+	125, // 23: agx.v1.PrepareResourcesRequest.environment_inputs:type_name -> agx.v1.PrepareResourcesRequest.EnvironmentInputsEntry
+	40,  // 24: agx.v1.PrepareResourcesResponse.launch:type_name -> agx.v1.Launch
+	34,  // 25: agx.v1.PrepareResourcesResponse.content:type_name -> agx.v1.ResourceContent
+	37,  // 26: agx.v1.PrepareResourcesResponse.mcp:type_name -> agx.v1.McpEndpoint
+	35,  // 27: agx.v1.ResourceContent.skills:type_name -> agx.v1.SkillContent
+	36,  // 28: agx.v1.SkillContent.files:type_name -> agx.v1.ResourceFile
+	40,  // 29: agx.v1.PrepareLaunchResponse.launch:type_name -> agx.v1.Launch
+	39,  // 30: agx.v1.PrepareLaunchResponse.spawn:type_name -> agx.v1.SpawnPlan
+	126, // 31: agx.v1.SpawnPlan.environment_overrides:type_name -> agx.v1.SpawnPlan.EnvironmentOverridesEntry
+	3,   // 32: agx.v1.Launch.state:type_name -> agx.v1.Launch.State
+	136, // 33: agx.v1.Launch.expires_at:type_name -> google.protobuf.Timestamp
+	2,   // 34: agx.v1.Launch.kind:type_name -> agx.v1.Launch.Kind
+	12,  // 35: agx.v1.ResolveThreadResponse.snapshot:type_name -> agx.v1.Snapshot
+	127, // 36: agx.v1.PrepareThreadLaunchRequest.environment_inputs:type_name -> agx.v1.PrepareThreadLaunchRequest.EnvironmentInputsEntry
+	40,  // 37: agx.v1.PrepareThreadLaunchResponse.launch:type_name -> agx.v1.Launch
+	45,  // 38: agx.v1.PrepareThreadLaunchResponse.thread:type_name -> agx.v1.ThreadPlan
+	136, // 39: agx.v1.RenewLaunchResponse.expires_at:type_name -> google.protobuf.Timestamp
+	40,  // 40: agx.v1.AttachLaunchRequest.launch:type_name -> agx.v1.Launch
+	128, // 41: agx.v1.AttachLaunchRequest.environment_inputs:type_name -> agx.v1.AttachLaunchRequest.EnvironmentInputsEntry
+	49,  // 42: agx.v1.AttachLaunchRequest.threads:type_name -> agx.v1.AttachedThread
+	40,  // 43: agx.v1.AttachedThread.launch:type_name -> agx.v1.Launch
+	129, // 44: agx.v1.AttachedThread.environment_inputs:type_name -> agx.v1.AttachedThread.EnvironmentInputsEntry
+	136, // 45: agx.v1.AttachLaunchResponse.expires_at:type_name -> google.protobuf.Timestamp
+	4,   // 46: agx.v1.McpRuntime.state:type_name -> agx.v1.McpRuntime.State
+	10,  // 47: agx.v1.McpRuntime.diagnostics:type_name -> agx.v1.Diagnostic
+	40,  // 48: agx.v1.RuntimeView.launches:type_name -> agx.v1.Launch
+	55,  // 49: agx.v1.RuntimeView.mcp_servers:type_name -> agx.v1.McpRuntime
+	10,  // 50: agx.v1.RuntimeView.diagnostics:type_name -> agx.v1.Diagnostic
+	130, // 51: agx.v1.ListSessionsRequest.stores:type_name -> agx.v1.ListSessionsRequest.StoresEntry
+	136, // 52: agx.v1.StoredSession.started_at:type_name -> google.protobuf.Timestamp
+	136, // 53: agx.v1.StoredSession.updated_at:type_name -> google.protobuf.Timestamp
+	59,  // 54: agx.v1.ListSessionsResponse.sessions:type_name -> agx.v1.StoredSession
+	131, // 55: agx.v1.ListSessionsResponse.errors:type_name -> agx.v1.ListSessionsResponse.ErrorsEntry
+	56,  // 56: agx.v1.GetRuntimeResponse.runtime:type_name -> agx.v1.RuntimeView
+	56,  // 57: agx.v1.WatchRuntimeResponse.runtime:type_name -> agx.v1.RuntimeView
+	132, // 58: agx.v1.McpCallScope.environment_inputs:type_name -> agx.v1.McpCallScope.EnvironmentInputsEntry
+	67,  // 59: agx.v1.ListMcpProcessesResponse.processes:type_name -> agx.v1.McpProcess
+	136, // 60: agx.v1.McpProcess.started_at:type_name -> google.protobuf.Timestamp
+	136, // 61: agx.v1.McpProcess.stops_at:type_name -> google.protobuf.Timestamp
+	137, // 62: agx.v1.StopRequest.grace:type_name -> google.protobuf.Duration
+	64,  // 63: agx.v1.ListToolsRequest.scope:type_name -> agx.v1.McpCallScope
+	74,  // 64: agx.v1.ListToolsResponse.servers:type_name -> agx.v1.McpTools
+	5,   // 65: agx.v1.McpTools.load:type_name -> agx.v1.McpTools.Load
+	4,   // 66: agx.v1.McpTools.state:type_name -> agx.v1.McpRuntime.State
+	75,  // 67: agx.v1.McpTools.tools:type_name -> agx.v1.McpTool
+	64,  // 68: agx.v1.CallToolRequest.scope:type_name -> agx.v1.McpCallScope
+	80,  // 69: agx.v1.LoginResponse.started:type_name -> agx.v1.LoginStarted
+	81,  // 70: agx.v1.LoginResponse.finished:type_name -> agx.v1.LoginFinished
+	136, // 71: agx.v1.LoginStarted.expires_at:type_name -> google.protobuf.Timestamp
+	6,   // 72: agx.v1.LoginFinished.outcome:type_name -> agx.v1.LoginFinished.Outcome
+	86,  // 73: agx.v1.GetSecretStatusResponse.statuses:type_name -> agx.v1.SecretStatus
+	7,   // 74: agx.v1.SecretStatus.state:type_name -> agx.v1.SecretStatus.State
+	136, // 75: agx.v1.SecretStatus.expires_at:type_name -> google.protobuf.Timestamp
+	10,  // 76: agx.v1.SecretStatus.diagnostics:type_name -> agx.v1.Diagnostic
+	136, // 77: agx.v1.RotateSecretResponse.expires_at:type_name -> google.protobuf.Timestamp
+	9,   // 78: agx.v1.Definition.source:type_name -> agx.v1.SourceLocation
+	138, // 79: agx.v1.Definition.value:type_name -> google.protobuf.Value
+	91,  // 80: agx.v1.ListDefinitionsResponse.definitions:type_name -> agx.v1.Definition
+	91,  // 81: agx.v1.GetSkillResponse.definition:type_name -> agx.v1.Definition
+	99,  // 82: agx.v1.ConfigChange.define:type_name -> agx.v1.DefineChange
+	100, // 83: agx.v1.ConfigChange.undefine:type_name -> agx.v1.UndefineChange
+	101, // 84: agx.v1.ConfigChange.enable:type_name -> agx.v1.SelectionChange
+	101, // 85: agx.v1.ConfigChange.disable:type_name -> agx.v1.SelectionChange
+	104, // 86: agx.v1.ConfigChange.add_package:type_name -> agx.v1.PackageSource
+	138, // 87: agx.v1.DefineChange.value:type_name -> google.protobuf.Value
+	98,  // 88: agx.v1.UpdateConfigurationRequest.changes:type_name -> agx.v1.ConfigChange
+	109, // 89: agx.v1.ListSourceRefsResponse.refs:type_name -> agx.v1.SourceRef
+	104, // 90: agx.v1.PreviewSourceResponse.package:type_name -> agx.v1.PackageSource
+	114, // 91: agx.v1.PreviewSourceResponse.skills:type_name -> agx.v1.PreviewSkill
+	139, // 92: agx.v1.GetLocalConfigurationResponse.document:type_name -> google.protobuf.Struct
+	133, // 93: agx.v1.GetLocalConfigurationResponse.packages:type_name -> agx.v1.GetLocalConfigurationResponse.PackagesEntry
+	134, // 94: agx.v1.ResolvePassthroughRequest.environment_inputs:type_name -> agx.v1.ResolvePassthroughRequest.EnvironmentInputsEntry
+	135, // 95: agx.v1.ResolvePassthroughResponse.environment:type_name -> agx.v1.ResolvePassthroughResponse.EnvironmentEntry
+	136, // 96: agx.v1.RecordLaunchRequest.started_at:type_name -> google.protobuf.Timestamp
+	136, // 97: agx.v1.RecordLaunchRequest.finished_at:type_name -> google.protobuf.Timestamp
+	119, // 98: agx.v1.GetLocalConfigurationResponse.PackagesEntry.value:type_name -> agx.v1.LocalPackageLock
+	117, // 99: agx.v1.ConfigurationService.GetLocalConfiguration:input_type -> agx.v1.GetLocalConfigurationRequest
+	120, // 100: agx.v1.ConfigurationService.ResolvePassthrough:input_type -> agx.v1.ResolvePassthroughRequest
+	15,  // 101: agx.v1.ConfigurationService.Validate:input_type -> agx.v1.ValidateRequest
+	17,  // 102: agx.v1.ConfigurationService.Resolve:input_type -> agx.v1.ResolveRequest
+	20,  // 103: agx.v1.ConfigurationService.GetConfiguration:input_type -> agx.v1.GetConfigurationRequest
+	23,  // 104: agx.v1.ConfigurationService.CompleteDirectory:input_type -> agx.v1.CompleteDirectoryRequest
+	92,  // 105: agx.v1.ConfigurationService.ListDefinitions:input_type -> agx.v1.ListDefinitionsRequest
+	94,  // 106: agx.v1.ConfigurationService.GetSkill:input_type -> agx.v1.GetSkillRequest
+	96,  // 107: agx.v1.ConfigurationService.ReadFile:input_type -> agx.v1.ReadFileRequest
+	102, // 108: agx.v1.ConfigurationService.WriteResourceFile:input_type -> agx.v1.WriteResourceFileRequest
+	105, // 109: agx.v1.ConfigurationService.UpdateConfiguration:input_type -> agx.v1.UpdateConfigurationRequest
+	25,  // 110: agx.v1.PackageService.Install:input_type -> agx.v1.InstallRequest
+	112, // 111: agx.v1.PackageService.PreviewSource:input_type -> agx.v1.PreviewSourceRequest
+	115, // 112: agx.v1.PackageService.ReadPreviewFile:input_type -> agx.v1.ReadPreviewFileRequest
+	107, // 113: agx.v1.PackageService.ListSourceRefs:input_type -> agx.v1.ListSourceRefsRequest
+	110, // 114: agx.v1.PackageService.InspectSource:input_type -> agx.v1.InspectSourceRequest
+	122, // 115: agx.v1.LaunchService.RecordLaunch:input_type -> agx.v1.RecordLaunchRequest
+	29,  // 116: agx.v1.LaunchService.PrepareLaunch:input_type -> agx.v1.PrepareLaunchRequest
+	46,  // 117: agx.v1.LaunchService.RenewLaunch:input_type -> agx.v1.RenewLaunchRequest
+	51,  // 118: agx.v1.LaunchService.FinishLaunch:input_type -> agx.v1.FinishLaunchRequest
+	53,  // 119: agx.v1.LaunchService.RevokeLaunch:input_type -> agx.v1.RevokeLaunchRequest
+	41,  // 120: agx.v1.LaunchService.ResolveThread:input_type -> agx.v1.ResolveThreadRequest
+	43,  // 121: agx.v1.LaunchService.PrepareThreadLaunch:input_type -> agx.v1.PrepareThreadLaunchRequest
+	48,  // 122: agx.v1.LaunchService.AttachLaunch:input_type -> agx.v1.AttachLaunchRequest
+	30,  // 123: agx.v1.ResourceService.ResolveResources:input_type -> agx.v1.ResolveResourcesRequest
+	32,  // 124: agx.v1.ResourceService.PrepareResources:input_type -> agx.v1.PrepareResourcesRequest
+	57,  // 125: agx.v1.RuntimeService.GetRuntime:input_type -> agx.v1.GetRuntimeRequest
+	62,  // 126: agx.v1.RuntimeService.WatchRuntime:input_type -> agx.v1.WatchRuntimeRequest
+	58,  // 127: agx.v1.RuntimeService.ListSessions:input_type -> agx.v1.ListSessionsRequest
+	72,  // 128: agx.v1.RuntimeService.ListTools:input_type -> agx.v1.ListToolsRequest
+	76,  // 129: agx.v1.RuntimeService.CallTool:input_type -> agx.v1.CallToolRequest
+	65,  // 130: agx.v1.RuntimeService.ListMcpProcesses:input_type -> agx.v1.ListMcpProcessesRequest
+	68,  // 131: agx.v1.RuntimeService.StopMcpProcess:input_type -> agx.v1.StopMcpProcessRequest
+	70,  // 132: agx.v1.RuntimeService.Stop:input_type -> agx.v1.StopRequest
+	78,  // 133: agx.v1.SecretService.Login:input_type -> agx.v1.LoginRequest
+	82,  // 134: agx.v1.SecretService.SetSecret:input_type -> agx.v1.SetSecretRequest
+	84,  // 135: agx.v1.SecretService.GetSecretStatus:input_type -> agx.v1.GetSecretStatusRequest
+	87,  // 136: agx.v1.SecretService.Logout:input_type -> agx.v1.LogoutRequest
+	89,  // 137: agx.v1.SecretService.RotateSecret:input_type -> agx.v1.RotateSecretRequest
+	118, // 138: agx.v1.ConfigurationService.GetLocalConfiguration:output_type -> agx.v1.GetLocalConfigurationResponse
+	121, // 139: agx.v1.ConfigurationService.ResolvePassthrough:output_type -> agx.v1.ResolvePassthroughResponse
+	16,  // 140: agx.v1.ConfigurationService.Validate:output_type -> agx.v1.ValidateResponse
+	18,  // 141: agx.v1.ConfigurationService.Resolve:output_type -> agx.v1.ResolveResponse
+	21,  // 142: agx.v1.ConfigurationService.GetConfiguration:output_type -> agx.v1.GetConfigurationResponse
+	24,  // 143: agx.v1.ConfigurationService.CompleteDirectory:output_type -> agx.v1.CompleteDirectoryResponse
+	93,  // 144: agx.v1.ConfigurationService.ListDefinitions:output_type -> agx.v1.ListDefinitionsResponse
+	95,  // 145: agx.v1.ConfigurationService.GetSkill:output_type -> agx.v1.GetSkillResponse
+	97,  // 146: agx.v1.ConfigurationService.ReadFile:output_type -> agx.v1.ReadFileResponse
+	103, // 147: agx.v1.ConfigurationService.WriteResourceFile:output_type -> agx.v1.WriteResourceFileResponse
+	106, // 148: agx.v1.ConfigurationService.UpdateConfiguration:output_type -> agx.v1.UpdateConfigurationResponse
+	26,  // 149: agx.v1.PackageService.Install:output_type -> agx.v1.InstallResponse
+	113, // 150: agx.v1.PackageService.PreviewSource:output_type -> agx.v1.PreviewSourceResponse
+	116, // 151: agx.v1.PackageService.ReadPreviewFile:output_type -> agx.v1.ReadPreviewFileResponse
+	108, // 152: agx.v1.PackageService.ListSourceRefs:output_type -> agx.v1.ListSourceRefsResponse
+	111, // 153: agx.v1.PackageService.InspectSource:output_type -> agx.v1.InspectSourceResponse
+	123, // 154: agx.v1.LaunchService.RecordLaunch:output_type -> agx.v1.RecordLaunchResponse
+	38,  // 155: agx.v1.LaunchService.PrepareLaunch:output_type -> agx.v1.PrepareLaunchResponse
+	47,  // 156: agx.v1.LaunchService.RenewLaunch:output_type -> agx.v1.RenewLaunchResponse
+	52,  // 157: agx.v1.LaunchService.FinishLaunch:output_type -> agx.v1.FinishLaunchResponse
+	54,  // 158: agx.v1.LaunchService.RevokeLaunch:output_type -> agx.v1.RevokeLaunchResponse
+	42,  // 159: agx.v1.LaunchService.ResolveThread:output_type -> agx.v1.ResolveThreadResponse
+	44,  // 160: agx.v1.LaunchService.PrepareThreadLaunch:output_type -> agx.v1.PrepareThreadLaunchResponse
+	50,  // 161: agx.v1.LaunchService.AttachLaunch:output_type -> agx.v1.AttachLaunchResponse
+	31,  // 162: agx.v1.ResourceService.ResolveResources:output_type -> agx.v1.ResolveResourcesResponse
+	33,  // 163: agx.v1.ResourceService.PrepareResources:output_type -> agx.v1.PrepareResourcesResponse
+	61,  // 164: agx.v1.RuntimeService.GetRuntime:output_type -> agx.v1.GetRuntimeResponse
+	63,  // 165: agx.v1.RuntimeService.WatchRuntime:output_type -> agx.v1.WatchRuntimeResponse
+	60,  // 166: agx.v1.RuntimeService.ListSessions:output_type -> agx.v1.ListSessionsResponse
+	73,  // 167: agx.v1.RuntimeService.ListTools:output_type -> agx.v1.ListToolsResponse
+	77,  // 168: agx.v1.RuntimeService.CallTool:output_type -> agx.v1.CallToolResponse
+	66,  // 169: agx.v1.RuntimeService.ListMcpProcesses:output_type -> agx.v1.ListMcpProcessesResponse
+	69,  // 170: agx.v1.RuntimeService.StopMcpProcess:output_type -> agx.v1.StopMcpProcessResponse
+	71,  // 171: agx.v1.RuntimeService.Stop:output_type -> agx.v1.StopResponse
+	79,  // 172: agx.v1.SecretService.Login:output_type -> agx.v1.LoginResponse
+	83,  // 173: agx.v1.SecretService.SetSecret:output_type -> agx.v1.SetSecretResponse
+	85,  // 174: agx.v1.SecretService.GetSecretStatus:output_type -> agx.v1.GetSecretStatusResponse
+	88,  // 175: agx.v1.SecretService.Logout:output_type -> agx.v1.LogoutResponse
+	90,  // 176: agx.v1.SecretService.RotateSecret:output_type -> agx.v1.RotateSecretResponse
+	138, // [138:177] is the sub-list for method output_type
+	99,  // [99:138] is the sub-list for method input_type
+	99,  // [99:99] is the sub-list for extension type_name
+	99,  // [99:99] is the sub-list for extension extendee
+	0,   // [0:99] is the sub-list for field type_name
 }
 
 func init() { file_agx_v1_agx_proto_init() }
@@ -8071,17 +8775,18 @@ func file_agx_v1_agx_proto_init() {
 		(*InstallResponse_Result)(nil),
 		(*InstallResponse_Failure)(nil),
 	}
-	file_agx_v1_agx_proto_msgTypes[35].OneofWrappers = []any{
+	file_agx_v1_agx_proto_msgTypes[43].OneofWrappers = []any{
 		(*FinishLaunchRequest_ExitCode)(nil),
 		(*FinishLaunchRequest_SignalName)(nil),
 		(*FinishLaunchRequest_SpawnFailure)(nil),
 		(*FinishLaunchRequest_ThreadClosed)(nil),
+		(*FinishLaunchRequest_ResourcesReleased)(nil),
 	}
-	file_agx_v1_agx_proto_msgTypes[63].OneofWrappers = []any{
+	file_agx_v1_agx_proto_msgTypes[71].OneofWrappers = []any{
 		(*LoginResponse_Started)(nil),
 		(*LoginResponse_Finished)(nil),
 	}
-	file_agx_v1_agx_proto_msgTypes[82].OneofWrappers = []any{
+	file_agx_v1_agx_proto_msgTypes[90].OneofWrappers = []any{
 		(*ConfigChange_Define)(nil),
 		(*ConfigChange_Undefine)(nil),
 		(*ConfigChange_Enable)(nil),
@@ -8093,10 +8798,10 @@ func file_agx_v1_agx_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agx_v1_agx_proto_rawDesc), len(file_agx_v1_agx_proto_rawDesc)),
-			NumEnums:      7,
-			NumMessages:   119,
+			NumEnums:      8,
+			NumMessages:   128,
 			NumExtensions: 0,
-			NumServices:   5,
+			NumServices:   6,
 		},
 		GoTypes:           file_agx_v1_agx_proto_goTypes,
 		DependencyIndexes: file_agx_v1_agx_proto_depIdxs,

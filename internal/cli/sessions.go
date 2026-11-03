@@ -260,7 +260,7 @@ func runLauncher(ctx context.Context, a *app) error {
 			if harnesses.err != nil {
 				notes = append(notes, fmt.Sprintf("Only built-ins: configuration did not load: %v", harnesses.err))
 			}
-			names, err := launcherHarnesses(harnesses.config)
+			names, err := launcherHarnesses(harnesses.config, a.registry)
 			if err != nil {
 				return err
 			}
@@ -304,9 +304,9 @@ func runLauncher(ctx context.Context, a *app) error {
 
 // launcherHarnesses lists the harnesses the launcher offers: built-ins first, then definitions,
 // each in name order. Hidden ones still run by name.
-func launcherHarnesses(c *config.Config) ([]launcher.Harness, error) {
+func launcherHarnesses(c *config.Config, registry adapters.Registry) ([]launcher.Harness, error) {
 	out := []launcher.Harness{}
-	names := c.HarnessNames()
+	names := registry.Launchable(c)
 	for _, builtin := range []bool{true, false} {
 		for _, name := range names {
 			h, err := c.Harness(name)
@@ -335,6 +335,10 @@ func resumeSession(
 	if !ok {
 		return fmt.Errorf("no adapter for harness %s", session.Builtin)
 	}
+	resumer, ok := adapter.(adapters.Resumer)
+	if !ok {
+		return fmt.Errorf("harness %s cannot resume native sessions", session.Builtin)
+	}
 	info, err := os.Stat(session.Directory)
 	if errors.Is(err, fs.ErrNotExist) || err == nil && !info.IsDir() {
 		return fmt.Errorf("session directory %s no longer exists", session.Directory)
@@ -345,5 +349,5 @@ func resumeSession(
 	if err := os.Chdir(session.Directory); err != nil {
 		return err
 	}
-	return runHarness(ctx, paths, registry, harnesses, name, adapter.Resume(session.Session), session.ID)
+	return runHarness(ctx, paths, registry, harnesses, name, resumer.Resume(session.Session), session.ID)
 }

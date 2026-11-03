@@ -65,11 +65,16 @@ type ThreadHost interface {
 
 // BuildThread composes a thread launch's plan, filling in the launch's artifacts and running the
 // adapter's installation when the launch finds it missing.
-func BuildThread(ctx context.Context, a Adapter, t Threads, l Launch, grant string) (ThreadPlan, error) {
+func BuildThread(ctx context.Context, a Launcher, t Threads, l Launch, grant string) (ThreadPlan, error) {
+	var err error
+	l.Instructions, err = l.Snapshot.InstructionsContent()
+	if err != nil {
+		return ThreadPlan{}, err
+	}
 	var collected Plan
 	l.plan = &collected
 	var plan ThreadPlan
-	err := withArtifacts(ctx, a, l, func(l Launch) (err error) {
+	err = withInstallation(ctx, a, l, func(l Launch) (err error) {
 		plan, err = t.ThreadPlan(l, grant)
 		return err
 	})

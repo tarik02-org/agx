@@ -27,6 +27,8 @@ const (
 	PackageServiceName = "agx.v1.PackageService"
 	// LaunchServiceName is the fully-qualified name of the LaunchService service.
 	LaunchServiceName = "agx.v1.LaunchService"
+	// ResourceServiceName is the fully-qualified name of the ResourceService service.
+	ResourceServiceName = "agx.v1.ResourceService"
 	// RuntimeServiceName is the fully-qualified name of the RuntimeService service.
 	RuntimeServiceName = "agx.v1.RuntimeService"
 	// SecretServiceName is the fully-qualified name of the SecretService service.
@@ -112,6 +114,12 @@ const (
 	// LaunchServiceAttachLaunchProcedure is the fully-qualified name of the LaunchService's
 	// AttachLaunch RPC.
 	LaunchServiceAttachLaunchProcedure = "/agx.v1.LaunchService/AttachLaunch"
+	// ResourceServiceResolveResourcesProcedure is the fully-qualified name of the ResourceService's
+	// ResolveResources RPC.
+	ResourceServiceResolveResourcesProcedure = "/agx.v1.ResourceService/ResolveResources"
+	// ResourceServicePrepareResourcesProcedure is the fully-qualified name of the ResourceService's
+	// PrepareResources RPC.
+	ResourceServicePrepareResourcesProcedure = "/agx.v1.ResourceService/PrepareResources"
 	// RuntimeServiceGetRuntimeProcedure is the fully-qualified name of the RuntimeService's GetRuntime
 	// RPC.
 	RuntimeServiceGetRuntimeProcedure = "/agx.v1.RuntimeService/GetRuntime"
@@ -946,6 +954,102 @@ func (UnimplementedLaunchServiceHandler) PrepareThreadLaunch(context.Context, *c
 
 func (UnimplementedLaunchServiceHandler) AttachLaunch(context.Context, *connect.Request[v1.AttachLaunchRequest]) (*connect.Response[v1.AttachLaunchResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.AttachLaunch is not implemented"))
+}
+
+// ResourceServiceClient is a client for the agx.v1.ResourceService service.
+type ResourceServiceClient interface {
+	ResolveResources(context.Context, *connect.Request[v1.ResolveResourcesRequest]) (*connect.Response[v1.ResolveResourcesResponse], error)
+	PrepareResources(context.Context, *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error)
+}
+
+// NewResourceServiceClient constructs a client for the agx.v1.ResourceService service. By default,
+// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
+// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
+// or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewResourceServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ResourceServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	resourceServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("ResourceService").Methods()
+	return &resourceServiceClient{
+		resolveResources: connect.NewClient[v1.ResolveResourcesRequest, v1.ResolveResourcesResponse](
+			httpClient,
+			baseURL+ResourceServiceResolveResourcesProcedure,
+			connect.WithSchema(resourceServiceMethods.ByName("ResolveResources")),
+			connect.WithClientOptions(opts...),
+		),
+		prepareResources: connect.NewClient[v1.PrepareResourcesRequest, v1.PrepareResourcesResponse](
+			httpClient,
+			baseURL+ResourceServicePrepareResourcesProcedure,
+			connect.WithSchema(resourceServiceMethods.ByName("PrepareResources")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// resourceServiceClient implements ResourceServiceClient.
+type resourceServiceClient struct {
+	resolveResources *connect.Client[v1.ResolveResourcesRequest, v1.ResolveResourcesResponse]
+	prepareResources *connect.Client[v1.PrepareResourcesRequest, v1.PrepareResourcesResponse]
+}
+
+// ResolveResources calls agx.v1.ResourceService.ResolveResources.
+func (c *resourceServiceClient) ResolveResources(ctx context.Context, req *connect.Request[v1.ResolveResourcesRequest]) (*connect.Response[v1.ResolveResourcesResponse], error) {
+	return c.resolveResources.CallUnary(ctx, req)
+}
+
+// PrepareResources calls agx.v1.ResourceService.PrepareResources.
+func (c *resourceServiceClient) PrepareResources(ctx context.Context, req *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error) {
+	return c.prepareResources.CallUnary(ctx, req)
+}
+
+// ResourceServiceHandler is an implementation of the agx.v1.ResourceService service.
+type ResourceServiceHandler interface {
+	ResolveResources(context.Context, *connect.Request[v1.ResolveResourcesRequest]) (*connect.Response[v1.ResolveResourcesResponse], error)
+	PrepareResources(context.Context, *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error)
+}
+
+// NewResourceServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewResourceServiceHandler(svc ResourceServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	resourceServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("ResourceService").Methods()
+	resourceServiceResolveResourcesHandler := connect.NewUnaryHandler(
+		ResourceServiceResolveResourcesProcedure,
+		svc.ResolveResources,
+		connect.WithSchema(resourceServiceMethods.ByName("ResolveResources")),
+		connect.WithHandlerOptions(opts...),
+	)
+	resourceServicePrepareResourcesHandler := connect.NewUnaryHandler(
+		ResourceServicePrepareResourcesProcedure,
+		svc.PrepareResources,
+		connect.WithSchema(resourceServiceMethods.ByName("PrepareResources")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/agx.v1.ResourceService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case ResourceServiceResolveResourcesProcedure:
+			resourceServiceResolveResourcesHandler.ServeHTTP(w, r)
+		case ResourceServicePrepareResourcesProcedure:
+			resourceServicePrepareResourcesHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedResourceServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedResourceServiceHandler struct{}
+
+func (UnimplementedResourceServiceHandler) ResolveResources(context.Context, *connect.Request[v1.ResolveResourcesRequest]) (*connect.Response[v1.ResolveResourcesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ResourceService.ResolveResources is not implemented"))
+}
+
+func (UnimplementedResourceServiceHandler) PrepareResources(context.Context, *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ResourceService.PrepareResources is not implemented"))
 }
 
 // RuntimeServiceClient is a client for the agx.v1.RuntimeService service.

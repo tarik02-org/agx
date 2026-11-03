@@ -94,6 +94,11 @@ func (Adapter) Directory(args []string, cwd string) (string, []string, error) {
 }
 
 func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
+	var err error
+	l.Artifacts, err = l.Materialize()
+	if err != nil {
+		return nil, err
+	}
 	prefix := []string{}
 	skills := adapters.SkillNames(l.Snapshot)
 	for _, r := range l.Snapshot.Resources {

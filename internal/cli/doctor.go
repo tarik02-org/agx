@@ -130,10 +130,10 @@ func (a *app) runDoctor(
 	}
 
 	executables := map[string]string{}
-	harnessRows := make([]check, len(a.registry.Names()))
+	harnessRows := make([]check, len(a.registry.Launchers()))
 	var wg sync.WaitGroup
-	for i, name := range a.registry.Names() {
-		adapter, _ := a.registry.Adapter(name)
+	for i, name := range a.registry.Launchers() {
+		adapter, _ := a.registry.Launcher(name)
 		configured := ""
 		if h, err := c.Harness(name); err == nil {
 			configured = h.Executable
@@ -362,7 +362,7 @@ func definitionChecks(ctx context.Context, c *config.Config, registry adapters.R
 		if err != nil {
 			continue
 		}
-		adapter, _ := registry.Adapter(h.Builtin)
+		adapter, _ := registry.Launcher(h.Builtin)
 		doctor, ok := adapter.(adapters.Doctor)
 		if !ok {
 			continue
@@ -618,7 +618,7 @@ func sopsChecks(c *config.Config, lookPath func(string) (string, error)) []check
 // whether the directory is on PATH, and which other executables share their names.
 func shimChecks(c *config.Config, registry adapters.Registry) []check {
 	names := []string{}
-	for _, name := range c.HarnessNames() {
+	for _, name := range registry.Launchable(c) {
 		if _, builtin := registry.Adapter(name); !builtin {
 			names = append(names, name)
 		}

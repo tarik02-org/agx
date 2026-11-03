@@ -283,6 +283,8 @@ func Serve(
 	mux.Handle(path, handler)
 	path, handler = agxv1connect.NewLaunchServiceHandler(s, opts...)
 	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewResourceServiceHandler(s, opts...)
+	mux.Handle(path, handler)
 	path, handler = agxv1connect.NewRuntimeServiceHandler(s, opts...)
 	mux.Handle(path, handler)
 	path, handler = agxv1connect.NewSecretServiceHandler(s, opts...)
@@ -389,6 +391,7 @@ var selfAuthorized = map[string]bool{
 // startsWork are the procedures a stopping daemon refuses, so that callers retry them with the
 // next daemon.
 var startsWork = map[string]bool{
+	agxv1connect.ResourceServicePrepareResourcesProcedure:         true,
 	agxv1connect.LaunchServicePrepareLaunchProcedure:              true,
 	agxv1connect.LaunchServiceAttachLaunchProcedure:               true,
 	agxv1connect.LaunchServicePrepareThreadLaunchProcedure:        true,
@@ -661,15 +664,7 @@ const abandonedCacheEntry = time.Hour
 // cleanCache removes the artifact directories launches no longer use, and what interrupted
 // writes and installations left in the cache.
 func (s *Server) cleanCache(now time.Time) {
-	s.mu.Lock()
-	ids := []string{}
-	for id, l := range s.launches {
-		if active(l.view.State) {
-			ids = append(ids, id)
-		}
-	}
-	s.mu.Unlock()
-	adapters.RemoveUnusedArtifacts(s.paths.Cache, ids, now)
+	adapters.RemoveUnusedArtifacts(s.paths.Cache, now)
 	for sub, prefixes := range cacheLeftovers {
 		dir := filepath.Join(s.paths.Cache, sub)
 		entries, err := os.ReadDir(dir)
