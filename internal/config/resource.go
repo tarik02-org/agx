@@ -90,7 +90,10 @@ func (s Skill) hashTree(create func(rel string, mode fs.FileMode, dir bool) (io.
 // otherwise the name in its SKILL.md front matter. A missing or invalid name falls back to the
 // directory name made valid, since the name also names the skill's directory.
 func (s Skill) NativeName() string {
-	b, _ := os.ReadFile(filepath.Join(s.Path, "SKILL.md"))
+	var b []byte
+	if !s.Generated() {
+		b, _ = os.ReadFile(filepath.Join(s.Path, "SKILL.md"))
+	}
 	return s.nativeName(b)
 }
 
