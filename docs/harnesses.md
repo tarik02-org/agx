@@ -1,8 +1,12 @@
 # Harnesses
 
-A harness is a coding agent agx launches. agx knows three: **Codex**
+A harness is a coding agent that consumes agx configuration. agx can launch **Codex**
 (`codex`), **Claude Code** (`claude`), and **Pi** (`pi`). You can define your
 own variants of them with extra arguments, environment, and resources.
+
+**OpenCode 2** (`opencode`) consumes configuration through a
+[native Effect plugin](../packages/opencode/README.md). OpenCode starts its own
+server and owns its conversations; it uses no agx shim or launch command.
 
 ## Launching
 

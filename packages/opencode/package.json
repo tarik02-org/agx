@@ -1,0 +1,51 @@
+{
+  "name": "agx-opencode",
+  "version": "0.0.0",
+  "description": "Directory-scoped AGX resources for OpenCode 2",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tarik02-org/agx.git",
+    "directory": "packages/opencode"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "build": "vp pack",
+    "check": "tsgo --noEmit && vp lint && vp fmt --check",
+    "format": "vp fmt",
+    "test": "pnpm build && node --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.16.0",
+    "@connectrpc/connect": "^2.1.1",
+    "@connectrpc/connect-web": "^2.1.1",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.5",
+    "@effect/platform-node": "4.0.6",
+    "@opencode/cli": "2.2.5",
+    "@opencode/client": "2.2.5",
+    "@opencode/plugin": "2.2.5",
+    "@opencode/schema": "2.2.5",
+    "@types/node": "^24.0.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "effect": "4.0.6",
+    "typescript": "^6.0.2",
+    "vite-plus": "1.4.0"
+  },
+  "peerDependencies": {
+    "@opencode/plugin": "2.2.5",
+    "@opencode/schema": "2.2.5",
+    "effect": "^4.0.6"
+  }
+}

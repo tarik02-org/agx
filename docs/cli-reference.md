@@ -6,6 +6,10 @@ configuration consumer. It uses normal autostart/version handling and returns
 credential. An integration reads that file and uses the management interface;
 it rereads discovery when reconnecting after a daemon replacement.
 
+`daemon connect --recover-instance <id>` starts a replacement only when that
+instance crashed: its discovery remains and its startup lock is free. An
+intentional stop removes discovery and is not restarted by this option.
+
 Every command also accepts `-h`/`--help`, which is the authoritative list of
 flags for your version. `agx man` prints a man page of every command.
 

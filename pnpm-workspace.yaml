@@ -1,0 +1,12 @@
+packages:
+  - packages/*
+autoInstallPeers: false
+allowBuilds:
+  '@opencode/cli': true
+overrides:
+  '@effect/platform-node-shared': 4.0.6
+peerDependencyRules:
+  ignoreMissing:
+    - redis
+  allowedVersions:
+    vite: 1.4.0

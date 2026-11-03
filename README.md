@@ -5,7 +5,7 @@
 **One config for every coding agent.**<br>
 Skills, MCP servers, and instructions — scoped to the directory you're in.
 
-Codex · Claude Code · Pi
+Codex · Claude Code · Pi · OpenCode 2
 
 [![CI](https://github.com/tarik02-org/agx/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/tarik02-org/agx/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/tarik02-org/agx?sort=semver)](https://github.com/tarik02-org/agx/releases)
@@ -73,7 +73,7 @@ Add or remove anything for a folder and everything below it. Work repos get work
 <td width="33%" valign="top">
 
 **🔌 MCP for every harness**<br>
-HTTP and stdio servers, defined once and served to Codex, Claude Code, and Pi.
+HTTP and stdio servers, defined once and served to Codex, Claude Code, Pi, and OpenCode 2.
 
 </td>
 </tr>
@@ -182,6 +182,9 @@ agx claude
 Commands save local configuration through the daemon in SQLite; YAML overlays remain authoritative. Continue with the [getting started guide](docs/getting-started.md).
 
 ## Integrations
+
+OpenCode 2 uses a [native Effect plugin](packages/opencode/README.md), which
+connects its server directly to AGX for directory-scoped configuration.
 
 Any tool that starts Codex, Claude Code, or Pi can run them through agx: point it at a [shim](docs/harnesses.md#shims) instead of the agent's own binary. See [Integrations](docs/integrations.md) for [T3 Code](docs/integrations.md#t3-code).
 

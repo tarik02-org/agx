@@ -35,6 +35,8 @@
             pkgs.buf
             pkgs.golangci-lint
             pkgs.gopls
+            pkgs.nodejs_24
+            pkgs.pnpm
           ];
         };
       });
