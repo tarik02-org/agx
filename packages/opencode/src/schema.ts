@@ -1,46 +1,15 @@
 import * as Schema from "effect/Schema";
-import { Launch_Kind } from "../../../gen/typescript/agx/v1/agx_pb.ts";
+import { Launch_Kind } from "agx-client/protocol";
+import { ConnectionOptions, LifecycleToken, McpGrant } from "agx-client/schema";
 
 export const Options = Schema.Struct({
-  executable: Schema.optionalKey(Schema.String),
-  config: Schema.optionalKey(Schema.String),
-  discovery: Schema.optionalKey(Schema.String),
+  ...ConnectionOptions.fields,
   harness: Schema.optionalKey(Schema.String),
   scopeDirectory: Schema.optionalKey(Schema.String),
   mcpDirectory: Schema.optionalKey(Schema.String),
   codemode: Schema.optionalKey(Schema.Boolean),
 });
 export type Options = typeof Options.Type;
-
-export const LifecycleToken = Schema.NonEmptyString.pipe(Schema.brand("agx/LifecycleToken"));
-export type LifecycleToken = typeof LifecycleToken.Type;
-export const McpGrant = Schema.NonEmptyString.pipe(Schema.brand("agx/McpGrant"));
-export const ManagementToken = Schema.NonEmptyString.pipe(Schema.brand("agx/ManagementToken"));
-
-export const Bootstrap = Schema.Struct({
-  version: Schema.Literal(1),
-  data: Schema.Struct({ discovery: Schema.String }),
-});
-
-export const Discovery = Schema.Struct({
-  url: Schema.URLFromString.check(
-    Schema.makeFilter(
-      (url) =>
-        url.protocol === "http:" &&
-        url.hostname === "127.0.0.1" &&
-        url.port !== "" &&
-        url.username === "" &&
-        url.password === "" &&
-        url.pathname === "/" &&
-        url.search === "" &&
-        url.hash === "",
-    ),
-  ),
-  token: ManagementToken,
-  instance_id: Schema.NonEmptyString,
-  config: Schema.NonEmptyString,
-});
-export type Discovery = typeof Discovery.Type;
 
 export const ResourcePath = Schema.String.check(
   Schema.makeFilter(

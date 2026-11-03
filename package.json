@@ -5,8 +5,8 @@
   "packageManager": "pnpm@12.16.1",
   "devDependencies": { "@bufbuild/protobuf": "^2.16.0" },
   "scripts": {
-    "check": "pnpm --filter agx-opencode check",
-    "build": "pnpm --filter agx-opencode build",
-    "test": "pnpm --filter agx-opencode test"
+    "check": "pnpm --filter agx-client build && pnpm -r check",
+    "build": "pnpm -r build",
+    "test": "pnpm --filter agx-client build && pnpm --filter agx-opencode test"
   }
 }

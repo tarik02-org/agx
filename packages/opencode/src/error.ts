@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import * as PlatformError from "effect/PlatformError";
-import { ConnectError } from "@connectrpc/connect";
+import type { ClientFailure } from "agx-client/error";
 
 export class IntegrationError extends Schema.TaggedError<IntegrationError>()("IntegrationError", {
   operation: Schema.String,
@@ -25,17 +25,4 @@ export class IntegrationError extends Schema.TaggedError<IntegrationError>()("In
   }
 }
 
-export const EndState = Schema.NullOr(Schema.Literals(["expired", "revoked", "finished"]));
-
-export class DaemonError extends Schema.TaggedError<DaemonError>()("DaemonError", {
-  operation: Schema.String,
-  code: Schema.Number,
-  ended: EndState,
-  cause: Schema.instanceOf(ConnectError),
-}) {
-  override get message() {
-    return `AGX ${this.operation} failed (RPC code ${this.code}${this.ended === null ? "" : `, ${this.ended}`})`;
-  }
-}
-
-export type IntegrationFailure = IntegrationError | DaemonError;
+export type IntegrationFailure = IntegrationError | ClientFailure;

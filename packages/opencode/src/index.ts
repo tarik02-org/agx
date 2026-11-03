@@ -108,14 +108,13 @@ export default define({
         (cause) => new IntegrationError({ operation: "plugin options", reason: "options", cause }),
       ),
     );
+    const { harness, scopeDirectory, mcpDirectory, codemode, ...connection } = options;
     const configuration = Configuration.of({
-      executable: options.executable ?? "agx",
-      config: options.config ?? null,
-      discovery: options.discovery ?? null,
-      harness: options.harness ?? "opencode",
-      scopeDirectory: options.scopeDirectory ?? ctx.location.directory,
-      mcpDirectory: options.mcpDirectory ?? ctx.location.directory,
-      codemode: options.codemode ?? null,
+      connection,
+      harness: harness ?? "opencode",
+      scopeDirectory: scopeDirectory ?? ctx.location.directory,
+      mcpDirectory: mcpDirectory ?? ctx.location.directory,
+      codemode: codemode ?? null,
     });
     const services = yield* Layer.build(runtime(configuration));
     yield* register(ctx).pipe(Effect.provide(services));

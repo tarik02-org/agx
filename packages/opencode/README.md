@@ -4,6 +4,9 @@ This server plugin brings AGX's directory-scoped skills, instructions and MCP
 servers to OpenCode 2.2.5. It uses the native Effect plugin interface and AGX's
 portable resource API. OpenCode owns its processes and conversations.
 
+The reusable [agx-client workspace](../client/README.md) owns daemon discovery
+and RPCs. This package owns OpenCode hooks, location leases and skill deployment.
+
 ## Install from this checkout
 
 Build the AGX client/daemon from this version and make `agx` available on the

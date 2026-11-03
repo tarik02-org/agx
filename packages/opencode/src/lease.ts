@@ -1,4 +1,3 @@
-import { create } from "@bufbuild/protobuf";
 import { Code } from "@connectrpc/connect";
 import type { Skill } from "@opencode/schema/skill";
 import * as Clock from "effect/Clock";
@@ -12,15 +11,13 @@ import * as ScopedRef from "effect/ScopedRef";
 import * as Semaphore from "effect/Semaphore";
 import type * as Scope from "effect/Scope";
 
-import {
-  AttachLaunchRequestSchema,
-  LaunchSchema,
-  PrepareResourcesRequestSchema,
-} from "../../../gen/typescript/agx/v1/agx_pb.ts";
-import { AgxClient } from "./AgxClient.ts";
+import { AgxClient } from "agx-client/AgxClient";
+import { AgxConnection } from "agx-client/AgxConnection";
+import type { DaemonError } from "agx-client/error";
+import type { Discovery } from "agx-client/schema";
 import { Configuration } from "./Configuration.ts";
-import { IntegrationError, type DaemonError, type IntegrationFailure } from "./error.ts";
-import { LeaseEnvelope, Prepared, Snapshot, type Discovery } from "./schema.ts";
+import { IntegrationError, type IntegrationFailure } from "./error.ts";
+import { LeaseEnvelope, Prepared, Snapshot } from "./schema.ts";
 import { SkillDeployer } from "./SkillDeployer.ts";
 
 export interface ActiveLease {
@@ -36,6 +33,7 @@ export interface ActiveLease {
 
 export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effect.Effect<void>) {
   const client = yield* AgxClient;
+  const connection = yield* AgxConnection;
   const configuration = yield* Configuration;
   const deployer = yield* SkillDeployer;
   const crypto = yield* Crypto.Crypto;
@@ -46,8 +44,11 @@ export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effec
     IntegrationFailure,
     Scope.Scope
   > {
-    const target = yield* client.discover;
-    const resolve = yield* client.resolve(target);
+    const target = yield* connection.discover();
+    const resolve = yield* client.resolve(target, {
+      directory: configuration.scopeDirectory,
+      harness: configuration.harness,
+    });
     if (resolve.settings.length > 0) {
       return yield* new IntegrationError({
         operation: "native settings are unsupported",
@@ -69,16 +70,13 @@ export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effec
       );
       if (Option.isSome(value)) environmentInputs[name] = value.value;
     }
-    const raw = yield* client.prepare(
-      target,
-      create(PrepareResourcesRequestSchema, {
-        snapshotId: snapshot.id,
-        directory: configuration.scopeDirectory,
-        harness: configuration.harness,
-        environmentInputs,
-        mcpDirectory: configuration.mcpDirectory,
-      }),
-    );
+    const raw = yield* client.prepare(target, {
+      snapshotId: snapshot.id,
+      directory: configuration.scopeDirectory,
+      harness: configuration.harness,
+      environmentInputs,
+      mcpDirectory: configuration.mcpDirectory,
+    });
     const envelope = yield* Schema.decodeUnknownEffect(LeaseEnvelope)(raw).pipe(
       Effect.mapError(
         (cause) =>
@@ -90,8 +88,13 @@ export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effec
       ),
     );
     yield* Effect.addFinalizer(() =>
-      client
-        .release(create(LaunchSchema, envelope.launch), envelope.lifecycleToken)
+      connection
+        .poll()
+        .pipe(
+          Effect.flatMap((current) =>
+            client.release(current, envelope.launch.id, envelope.lifecycleToken),
+          ),
+        )
         .pipe(Effect.catch((error) => Effect.logWarning(error.message))),
     );
     const prepared = yield* Schema.decodeUnknownEffect(Prepared)(raw).pipe(
@@ -145,17 +148,17 @@ export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effec
     terminal = null;
   });
   const restore = Effect.fn("lease.restore")(function* (target: Discovery, active: ActiveLease) {
-    yield* client.attach(
-      target,
-      create(AttachLaunchRequestSchema, {
-        launch: create(LaunchSchema, active.prepared.launch),
-        grant: active.prepared.grant,
-        lifecycleToken: active.prepared.lifecycleToken,
-        environmentInputs: active.environmentInputs,
-        mcpDirectory: active.prepared.mcpDirectory,
-      }),
-    );
-    const resolved = yield* client.resolve(target);
+    yield* client.attach(target, {
+      launch: active.prepared.launch,
+      grant: active.prepared.grant,
+      lifecycleToken: active.prepared.lifecycleToken,
+      environmentInputs: active.environmentInputs,
+      mcpDirectory: active.prepared.mcpDirectory,
+    });
+    const resolved = yield* client.resolve(target, {
+      directory: configuration.scopeDirectory,
+      harness: configuration.harness,
+    });
     if (
       resolved.snapshot?.id !== active.prepared.launch.snapshotId ||
       active.origin !== target.url.origin
@@ -163,23 +166,19 @@ export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effec
       yield* replace();
       return;
     }
-    yield* client.renew(
-      target,
-      create(LaunchSchema, active.prepared.launch),
-      active.prepared.lifecycleToken,
-    );
+    yield* client.renew(target, active.prepared.launch.id, active.prepared.lifecycleToken);
     active.instance = target.instance_id;
     active.renewAt = (yield* Clock.currentTimeMillis) + active.prepared.renewAfterSeconds * 1000;
   });
 
   const synchronize = Effect.fn("lease.synchronize")(function* () {
-    const target = yield* client.poll;
+    const target = yield* connection.poll();
     const active = yield* ScopedRef.get(state);
     if (active.instance !== target.instance_id) return yield* restore(target, active);
     const now = yield* Clock.currentTimeMillis;
     if (now < active.renewAt) return;
     yield* client
-      .renew(target, create(LaunchSchema, active.prepared.launch), active.prepared.lifecycleToken)
+      .renew(target, active.prepared.launch.id, active.prepared.lifecycleToken)
       .pipe(
         Effect.catchTag("DaemonError", (error) =>
           error.code === Code.NotFound || error.ended === "expired"
@@ -201,7 +200,7 @@ export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effec
         : error.code === Code.Unavailable ||
             error.code === Code.Unknown ||
             error.code === Code.DeadlineExceeded
-          ? client
+          ? connection
               .reconnect(ScopedRef.getUnsafe(state).instance)
               .pipe(Effect.andThen(synchronize()))
           : Effect.fail(error),

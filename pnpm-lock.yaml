@@ -173,7 +173,7 @@ importers:
         specifier: ^2.16.0
         version: 2.16.0
 
-  packages/opencode:
+  packages/client:
     dependencies:
       '@bufbuild/protobuf':
         specifier: ^2.16.0
@@ -184,6 +184,34 @@ importers:
       '@connectrpc/connect-web':
         specifier: ^2.1.1
         version: 2.3.0(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.3.0(@bufbuild/protobuf@2.16.0))
+    devDependencies:
+      '@effect/language-service':
+        specifier: 0.87.5
+        version: 0.87.5
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.19.2
+      '@typescript/native-preview':
+        specifier: 7.0.0-dev.20260707.2
+        version: 7.0.0-dev.20260707.2
+      effect:
+        specifier: 4.0.6
+        version: 4.0.6
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.3
+      vite-plus:
+        specifier: 1.4.0
+        version: 1.4.0(@opentelemetry/api@1.9.0)(@types/node@24.19.2)(@typescript/native-preview@7.0.0-dev.20260707.2)(@vitest/ui@5.0.5)(typescript@6.0.3)(yaml@2.9.1)
+
+  packages/opencode:
+    dependencies:
+      '@connectrpc/connect':
+        specifier: ^2.1.1
+        version: 2.3.0(@bufbuild/protobuf@2.16.0)
+      agx-client:
+        specifier: workspace:*
+        version: link:../client
       yaml:
         specifier: ^2.8.1
         version: 2.9.1

@@ -337,6 +337,23 @@ test(
       ).length,
       1,
     );
+    let nativeServers = (await api.mcp.list({ location: { directory: alpha } })).data.filter(
+      (entry) => entry.name.startsWith("agx-"),
+    );
+    for (
+      let attempt = 0;
+      attempt < 100 && !nativeServers.every((entry) => entry.status.status === "connected");
+      attempt++
+    ) {
+      await setTimeout(100);
+      nativeServers = (await api.mcp.list({ location: { directory: alpha } })).data.filter(
+        (entry) => entry.name.startsWith("agx-"),
+      );
+    }
+    assert.ok(
+      nativeServers.every((entry) => entry.status.status === "connected"),
+      JSON.stringify(nativeServers),
+    );
 
     const session = await api.session.create({
       location: { directory: alpha },
