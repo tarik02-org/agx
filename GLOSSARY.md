@@ -34,7 +34,7 @@ selection list rather than its top-level section; its ID shares the top-level
 ID space and cannot be redefined.
 
 **Generated skill**: A skill written in configuration with `content` and
-optional `files`, materialized as a skill directory for each launch.
+optional supporting files.
 
 **Anonymous package**: The Git source of a skill or instructions definition,
 fetched and locked like a package under the resource's kind and ID.
@@ -56,15 +56,19 @@ _Avoid_: Lazy server
 launch's, through its grant, or the servers selected for a directory, or every
 configured server with `--all`.
 
-**Snapshot**: The resolved selection of resources and settings for a working
-directory at launch time.
+**Snapshot**: The resolved selection of resources and settings for a directory
+and harness at a point in time.
 
-**Launch**: One running harness instance associated with a snapshot.
+**Launch**: A leased use of a snapshot, associated with a harness process or
+held by a configuration consumer independently of a process.
+
+**Resource lease**: A launch that grants configuration resources to a consumer
+without starting or managing a harness process.
 
 **Launch grant**: Authorization to use the selected MCP servers during a launch.
 
-**Lifecycle credential**: Authorization held by the wrapper to renew or finish
-one launch, separate from the harness's launch grant.
+**Lifecycle credential**: Authorization held by a wrapper or integration to
+renew or finish one launch, separate from its launch grant.
 
 **Secret**: A definition of how a credential is obtained: under `secrets`, shared
 through `!secret`, or inline in an MCP server's `auth`, where it belongs to that
@@ -77,13 +81,11 @@ needs a login only once the server answers with an authorization challenge.
 **Injected value**: A configuration value written with `!env`, `!file`, or
 `!secret` and resolved at launch; snapshots and explanations keep only the tag.
 
-**Harness**: A coding agent agx launches. Built-ins (Codex, Claude Code, Pi) have
-native adapters; a harness definition extends one with arguments, environment,
-and resource selection.
+**Harness**: A coding agent that consumes agx configuration. A harness definition
+extends a built-in with resource selection and optional process settings.
 
-**Adapter**: The package that integrates one built-in harness: it classifies
-invocations into modes and turns a snapshot into that harness's native
-arguments, files, and plugins.
+**Adapter**: An integration with a built-in harness, which can provide native
+resource delivery, process launching or access to native sessions.
 
 **Session**: A conversation stored by a harness in its own store, which the
 launcher lists and resumes; agx records which harness definition started it.

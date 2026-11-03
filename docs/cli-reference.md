@@ -1,5 +1,11 @@
 # CLI reference
 
+`agx --json daemon connect` locates the authenticated daemon for a local
+configuration consumer. It uses normal autostart/version handling and returns
+`data.discovery`, the absolute path of the private discovery file, without its
+credential. An integration reads that file and uses the management interface;
+it rereads discovery when reconnecting after a daemon replacement.
+
 Every command also accepts `-h`/`--help`, which is the authoritative list of
 flags for your version. `agx man` prints a man page of every command.
 

@@ -24,7 +24,7 @@ func TestLauncherHarnessesSkipHidden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	harnesses, err := launcherHarnesses(c)
+	harnesses, err := launcherHarnesses(c, builtin.Registry())
 	if err != nil {
 		t.Fatal(err)
 	}

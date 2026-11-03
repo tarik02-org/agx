@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"path/filepath"
 	"slices"
@@ -147,8 +148,12 @@ func (c *Catalog) scan(
 				result.err = err
 			} else {
 				defer func() { _ = index.Close() }()
-				adapter, _ := c.registry.Adapter(name)
-				result.sessions, result.err = adapter.Sessions(ctx, index, root)
+				adapter, ok := c.registry.SessionStore(name)
+				if !ok {
+					result.err = fmt.Errorf("harness %s has no local session store", name)
+				} else {
+					result.sessions, result.err = adapter.Sessions(ctx, index, root)
+				}
 				result.err = errors.Join(result.err, index.Err())
 				result.stats = index.Stats()
 				if ctx.Err() == nil {

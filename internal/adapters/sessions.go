@@ -17,6 +17,17 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// SessionStore reads a harness's native files. Consumers backed by a server need not implement it.
+type SessionStore interface {
+	SessionRoot(directory string, lookup func(string) string) (string, error)
+	Sessions(ctx context.Context, files SessionFiles, root string) ([]Session, error)
+}
+
+// Resumer translates a stored session into native process arguments.
+type Resumer interface {
+	Resume(session Session) []string
+}
+
 // Session is one conversation in a harness's own store, reduced to what a listing shows. Title
 // and Message are excerpts; nothing else of the transcript leaves the store.
 type Session struct {

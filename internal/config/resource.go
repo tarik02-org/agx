@@ -90,13 +90,16 @@ func (s Skill) hashTree(create func(rel string, mode fs.FileMode, dir bool) (io.
 // otherwise the name in its SKILL.md front matter. A missing or invalid name falls back to the
 // directory name made valid, since the name also names the skill's directory.
 func (s Skill) NativeName() string {
+	b, _ := os.ReadFile(filepath.Join(s.Path, "SKILL.md"))
+	return s.nativeName(b)
+}
+
+func (s Skill) nativeName(document []byte) string {
 	if s.Generated() {
 		return s.Name
 	}
-	if b, err := os.ReadFile(filepath.Join(s.Path, "SKILL.md")); err == nil {
-		if name := frontmatterName(string(b)); skillNamePattern.MatchString(name) && len(name) <= maxSkillName {
-			return name
-		}
+	if name := frontmatterName(string(document)); skillNamePattern.MatchString(name) && len(name) <= maxSkillName {
+		return name
 	}
 	var name strings.Builder
 	for _, r := range strings.ToLower(filepath.Base(s.Path)) {
@@ -135,24 +138,7 @@ func frontmatterName(document string) string {
 	return strings.TrimSpace(fields.Name)
 }
 
-// Materialize writes the skill directory to dest, which must not exist yet, and returns the
-// content hash of what it wrote. A skill inside an installed package reports its ContentHash,
-// since installation hashed that content already.
-func (s Skill) Materialize(dest string) (string, error) {
-	hash, err := s.hashTree(func(rel string, mode fs.FileMode, dir bool) (io.WriteCloser, error) {
-		target := filepath.Join(dest, filepath.FromSlash(rel))
-		if dir {
-			return nil, os.MkdirAll(target, 0o700)
-		}
-		return os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
-	})
-	if err != nil || s.installed == "" {
-		return hash, err
-	}
-	return s.installed, nil
-}
-
-// tree visits the skill directory as Materialize writes it and in the order TreeHash walks a
+// tree visits the skill content in the order TreeHash walks a
 // directory, without reading file content the visitor does not read: rel is slash-separated,
 // mode holds the file's permissions, and content is nil for directories.
 func (s Skill) tree(visit func(rel string, size int64, mode fs.FileMode, content io.Reader) error) error {

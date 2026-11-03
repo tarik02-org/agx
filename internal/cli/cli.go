@@ -355,7 +355,7 @@ func run(osArgs []string, stdout io.Writer) int {
 	} else {
 		a.harnesses = a.fragments()
 	}
-	for _, name := range a.harnesses.config.HarnessNames() {
+	for _, name := range a.registry.Launchable(a.harnesses.config) {
 		short := "Launch " + name + " with directory-scoped resources"
 		if _, builtin := a.registry.Adapter(name); !builtin {
 			h, _ := a.harnesses.config.Harness(name)
@@ -593,6 +593,24 @@ func daemonCommand(a *app) *cobra.Command {
 		},
 	}
 	command.AddCommand(start)
+	command.AddCommand(&cobra.Command{
+		Use:   "connect",
+		Short: "Locate the authenticated daemon for a configuration consumer",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if _, err := a.client(cmd.Context()); err != nil {
+				return err
+			}
+			path, err := filepath.Abs(filepath.Join(a.paths.Runtime, "daemon.json"))
+			if err != nil {
+				return err
+			}
+			document := struct {
+				Discovery string `json:"discovery"`
+			}{path}
+			return emit(document, func() error { _, err := fmt.Fprintln(ui.Stdout, path); return err })
+		},
+	})
 	status := &cobra.Command{
 		Use:   "status",
 		Short: "Show daemon version and launch count",

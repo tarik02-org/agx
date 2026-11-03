@@ -100,6 +100,11 @@ func (Adapter) Directory(args []string, cwd string) (string, []string, error) {
 }
 
 func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
+	var err error
+	l.Artifacts, err = l.Materialize()
+	if err != nil {
+		return nil, err
+	}
 	prefix := []string{"--plugin-dir", filepath.Join(l.Artifacts, "plugin")}
 	if len(l.Instructions) > 0 {
 		prefix = append(prefix, "--append-system-prompt-file", l.InstructionsFile())

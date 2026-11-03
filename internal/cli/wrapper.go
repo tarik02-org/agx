@@ -105,9 +105,9 @@ func runHarness(
 	if err != nil {
 		return err
 	}
-	adapter, ok := registry.Adapter(h.Builtin)
+	adapter, ok := registry.Launcher(h.Builtin)
 	if !ok {
-		return fmt.Errorf("no adapter for harness %s", h.Builtin)
+		return fmt.Errorf("harness %s has no native process launcher", h.Builtin)
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -275,12 +275,17 @@ func runHarness(
 		}
 		environment[key] = value
 	}
-	store, storeErr := adapter.SessionRoot(cmd.Dir, func(name string) string {
+	lookupSessionEnv := func(name string) string {
 		if runtime.GOOS == "windows" {
 			name = strings.ToUpper(name)
 		}
 		return environment[name]
-	})
+	}
+	var store string
+	var storeErr error
+	if sessions, ok := registry.SessionStore(h.Builtin); ok {
+		store, storeErr = sessions.SessionRoot(cmd.Dir, lookupSessionEnv)
+	}
 	link := newLease(paths, c, &v1.AttachLaunchRequest{
 		Launch:            p.Launch,
 		Grant:             p.Spawn.EnvironmentOverrides[adapters.GrantEnvironment],
