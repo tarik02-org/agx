@@ -7,9 +7,11 @@ portable resource API. OpenCode owns its processes and conversations.
 ## Install from this checkout
 
 Build the AGX client/daemon from this version and make `agx` available on the
-OpenCode server's PATH. Then build the plugin:
+OpenCode server's PATH. Restart the daemon after installing updated binaries,
+then build the plugin:
 
 ```sh
+agx daemon restart
 pnpm install
 pnpm build
 opencode2 plugin add /absolute/path/to/agx/packages/opencode
