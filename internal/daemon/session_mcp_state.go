@@ -103,6 +103,10 @@ func (s *Server) attachSession(ctx context.Context, l *launch, input attachMCPIn
 		if !ok {
 			return nil, fmt.Errorf("unknown configured MCP server %s", id)
 		}
+		if server.Auth.Inline != nil {
+			secret := c.Secrets[server.Auth.Secret]
+			server.Auth.Inline = &secret
+		}
 		definition = mcpDocument(server)
 	}
 	local.Document["mcp"].(map[string]any)[input.ID] = definition

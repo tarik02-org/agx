@@ -272,14 +272,21 @@ func TestSessionRestoresInlineCredentials(t *testing.T) {
 	s, dir := editorServer(
 		t,
 		fmt.Sprintf(
-			"mcp:\n  pkg/private: {url: '%s', auth: {kind: keychain}}\n  pkg/encrypted: {url: '%s', auth: {kind: sops, file: ./sealed.json, age_key: !secret age}}\n  private-command: {url: '%s', auth: {kind: command, command: [printf, private-command-credential]}}\nsecrets:\n  age: {kind: keychain}\n  shared: {kind: keychain}\n",
-			remote.URL,
+			"mcp:\n  pkg/private: {url: '%s', auth: {kind: keychain}}\n  private-command: {url: '%s', auth: {kind: command, command: [printf, private-command-credential]}}\nsecrets:\n  age: {kind: keychain}\n  shared: {kind: keychain}\n",
 			remote.URL,
 			remote.URL,
 		),
 	)
 	s.changed, s.clients, s.launches, s.ctx = &notifier{}, newClientPool(), map[string]*launch{}, t.Context()
-	writeFile(t, filepath.Join(dir, "sealed.json"), "{}")
+	writeFile(t, filepath.Join(dir, "agx.d", "sealed.json"), "{}")
+	writeFile(
+		t,
+		filepath.Join(dir, "agx.d", "encrypted.yaml"),
+		fmt.Sprintf(
+			"mcp:\n  pkg/encrypted: {url: '%s', auth: {kind: sops, file: ./sealed.json, age_key: !secret age}}\n",
+			remote.URL,
+		),
+	)
 	s.shared = mcpruntime.NewShared(t.Context(), "test", nil)
 	t.Cleanup(s.shared.Close)
 	s.manager = auth.New("", secretstore.Open(s.paths.State))
@@ -330,6 +337,7 @@ func TestSessionRestoresInlineCredentials(t *testing.T) {
 	s.end(l, v1.Launch_STATE_EXPIRED)
 	s.mu.Unlock()
 	writeFile(t, filepath.Join(dir, "main.yaml"), "{}\n")
+	writeFile(t, filepath.Join(dir, "agx.d", "encrypted.yaml"), "{}\n")
 	c, err := s.reload()
 	if err != nil {
 		t.Fatal(err)
