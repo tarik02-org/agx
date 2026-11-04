@@ -68,7 +68,7 @@ func (s *Server) PrepareLaunch(
 	endpoints, nativeEndpoints := map[config.ID]*mcpruntime.Endpoint{}, []adapters.Endpoint{}
 	// A process serving many threads gets its MCP servers per thread launch.
 	if !b.threadServer {
-		endpoints, nativeEndpoints = s.endpoints(launchCtx, id, snapshot, inputs)
+		endpoints, nativeEndpoints = s.endpoints(launchCtx, id, snapshot, inputs, snapshot.Directory)
 	}
 	discard := func() {
 		cancel()
@@ -95,6 +95,7 @@ func (s *Server) PrepareLaunch(
 		return nil, rpcError(connect.CodeFailedPrecondition, err.Error())
 	}
 	view := &v1.Launch{
+		Kind:       v1.Launch_KIND_PROCESS,
 		Id:         id,
 		SnapshotId: snapshot.ID,
 		Directory:  snapshot.Directory,
@@ -140,24 +141,10 @@ func (s *Server) PrepareLaunch(
 		RenewAfterSeconds: uint32(b.config.Daemon.RenewSeconds),
 		Warnings:          plan.Warnings,
 	}
-	s.mu.Lock()
-	// A launch added after a forced stop revoked the others would escape it.
-	if s.stopped {
-		s.mu.Unlock()
+	if err := s.addLaunch(l); err != nil {
 		discard()
-		return nil, refusal()
+		return nil, err
 	}
-	if len(s.launches) >= 10000 {
-		s.mu.Unlock()
-		discard()
-		return nil, rpcError(
-			connect.CodeResourceExhausted,
-			"launch history full; retry after ended launches are pruned",
-		)
-	}
-	s.launches[id] = l
-	s.changed.notify()
-	s.mu.Unlock()
 	return connect.NewResponse(response), nil
 }
 
@@ -165,7 +152,7 @@ func (s *Server) PrepareLaunch(
 type launchBasis struct {
 	config   *config.Config
 	harness  config.ResolvedHarness
-	adapter  adapters.Adapter
+	adapter  adapters.Launcher
 	mode     string
 	snapshot *config.Snapshot
 	// threadServer marks a harness process serving many threads.
@@ -183,9 +170,12 @@ func (s *Server) launchBasis(directory, name, id string, native []string) (launc
 	if err != nil {
 		return launchBasis{}, rpcError(connect.CodeInvalidArgument, err.Error())
 	}
-	adapter, ok := s.adapters.Adapter(harness.Builtin)
+	adapter, ok := s.adapters.Launcher(harness.Builtin)
 	if !ok {
-		return launchBasis{}, rpcError(connect.CodeInternal, "no adapter for harness "+harness.Builtin)
+		return launchBasis{}, rpcError(
+			connect.CodeFailedPrecondition,
+			"harness "+harness.Builtin+" has no process launcher",
+		)
 	}
 	mode := adapter.Classify(native)
 	if mode == config.ModePassthrough {
@@ -331,6 +321,7 @@ func (s *Server) endpoints(
 	id string,
 	snapshot *config.Snapshot,
 	inputs map[string]string,
+	directory string,
 ) (map[config.ID]*mcpruntime.Endpoint, []adapters.Endpoint) {
 	endpoints := map[config.ID]*mcpruntime.Endpoint{}
 	native := []adapters.Endpoint{}
@@ -339,7 +330,7 @@ func (s *Server) endpoints(
 		if r.Kind != "mcp" {
 			continue
 		}
-		definition, root := mcpDefinition(snapshot.Config.MCP[r.ID], snapshot.Directory)
+		definition, root := mcpDefinition(snapshot.Config.MCP[r.ID], directory)
 		// Each server gets only the inputs it reads, so launches that differ in others still
 		// share its process.
 		own := map[string]string{}
@@ -487,13 +478,18 @@ func (s *Server) FinishLaunch(
 ) (*connect.Response[v1.FinishLaunchResponse], error) {
 	switch req.Msg.Outcome.(type) {
 	case *v1.FinishLaunchRequest_ExitCode, *v1.FinishLaunchRequest_SignalName, *v1.FinishLaunchRequest_SpawnFailure,
-		*v1.FinishLaunchRequest_ThreadClosed:
+		*v1.FinishLaunchRequest_ThreadClosed, *v1.FinishLaunchRequest_ResourcesReleased:
 	default:
 		return nil, rpcError(connect.CodeInvalidArgument, "finish outcome is required")
 	}
 	s.mu.Lock()
 	l, err := s.lifecycleLaunch(req.Msg.LaunchId, req.Header().Get("Authorization"))
 	if err == nil {
+		_, resourcesReleased := req.Msg.Outcome.(*v1.FinishLaunchRequest_ResourcesReleased)
+		if resourcesReleased != (l.view.Kind == v1.Launch_KIND_RESOURCES) {
+			s.mu.Unlock()
+			return nil, rpcError(connect.CodeInvalidArgument, "finish outcome does not match the launch kind")
+		}
 		s.end(l, v1.Launch_STATE_FINISHED)
 	}
 	s.mu.Unlock()

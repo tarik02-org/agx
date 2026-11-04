@@ -8,6 +8,12 @@ The Go module path is `github.com/tarik02-org/agx`.
 
 ## Services
 
+- `ResourceService`: resolve configuration in an explicit scope namespace and
+  prepare a resource lease independently of process launching. Content is portable:
+  instruction text and skill trees with relative paths, bytes, executable flags,
+  empty directories and content digests. No producer filesystem paths or native
+  installation are required.
+
 - `ConfigurationService`: validate the daemon's configured root and resolve a
   directory for an optional harness, including provenance and required
   environment names. `GetLocalConfiguration` supplies managed definitions and typed
@@ -101,6 +107,45 @@ files cannot be read or written through these methods. `Logout` with `all`
 clears stored credentials, including orphans, without deleting local config.
 
 ## Launch flow
+
+### Configuration consumers
+
+An integration in an already-running harness uses `ResolveResources` with a
+directory in the configuration's scope namespace and an optional registered
+consumer/harness name. The directory is cleaned but is not checked against the
+daemon's filesystem. The integration is responsible for mapping and validating its
+workspace. Process arguments, executable and environment settings are not applied;
+native settings are returned as leaves for the integration to interpret. Required
+environment names include only those used by the selected MCP resources.
+
+`PrepareResources` takes the expected snapshot ID and those environment inputs.
+It returns the resource content, native MCP endpoints, an MCP grant, a separate
+lifecycle credential and the renewal interval. Preparation writes no harness
+artifacts, starts no harness process and inspects no native session files.
+Each skill's digest identifies its exact returned tree, independently of its
+package-lock source identity. Files use relative slash-separated paths; consumers
+may register text directly or deploy the tree in their execution environment.
+
+When selected MCP servers inherit cwd or share per directory/repository,
+`mcp_directory` must identify an existing directory on the daemon's host. It is
+separate from the scope directory. Explicit server working directories and global
+sharing retain their existing behavior. The response returns its canonical value;
+keep it for attachment. MCP processes still execute on the daemon's host, and
+endpoint URLs still use loopback: this interface does not add remote transport.
+
+The returned `Launch` has kind `RESOURCES` and starts running immediately. Renew
+it using its lifecycle credential; no PID or session ID is required. Release it
+with `FinishLaunch.resources_released`. After daemon replacement, `AttachLaunch`
+takes that launch, its credentials, original environment inputs and `mcp_directory`,
+with no executable, native arguments or thread launches. A changed snapshot leaves
+MCP unavailable until fresh preparation, as for process launches.
+
+Local integrations can run `agx --json daemon connect` to locate the private
+discovery file through the CLI's normal startup/version handling. Its JSON contains
+the absolute `discovery` path, never the management credential. Read and validate
+that file and reread it on reconnect; retain credentials in integration state.
+
+### Native process launches
 
 Resolve the working directory locally or through the daemon. The wrapper
 resolves the native executable on its own `PATH`, or takes the configured absolute

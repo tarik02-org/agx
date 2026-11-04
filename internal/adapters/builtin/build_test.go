@@ -102,7 +102,7 @@ func (f fixture) build(t *testing.T, harness string, native ...string) (adapters
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, _ := builtin.Registry().Adapter(h.Builtin)
+	a, _ := builtin.Registry().Launcher(h.Builtin)
 	plan, err := adapters.Build(
 		t.Context(),
 		a,
@@ -146,6 +146,13 @@ func checkPlan(t *testing.T, f fixture, plan adapters.Plan, s *config.Snapshot, 
 	}
 	if want := []string{"AGX_MANAGEMENT_TOKEN", "AGX_LIFECYCLE_TOKEN", "MCP_ONLY"}; !slices.Equal(plan.Unset, want) {
 		t.Errorf("unset = %v, want %v", plan.Unset, want)
+	}
+	if s.Harness == "codex" {
+		paths, err := filepath.Glob(filepath.Join(f.cache, "artifacts", "v3-*"))
+		if err != nil || len(paths) != 0 {
+			t.Fatalf("Codex created unnecessary resource artifacts: %v, %v", paths, err)
+		}
+		return
 	}
 	text, err := os.ReadFile(filepath.Join(artifacts(t, f), "instructions.md"))
 	if err != nil || string(text) != "first\n\nsecond\n\n" {
@@ -312,7 +319,7 @@ func TestBuildCodexAppServer(t *testing.T) {
 		t.Errorf("websocket app-server arguments = %q, %v", plan.Arguments, err)
 	}
 
-	a, _ := builtin.Registry().Adapter("codex")
+	a, _ := builtin.Registry().Launcher("codex")
 	threads := a.(adapters.Threads)
 	for _, tt := range []struct {
 		args []string
@@ -466,7 +473,7 @@ func TestArtifactsFollowContent(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		a, _ := builtin.Registry().Adapter("claude")
+		a, _ := builtin.Registry().Launcher("claude")
 		plan, err := adapters.Build(
 			t.Context(),
 			a,
@@ -507,7 +514,7 @@ func TestArtifactsFollowContent(t *testing.T) {
 		"---\nname: review\ndescription: r\n---\nChanged.\n",
 	)
 	h, _ := f.config.Harness("pi")
-	a, _ := builtin.Registry().Adapter("pi")
+	a, _ := builtin.Registry().Launcher("pi")
 	if _, err := adapters.Build(
 		t.Context(),
 		a,
@@ -555,12 +562,7 @@ func TestRemoveUnusedArtifacts(t *testing.T) {
 		return err == nil
 	}
 
-	// A launch whose directory names no artifacts keeps them all.
-	adapters.RemoveUnusedArtifacts(cache, []string{"A", "B"}, now)
-	if !exists(unused) {
-		t.Fatal("removed artifacts while a launch's are unknown")
-	}
-	adapters.RemoveUnusedArtifacts(cache, []string{"A"}, now)
+	adapters.RemoveUnusedArtifacts(cache, now)
 	for path, want := range map[string]bool{
 		used: true, unused: false, recent: true, build: false, building: true,
 	} {

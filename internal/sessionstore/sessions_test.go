@@ -355,7 +355,7 @@ func TestIndexReusesUnchangedFiles(t *testing.T) {
 
 // store is an adapter whose sessions are fixed.
 type store struct {
-	adapters.Adapter
+	adapters.SessionStore
 	name     string
 	sessions []adapters.Session
 }

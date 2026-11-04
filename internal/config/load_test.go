@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/securefs"
 )
@@ -536,7 +537,7 @@ func TestGeneratedSkillHash(t *testing.T) {
 `)
 	s := load(t, root).Skills["g"]
 	written := filepath.Join(t.TempDir(), "g")
-	copied, err := s.Materialize(written)
+	copied, err := adapters.MaterializeSkill(s, written)
 	if err != nil {
 		t.Fatal(err)
 	}

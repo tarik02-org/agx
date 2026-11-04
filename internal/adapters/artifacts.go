@@ -48,37 +48,28 @@ const (
 	abandonedBuild = time.Hour
 )
 
-// artifacts returns the artifact directory of the launch's skills, unless skills is false, and
-// instructions, building it unless an earlier launch did, and records in the launch directory
-// that the launch uses it.
-func artifacts(l Launch, skills bool) (string, error) {
+// Materialize deploys resources for an adapter that requires local plugin files.
+func (l Launch) Materialize() (string, error) {
 	s := l.Snapshot
 	type skill struct {
 		Name, Hash string
 		id         config.ID
 	}
 	selected := []skill{}
-	var text strings.Builder
+	text, err := s.InstructionsContent()
+	if err != nil {
+		return "", err
+	}
 	names := SkillNames(s)
 	for _, r := range s.Resources {
-		switch r.Kind {
-		case "skill":
-			if skills {
-				selected = append(selected, skill{names[r.ID], s.SkillHashes[r.ID], r.ID})
-			}
-		case "instructions":
-			b, err := s.Config.Instructions[r.ID].Read()
-			if err != nil {
-				return "", err
-			}
-			text.Write(b)
-			text.WriteString("\n\n")
+		if r.Kind == "skill" {
+			selected = append(selected, skill{names[r.ID], s.SkillHashes[r.ID], r.ID})
 		}
 	}
 	name := layout + "-" + config.Digest(struct {
 		Skills       []skill
 		Instructions string
-	}{selected, text.String()})
+	}{selected, string(text)})
 	parent := filepath.Join(l.Cache, "artifacts")
 	dest := filepath.Join(parent, name)
 	if err := os.MkdirAll(parent, 0o700); err != nil {
@@ -122,7 +113,7 @@ func artifacts(l Launch, skills bool) (string, error) {
 		return "", err
 	}
 	for _, skill := range selected {
-		hash, err := s.Config.Skills[skill.id].Materialize(filepath.Join(plugin, "skills", skill.Name))
+		hash, err := MaterializeSkill(s.Config.Skills[skill.id], filepath.Join(plugin, "skills", skill.Name))
 		if err != nil {
 			return "", err
 		}
@@ -131,7 +122,7 @@ func artifacts(l Launch, skills bool) (string, error) {
 			return "", fmt.Errorf("skill %s changed while preparing launch; retry", skill.id)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(tmp, "instructions.md"), []byte(text.String()), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(tmp, "instructions.md"), text, 0o600); err != nil {
 		return "", err
 	}
 	if err := os.Rename(tmp, dest); err != nil {
@@ -142,12 +133,9 @@ func artifacts(l Launch, skills bool) (string, error) {
 	return dest, nil
 }
 
-// RemoveUnusedArtifacts removes the artifact directories in cache that no launch directory
-// names and that no launch used for a while, and builds an interrupted process left. Launch
-// directories name the artifacts their launches use, so active holds the launches whose
-// directories must name them: while one does not, as for a launch of an earlier agx, every
-// artifact directory is kept. Directories in use get their use recorded at now.
-func RemoveUnusedArtifacts(cache string, active []string, now time.Time) {
+// RemoveUnusedArtifacts follows only actual filesystem artifact references. Consumers that
+// use content directly hold no such reference and do not prevent cleanup.
+func RemoveUnusedArtifacts(cache string, now time.Time) {
 	lock := flock.New(filepath.Join(cache, "artifacts.lock"))
 	if ok, err := lock.TryLock(); err != nil || !ok {
 		return
@@ -166,12 +154,6 @@ func RemoveUnusedArtifacts(cache string, active []string, now time.Time) {
 			if b, err := os.ReadFile(filepath.Join(launches, entry.Name(), "artifacts")); err == nil {
 				used[string(b)] = true
 			}
-		}
-	}
-	known := true
-	for _, id := range active {
-		if _, err := os.Stat(filepath.Join(launches, id, "artifacts")); err != nil {
-			known = false
 		}
 	}
 	parent := filepath.Join(cache, "artifacts")
@@ -193,7 +175,7 @@ func RemoveUnusedArtifacts(cache string, active []string, now time.Time) {
 			}
 		case used[entry.Name()]:
 			_ = os.Chtimes(dir, now, now)
-		case known && age > unusedArtifacts &&
+		case age > unusedArtifacts &&
 			strings.HasPrefix(entry.Name(), layout+"-"):
 			// Renaming is quick, so launches wait for no removal.
 			removed := filepath.Join(parent, ".remove-"+entry.Name())

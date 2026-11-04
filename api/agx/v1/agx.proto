@@ -64,6 +64,12 @@ service LaunchService {
   rpc AttachLaunch(AttachLaunchRequest) returns (AttachLaunchResponse);
 }
 
+// Configuration consumption does not require a process launched by agx or a shared filesystem.
+service ResourceService {
+  rpc ResolveResources(ResolveResourcesRequest) returns (ResolveResourcesResponse);
+  rpc PrepareResources(PrepareResourcesRequest) returns (PrepareResourcesResponse);
+}
+
 service RuntimeService {
   rpc GetRuntime(GetRuntimeRequest) returns (GetRuntimeResponse);
   rpc WatchRuntime(WatchRuntimeRequest) returns (stream WatchRuntimeResponse);
@@ -257,6 +263,66 @@ message PrepareLaunchRequest {
   // one. The wrapper runs it; the daemon runs it only for native installation on its behalf.
   string executable = 6;
 }
+
+message ResolveResourcesRequest {
+  // Absolute directory in the configuration's scope namespace. The consumer maps its workspace
+  // into this namespace; this directory need not exist on the daemon's host.
+  string directory = 1;
+  // Optional registered consumer or harness definition. Process settings are not applied.
+  string harness = 2;
+}
+message ResolveResourcesResponse {
+  Snapshot snapshot = 1;
+  repeated ResourceTrace traces = 2;
+  repeated Diagnostic diagnostics = 3;
+  repeated HarnessSetting settings = 4;
+}
+message PrepareResourcesRequest {
+  string snapshot_id = 1;
+  string directory = 2;
+  string harness = 3;
+  // Sensitive: only the resource environment names declared by ResolveResources are accepted.
+  map<string, string> environment_inputs = 4;
+  // Optional execution directory on the daemon's host, separate from the consumer's scope
+  // directory. Required for MCP servers that inherit cwd or share per directory/repository.
+  string mcp_directory = 5;
+}
+message PrepareResourcesResponse {
+  // A running resource lease, renewed, finished and reattached through LaunchService.
+  Launch launch = 1;
+  ResourceContent content = 2;
+  repeated McpEndpoint mcp = 3;
+  // Sensitive: authorizes only this lease's MCP access.
+  string grant = 4;
+  // Sensitive: held by the integration for renewal and release.
+  string lifecycle_token = 5;
+  uint32 renew_after_seconds = 6;
+  // Canonical daemon-side directory, retained for AttachLaunch; empty when unnecessary.
+  string mcp_directory = 7;
+}
+message ResourceContent {
+  repeated SkillContent skills = 1;
+  string instructions = 2;
+}
+message SkillContent {
+  string id = 1;
+  string name = 2;
+  // Identifies the exact file content, relative paths and executable permissions.
+  string digest = 3;
+  repeated ResourceFile files = 4;
+  // Relative slash-separated paths, including empty directories.
+  repeated string directories = 5;
+}
+message ResourceFile {
+  // Relative slash-separated path within the skill; never a daemon filesystem path.
+  string path = 1;
+  bytes content = 2;
+  bool executable = 3;
+}
+message McpEndpoint {
+  string id = 1;
+  string url = 2;
+}
 message PrepareLaunchResponse {
   Launch launch = 1;
   SpawnPlan spawn = 2;
@@ -279,6 +345,11 @@ message SpawnPlan {
 }
 
 message Launch {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_PROCESS = 1;
+    KIND_RESOURCES = 2;
+  }
   enum State {
     STATE_UNSPECIFIED = 0;
     STATE_PREPARED = 1;
@@ -299,6 +370,7 @@ message Launch {
   string parent_launch_id = 8;
   // Native session the launch serves, once the wrapper reports it; a thread launch's thread.
   string session_id = 9;
+  Kind kind = 10;
 }
 
 message ResolveThreadRequest {
@@ -368,6 +440,8 @@ message AttachLaunchRequest {
   string executable = 6;
   // For a process serving threads, its active thread launches.
   repeated AttachedThread threads = 7;
+  // Daemon-side execution directory used when preparing a resource lease.
+  string mcp_directory = 8;
 }
 message AttachedThread {
   // The thread launch as PrepareThreadLaunch returned it, with the thread it serves once bound.
@@ -389,6 +463,8 @@ message FinishLaunchRequest {
     string spawn_failure = 4;
     // The harness closed the thread a thread launch served.
     bool thread_closed = 5;
+    // The integration released its configuration resources without a process exit.
+    bool resources_released = 6;
   }
 }
 message FinishLaunchResponse {}

@@ -14,7 +14,10 @@ func Stores(
 	roots := map[string]string{}
 	errors := map[string]error{}
 	for _, name := range registry.Names() {
-		adapter, _ := registry.Adapter(name)
+		adapter, ok := registry.SessionStore(name)
+		if !ok {
+			continue
+		}
 		root, err := adapter.SessionRoot(directory, lookup)
 		if err == nil {
 			root, err = platform.Canonical(root)

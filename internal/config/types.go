@@ -414,8 +414,9 @@ type Snapshot struct {
 	// Injections lists tagged values the launch resolves, as configured; never their values.
 	Injections []Injection `json:"injections,omitempty"`
 	// SkillHashes holds the content hash of each selected skill as resolution found it.
-	SkillHashes map[ID]string `json:"-"`
-	Config      *Config       `json:"-"`
+	SkillHashes       map[ID]string `json:"-"`
+	InstructionHashes map[ID]string `json:"-"`
+	Config            *Config       `json:"-"`
 }
 
 func Digest(v any) string {
@@ -441,6 +442,17 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("not a directory: %s", dir)
 	}
+	return c.ResolveContext(dir, harness)
+}
+
+// ResolveContext evaluates a directory in the configuration's scope namespace. The caller
+// maps and validates its execution environment; the directory need not exist on this host.
+func (c *Config) ResolveContext(dir, harness string) (*Snapshot, error) {
+	if !filepath.IsAbs(dir) {
+		return nil, fmt.Errorf("absolute scope directory required")
+	}
+	dir = filepath.Clean(dir)
+	var err error
 	var h ResolvedHarness
 	if harness != "" {
 		h, err = c.Harness(harness)
@@ -574,6 +586,7 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 	// Local resources are content inputs too, even when no package is declared.
 	content := []string{s.ID}
 	s.SkillHashes = map[ID]string{}
+	s.InstructionHashes = map[ID]string{}
 	for _, r := range s.Resources {
 		switch r.Kind {
 		case "skill":
@@ -588,7 +601,9 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 			if err != nil {
 				return nil, fmt.Errorf("instructions %s: %w", r.ID, err)
 			}
-			content = append(content, Digest(string(b)))
+			hash := Digest(string(b))
+			s.InstructionHashes[r.ID] = hash
+			content = append(content, hash)
 		}
 	}
 	s.ID = Digest(content)

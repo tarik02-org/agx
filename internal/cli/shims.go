@@ -27,7 +27,7 @@ func shimsCommand(a *app) *cobra.Command {
 			return nil, err
 		}
 		names := []string{}
-		for _, name := range c.HarnessNames() {
+		for _, name := range a.registry.Launchable(c) {
 			if _, builtin := a.registry.Adapter(name); !builtin {
 				names = append(names, name)
 			}

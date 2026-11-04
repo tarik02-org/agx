@@ -24,10 +24,15 @@ const (
 	LaunchEnvironment = "AGX_LAUNCH_ID"
 )
 
-// Adapter carries everything specific to one built-in harness.
+// Adapter identifies a configuration consumer. Process launching and session storage are optional.
 type Adapter interface {
-	// Name is the built-in harness name, which is also its command and native executable name.
+	// Name identifies a built-in consumer independently of how it is started.
 	Name() string
+}
+
+// Launcher delivers configuration to a native process. The CLI owns spawning that process.
+type Launcher interface {
+	Adapter
 	// Modes lists every mode Classify returns, passthrough included.
 	Modes() []string
 	// Classify sorts a native invocation into a mode; passthrough runs without a managed launch.
@@ -40,12 +45,6 @@ type Adapter interface {
 	// Arguments returns the native arguments that bring a launch's skills, instructions, and
 	// MCP servers to the harness. They precede the definition's groups and the caller's arguments.
 	Arguments(launch Launch) ([]string, error)
-	// SessionRoot resolves the caller's store, which may differ from the daemon's environment.
-	SessionRoot(directory string, lookup func(string) string) (string, error)
-	// Sessions lists the read-only store at root, parsing files through files.
-	Sessions(ctx context.Context, files SessionFiles, root string) ([]Session, error)
-	// Resume returns the native arguments that resume a session in its directory.
-	Resume(session Session) []string
 }
 
 // Installer is an adapter whose harness needs a native installation.
@@ -71,13 +70,6 @@ func Forwarded(a Adapter) []string {
 		return f.Forwarded()
 	}
 	return nil
-}
-
-// NativeSkills is an adapter whose harness gets skills from its native installation, so its
-// launches' artifacts leave them out.
-type NativeSkills interface {
-	// NativeSkills marks the adapter; it is never called.
-	NativeSkills()
 }
 
 // Doctor is an adapter that checks what a definition's launches need beyond the executable.
@@ -109,11 +101,16 @@ type SessionAssigner interface {
 	AssignSession(args []string, id string) (string, []string)
 }
 
-// SettingsAdapter is an adapter whose harness takes a definition's native settings.
-type SettingsAdapter interface {
+// SettingsValidator checks native settings without requiring process delivery.
+type SettingsValidator interface {
 	// ValidateSettings checks resolved settings, and the definition's literal arguments, for what
 	// cannot take effect.
 	ValidateSettings(settings map[string]any, args []string) error
+}
+
+// SettingsAdapter delivers native settings as process arguments.
+type SettingsAdapter interface {
+	SettingsValidator
 	// SettingsArguments delivers settings as native arguments. dir holds files the launch owns;
 	// it is empty for installation, which needs only what arguments alone carry.
 	SettingsArguments(settings map[string]any, dir string) ([]string, error)
@@ -129,10 +126,9 @@ type Launch struct {
 	// ID names the launch's own files, which hold launch-specific endpoint URLs.
 	ID        string
 	Endpoints []Endpoint
-	// Artifacts is the shared artifact directory of the launch's content: plugin/ and
-	// instructions.md. Adapters with NativeSkills find no skills in plugin/.
+	// Artifacts is set by adapters that materialize plugin/ and instructions.md.
 	Artifacts string
-	// Instructions is the content of the instructions file, empty when none are selected.
+	// Instructions is the selected content, whether or not the adapter creates a file.
 	Instructions []byte
 	// Uninstalled marks a launch whose native installation was skipped; Arguments must leave out
 	// what needs it.
@@ -340,6 +336,45 @@ func (r Registry) Adapter(name string) (Adapter, bool) {
 	return a, ok
 }
 
+// Launcher finds a consumer that can be started as a native process.
+func (r Registry) Launcher(name string) (Launcher, bool) {
+	a, ok := r.adapters[name].(Launcher)
+	return a, ok
+}
+
+// SessionStore finds a consumer whose native session files can be read locally.
+func (r Registry) SessionStore(name string) (SessionStore, bool) {
+	a, ok := r.adapters[name].(SessionStore)
+	return a, ok
+}
+
+// Launchers lists only consumers that the CLI can start.
+func (r Registry) Launchers() []string {
+	names := []string{}
+	for name, a := range r.adapters {
+		if _, ok := a.(Launcher); ok {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
+// Launchable lists configured harnesses whose adapter can start a native process.
+func (r Registry) Launchable(c *config.Config) []string {
+	names := []string{}
+	for _, name := range c.HarnessNames() {
+		h, err := c.Harness(name)
+		if err != nil {
+			continue
+		}
+		if _, ok := r.Launcher(h.Builtin); ok {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // Names lists the registered harnesses in name order.
 func (r Registry) Names() []string { return slices.Sorted(maps.Keys(r.adapters)) }
 
@@ -348,8 +383,11 @@ func (r Registry) Builtins(commands []string) config.Builtins {
 	harnesses := map[string][]string{}
 	settings := map[string]func(map[string]any, []string) error{}
 	for name, a := range r.adapters {
-		harnesses[name] = a.Modes()
-		if s, ok := a.(SettingsAdapter); ok {
+		harnesses[name] = nil
+		if launcher, ok := a.(Launcher); ok {
+			harnesses[name] = launcher.Modes()
+		}
+		if s, ok := a.(SettingsValidator); ok {
 			settings[name] = s.ValidateSettings
 		}
 	}
@@ -406,12 +444,11 @@ func (r Registry) Install(
 	return warnings, nil
 }
 
-// Build composes the arguments as the definition's settings, the adapter's managed arguments,
-// the definition's resolved groups, then native args. It fills in the launch's artifacts, and runs the adapter's installation when the
-// launch finds it missing.
+// Build composes native arguments and environment. Each adapter chooses whether it needs
+// filesystem artifacts; native installation runs when delivery reports ErrNotInstalled.
 func Build(
 	ctx context.Context,
-	a Adapter,
+	a Launcher,
 	l Launch,
 	h config.ResolvedHarness,
 	harnessArgs []string,
@@ -442,6 +479,11 @@ func Build(
 	}
 	plan.Environment[GrantEnvironment] = grant
 	plan.Environment[LaunchEnvironment] = l.ID
+	var err error
+	l.Instructions, err = l.Snapshot.InstructionsContent()
+	if err != nil {
+		return Plan{}, err
+	}
 	l.Native = args
 	settings := []string{}
 	if s, ok := a.(SettingsAdapter); ok && len(h.Settings) > 0 {
@@ -456,7 +498,7 @@ func Build(
 	l.Target.Resolved = resolved
 	l.plan = &plan
 	var prefix []string
-	if err := withArtifacts(ctx, a, l, func(l Launch) (err error) {
+	if err := withInstallation(ctx, a, l, func(l Launch) (err error) {
 		prefix, err = a.Arguments(l)
 		return err
 	}); err != nil {
@@ -471,20 +513,9 @@ func Build(
 	return plan, nil
 }
 
-// withArtifacts fills in the launch's artifacts and runs call, installing the adapter's native
-// plugins once when call reports ErrNotInstalled.
-func withArtifacts(ctx context.Context, a Adapter, l Launch, call func(Launch) error) error {
-	var err error
-	_, native := a.(NativeSkills)
-	l.Artifacts, err = artifacts(l, !native)
-	if err != nil {
-		return err
-	}
-	l.Instructions, err = os.ReadFile(l.InstructionsFile())
-	if err != nil {
-		return err
-	}
-	err = call(l)
+// withInstallation installs native plugins once when delivery reports ErrNotInstalled.
+func withInstallation(ctx context.Context, a Adapter, l Launch, call func(Launch) error) error {
+	err := call(l)
 	installer, ok := a.(Installer)
 	if !errors.Is(err, ErrNotInstalled) || !ok {
 		return err
