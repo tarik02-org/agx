@@ -9,6 +9,7 @@ These notes are for people working on agx itself. For using agx, start at the
 - [Verification](verification.md): how behavior is tested, what was checked by
   hand, and known limits.
 - [Library choices](libraries.md).
+- [OpenCode plugin](opencode.md): development, distribution and advanced options.
 - [Architecture decision records](../adr/) and the [glossary](../../GLOSSARY.md).
 
 ## Building and testing

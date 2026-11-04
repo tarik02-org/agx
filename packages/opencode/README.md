@@ -1,146 +1,60 @@
 # AGX for OpenCode 2
 
-This server plugin brings AGX's directory-scoped skills, instructions and MCP
-servers to OpenCode 2.2.5. It uses the native Effect plugin interface and AGX's
-portable resource API. OpenCode owns its processes and conversations.
+Use your AGX skills, instructions and MCP servers in OpenCode. Each directory gets
+its matching AGX configuration when you open it in OpenCode.
 
-The reusable [agx-client workspace](../client/README.md) owns daemon discovery
-and RPCs. This package owns OpenCode hooks, location leases and skill deployment.
+## Install
 
-## Install from this checkout
-
-Build the AGX client/daemon from this version and make `agx` available on the
-OpenCode server's PATH. Restart the daemon after installing updated binaries,
-then build the plugin:
+[Install a current AGX build](https://github.com/tarik02-org/agx#install) on the machine running
+OpenCode's server, then install the plugin through OpenCode:
 
 ```sh
-agx daemon restart
-pnpm install
-pnpm build
-opencode2 plugin add /absolute/path/to/agx/packages/opencode
+opencode2 plugin add github:tarik02-org/agx#opencode-plugin
 ```
 
-Configured local plugins must name the package directory, not `dist/index.mjs`.
-Alternatively, add the package to your OpenCode configuration:
+OpenCode downloads a ready-to-run package and manages its installation. Restart
+OpenCode after adding the plugin. AGX must be available on the server's PATH; the
+plugin connects to the daemon and starts it when needed.
 
-```json
-{
-  "plugins": [
-    {
-      "package": "/absolute/path/to/agx/packages/opencode",
-      "options": {
-        "executable": "/absolute/path/to/agx",
-        "config": "/absolute/path/to/agx.yaml"
-      }
-    }
-  ]
-}
+The package is published to the `opencode-plugin` branch after successful builds
+of AGX's main branch. It is tested with OpenCode 2.2.5.
+
+## Use it
+
+Start OpenCode normally in a project directory:
+
+- AGX skills appear in OpenCode's skill catalog, including their supporting files.
+- AGX instructions are included in conversations and compaction.
+- Eager MCP servers appear as native OpenCode tools. On-demand servers remain
+  available through `agx mcp call`.
+
+Sessions in the same directory share its resources. Opening another directory
+selects the AGX scopes for that directory.
+
+After changing your AGX configuration, run this command inside OpenCode:
+
+```text
+/agx-reload
 ```
 
-The plugin bootstraps the daemon using `agx --json daemon connect`. If you provide
-`discovery`, it reads that private discovery file directly and leaves daemon
-startup to you. Credentials are read from discovery, not written into OpenCode's
-configuration.
-
-AGX recognizes the `opencode` configuration consumer, so scopes can filter on
-`harnesses: [opencode]` and definitions can extend it:
-
-```yaml
-harnesses:
-  opencode:
-    add:
-      instructions: [house-rules]
-scopes:
-  - directory: ~/work/team
-    harnesses: [opencode]
-    add:
-      skills: [review]
-      mcp: [tracker]
-```
-
-Check a directory's selection with `agx explain --harness opencode`.
-
-## Options
-
-| Option           | Default                     | Meaning                                                                                                        |
-| ---------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `executable`     | `agx`                       | AGX client executable on the OpenCode server.                                                                  |
-| `config`         | AGX's normal root           | Explicit AGX root configuration file.                                                                          |
-| `discovery`      | CLI discovery               | Explicit private discovery file; disables automatic daemon startup.                                            |
-| `harness`        | `opencode`                  | AGX consumer or a definition based on it.                                                                      |
-| `scopeDirectory` | OpenCode location directory | Directory in AGX's scope namespace. Override when mapping a workspace.                                         |
-| `mcpDirectory`   | OpenCode location directory | Explicit MCP execution directory on the daemon host. Set `""` when unnecessary, for example for HTTP-only MCP. |
-| `codemode`       | OpenCode's default          | Explicitly enable/disable Code Mode for AGX's native MCP servers.                                              |
-
-## Behavior
-
-One resource lease belongs to each OpenCode location. Sessions in that location
-share its skills and MCP catalog; locations resolve independently. AGX instruction
-text is included in primary, compaction, generation and title requests. `/agx-reload`
-acquires current configuration for the location and replaces only AGX's resources.
-Native process settings such as executable, argv and environment are not applied.
-
-Text-only skills use OpenCode's virtual `skill://` paths and create no files.
-Supporting files are deployed into a private temporary directory on the OpenCode
-server, grouped by content digest, with executable permissions preserved. The
-directory is removed with the plugin scope. Asset execution requires OpenCode's
-tools to have access to that server filesystem; this does not deploy files into a
-separate remote workspace executor.
-
-Native MCP servers receive AGX endpoint URLs and a restricted lease grant. Servers
-with `load: on_demand` stay outside the native catalog and remain accessible with
-`agx mcp call`. Shells receive `AGX_CONFIG`, `AGX_LAUNCH_ID` and `AGX_MCP_GRANT` for
-that location. Upstream MCP environment inputs and management/lifecycle tokens
-are removed from shell environments. The server's global environment is unchanged.
-
-The plugin renews leases and watches discovery. A daemon replacement reattaches
-the existing lease; changed configuration or endpoint origin triggers fresh
-preparation and native catalog reload. Revocation is respected. A crashed daemon
-can be restarted through the CLI's startup-lock checks; an intentional daemon
-stop is left stopped. Runtime operations fail while their resources are unavailable.
-
-AGX transport remains authenticated loopback HTTP. For a remote OpenCode server,
-run AGX alongside that server; neither resource content nor this package's
-interface requires the user's UI to share its filesystem. Remote AGX transport
-and a persistent content-addressed store are separate features.
-
-## Verification
-
-The repository development shell supplies Go 1.26, Node 24 and pnpm 12 for these
-checks.
+To see what AGX selects for the current directory:
 
 ```sh
-pnpm format
-pnpm lint
-pnpm check
-pnpm test
+agx explain --harness opencode
 ```
 
-Both workspaces use stable TypeScript 7 and inherit `tsconfig.base.json` and the
-root Vite lint/format rules. External dependencies share the default pnpm catalog
-in `pnpm-workspace.yaml`, with caret ranges and exact resolutions in the lockfile.
-The lint baseline enables Oxlint's correctness, suspicious and performance categories;
-explicit overrides add type-safety and AGX error-handling policies.
-`pnpm check` runs Vite+'s combined format, lint and type checks across the
-repository. `pnpm lint` runs type-aware lint separately. `pnpm format` discovers
-supported files automatically, excluding generated code and schemas.
-Vite tasks build the client before checks and lint, and build workspace
-dependencies before the plugin and its end-to-end test. Build results are cached;
-checks, lint and the end-to-end test execute on every invocation.
-The equivalent task commands are `vp run check:workspace`,
-`vp run lint:workspace`, `vp run -r build` and `vp run -r test`. Schema, platform,
-configuration and RPC failures are handled by their tags; lint rejects broad
-Effect catches, `mapError`, and error-discarding helpers. Unexpected SDK/parser
-exceptions remain defects rather than becoming retryable integration failures.
-The Effect language-service diagnostics also run in supported editors; the native TypeScript compiler
-does not load TypeScript language-service plugins.
+Manage skills, MCP servers and authentication through
+[AGX's configuration](https://github.com/tarik02-org/agx/blob/master/docs/configuration.md).
 
-`skipLibCheck` is retained for dependency declarations: OpenCode 2.2.5's AI
-package has incompatible optional-property declarations under
-`exactOptionalPropertyTypes`. First-party strict checks remain enabled.
-The client accepts generated Protobuf enums; the plugin and root tooling require
-erasable TypeScript syntax.
+## Update
 
-The end-to-end test builds isolated AGX binaries and runs the pinned OpenCode
-server with a local model fixture and stdio MCP server. It uses temporary
-configuration, data and cache directories and does not access real model accounts.
+Let OpenCode update the plugin:
+
+```sh
+opencode2 plugin update github:tarik02-org/agx#opencode-plugin
+```
+
+Update the AGX binary through your usual installation method. For remote OpenCode,
+AGX and the plugin run on the OpenCode server.
+
+[Advanced options and development](https://github.com/tarik02-org/agx/blob/master/docs/development/opencode.md)

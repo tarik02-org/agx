@@ -200,6 +200,9 @@ catalogs:
     typescript:
       specifier: ^7.0.2
       version: 7.0.2
+    unplugin-license:
+      specifier: ^0.2.0
+      version: 0.2.0
     vite-plus:
       specifier: ^1.4.0
       version: 1.4.0
@@ -291,6 +294,9 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
+      unplugin-license:
+        specifier: 'catalog:'
+        version: 0.2.0
       vite-plus:
         specifier: 'catalog:'
         version: 1.4.0(@opentelemetry/api@1.9.0)(@types/node@24.19.2)(@vitest/ui@5.0.5)(typescript@7.0.2)(yaml@2.9.1)
@@ -2327,6 +2333,10 @@ packages:
   undici@8.12.3:
     resolution: {integrity: sha512-+fdndUTwBP86cVjihTp21hZHo7d6oj1c/47XPA3lL8mM0XHs+C4EkcjmgRsFnFk2f/UONGDy9ItBItmXsLOQHw==}
     engines: {node: '>=22.19.0'}
+
+  unplugin-license@0.2.0:
+    resolution: {integrity: sha512-0GevrE94yQlMJ+ZTdivoTa5mxE7G5g0Z45MM/ZR+JaPPN7xkUK6M/ft+Tvz5wwHA5gdLHEZBi9AnhXxOCP+kGA==}
+    engines: {node: '>=22.22.0'}
 
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
@@ -4423,6 +4433,8 @@ snapshots:
   undici@6.29.1: {}
 
   undici@8.12.3: {}
+
+  unplugin-license@0.2.0: {}
 
   util-deprecate@1.0.2: {}
 

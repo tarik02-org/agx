@@ -33,6 +33,7 @@
     "@types/node": "catalog:",
     "effect": "catalog:",
     "typescript": "catalog:",
+    "unplugin-license": "catalog:",
     "vite-plus": "catalog:"
   },
   "peerDependencies": {

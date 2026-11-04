@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { setTimeout } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import { ClientError, OpenCode } from "@opencode/client";
@@ -83,7 +83,7 @@ await test(
     }
     const inherited = Object.fromEntries(
       Object.entries(process.env).filter(
-        ([name]) => !/^(AGX_|OPENCODE_|XDG_|OPENAI_|ANTHROPIC_)/.test(name),
+        ([name]) => !/^(AGX_|OPENCODE_|XDG_|OPENAI_|ANTHROPIC_|NPM_CONFIG_|GIT_)/i.test(name),
       ),
     );
     const env = {
@@ -95,6 +95,11 @@ await test(
       AGX_MANAGEMENT_TOKEN: "must-not-reach-shell",
       AGX_LIFECYCLE_TOKEN: "must-not-reach-shell",
       MCP_INPUT_SECRET: "fixture-input",
+      GIT_CONFIG_GLOBAL: path.join(root, "gitconfig"),
+      GIT_CONFIG_NOSYSTEM: "1",
+      NPM_CONFIG_CACHE: path.join(root, "npm-cache"),
+      NPM_CONFIG_USERCONFIG: path.join(root, "npmrc"),
+      NPM_CONFIG_GLOBALCONFIG: path.join(root, "global-npmrc"),
       OPENCODE_TEST_HOME: path.join(root, "home"),
       OPENCODE_CONFIG_DIR: path.join(root, "opencode"),
       XDG_CONFIG_HOME: path.join(root, "xdg-config"),
@@ -241,6 +246,48 @@ await test(
       repository,
       "packages/opencode/node_modules/@opencode/cli/bin/opencode.exe",
     );
+    const pluginRepository = path.join(root, "plugin-release");
+    await cp(path.join(repository, "packages/opencode/dist/git"), pluginRepository, {
+      recursive: true,
+    });
+    await exec("git", ["init", "--initial-branch=release", pluginRepository], { env });
+    await exec("git", ["-C", pluginRepository, "add", "."], { env });
+    const commitPlugin = (message: string) =>
+      exec(
+        "git",
+        [
+          "-C",
+          pluginRepository,
+          "-c",
+          `core.hooksPath=${path.join(root, "empty-hooks")}`,
+          "-c",
+          "commit.gpgSign=false",
+          "-c",
+          "user.name=agx fixture",
+          "-c",
+          "user.email=fixture@example.invalid",
+          "commit",
+          "-am",
+          message,
+        ],
+        { env },
+      );
+    await commitPlugin("fixture plugin release");
+    const pluginTarget = `git+${pathToFileURL(pluginRepository).href}#release`;
+    await mkdir(env.OPENCODE_CONFIG_DIR, { recursive: true });
+    await mkdir(env.OPENCODE_TEST_HOME, { recursive: true });
+    await exec(opencode, ["plugin", "add", pluginTarget], { cwd: alpha, env });
+    const installed = Schema.decodeUnknownSync(
+      Schema.fromJsonString(
+        Schema.Struct({
+          plugins: Schema.Array(Schema.String),
+        }),
+      ),
+    )(await readFile(path.join(env.OPENCODE_CONFIG_DIR, "opencode.json"), "utf8"));
+    assert.ok(
+      installed.plugins.includes(pluginTarget),
+      "plugin add did not register the Git package",
+    );
     const catalogFile = path.join(root, "tool-catalog.json");
     const catalogPlugin = path.join(root, "catalog-plugin");
     await mkdir(catalogPlugin);
@@ -277,7 +324,7 @@ export default define({
       plugins: [
         { package: catalogPlugin },
         {
-          package: path.join(repository, "packages/opencode"),
+          package: pluginTarget,
           options: { executable: binary, codemode: false },
         },
       ],
@@ -289,8 +336,6 @@ export default define({
         },
       },
     };
-    await mkdir(env.OPENCODE_CONFIG_DIR, { recursive: true });
-    await mkdir(env.OPENCODE_TEST_HOME, { recursive: true });
     await writeFile(path.join(env.OPENCODE_CONFIG_DIR, "opencode.json"), JSON.stringify(config));
     const server = spawn(
       opencode,
@@ -370,6 +415,10 @@ export default define({
         (entry) => entry.id === "agx.fixture.catalog" && entry.state.status === "active",
       ),
       `${JSON.stringify(plugin.data.filter((entry) => entry.source.type !== "builtin"))}\n${logs}`,
+    );
+    assert.ok(
+      plugin.data.some((entry) => entry.id === "agx" && entry.source.type === "package"),
+      "AGX must load from OpenCode's installed Git package",
     );
     const skills = (await api.skill.list({ location: { directory: alpha } })).data.filter((entry) =>
       entry.id.startsWith("agx-"),
@@ -651,6 +700,35 @@ export default define({
       (await readRuntime()).launches.find((entry) => entry.id === betaLease.id)?.state,
       "STATE_FINISHED",
     );
+    await writeFile(path.join(pluginRepository, "README.md"), "Updated fixture Git release.\n");
+    await commitPlugin("fixture plugin update");
+    const available = await api.plugin.check({
+      location: { directory: alpha },
+      target: pluginTarget,
+    });
+    assert.ok(
+      available.data.some(
+        (entry) =>
+          entry.id === "agx" && entry.source.type === "package" && entry.source.outdated === true,
+      ),
+      "OpenCode did not discover the new Git revision",
+    );
+    await api.plugin.update({ location: { directory: alpha }, targets: [pluginTarget] });
+    const updated = await api.plugin.check({
+      location: { directory: alpha },
+      target: pluginTarget,
+    });
+    assert.ok(
+      updated.data.some(
+        (entry) =>
+          entry.id === "agx" &&
+          entry.state.status === "active" &&
+          entry.source.type === "package" &&
+          entry.source.outdated === undefined,
+      ),
+      "OpenCode did not activate the Git update",
+    );
+    await api.session.generate({ sessionID: session.id, prompt: "Confirm plugin update." });
     assert.ok(!JSON.stringify(requests).includes(shell.grant), "MCP grants reached model context");
     await exec(binary, ["daemon", "stop", "--force"], { env });
     await setTimeout(1800);
