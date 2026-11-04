@@ -2,9 +2,16 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   lint: {
-    ignorePatterns: ["gen/**", "**/dist/**"],
+    ignorePatterns: ["**/gen/**", "**/dist/**"],
     plugins: ["typescript", "unicorn", "oxc", "import", "promise"],
-    categories: { correctness: "error", suspicious: "error" },
+    categories: { correctness: "error", suspicious: "error", perf: "error" },
+    overrides: [
+      {
+        files: ["packages/opencode/test/**"],
+        // Process readiness checks must poll sequentially.
+        rules: { "no-await-in-loop": "off" },
+      },
+    ],
     options: {
       typeAware: true,
       typeCheck: true,
@@ -18,9 +25,7 @@ export default defineConfig({
       "typescript/no-explicit-any": "error",
       "typescript/no-non-null-assertion": "error",
       "typescript/consistent-type-imports": "error",
-      "typescript/no-floating-promises": "error",
       "typescript/no-misused-promises": "error",
-      "typescript/await-thenable": "error",
       "typescript/no-unsafe-argument": "error",
       "typescript/no-unsafe-assignment": "error",
       "typescript/no-unsafe-call": "error",
@@ -54,14 +59,7 @@ export default defineConfig({
     },
   },
   fmt: {
-    ignorePatterns: ["gen/**", "**/dist/**"],
-    printWidth: 100,
-    tabWidth: 2,
-    useTabs: false,
-    semi: true,
-    singleQuote: false,
-    trailingComma: "all",
-    endOfLine: "lf",
+    ignorePatterns: ["**/gen/**", "**/dist/**"],
     sortImports: true,
     sortPackageJson: true,
   },

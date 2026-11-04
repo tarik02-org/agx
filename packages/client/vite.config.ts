@@ -10,7 +10,7 @@ export default defineConfig({
       AgxConnection: "src/AgxConnection.ts",
       schema: "src/schema.ts",
       error: "src/error.ts",
-      protocol: "../../gen/typescript/agx/v1/agx_pb.ts",
+      protocol: "gen/agx/v1/agx_pb.ts",
     },
     format: ["esm"],
     dts: true,

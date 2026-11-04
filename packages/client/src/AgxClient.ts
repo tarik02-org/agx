@@ -20,7 +20,7 @@ import {
   type ResolveResourcesRequestSchema,
   type PrepareResourcesResponse,
   type ResolveResourcesResponse,
-} from "../../../gen/typescript/agx/v1/agx_pb.ts";
+} from "../gen/agx/v1/agx_pb.ts";
 import { DaemonError, EndState } from "./error.ts";
 import type { Discovery, LifecycleToken } from "./schema.ts";
 

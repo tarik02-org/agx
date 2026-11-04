@@ -241,8 +241,41 @@ await test(
       repository,
       "packages/opencode/node_modules/@opencode/cli/bin/opencode.exe",
     );
+    const catalogFile = path.join(root, "tool-catalog.json");
+    const catalogPlugin = path.join(root, "catalog-plugin");
+    await mkdir(catalogPlugin);
+    await writeFile(
+      path.join(catalogPlugin, "package.json"),
+      JSON.stringify({
+        name: "agx-fixture-catalog",
+        version: "0.0.0",
+        type: "module",
+        exports: "./index.mjs",
+      }),
+    );
+    await writeFile(
+      path.join(catalogPlugin, "index.mjs"),
+      `import { writeFileSync } from "node:fs";
+import { define } from "@opencode/plugin/effect/plugin";
+import * as Effect from "effect/Effect";
+
+export default define({
+  id: "agx.fixture.catalog",
+  effect: Effect.fn("fixture.catalog")(function* (ctx) {
+    yield* ctx.command.transform((editor) => editor.add({
+      name: "fixture-catalog",
+      description: "Read the native tool catalog",
+      execute: Effect.fn("fixture.catalog.read")(function* () {
+        const tools = yield* ctx.tool.list();
+        yield* Effect.sync(() => writeFileSync(${JSON.stringify(catalogFile)}, JSON.stringify(tools.map((tool) => tool.id))));
+      }),
+    }));
+  }),
+});`,
+    );
     const config = {
       plugins: [
+        { package: catalogPlugin },
         {
           package: path.join(repository, "packages/opencode"),
           options: { executable: binary, codemode: false },
@@ -319,7 +352,10 @@ await test(
     let plugin = await api.plugin.list({ location: { directory: alpha } });
     for (
       let attempt = 0;
-      attempt < 100 && !plugin.data.some((entry) => entry.id === "agx");
+      attempt < 100 &&
+      !["agx", "agx.fixture.catalog"].every((id) =>
+        plugin.data.some((entry) => entry.id === id && entry.state.status === "active"),
+      );
       attempt++
     ) {
       await setTimeout(100);
@@ -328,6 +364,12 @@ await test(
     assert.ok(
       plugin.data.some((entry) => entry.id === "agx" && entry.state.status === "active"),
       `${JSON.stringify(plugin.data.filter((entry) => entry.source.type !== "builtin"))}\n${JSON.stringify(await api.config.get({ location: { directory: alpha } }))}\n${logs}`,
+    );
+    assert.ok(
+      plugin.data.some(
+        (entry) => entry.id === "agx.fixture.catalog" && entry.state.status === "active",
+      ),
+      `${JSON.stringify(plugin.data.filter((entry) => entry.source.type !== "builtin"))}\n${logs}`,
     );
     const skills = (await api.skill.list({ location: { directory: alpha } })).data.filter((entry) =>
       entry.id.startsWith("agx-"),
@@ -392,6 +434,22 @@ await test(
       model: { providerID: "fixture", id: "fixture" },
       permissions: [{ action: "*", resource: "*", effect: "allow" }],
     });
+    // MCP connection status precedes OpenCode's debounced native tool registration.
+    let catalog: ReadonlyArray<string> = [];
+    for (let attempt = 0; attempt < 100; attempt++) {
+      await api.session.command({ sessionID: session.id, name: "fixture-catalog", text: "" });
+      catalog = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(Schema.String)))(
+        await readFile(catalogFile, "utf8"),
+      );
+      if (catalog.some((id) => id.startsWith("agx-") && id.endsWith("echo"))) {
+        break;
+      }
+      await setTimeout(50);
+    }
+    assert.ok(
+      catalog.some((id) => id.startsWith("agx-") && id.endsWith("echo")),
+      `AGX echo did not reach OpenCode's tool catalog: ${JSON.stringify(catalog)}`,
+    );
     await api.session.prompt({ sessionID: session.id, text: "Use the echo tool, then finish." });
     await api.experimental.session.wait({ sessionID: session.id });
     assert.ok(

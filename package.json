@@ -3,17 +3,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "pnpm --filter agx-client build && tsgo --noEmit && pnpm -r check && vp lint vite.config.ts && vp fmt --check vite.config.ts tsconfig*.json package.json pnpm-workspace.yaml packages",
+    "check": "pnpm --filter agx-client build && tsc --noEmit && pnpm -r check && vp lint vite.config.ts && vp fmt --check vite.config.ts tsconfig*.json package.json pnpm-workspace.yaml packages",
     "build": "pnpm -r build",
     "test": "pnpm --filter agx-client build && pnpm --filter agx-opencode test",
     "format": "vp fmt vite.config.ts tsconfig*.json package.json pnpm-workspace.yaml packages"
   },
   "devDependencies": {
-    "@bufbuild/protobuf": "^2.16.0",
-    "@types/node": "^24.0.0",
-    "@typescript/native-preview": "7.0.0-dev.20260707.2",
-    "typescript": "^6.0.2",
-    "vite-plus": "1.4.0"
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
   },
   "packageManager": "pnpm@12.16.1"
 }

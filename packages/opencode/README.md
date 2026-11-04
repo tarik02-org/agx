@@ -115,13 +115,17 @@ pnpm check
 pnpm test
 ```
 
-Both workspaces inherit `tsconfig.base.json` and the root Vite lint/format rules.
+Both workspaces use stable TypeScript 7 and inherit `tsconfig.base.json` and the
+root Vite lint/format rules. External dependencies share the default pnpm catalog
+in `pnpm-workspace.yaml`, with caret ranges and exact resolutions in the lockfile.
+The lint baseline enables Oxlint's correctness, suspicious and performance categories;
+explicit overrides add type-safety and AGX error-handling policies.
 `pnpm check` checks first-party types, type-aware lint (warnings fail the check),
 and formatting, including the root tooling configuration. Schema, platform,
 configuration and RPC failures are handled by their tags; lint rejects broad
 Effect catches, `mapError`, and error-discarding helpers. Unexpected SDK/parser
 exceptions remain defects rather than becoming retryable integration failures.
-The Effect language-service diagnostics also run in supported editors; `tsgo`
+The Effect language-service diagnostics also run in supported editors; the native TypeScript compiler
 does not load TypeScript language-service plugins.
 
 `skipLibCheck` is retained for dependency declarations: OpenCode 2.2.5's AI
