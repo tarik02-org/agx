@@ -11,8 +11,9 @@ until an agent calls them through the built-in `agx` server or the shell.
 
 Every managed harness launch gets a native MCP server named **`agx`**, including
 launches with no selected MCP servers. Codex app-server threads each get their
-own instance. The ID `agx` is reserved in configuration. Help, login and other
-passthrough invocations have no launch or built-in server.
+own instance. Resource leases also receive this server. The ID `agx` is reserved
+in configuration. Help, login and other passthrough invocations have no launch or
+built-in server.
 
 Its tool list stays small; upstream servers and tool schemas are discovered only
 when requested. Startup does not wait for discovery.
@@ -68,6 +69,8 @@ or a call does that. A temporary server is immediately reachable through
 `search_tools` / `call_tool` and the launch-scoped shell commands; the harness's
 native MCP catalog does not change. Another launch cannot see the attachment.
 Initial scope-selected servers cannot be detached through `detach_mcp`.
+For resource leases, temporary servers follow the same daemon-side
+`mcp_directory`, `cwd`, and process-sharing rules as initially selected servers.
 Attachments survive daemon replacement, crashes and lease reattachment. They
 end with the launch, not a saved conversation: resuming a conversation in a new
 launch starts with its configured selection again.

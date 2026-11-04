@@ -66,6 +66,8 @@ type launch struct {
 	temporary  map[config.ID]config.MCPServer
 	tempInputs map[config.ID]map[string]string
 	agx        http.Handler
+	// Resource scope paths need not exist on this host.
+	mcpDirectory string
 	// target is the harness process a launch started; its thread launches share it.
 	target  adapters.Target
 	ended   time.Time

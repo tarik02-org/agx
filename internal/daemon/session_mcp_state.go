@@ -25,12 +25,16 @@ func (s *Server) restoreSession(ctx context.Context, l *launch, inputs map[strin
 	if err != nil {
 		return err
 	}
+	directory, err := sessionDirectory(l, parsed)
+	if err != nil {
+		return err
+	}
 	l.temporary = parsed.MCP
 	if l.endpoints == nil {
 		l.endpoints = map[config.ID]*mcpruntime.Endpoint{}
 	}
 	for id := range parsed.MCP {
-		l.endpoints[id] = s.sessionEndpoint(l, parsed, id, saved[id])
+		l.endpoints[id] = s.sessionEndpoint(l, parsed, id, saved[id], directory)
 	}
 	return nil
 }
@@ -58,9 +62,17 @@ func (s *Server) sessionEndpoint(
 	c *config.Config,
 	id config.ID,
 	inputs map[string]string,
+	directory string,
 ) *mcpruntime.Endpoint {
-	definition, root := mcpDefinition(c.MCP[id], l.view.Directory)
+	definition, root := mcpDefinition(c.MCP[id], directory)
 	return mcpruntime.New(l.ctx, id, definition, c.Secrets, inputs, s.manager, s.shared, root)
+}
+
+func sessionDirectory(l *launch, c *config.Config) (string, error) {
+	if l.view.Kind == v1.Launch_KIND_RESOURCES {
+		return resourceMCPDirectory(scopeSnapshot(c, slices.Collect(maps.Keys(c.MCP))), l.mcpDirectory)
+	}
+	return l.view.Directory, nil
 }
 
 type attachMCPInput struct {
@@ -114,6 +126,10 @@ func (s *Server) attachSession(ctx context.Context, l *launch, input attachMCPIn
 	if err != nil {
 		return nil, err
 	}
+	directory, err := sessionDirectory(l, parsed)
+	if err != nil {
+		return nil, err
+	}
 	id := config.ID(input.ID)
 	retainSessionSecrets(local, parsed, []config.ID{id})
 	inputs := map[string]string{}
@@ -143,7 +159,7 @@ func (s *Server) attachSession(ctx context.Context, l *launch, input attachMCPIn
 		return nil, err
 	}
 	local.Revision = revision
-	endpoint := s.sessionEndpoint(l, parsed, id, inputs)
+	endpoint := s.sessionEndpoint(l, parsed, id, inputs, directory)
 	s.mu.Lock()
 	if !active(l.view.State) || l.ctx.Err() != nil {
 		s.mu.Unlock()
