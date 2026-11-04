@@ -19,7 +19,7 @@ touching the user's files.
 
 ```yaml
 harnesses:
-  codex: {hidden: true}
+  codex: { hidden: true }
   codex-cpa:
     base: codex
     environment:
@@ -48,11 +48,11 @@ harnesses:
 user configuration: Codex `config.toml`, Claude Code `settings.json`. agx does
 not know or validate them; the harness does, at launch.
 
-| Harness | Delivery | Native precedence |
-| --- | --- | --- |
-| Codex | one `-c <dotted.path>=<TOML value>` per leaf | above `config.toml` and `--profile`; later `-c` win |
-| Claude Code | a generated file passed as `--settings <file>` | above user, project, and local settings; below managed settings |
-| Pi | not supported; `settings` on a Pi-based definition is a validation error | (see [Pi](#pi)) |
+| Harness     | Delivery                                                                 | Native precedence                                               |
+| ----------- | ------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| Codex       | one `-c <dotted.path>=<TOML value>` per leaf                             | above `config.toml` and `--profile`; later `-c` win             |
+| Claude Code | a generated file passed as `--settings <file>`                           | above user, project, and local settings; below managed settings |
+| Pi          | not supported; `settings` on a Pi-based definition is a validation error | (see [Pi](#pi))                                                 |
 
 ### Codex
 

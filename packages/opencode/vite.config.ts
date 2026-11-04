@@ -3,6 +3,19 @@ import { copyFile } from "node:fs/promises";
 import { defineConfig } from "vite-plus";
 
 export default defineConfig({
+  run: {
+    tasks: {
+      build: {
+        command: "vp pack",
+        dependsOn: [{ task: "build", from: "dependencies" }],
+      },
+      test: {
+        command: "node --test test/*.test.ts",
+        dependsOn: ["build"],
+        cache: false,
+      },
+    },
+  },
   pack: {
     entry: ["src/index.ts"],
     format: ["esm"],

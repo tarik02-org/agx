@@ -17,7 +17,7 @@ Built-in harnesses get no shim, so define a harness for the tool:
 harnesses:
   codex-app:
     base: codex
-    hidden: true      # keep it out of the launcher
+    hidden: true # keep it out of the launcher
   claude-app:
     base: claude
     hidden: true

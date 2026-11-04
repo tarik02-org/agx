@@ -111,6 +111,7 @@ checks.
 
 ```sh
 pnpm format
+pnpm lint
 pnpm check
 pnpm test
 ```
@@ -120,8 +121,14 @@ root Vite lint/format rules. External dependencies share the default pnpm catalo
 in `pnpm-workspace.yaml`, with caret ranges and exact resolutions in the lockfile.
 The lint baseline enables Oxlint's correctness, suspicious and performance categories;
 explicit overrides add type-safety and AGX error-handling policies.
-`pnpm check` checks first-party types, type-aware lint (warnings fail the check),
-and formatting, including the root tooling configuration. Schema, platform,
+`pnpm check` runs Vite+'s combined format, lint and type checks across the
+repository. `pnpm lint` runs type-aware lint separately. `pnpm format` discovers
+supported files automatically, excluding generated code and schemas.
+Vite tasks build the client before checks and lint, and build workspace
+dependencies before the plugin and its end-to-end test. Build results are cached;
+checks, lint and the end-to-end test execute on every invocation.
+The equivalent task commands are `vp run check:workspace`,
+`vp run lint:workspace`, `vp run -r build` and `vp run -r test`. Schema, platform,
 configuration and RPC failures are handled by their tags; lint rejects broad
 Effect catches, `mapError`, and error-discarding helpers. Unexpected SDK/parser
 exceptions remain defects rather than becoming retryable integration failures.

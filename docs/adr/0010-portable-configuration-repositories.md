@@ -15,8 +15,8 @@ A `sops` secret kind reads one value from a sops-encrypted file by running the
 secrets:
   github:
     kind: sops
-    file: ./secrets.yaml      # relative to the declaring fragment
-    key: github.token         # omit for dotenv/binary files read whole
+    file: ./secrets.yaml # relative to the declaring fragment
+    key: github.token # omit for dotenv/binary files read whole
 mcp:
   github:
     url: https://api.githubcopilot.com/mcp

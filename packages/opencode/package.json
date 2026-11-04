@@ -18,12 +18,6 @@
       "import": "./dist/index.mjs"
     }
   },
-  "scripts": {
-    "build": "vp pack",
-    "check": "tsc --noEmit && vp lint && vp fmt --check",
-    "format": "vp fmt",
-    "test": "pnpm build && node --test test/*.test.ts"
-  },
   "dependencies": {
     "@connectrpc/connect": "catalog:",
     "agx-client": "workspace:^",

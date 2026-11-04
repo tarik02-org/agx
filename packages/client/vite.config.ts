@@ -3,6 +3,11 @@ import { copyFile } from "node:fs/promises";
 import { defineConfig } from "vite-plus";
 
 export default defineConfig({
+  run: {
+    tasks: {
+      build: "vp pack",
+    },
+  },
   pack: {
     entry: {
       index: "src/index.ts",

@@ -3,10 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "pnpm --filter agx-client build && tsc --noEmit && pnpm -r check && vp lint vite.config.ts && vp fmt --check vite.config.ts tsconfig*.json package.json pnpm-workspace.yaml packages",
-    "build": "pnpm -r build",
-    "test": "pnpm --filter agx-client build && pnpm --filter agx-opencode test",
-    "format": "vp fmt vite.config.ts tsconfig*.json package.json pnpm-workspace.yaml packages"
+    "build": "vp run -r build",
+    "check": "vp run check:workspace",
+    "lint": "vp run lint:workspace",
+    "test": "vp run -r test",
+    "format": "vp fmt"
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -38,11 +38,6 @@
       "import": "./dist/protocol.mjs"
     }
   },
-  "scripts": {
-    "build": "vp pack",
-    "check": "tsc --noEmit && vp lint && vp fmt --check",
-    "format": "vp fmt"
-  },
   "dependencies": {
     "@bufbuild/protobuf": "catalog:",
     "@connectrpc/connect": "catalog:",

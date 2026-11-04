@@ -21,15 +21,15 @@ new session or quit immediately. When a daemon is already running, its cached
 history appears first and refreshes in the background. Your search and selected
 session stay in place as results arrive.
 
-| Key | Action |
-| --- | --- |
-| type | filter harnesses and sessions |
-| ↑ ↓, Ctrl-P Ctrl-N, PgUp PgDn | move |
-| Enter | start the harness, or resume the session |
-| Tab | show sessions from this directory and below, or from everywhere |
-| Ctrl-H | resume with another harness based on the same one |
-| Esc | quit; in a sub-picker, go back |
-| Ctrl-C | quit |
+| Key                           | Action                                                          |
+| ----------------------------- | --------------------------------------------------------------- |
+| type                          | filter harnesses and sessions                                   |
+| ↑ ↓, Ctrl-P Ctrl-N, PgUp PgDn | move                                                            |
+| Enter                         | start the harness, or resume the session                        |
+| Tab                           | show sessions from this directory and below, or from everywhere |
+| Ctrl-H                        | resume with another harness based on the same one               |
+| Esc                           | quit; in a sub-picker, go back                                  |
+| Ctrl-C                        | quit                                                            |
 
 Resuming changes to the session's directory and runs the harness's own resume
 command through agx (`agx codex resume <id>`, `agx claude --resume <id>`,

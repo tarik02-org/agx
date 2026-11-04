@@ -23,23 +23,23 @@ packages:
     git: https://github.com/mattpocock/skills.git
 
 mcp:
-  context7:   { url: https://mcp.context7.com/mcp, auth: none }
-  github:     { url: https://api.githubcopilot.com/mcp/, auth: keychain }
-  playwright: { command: [npx, -y, '@playwright/mcp@latest'] }
+  context7: { url: https://mcp.context7.com/mcp, auth: none }
+  github: { url: https://api.githubcopilot.com/mcp/, auth: keychain }
+  playwright: { command: [npx, -y, "@playwright/mcp@latest"] }
 
 instructions:
   house-rules:
     text: Use pnpm, not npm. Write conventional commits.
 
 scopes:
-  - add:                                  # everywhere
+  - add: # everywhere
       skills: [mattpocock/tdd, mattpocock/grill-me, mattpocock/diagnosing-bugs]
       instructions: [house-rules]
       mcp: [context7, github]
-  - directory: ~/work                     # work projects only
+  - directory: ~/work # work projects only
     add:
       skills: [mattpocock/pr]
-  - directory: ~/work/acme-web            # just this repo
+  - directory: ~/work/acme-web # just this repo
     add:
       mcp: [playwright]
 ```
@@ -111,6 +111,7 @@ Clear the quarantine flag once:
 ```sh
 xattr -d com.apple.quarantine ./agx
 ```
+
 </details>
 
 <details>
@@ -119,6 +120,7 @@ xattr -d com.apple.quarantine ./agx
 ```sh
 mise use -g github:tarik02-org/agx
 ```
+
 </details>
 
 <details>
@@ -127,6 +129,7 @@ mise use -g github:tarik02-org/agx
 ```sh
 nix profile install github:tarik02-org/agx
 ```
+
 </details>
 
 <details>
@@ -162,6 +165,7 @@ installs a `<name>` link to agx (`link`) and pins its `executable` to the packag
 go install github.com/tarik02-org/agx/cmd/agx@latest
 go install github.com/tarik02-org/agx/cmd/agxd@latest
 ```
+
 </details>
 
 Install `agx` and `agxd` from the same version into the same directory. Release

@@ -12,7 +12,7 @@ credentials, and other programs' configuration.
 
 That includes agx itself. An agent can run `agx` commands, read agx's files,
 and talk to the daemon, just as you can. Choosing which MCP servers and skills a
-directory gets controls what an agent is *offered*, not what it is *able* to
+directory gets controls what an agent is _offered_, not what it is _able_ to
 reach.
 
 If you need to contain an agent, run it in a container, a virtual machine, a
