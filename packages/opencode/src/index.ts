@@ -7,10 +7,10 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 
 import { Configuration } from "./Configuration.ts";
-import { IntegrationError } from "./error.ts";
+import { IntegrationError, type IntegrationFailure } from "./error.ts";
 import { acquireLease } from "./lease.ts";
-import { Options } from "./schema.ts";
 import { runtime } from "./runtime.ts";
+import { Options } from "./schema.ts";
 
 const register = Effect.fn("register")(function* (ctx: Context) {
   const configuration = yield* Configuration;
@@ -18,7 +18,9 @@ const register = Effect.fn("register")(function* (ctx: Context) {
   const reload = Effect.all([ctx.skill.reload(), ctx.mcp.reload()]).pipe(Effect.asVoid);
   const lease = yield* acquireLease(reload);
   yield* ctx.skill.transform((editor) => {
-    for (const skill of lease.current().skills) editor.add(skill);
+    for (const skill of lease.current().skills) {
+      editor.add(skill);
+    }
   });
   yield* ctx.mcp.transform((editor) => {
     const active = lease.current();
@@ -32,13 +34,21 @@ const register = Effect.fn("register")(function* (ctx: Context) {
       });
     }
   });
-  const instructions = Effect.fn("instructions")(function* (event: SessionRequest) {
-    yield* lease.ensure;
-    const text = lease.current().prepared.content.instructions;
-    event.system = event.system.filter((part) => part.metadata?.["agx.instructions"] !== true);
-    if (text !== "")
-      event.system.push({ type: "text", text, metadata: { "agx.instructions": true } });
-  }, Effect.orDie);
+  const instructions = Effect.fn("instructions")(
+    function* (event: SessionRequest) {
+      yield* lease.ensure;
+      const text = lease.current().prepared.content.instructions;
+      event.system = event.system.filter((part) => part.metadata?.["agx.instructions"] !== true);
+      if (text !== "") {
+        event.system.push({ type: "text", text, metadata: { "agx.instructions": true } });
+      }
+    },
+    Effect.catchTags({
+      ConnectionError: (error) => Effect.die(error),
+      DaemonError: (error) => Effect.die(error),
+      IntegrationError: (error) => Effect.die(error),
+    }),
+  );
   yield* ctx.session.hook("context", instructions);
   yield* ctx.session.hook("compaction", instructions);
   yield* ctx.session.hook("generate", instructions);
@@ -59,17 +69,24 @@ const register = Effect.fn("register")(function* (ctx: Context) {
           const protectedNames = new Set(
             names.map((name) => (path.sep === "\\" ? name.toUpperCase() : name)),
           );
-          for (const name of names) event.env[name] = undefined;
-          for (const name of Object.keys(event.env)) {
-            if (protectedNames.has(path.sep === "\\" ? name.toUpperCase() : name))
-              event.env[name] = undefined;
+          for (const name of names) {
+            event.env[name] = undefined;
           }
-          event.env.AGX_LAUNCH_ID = active.prepared.launch.id;
-          event.env.AGX_MCP_GRANT = active.prepared.grant;
-          event.env.AGX_CONFIG = active.configuration;
+          for (const name of Object.keys(event.env)) {
+            if (protectedNames.has(path.sep === "\\" ? name.toUpperCase() : name)) {
+              event.env[name] = undefined;
+            }
+          }
+          event.env["AGX_LAUNCH_ID"] = active.prepared.launch.id;
+          event.env["AGX_MCP_GRANT"] = active.prepared.grant;
+          event.env["AGX_CONFIG"] = active.configuration;
         }),
       ),
-      Effect.orDie,
+      Effect.catchTags({
+        ConnectionError: (error) => Effect.die(error),
+        DaemonError: (error) => Effect.die(error),
+        IntegrationError: (error) => Effect.die(error),
+      }),
     ),
   );
   yield* ctx.command.transform((editor) =>
@@ -80,16 +97,23 @@ const register = Effect.fn("register")(function* (ctx: Context) {
     }),
   );
   let warned = false;
+  const warn = (error: IntegrationFailure) => {
+    if (warned) {
+      return Effect.void;
+    }
+    warned = true;
+    return Effect.logWarning(error.message);
+  };
   yield* lease.ensure.pipe(
     Effect.tap(() =>
       Effect.sync(() => {
         warned = false;
       }),
     ),
-    Effect.catch((error) => {
-      if (warned) return Effect.void;
-      warned = true;
-      return Effect.logWarning(error.message);
+    Effect.catchTags({
+      ConnectionError: warn,
+      DaemonError: warn,
+      IntegrationError: warn,
     }),
     Effect.repeat(Schedule.spaced("1 second")),
     Effect.forkScoped,
@@ -102,21 +126,30 @@ const register = Effect.fn("register")(function* (ctx: Context) {
 
 export default define({
   id: "agx",
-  effect: Effect.fn("agx.plugin")(function* (ctx) {
-    const options = yield* Schema.decodeUnknownEffect(Options)(ctx.options).pipe(
-      Effect.mapError(
-        (cause) => new IntegrationError({ operation: "plugin options", reason: "options", cause }),
-      ),
-    );
-    const { harness, scopeDirectory, mcpDirectory, codemode, ...connection } = options;
-    const configuration = Configuration.of({
-      connection,
-      harness: harness ?? "opencode",
-      scopeDirectory: scopeDirectory ?? ctx.location.directory,
-      mcpDirectory: mcpDirectory ?? ctx.location.directory,
-      codemode: codemode ?? null,
-    });
-    const services = yield* Layer.build(runtime(configuration));
-    yield* register(ctx).pipe(Effect.provide(services));
-  }, Effect.orDie),
+  effect: Effect.fn("agx.plugin")(
+    function* (ctx) {
+      const options = yield* Schema.decodeUnknownEffect(Options)(ctx.options).pipe(
+        Effect.catchTag("SchemaError", (cause) =>
+          Effect.fail(
+            new IntegrationError({ operation: "plugin options", reason: "options", cause }),
+          ),
+        ),
+      );
+      const { harness, scopeDirectory, mcpDirectory, codemode, ...connection } = options;
+      const configuration = Configuration.of({
+        connection,
+        harness: harness ?? "opencode",
+        scopeDirectory: scopeDirectory ?? ctx.location.directory,
+        mcpDirectory: mcpDirectory ?? ctx.location.directory,
+        codemode: codemode ?? null,
+      });
+      const services = yield* Layer.build(runtime(configuration));
+      yield* register(ctx).pipe(Effect.provide(services));
+    },
+    Effect.catchTags({
+      ConnectionError: (error) => Effect.die(error),
+      DaemonError: (error) => Effect.die(error),
+      IntegrationError: (error) => Effect.die(error),
+    }),
+  ),
 });

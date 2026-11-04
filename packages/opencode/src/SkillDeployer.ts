@@ -31,7 +31,9 @@ export const makeSkillDeployer = Effect.fn("makeSkillDeployer")(function* () {
   const deploy = Effect.fn("SkillDeployer.deploy")(
     function* (tree: SkillTree) {
       const existing = deployed.get(tree.digest);
-      if (existing !== undefined) return path.join(existing, "SKILL.md");
+      if (existing !== undefined) {
+        return path.join(existing, "SKILL.md");
+      }
       if (root === null) {
         root = yield* fs
           .makeTempDirectoryScoped({ prefix: "agx-opencode-" })
@@ -49,21 +51,25 @@ export const makeSkillDeployer = Effect.fn("makeSkillDeployer")(function* () {
         const destination = path.join(directory, ...file.path.split("/"));
         yield* fs.makeDirectory(path.dirname(destination), { recursive: true, mode: 0o700 });
         yield* fs.writeFile(destination, file.content, { mode: 0o600 });
-        if (file.executable) yield* fs.chmod(destination, 0o700);
+        if (file.executable) {
+          yield* fs.chmod(destination, 0o700);
+        }
       }
       deployed.set(tree.digest, directory);
       return path.join(directory, "SKILL.md");
     },
-    Effect.mapError(
-      (cause) =>
+    Effect.catchTag("PlatformError", (cause) =>
+      Effect.fail(
         new IntegrationError({ operation: "skill deployment", reason: "filesystem", cause }),
+      ),
     ),
   );
 
   const prepare = Effect.fn("SkillDeployer.prepare")(function* (tree: SkillTree) {
     const document = tree.files.find((file) => file.path === "SKILL.md");
-    if (document === undefined)
+    if (document === undefined) {
       return yield* new IntegrationError({ operation: "skill document", reason: "content" });
+    }
     const text = new TextDecoder()
       .decode(document.content)
       .replace(/^\uFEFF/, "")
@@ -72,33 +78,46 @@ export const makeSkillDeployer = Effect.fn("makeSkillDeployer")(function* () {
     let frontmatter: unknown = {};
     if (text.startsWith("---\n")) {
       const end = text.indexOf("\n---", 4);
-      if (end === -1)
+      if (end === -1) {
         return yield* new IntegrationError({ operation: "skill frontmatter", reason: "content" });
-      frontmatter = yield* Effect.try({
-        try: () => parse(text.slice(4, end)) ?? {},
-        catch: (cause) =>
-          new IntegrationError({
-            operation: "skill frontmatter",
-            reason: "content",
-            cause: {
-              kind: "yaml",
-              code: Schema.is(Schema.instanceOf(YAMLParseError))(cause) ? cause.code : "parse",
-            },
-          }),
-      });
+      }
+      frontmatter = yield* Effect.try((): unknown => parse(text.slice(4, end)) ?? {}).pipe(
+        Effect.catchTag("UnknownError", (error) => {
+          const cause = error.cause;
+          const code = Schema.is(Schema.instanceOf(YAMLParseError))(cause)
+            ? cause.code
+            : // yaml exposes its alias-expansion limit without a dedicated error type or code.
+              Schema.is(Schema.instanceOf(ReferenceError))(cause) &&
+                cause.message === "Excessive alias count indicates a resource exhaustion attack"
+              ? "EXCESSIVE_ALIASES"
+              : null;
+          return code === null
+            ? Effect.die(cause)
+            : Effect.fail(
+                new IntegrationError({
+                  operation: "skill frontmatter",
+                  reason: "content",
+                  cause: { kind: "yaml", code },
+                }),
+              );
+        }),
+      );
       content = text.slice(end + 4).replace(/^\n/, "");
     }
     const metadata = yield* Schema.decodeUnknownEffect(Frontmatter)(frontmatter).pipe(
-      Effect.mapError(
-        (cause) => new IntegrationError({ operation: "skill metadata", reason: "content", cause }),
+      Effect.catchTag("SchemaError", (cause) =>
+        Effect.fail(
+          new IntegrationError({ operation: "skill metadata", reason: "content", cause }),
+        ),
       ),
     );
     const hash = yield* crypto
       .digest("SHA-256", new TextEncoder().encode(tree.id))
       .pipe(
-        Effect.mapError(
-          (cause) =>
+        Effect.catchTag("PlatformError", (cause) =>
+          Effect.fail(
             new IntegrationError({ operation: "skill identity", reason: "content", cause }),
+          ),
         ),
       );
     const id = Skill.ID.make(`agx-${tree.name}-${Hex.encode(hash).slice(0, 12)}`);

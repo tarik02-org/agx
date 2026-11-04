@@ -1,8 +1,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as Layer from "effect/Layer";
-
 import { AgxClientLive } from "agx-client/AgxClient";
 import { AgxConnectionLive } from "agx-client/AgxConnection";
+import * as Layer from "effect/Layer";
+
 import { Configuration } from "./Configuration.ts";
 import { SkillDeployerLive } from "./SkillDeployer.ts";
 

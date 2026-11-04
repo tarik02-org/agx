@@ -2,9 +2,9 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as Schema from "effect/Schema";
 
 import { ConnectionError } from "./error.ts";
 import { Bootstrap, ConnectionOptions, Discovery } from "./schema.ts";
@@ -22,8 +22,10 @@ export const makeAgxConnection = Effect.fn("makeAgxConnection")(function* (
   input: ConnectionOptions = {},
 ) {
   const options = yield* Schema.decodeUnknownEffect(ConnectionOptions)(input).pipe(
-    Effect.mapError(
-      (cause) => new ConnectionError({ operation: "connection options", reason: "options", cause }),
+    Effect.catchTag("SchemaError", (cause) =>
+      Effect.fail(
+        new ConnectionError({ operation: "connection options", reason: "options", cause }),
+      ),
     ),
   );
   const fs = yield* FileSystem.FileSystem;
@@ -36,25 +38,31 @@ export const makeAgxConnection = Effect.fn("makeAgxConnection")(function* (
     instance: string | null = null,
   ) {
     const args = ["--json"];
-    if (options.config !== undefined) args.push("--config", options.config);
+    if (options.config !== undefined) {
+      args.push("--config", options.config);
+    }
     args.push("daemon", "connect");
-    if (instance !== null) args.push("--recover-instance", instance);
+    if (instance !== null) {
+      args.push("--recover-instance", instance);
+    }
     const output = yield* spawner
       .string(ChildProcess.make(executable, args, { stderr: "ignore" }))
       .pipe(
-        Effect.mapError(
-          (cause) =>
+        Effect.catchTag("PlatformError", (cause) =>
+          Effect.fail(
             new ConnectionError({ operation: "daemon bootstrap", reason: "bootstrap", cause }),
+          ),
         ),
       );
     const result = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Bootstrap))(output).pipe(
-      Effect.mapError(
-        (cause) =>
+      Effect.catchTag("SchemaError", (cause) =>
+        Effect.fail(
           new ConnectionError({
             operation: "daemon bootstrap response",
             reason: "bootstrap",
             cause,
           }),
+        ),
       ),
     );
     discoveryFile = result.data.discovery;
@@ -67,9 +75,12 @@ export const makeAgxConnection = Effect.fn("makeAgxConnection")(function* (
     }
     const path = discoveryFile === null ? yield* bootstrap() : discoveryFile;
     const text = yield* fs.readFileString(path).pipe(
-      Effect.catchIf(
-        (error) => error.reason._tag === "NotFound" && explicitDiscovery === null && allowStartup,
-        () => bootstrap().pipe(Effect.flatMap((next) => fs.readFileString(next))),
+      Effect.catchReason("PlatformError", "NotFound", (_reason, cause) =>
+        explicitDiscovery === null && allowStartup
+          ? bootstrap().pipe(Effect.flatMap((next) => fs.readFileString(next)))
+          : Effect.fail(
+              new ConnectionError({ operation: "daemon discovery", reason: "discovery", cause }),
+            ),
       ),
       Effect.catchTag("PlatformError", (cause) =>
         Effect.fail(
@@ -78,13 +89,14 @@ export const makeAgxConnection = Effect.fn("makeAgxConnection")(function* (
       ),
     );
     return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Discovery))(text).pipe(
-      Effect.mapError(
-        (cause) =>
+      Effect.catchTag("SchemaError", (cause) =>
+        Effect.fail(
           new ConnectionError({
             operation: "daemon discovery document",
             reason: "discovery",
             cause,
           }),
+        ),
       ),
     );
   });

@@ -110,9 +110,25 @@ The repository development shell supplies Go 1.26, Node 24 and pnpm 12 for these
 checks.
 
 ```sh
+pnpm format
 pnpm check
 pnpm test
 ```
+
+Both workspaces inherit `tsconfig.base.json` and the root Vite lint/format rules.
+`pnpm check` checks first-party types, type-aware lint (warnings fail the check),
+and formatting, including the root tooling configuration. Schema, platform,
+configuration and RPC failures are handled by their tags; lint rejects broad
+Effect catches, `mapError`, and error-discarding helpers. Unexpected SDK/parser
+exceptions remain defects rather than becoming retryable integration failures.
+The Effect language-service diagnostics also run in supported editors; `tsgo`
+does not load TypeScript language-service plugins.
+
+`skipLibCheck` is retained for dependency declarations: OpenCode 2.2.5's AI
+package has incompatible optional-property declarations under
+`exactOptionalPropertyTypes`. First-party strict checks remain enabled.
+The client accepts generated Protobuf enums; the plugin and root tooling require
+erasable TypeScript syntax.
 
 The end-to-end test builds isolated AGX binaries and runs the pinned OpenCode
 server with a local model fixture and stdio MCP server. It uses temporary

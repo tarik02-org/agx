@@ -1,5 +1,6 @@
-import { defineConfig } from "vite-plus";
 import { copyFile } from "node:fs/promises";
+
+import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   pack: {

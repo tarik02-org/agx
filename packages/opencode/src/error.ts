@@ -1,6 +1,7 @@
-import * as Schema from "effect/Schema";
-import * as PlatformError from "effect/PlatformError";
 import type { ClientFailure } from "agx-client/error";
+import * as Config from "effect/Config";
+import * as PlatformError from "effect/PlatformError";
+import * as Schema from "effect/Schema";
 
 export class IntegrationError extends Schema.TaggedError<IntegrationError>()("IntegrationError", {
   operation: Schema.String,
@@ -15,6 +16,7 @@ export class IntegrationError extends Schema.TaggedError<IntegrationError>()("In
   cause: Schema.optionalKey(
     Schema.Union([
       Schema.instanceOf(PlatformError.PlatformError),
+      Schema.instanceOf(Config.ConfigError),
       Schema.instanceOf(Schema.SchemaError),
       Schema.Struct({ kind: Schema.Literal("yaml"), code: Schema.String }),
     ]),

@@ -1,20 +1,20 @@
 import { Code } from "@connectrpc/connect";
 import type { Skill } from "@opencode/schema/skill";
-import * as Clock from "effect/Clock";
-import * as Config from "effect/Config";
-import * as Crypto from "effect/Crypto";
-import * as Hex from "effect/encoding/Hex";
-import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
-import * as ScopedRef from "effect/ScopedRef";
-import * as Semaphore from "effect/Semaphore";
-import type * as Scope from "effect/Scope";
-
 import { AgxClient } from "agx-client/AgxClient";
 import { AgxConnection } from "agx-client/AgxConnection";
 import type { DaemonError } from "agx-client/error";
 import type { Discovery } from "agx-client/schema";
+import * as Clock from "effect/Clock";
+import * as Config from "effect/Config";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Hex from "effect/encoding/Hex";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
+import * as ScopedRef from "effect/ScopedRef";
+import * as Semaphore from "effect/Semaphore";
+
 import { Configuration } from "./Configuration.ts";
 import { IntegrationError, type IntegrationFailure } from "./error.ts";
 import { LeaseEnvelope, Prepared, Snapshot } from "./schema.ts";
@@ -56,19 +56,24 @@ export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effec
       });
     }
     const snapshot = yield* Schema.decodeUnknownEffect(Snapshot)(resolve.snapshot).pipe(
-      Effect.mapError(
-        (cause) =>
+      Effect.catchTag("SchemaError", (cause) =>
+        Effect.fail(
           new IntegrationError({ operation: "resolved snapshot", reason: "content", cause }),
+        ),
       ),
     );
     const environmentInputs: Record<string, string> = {};
     for (const name of snapshot.requiredEnvironment) {
       const value = yield* Config.option(Config.String(name)).pipe(
-        Effect.mapError(
-          () => new IntegrationError({ operation: "resource environment", reason: "options" }),
+        Effect.catchTag("ConfigError", (cause) =>
+          Effect.fail(
+            new IntegrationError({ operation: "resource environment", reason: "options", cause }),
+          ),
         ),
       );
-      if (Option.isSome(value)) environmentInputs[name] = value.value;
+      if (Option.isSome(value)) {
+        environmentInputs[name] = value.value;
+      }
     }
     const raw = yield* client.prepare(target, {
       snapshotId: snapshot.id,
@@ -78,13 +83,14 @@ export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effec
       mcpDirectory: configuration.mcpDirectory,
     });
     const envelope = yield* Schema.decodeUnknownEffect(LeaseEnvelope)(raw).pipe(
-      Effect.mapError(
-        (cause) =>
+      Effect.catchTag("SchemaError", (cause) =>
+        Effect.fail(
           new IntegrationError({
             operation: "resource lease credentials",
             reason: "content",
             cause,
           }),
+        ),
       ),
     );
     yield* Effect.addFinalizer(() =>
@@ -95,12 +101,18 @@ export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effec
             client.release(current, envelope.launch.id, envelope.lifecycleToken),
           ),
         )
-        .pipe(Effect.catch((error) => Effect.logWarning(error.message))),
+        .pipe(
+          Effect.catchTags({
+            ConnectionError: (error) => Effect.logWarning(error.message),
+            DaemonError: (error) => Effect.logWarning(error.message),
+          }),
+        ),
     );
     const prepared = yield* Schema.decodeUnknownEffect(Prepared)(raw).pipe(
-      Effect.mapError(
-        (cause) =>
+      Effect.catchTag("SchemaError", (cause) =>
+        Effect.fail(
           new IntegrationError({ operation: "prepared resources", reason: "content", cause }),
+        ),
       ),
     );
     if (prepared.mcp.some((endpoint) => endpoint.url.origin !== target.url.origin)) {
@@ -112,9 +124,10 @@ export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effec
         const digest = yield* crypto
           .digest("SHA-256", new TextEncoder().encode(endpoint.id))
           .pipe(
-            Effect.mapError(
-              (cause) =>
+            Effect.catchTag("PlatformError", (cause) =>
+              Effect.fail(
                 new IntegrationError({ operation: "MCP identity", reason: "content", cause }),
+              ),
             ),
           );
         const label = endpoint.id.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 15);
@@ -174,9 +187,14 @@ export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effec
   const synchronize = Effect.fn("lease.synchronize")(function* () {
     const target = yield* connection.poll();
     const active = yield* ScopedRef.get(state);
-    if (active.instance !== target.instance_id) return yield* restore(target, active);
+    if (active.instance !== target.instance_id) {
+      yield* restore(target, active);
+      return;
+    }
     const now = yield* Clock.currentTimeMillis;
-    if (now < active.renewAt) return;
+    if (now < active.renewAt) {
+      return;
+    }
     yield* client
       .renew(target, active.prepared.launch.id, active.prepared.lifecycleToken)
       .pipe(

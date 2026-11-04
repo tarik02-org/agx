@@ -1,4 +1,4 @@
-import { ConnectError } from "@connectrpc/connect";
+import { Code, ConnectError } from "@connectrpc/connect";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
@@ -21,7 +21,7 @@ export const EndState = Schema.NullOr(Schema.Literals(["expired", "revoked", "fi
 
 export class DaemonError extends Schema.TaggedError<DaemonError>()("DaemonError", {
   operation: Schema.String,
-  code: Schema.Number,
+  code: Schema.Enum(Code),
   ended: EndState,
   cause: Schema.instanceOf(ConnectError),
 }) {

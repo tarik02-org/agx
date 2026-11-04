@@ -1,6 +1,6 @@
-import * as Schema from "effect/Schema";
 import { Launch_Kind } from "agx-client/protocol";
 import { ConnectionOptions, LifecycleToken, McpGrant } from "agx-client/schema";
+import * as Schema from "effect/Schema";
 
 export const Options = Schema.Struct({
   ...ConnectionOptions.fields,

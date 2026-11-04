@@ -1,3 +1,4 @@
+import type { MessageInitShape } from "@bufbuild/protobuf";
 import {
   Code,
   ConnectError,
@@ -6,7 +7,6 @@ import {
   type Transport,
 } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
-import type { MessageInitShape } from "@bufbuild/protobuf";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -53,33 +53,38 @@ export class AgxClient extends Context.Service<
   }
 >()("agx-client/AgxClient") {}
 
+const call = <A>(
+  target: Discovery,
+  operation: string,
+  token: string,
+  request: (transport: Transport, options: CallOptions) => Promise<A>,
+) =>
+  Effect.tryPromise((signal) =>
+    request(createConnectTransport({ baseUrl: target.url.origin }), {
+      signal,
+      timeoutMs: 10_000,
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  ).pipe(
+    Effect.catchTag("UnknownError", (error) => {
+      if (!Schema.is(Schema.instanceOf(ConnectError))(error.cause)) {
+        return Effect.die(error.cause);
+      }
+      const cause = error.cause;
+      const ended = cause.metadata.get("Agx-Launch-Ended");
+      return Effect.fail(
+        new DaemonError({
+          operation,
+          code: cause.code,
+          ended: Schema.is(EndState)(ended) ? ended : null,
+          cause,
+        }),
+      );
+    }),
+  );
+
 export const makeAgxClient = Effect.fn("makeAgxClient")(() =>
   Effect.sync(() => {
-    const call = <A>(
-      target: Discovery,
-      operation: string,
-      token: string,
-      request: (transport: Transport, options: CallOptions) => Promise<A>,
-    ) =>
-      Effect.tryPromise({
-        try: (signal) =>
-          request(createConnectTransport({ baseUrl: target.url.origin }), {
-            signal,
-            timeoutMs: 10_000,
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-        catch: (error) => {
-          const cause = ConnectError.from(error);
-          const ended = cause.metadata.get("Agx-Launch-Ended");
-          return new DaemonError({
-            operation,
-            code: cause.code,
-            ended: Schema.is(EndState)(ended) ? ended : null,
-            cause,
-          });
-        },
-      });
-
     const resolve = Effect.fn("AgxClient.resolve")((target: Discovery, input: ResolveInput) =>
       call(target, "resolve resources", target.token, (transport, options) =>
         createClient(ResourceService, transport).resolveResources(input, options),

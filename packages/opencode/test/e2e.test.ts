@@ -5,11 +5,12 @@ import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
-import { setTimeout } from "node:timers/promises";
 import { test } from "node:test";
-import { OpenCode } from "@opencode/client";
+import { setTimeout } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+import { ClientError, OpenCode } from "@opencode/client";
 import * as Schema from "effect/Schema";
 import { Document, Scalar } from "yaml";
 
@@ -44,6 +45,11 @@ const ShellEnvironment = Schema.Struct({
   launch: Schema.String,
   grant: Schema.String,
 });
+const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
+const ServerStarting = Schema.Struct({
+  reason: Schema.Literal("UnexpectedStatus"),
+  cause: Schema.Struct({ status: Schema.Literal(503) }),
+});
 const ModelRequest = Schema.Struct({
   stream: Schema.optionalKey(Schema.Boolean),
   messages: Schema.Array(
@@ -55,7 +61,7 @@ const ModelRequest = Schema.Struct({
 });
 type ModelRequest = typeof ModelRequest.Type;
 
-test(
+await test(
   "native OpenCode plugin consumes AGX resources and recovers after daemon replacement",
   { timeout: 180_000 },
   async (t) => {
@@ -72,8 +78,9 @@ test(
       path.join(invalidSkill, "SKILL.md"),
       "---\nname: invalid\ndescription: Invalid skill.\n---\nInvalid.",
     );
-    if (process.platform !== "win32")
+    if (process.platform !== "win32") {
       await writeFile(path.join(invalidSkill, "bad:name"), "invalid resource path");
+    }
     const inherited = Object.fromEntries(
       Object.entries(process.env).filter(
         ([name]) => !/^(AGX_|OPENCODE_|XDG_|OPENAI_|ANTHROPIC_)/.test(name),
@@ -102,8 +109,15 @@ test(
       NO_COLOR: "1",
     };
     t.after(async () => {
-      await exec(binary, ["daemon", "stop", "--force"], { env }).catch(() => undefined);
-      await rm(root, { recursive: true, force: true });
+      try {
+        await exec(binary, ["daemon", "stop", "--force"], { env });
+      } catch (error) {
+        if (!Schema.is(MissingFile)(error)) {
+          throw error;
+        }
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
     });
     await exec("go", ["build", "-o", binary, "./cmd/agx"], { cwd: repository });
     await exec("go", ["build", "-o", daemon, "./cmd/agxd"], { cwd: repository });
@@ -154,57 +168,64 @@ test(
     await writeFragment();
 
     const requests: ModelRequest[] = [];
-    const model = createServer(async (request, response) => {
-      const chunks: Buffer[] = [];
-      for await (const chunk of request) chunks.push(Buffer.from(chunk));
-      const body = Schema.decodeUnknownSync(Schema.fromJsonString(ModelRequest))(
-        Buffer.concat(chunks).toString(),
-      );
-      requests.push(body);
-      const tool = body.tools?.find((entry) => entry.function.name.includes("echo"));
-      const lastUser = body.messages.findLastIndex((message) => message.role === "user");
-      const called = body.messages.slice(lastUser + 1).some((message) => message.role === "tool");
-      const delta =
-        tool !== undefined && !called
-          ? {
-              role: "assistant",
-              tool_calls: [
-                {
-                  index: 0,
-                  id: "call_echo",
-                  type: "function",
-                  function: { name: tool.function.name, arguments: '{"text":"through-opencode"}' },
-                },
-              ],
-            }
-          : { role: "assistant", content: "fixture complete" };
-      const finish = tool !== undefined && !called ? "tool_calls" : "stop";
-      if (body.stream === false) {
-        response.writeHead(200, { "content-type": "application/json" });
-        response.end(
-          JSON.stringify({
-            id: "fixture",
-            object: "chat.completion",
-            created: 1,
-            model: "fixture",
-            choices: [{ index: 0, message: delta, finish_reason: finish }],
+    const model = createServer((request, response) => {
+      let text = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk: unknown) => {
+        text += Schema.decodeUnknownSync(Schema.String)(chunk);
+      });
+      request.on("end", () => {
+        const body = Schema.decodeUnknownSync(Schema.fromJsonString(ModelRequest))(text);
+        requests.push(body);
+        const tool = body.tools?.find((entry) => entry.function.name.includes("echo"));
+        const lastUser = body.messages.findLastIndex((message) => message.role === "user");
+        const called = body.messages.slice(lastUser + 1).some((message) => message.role === "tool");
+        const delta =
+          tool !== undefined && !called
+            ? {
+                role: "assistant",
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call_echo",
+                    type: "function",
+                    function: {
+                      name: tool.function.name,
+                      arguments: '{"text":"through-opencode"}',
+                    },
+                  },
+                ],
+              }
+            : { role: "assistant", content: "fixture complete" };
+        const finish = tool !== undefined && !called ? "tool_calls" : "stop";
+        if (body.stream === false) {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({
+              id: "fixture",
+              object: "chat.completion",
+              created: 1,
+              model: "fixture",
+              choices: [{ index: 0, message: delta, finish_reason: finish }],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            }),
+          );
+          return;
+        }
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        for (const item of [
+          { choices: [{ index: 0, delta, finish_reason: null }] },
+          {
+            choices: [{ index: 0, delta: {}, finish_reason: finish }],
             usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-          }),
-        );
-        return;
-      }
-      response.writeHead(200, { "content-type": "text/event-stream" });
-      for (const item of [
-        { choices: [{ index: 0, delta, finish_reason: null }] },
-        {
-          choices: [{ index: 0, delta: {}, finish_reason: finish }],
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-        },
-      ])
-        response.write(
-          `data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", created: 1, model: "fixture", ...item })}\n\n`,
-        );
-      response.end("data: [DONE]\n\n");
+          },
+        ]) {
+          response.write(
+            `data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", created: 1, model: "fixture", ...item })}\n\n`,
+          );
+        }
+        response.end("data: [DONE]\n\n");
+      });
     });
     model.listen(0, "127.0.0.1");
     await once(model, "listening");
@@ -281,10 +302,18 @@ test(
         await api.server.info();
         ready = true;
         break;
-      } catch {
+      } catch (error) {
+        if (
+          !Schema.is(Schema.instanceOf(ClientError))(error) ||
+          (error.reason !== "Transport" && !Schema.is(ServerStarting)(error))
+        ) {
+          throw error;
+        }
         await setTimeout(100);
       }
-      if (server.exitCode !== null) break;
+      if (server.exitCode !== null) {
+        break;
+      }
     }
     assert.ok(ready, `OpenCode did not start: ${logs}`);
     let plugin = await api.plugin.list({ location: { directory: alpha } });
@@ -303,7 +332,7 @@ test(
     const skills = (await api.skill.list({ location: { directory: alpha } })).data.filter((entry) =>
       entry.id.startsWith("agx-"),
     );
-    assert.deepEqual(skills.map((entry) => entry.name).sort(), ["assets", "memory"]);
+    assert.deepEqual(skills.map((entry) => entry.name).toSorted(), ["assets", "memory"]);
     const memory = skills.find((entry) => entry.name === "memory");
     const asset = skills.find((entry) => entry.name === "assets");
     assert.ok(memory?.path.startsWith("skill://"));
@@ -312,16 +341,19 @@ test(
       await readFile(path.join(path.dirname(asset.path), "references/data.txt"), "utf8"),
       "Reference bytes.",
     );
-    if (process.platform !== "win32")
+    if (process.platform !== "win32") {
       assert.notEqual(
         (await stat(path.join(path.dirname(asset.path), "scripts/check.sh"))).mode & 0o111,
         0,
       );
+    }
     for (let attempt = 0; attempt < 100; attempt++) {
       const otherPlugin = (await api.plugin.list({ location: { directory: beta } })).data.find(
         (entry) => entry.id === "agx",
       );
-      if (otherPlugin?.state.status === "active") break;
+      if (otherPlugin?.state.status === "active") {
+        break;
+      }
       await setTimeout(100);
     }
     const otherSkills = (await api.skill.list({ location: { directory: beta } })).data.filter(
@@ -379,6 +411,9 @@ test(
             JSON.stringify(message.content).includes("echo:through-opencode:"),
         ),
       ),
+      JSON.stringify(
+        requests.map((request) => ({ tools: request.tools, messages: request.messages.slice(-4) })),
+      ),
     );
 
     const connected = Schema.decodeUnknownSync(Schema.fromJsonString(Bootstrap))(
@@ -391,7 +426,7 @@ test(
       const current = Schema.decodeUnknownSync(Schema.fromJsonString(Discovery))(
         await readFile(connected.data.discovery, "utf8"),
       );
-      const response = await fetch(`${current.url}/agx.v1.RuntimeService/GetRuntime`, {
+      const result = await fetch(`${current.url}/agx.v1.RuntimeService/GetRuntime`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -399,7 +434,7 @@ test(
         },
         body: "{}",
       }).then((response) => response.text());
-      const view = Schema.decodeUnknownSync(Schema.fromJsonString(Runtime))(response).runtime;
+      const view = Schema.decodeUnknownSync(Schema.fromJsonString(Runtime))(result).runtime;
       return { ...view, launches: view.launches ?? [] };
     };
     assert.equal(
@@ -445,10 +480,16 @@ test(
       if (
         await readFile(environmentFile, "utf8").then(
           () => true,
-          () => false,
+          (error: unknown) => {
+            if (Schema.is(MissingFile)(error)) {
+              return false;
+            }
+            throw error;
+          },
         )
-      )
+      ) {
         break;
+      }
       await setTimeout(50);
     }
     const shell = Schema.decodeUnknownSync(Schema.fromJsonString(ShellEnvironment))(
@@ -468,8 +509,15 @@ test(
     let recovered = false;
     for (let attempt = 0; attempt < 100; attempt++) {
       await setTimeout(100);
-      const text = await readFile(connected.data.discovery, "utf8").catch(() => null);
-      if (text === null) continue;
+      const text = await readFile(connected.data.discovery, "utf8").catch((error: unknown) => {
+        if (Schema.is(MissingFile)(error)) {
+          return null;
+        }
+        throw error;
+      });
+      if (text === null) {
+        continue;
+      }
       const next = Schema.decodeUnknownSync(Schema.fromJsonString(Discovery))(text);
       if (next.instance_id !== beforeCrash.instance_id) {
         recovered = true;
@@ -483,10 +531,16 @@ test(
       if (
         !(await readFile(connected.data.discovery).then(
           () => true,
-          () => false,
+          (error: unknown) => {
+            if (Schema.is(MissingFile)(error)) {
+              return false;
+            }
+            throw error;
+          },
         ))
-      )
+      ) {
         break;
+      }
       await setTimeout(50);
     }
     const blocker = createServer((_request, response) => {

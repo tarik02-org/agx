@@ -1,5 +1,5 @@
-import * as Context from "effect/Context";
 import type { ConnectionOptions } from "agx-client/schema";
+import * as Context from "effect/Context";
 
 export class Configuration extends Context.Service<
   Configuration,

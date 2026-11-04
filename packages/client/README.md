@@ -13,10 +13,10 @@ recover crashed daemon instances. The application supplies platform layers.
 
 ```ts
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import { AgxClient, AgxClientLive } from "agx-client/AgxClient";
 import { AgxConnection, AgxConnectionLive } from "agx-client/AgxConnection";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
 const services = Layer.merge(
   AgxClientLive,
