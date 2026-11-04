@@ -109,22 +109,22 @@ agx sends the token as a bearer token. To replace it, run `secret set` again.
 ```yaml
 mcp:
   tracker:
-    url: https://tracker.example.com/mcp      # no auth: OAuth when the server asks
+    url: https://tracker.example.com/mcp # no auth: OAuth when the server asks
   sso:
     url: https://sso.example.com/mcp
-    auth: {kind: oauth, client_id: agx-cli}   # OAuth with a registered client
+    auth: { kind: oauth, client_id: agx-cli } # OAuth with a registered client
   github:
     url: https://api.githubcopilot.com/mcp/
-    auth: keychain                            # a token you store once
+    auth: keychain # a token you store once
   shared:
     url: https://shared.example.com/mcp
-    auth: !secret team-token                  # a secret defined under secrets
+    auth: !secret team-token # a secret defined under secrets
   ci:
     url: https://ci.example.com/mcp
-    auth: !env CI_TOKEN                       # or !file PATH
+    auth: !env CI_TOKEN # or !file PATH
   public:
     url: https://public.example.com/mcp
-    auth: none                                # never send credentials
+    auth: none # never send credentials
 ```
 
 - **Omitted**: the server is used without credentials until it answers with an
@@ -181,16 +181,16 @@ adds the raw input and output JSON Schemas.
 
 Arguments are `key=value` pairs, converted by the tool's schema:
 
-| You write | The tool receives |
-| --- | --- |
-| `limit=5` | `5` when `limit` is a number or integer, `"5"` when it is a string |
-| `exact=true` | `true` for a boolean |
-| `note=null` | `null` when the schema allows it |
-| `status=open` | `"open"`, checked against the enum |
-| `tags=a tags=b` | `["a", "b"]`; a single `tags=a` becomes `["a"]` |
-| `filter='{"owner":"me"}'` | an object or array, written as JSON |
-| `body=@notes.md` | the file's content |
-| `handle=@@me` | `"@me"`: `@@` escapes a leading `@` |
+| You write                 | The tool receives                                                  |
+| ------------------------- | ------------------------------------------------------------------ |
+| `limit=5`                 | `5` when `limit` is a number or integer, `"5"` when it is a string |
+| `exact=true`              | `true` for a boolean                                               |
+| `note=null`               | `null` when the schema allows it                                   |
+| `status=open`             | `"open"`, checked against the enum                                 |
+| `tags=a tags=b`           | `["a", "b"]`; a single `tags=a` becomes `["a"]`                    |
+| `filter='{"owner":"me"}'` | an object or array, written as JSON                                |
+| `body=@notes.md`          | the file's content                                                 |
+| `handle=@@me`             | `"@me"`: `@@` escapes a leading `@`                                |
 
 `--raw-strings` passes every value as a string, and `--args '<json>'` (or
 `--args -` to read standard input) gives the whole arguments object; `key=value`
@@ -211,7 +211,16 @@ except that binary content names its `path` and `size` instead of carrying
 base64 data:
 
 ```json
-{"version":1,"data":{"mcp_id":"tracker","tool":"search_issues","is_error":false,"content":[{"type":"text","text":"…"}],"structured_content":null}}
+{
+  "version": 1,
+  "data": {
+    "mcp_id": "tracker",
+    "tool": "search_issues",
+    "is_error": false,
+    "content": [{ "type": "text", "text": "…" }],
+    "structured_content": null
+  }
+}
 ```
 
 `call` exits 0 on success, 1 when the call fails or the tool reports an error
@@ -283,12 +292,12 @@ mcp:
     share: repo
 ```
 
-| `share` | One process for |
-| --- | --- |
-| `none` (default) | each harness session and each `agx mcp call` session |
-| `directory` | every launch in the same directory |
-| `repo` | every launch in the same repository, from any of its subdirectories; each worktree is a repository of its own, and outside a repository it acts like `directory` |
-| `global` | every launch, wherever it runs |
+| `share`          | One process for                                                                                                                                                  |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `none` (default) | each harness session and each `agx mcp call` session                                                                                                             |
+| `directory`      | every launch in the same directory                                                                                                                               |
+| `repo`           | every launch in the same repository, from any of its subdirectories; each worktree is a repository of its own, and outside a repository it acts like `directory` |
+| `global`         | every launch, wherever it runs                                                                                                                                   |
 
 A shared server runs in the directory or repository root it is shared for, or in
 your home directory for `global`, unless `cwd` says otherwise. It stays five
@@ -299,9 +308,10 @@ long with the mapping form:
 mcp:
   fff:
     command: [fff-mcp]
-    share: { type: repo, idle: 30m }   # idle: 0s stops it with its last session
+    share: { type: repo, idle: 30m } # idle: 0s stops it with its last session
 ```
- Launches still
+
+Launches still
 reach only the servers they select. Sessions that differ in the server's command,
 environment, secrets, `!env` values, or idle period get separate processes. A
 shared server also stops when a secret it uses changes or you log in again, and
@@ -366,33 +376,33 @@ when servers or their tools change.
 
 ```yaml
 mcp:
-  tracker:                          # remote (HTTP)
+  tracker: # remote (HTTP)
     url: https://tracker.example.com/mcp
     headers:
       X-Team: platform
       X-Api-Key: !secret tracker-key
     auth: none
 
-  fs:                               # local (stdio)
-    command: [npx, -y, '@modelcontextprotocol/server-filesystem', .]
-    cwd: ~/work                     # default: the launch directory
-    share: repo                     # one process per repository
+  fs: # local (stdio)
+    command: [npx, -y, "@modelcontextprotocol/server-filesystem", .]
+    cwd: ~/work # default: the launch directory
+    share: repo # one process per repository
     environment:
       LOG_LEVEL: warning
       API_TOKEN: !secret fs-token
 ```
 
-| Field | Applies to | Meaning |
-| --- | --- | --- |
-| `url` | remote | the server's MCP endpoint |
-| `headers` | remote | extra HTTP headers; values may use `!secret`, `!env`, `!file` |
-| `auth` | remote | credentials, see above |
-| `command` | local | the program and its arguments |
-| `cwd` | local | working directory; relative to the configuration file |
-| `environment` | local | environment variables; values may use `!secret`, `!env`, `!file` |
-| `description` | both | what the server offers, shown by `agx mcp tools` |
-| `load` | both | `native` (default): in the harness's tool list; `on_demand`: reached with `agx mcp call` only |
-| `share` | local | `none` (default), `directory`, `repo`, or `global`, or `{type, idle}`: see [Sharing a local server](#sharing-a-local-server) |
+| Field         | Applies to | Meaning                                                                                                                      |
+| ------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `url`         | remote     | the server's MCP endpoint                                                                                                    |
+| `headers`     | remote     | extra HTTP headers; values may use `!secret`, `!env`, `!file`                                                                |
+| `auth`        | remote     | credentials, see above                                                                                                       |
+| `command`     | local      | the program and its arguments                                                                                                |
+| `cwd`         | local      | working directory; relative to the configuration file                                                                        |
+| `environment` | local      | environment variables; values may use `!secret`, `!env`, `!file`                                                             |
+| `description` | both       | what the server offers, shown by `agx mcp tools`                                                                             |
+| `load`        | both       | `native` (default): in the harness's tool list; `on_demand`: reached with `agx mcp call` only                                |
+| `share`       | local      | `none` (default), `directory`, `repo`, or `global`, or `{type, idle}`: see [Sharing a local server](#sharing-a-local-server) |
 
 A server has either `url` or `command`. agx manages the `Authorization`,
 `Cookie`, `Host`, and `Mcp-Session-Id` headers itself.

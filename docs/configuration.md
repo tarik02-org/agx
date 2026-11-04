@@ -12,20 +12,20 @@ to edit YAML-owned or package-owned definitions, naming their source.
 
 ## Where files live
 
-| What | Default location | Override |
-| --- | --- | --- |
-| Configuration: the root file, with fragments beside it in `agx.d/` | `agx/agx.yaml` in your config directory | `AGX_CONFIG` or `--config` |
-| Cache: installed packages, generated files, daemon log | `agx` in your cache directory | `AGX_CACHE` or `--cache` |
-| State: local configuration, launch records, encrypted secrets (`state.db`) | `agx` in your state directory | `AGX_STATE` |
+| What                                                                       | Default location                        | Override                   |
+| -------------------------------------------------------------------------- | --------------------------------------- | -------------------------- |
+| Configuration: the root file, with fragments beside it in `agx.d/`         | `agx/agx.yaml` in your config directory | `AGX_CONFIG` or `--config` |
+| Cache: installed packages, generated files, daemon log                     | `agx` in your cache directory           | `AGX_CACHE` or `--cache`   |
+| State: local configuration, launch records, encrypted secrets (`state.db`) | `agx` in your state directory           | `AGX_STATE`                |
 
 The base directories follow the XDG variables (`XDG_CONFIG_HOME`,
 `XDG_CACHE_HOME`, `XDG_STATE_HOME`) and otherwise default to:
 
-| | Linux | macOS | Windows |
-| --- | --- | --- | --- |
-| Config | `~/.config` | `~/Library/Application Support` | `%LOCALAPPDATA%` |
-| Cache | `~/.cache` | `~/Library/Caches` | `%LOCALAPPDATA%\cache` |
-| State | `~/.local/state` | `~/Library/Application Support` | `%LOCALAPPDATA%` |
+|        | Linux            | macOS                           | Windows                |
+| ------ | ---------------- | ------------------------------- | ---------------------- |
+| Config | `~/.config`      | `~/Library/Application Support` | `%LOCALAPPDATA%`       |
+| Cache  | `~/.cache`       | `~/Library/Caches`              | `%LOCALAPPDATA%\cache` |
+| State  | `~/.local/state` | `~/Library/Application Support` | `%LOCALAPPDATA%`       |
 
 `AGX_CONFIG`, `AGX_CACHE`, and `AGX_STATE` must be absolute paths. When you set
 only `AGX_CACHE` (or `--cache`), state moves to `<cache>/state`, so one variable
@@ -60,13 +60,13 @@ mcp:
     url: https://docs.example.com/mcp
 
 scopes:
-  - add:                        # no directory: everywhere
+  - add: # no directory: everywhere
       instructions: [pnpm]
   - directory: ~/work
     add:
       mcp: [docs]
       skills:
-        - ~/skills/review       # a skill folder, defined right here
+        - ~/skills/review # a skill folder, defined right here
   - directory: ~/work/legacy
     remove:
       instructions: [pnpm]
@@ -134,14 +134,14 @@ three forms:
 ```yaml
 add:
   skills:
-    - review                          # an ID defined elsewhere
-    - ./skills/deploy                 # a path: ID is the folder name
-    - id: release-notes               # an inline definition
+    - review # an ID defined elsewhere
+    - ./skills/deploy # a path: ID is the folder name
+    - id: release-notes # an inline definition
       description: Write release notes for the current tag.
       content: |
         Summarize the commits since the previous tag.
   instructions:
-    - ./AGENTS.md                     # a path: ID is the file stem, "AGENTS"
+    - ./AGENTS.md # a path: ID is the file stem, "AGENTS"
     - id: tone
       text: Be brief.
   mcp:
@@ -186,8 +186,8 @@ symlink:
 
 ```yaml
 fragments:
-  - personal.yaml           # must exist
-  - agx.d/*.yaml            # every match, in name order; may match nothing
+  - personal.yaml # must exist
+  - agx.d/*.yaml # every match, in name order; may match nothing
 ```
 
 An entry containing `*`, `?`, or `[` is a glob; any other entry is a path.
@@ -251,14 +251,14 @@ a definition.
 
 Options shared by the commands that write:
 
-| Option | Meaning |
-| --- | --- |
-| `--scope user` | everywhere (the default) |
-| `--scope here` | the current directory and below |
-| `--scope <dir>` | that directory and below; it must exist, except for `unuse` |
-| `--harness <name>` | only for launches of that harness; repeatable |
-| `--define-only` | define without enabling (`add` commands) |
-| `-y`, `--yes` | write without asking |
+| Option             | Meaning                                                     |
+| ------------------ | ----------------------------------------------------------- |
+| `--scope user`     | everywhere (the default)                                    |
+| `--scope here`     | the current directory and below                             |
+| `--scope <dir>`    | that directory and below; it must exist, except for `unuse` |
+| `--harness <name>` | only for launches of that harness; repeatable               |
+| `--define-only`    | define without enabling (`add` commands)                    |
+| `-y`, `--yes`      | write without asking                                        |
 
 On a terminal, missing arguments become prompts and commands ask before saving.
 Without a terminal, commands save without asking and a missing argument is an
@@ -315,9 +315,9 @@ These go in the root file:
 
 ```yaml
 daemon:
-  autostart: true               # start the daemon when a command needs it
-  lease_seconds: 60             # how long a launch survives without its wrapper
-  renew_seconds: 20             # how often wrappers renew (less than the lease)
+  autostart: true # start the daemon when a command needs it
+  lease_seconds: 60 # how long a launch survives without its wrapper
+  renew_seconds: 20 # how often wrappers renew (less than the lease)
 ```
 
 All of these are optional. See [The daemon](daemon.md).

@@ -1,0 +1,56 @@
+{
+  "name": "agx-client",
+  "version": "0.0.0",
+  "description": "Effect client for the AGX daemon",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tarik02-org/agx.git",
+    "directory": "packages/client"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    },
+    "./AgxClient": {
+      "types": "./dist/AgxClient.d.mts",
+      "import": "./dist/AgxClient.mjs"
+    },
+    "./AgxConnection": {
+      "types": "./dist/AgxConnection.d.mts",
+      "import": "./dist/AgxConnection.mjs"
+    },
+    "./schema": {
+      "types": "./dist/schema.d.mts",
+      "import": "./dist/schema.mjs"
+    },
+    "./error": {
+      "types": "./dist/error.d.mts",
+      "import": "./dist/error.mjs"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.mts",
+      "import": "./dist/protocol.mjs"
+    }
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "catalog:",
+    "@connectrpc/connect": "catalog:",
+    "@connectrpc/connect-web": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/language-service": "catalog:",
+    "@types/node": "catalog:",
+    "effect": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "peerDependencies": {
+    "effect": "catalog:"
+  }
+}

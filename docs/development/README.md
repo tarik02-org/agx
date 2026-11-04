@@ -9,6 +9,7 @@ These notes are for people working on agx itself. For using agx, start at the
 - [Verification](verification.md): how behavior is tested, what was checked by
   hand, and known limits.
 - [Library choices](libraries.md).
+- [OpenCode plugin](opencode.md): development, distribution and advanced options.
 - [Architecture decision records](../adr/) and the [glossary](../../GLOSSARY.md).
 
 ## Building and testing
@@ -55,7 +56,7 @@ explicitly and return changes for the daemon to persist. This prepares reuse by 
 future daemonless runtime; no daemonless launch mode is implemented yet.
 
 Go messages and Connect handlers live in `gen/agx/v1`; TypeScript Protobuf
-messages and service descriptors live in `gen/typescript`. Regenerate them with
+messages and service descriptors live in `packages/client/gen`. Regenerate them with
 `buf generate`; TypeScript consumers need `@bufbuild/protobuf` and can build
 Connect clients with `@connectrpc/connect`. Generator versions are pinned in
 [buf.gen.yaml](../../buf.gen.yaml).

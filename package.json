@@ -1,0 +1,18 @@
+{
+  "name": "agx-workspace",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vp run -r build",
+    "check": "vp run check:workspace",
+    "lint": "vp run lint:workspace",
+    "test": "vp run -r test",
+    "format": "vp fmt"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "packageManager": "pnpm@12.16.1"
+}

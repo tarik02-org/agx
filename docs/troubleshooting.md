@@ -109,11 +109,11 @@ added: `xattr -d com.apple.quarantine /path/to/agx`.
 
 The daemon writes `daemon.log` in its configuration's hashed runtime directory:
 
-| Platform | Default log location |
-| --- | --- |
-| Linux | `~/.cache/agx/runtime/<root-hash>/daemon.log` |
-| macOS | `~/Library/Caches/agx/runtime/<root-hash>/daemon.log` |
-| Windows | `%LOCALAPPDATA%\cache\agx\runtime\<root-hash>\daemon.log` |
+| Platform | Default log location                                      |
+| -------- | --------------------------------------------------------- |
+| Linux    | `~/.cache/agx/runtime/<root-hash>/daemon.log`             |
+| macOS    | `~/Library/Caches/agx/runtime/<root-hash>/daemon.log`     |
+| Windows  | `%LOCALAPPDATA%\cache\agx\runtime\<root-hash>\daemon.log` |
 
 `agx daemon start` prints the path.
 

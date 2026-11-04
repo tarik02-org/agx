@@ -8,8 +8,8 @@ use YAML tags resolved at launch:
 ```yaml
 environment:
   REGION: eu
-  API_KEY: !secret cpa-key   # a configured secret
-  TOKEN: !env WORK_TOKEN     # the caller's environment
+  API_KEY: !secret cpa-key # a configured secret
+  TOKEN: !env WORK_TOKEN # the caller's environment
   PROMPT: !file ./prompt.txt # file contents, relative to the declaring fragment
 ```
 

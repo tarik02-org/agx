@@ -1,8 +1,12 @@
 # Harnesses
 
-A harness is a coding agent agx launches. agx knows three: **Codex**
+A harness is a coding agent that consumes agx configuration. agx can launch **Codex**
 (`codex`), **Claude Code** (`claude`), and **Pi** (`pi`). You can define your
 own variants of them with extra arguments, environment, and resources.
+
+**OpenCode 2** (`opencode`) consumes configuration through a
+[native Effect plugin](../packages/opencode/README.md). OpenCode starts its own
+server and owns its conversations; it uses no agx shim or launch command.
 
 ## Launching
 
@@ -65,7 +69,7 @@ based on one:
 harnesses:
   claude:
     add:
-      skills: [review]            # every Claude launch, in every directory
+      skills: [review] # every Claude launch, in every directory
 
   codex-work:
     base: codex
@@ -87,15 +91,15 @@ the command line with:
 agx harness add codex-work --base codex --env 'OPENAI_API_KEY=!env WORK_OPENAI_KEY' -- --profile work
 ```
 
-| Field | Meaning |
-| --- | --- |
-| `base` | the harness this one extends: a built-in or another definition |
-| `executable` | absolute path of the binary; default: found on `PATH` |
-| `args` | arguments placed before the ones you type |
-| `environment` | environment variables for the harness |
-| `settings` | the harness's own settings, see [Settings](#settings) |
-| `add`, `remove` | resources for every launch of this harness, applied after directory rules |
-| `hidden` | `true` leaves the harness out of the [launcher](sessions.md)'s new-session list |
+| Field           | Meaning                                                                         |
+| --------------- | ------------------------------------------------------------------------------- |
+| `base`          | the harness this one extends: a built-in or another definition                  |
+| `executable`    | absolute path of the binary; default: found on `PATH`                           |
+| `args`          | arguments placed before the ones you type                                       |
+| `environment`   | environment variables for the harness                                           |
+| `settings`      | the harness's own settings, see [Settings](#settings)                           |
+| `add`, `remove` | resources for every launch of this harness, applied after directory rules       |
+| `hidden`        | `true` leaves the harness out of the [launcher](sessions.md)'s new-session list |
 
 A definition inherits from its base: arguments add up (base first),
 `environment` and `settings` merge key by key, and `executable` is replaced; `hidden` is not
@@ -106,11 +110,11 @@ inherited. Names cannot clash with agx commands such as `install`.
 agx sorts every launch into a mode, so arguments can apply only where they make
 sense:
 
-| Harness | Modes |
-| --- | --- |
-| codex | `interactive`, `exec`, `resume`, `app-server`, `passthrough` |
-| claude | `interactive`, `print`, `resume`, `passthrough` |
-| pi | `interactive`, `print`, `rpc`, `resume`, `passthrough` |
+| Harness | Modes                                                        |
+| ------- | ------------------------------------------------------------ |
+| codex   | `interactive`, `exec`, `resume`, `app-server`, `passthrough` |
+| claude  | `interactive`, `print`, `resume`, `passthrough`              |
+| pi      | `interactive`, `print`, `rpc`, `resume`, `passthrough`       |
 
 For example, `codex exec …` is `exec`, `claude -p …` is `print`, and `claude
 --resume …` is `resume`; help, version, and login commands are `passthrough`.
@@ -123,9 +127,9 @@ harnesses:
   codex-cpa:
     base: codex
     args:
-      - values: [--search]                       # every mode except passthrough
+      - values: [--search] # every mode except passthrough
       - values: [--profile, cpa]
-        modes: [interactive, exec, resume]       # only these modes
+        modes: [interactive, exec, resume] # only these modes
 ```
 
 ### Settings
@@ -147,7 +151,7 @@ harnesses:
         cpa:
           name: CPA
           base_url: http://127.0.0.1:8317/v1
-          env_key: CPA_API_KEY          # Codex reads the key from this variable
+          env_key: CPA_API_KEY # Codex reads the key from this variable
           wire_api: responses
 
   claude-work:
@@ -189,9 +193,9 @@ as process arguments that other processes can read: put the secret in
 ```yaml
 environment:
   REGION: eu
-  API_KEY: !secret cpa-key       # a configured secret
-  TOKEN: !env WORK_TOKEN         # from the shell you launch from
-  PROMPT: !file ./prompt.txt     # a file's contents
+  API_KEY: !secret cpa-key # a configured secret
+  TOKEN: !env WORK_TOKEN # from the shell you launch from
+  PROMPT: !file ./prompt.txt # a file's contents
 ```
 
 `args` accept literal strings and `!file`. Put secrets and environment
@@ -209,10 +213,10 @@ gateway, hide the built-in so the launcher offers just the definitions:
 
 ```yaml
 harnesses:
-  codex: {hidden: true}
+  codex: { hidden: true }
   codex-cpa:
     base: codex
-    settings: {model_provider: cpa}
+    settings: { model_provider: cpa }
 ```
 
 A hidden harness still runs by name (`agx codex`, or a `codex` link), and its
@@ -272,11 +276,11 @@ agx's instructions, combined with the host's own system prompt additions.
 
 ### Supported versions
 
-| Harness | Minimum | Tested with |
-| --- | --- | --- |
-| Codex | 0.160 | 0.162.1 |
-| Claude Code | 2.1.29x | 2.1.300 |
-| Pi | 0.99.0 | 1.2.0 |
+| Harness     | Minimum | Tested with |
+| ----------- | ------- | ----------- |
+| Codex       | 0.160   | 0.162.1     |
+| Claude Code | 2.1.29x | 2.1.300     |
+| Pi          | 0.99.0  | 1.2.0       |
 
 Older versions may start but lose skills, instructions, or MCP servers.
 `agx doctor` checks the installed versions.

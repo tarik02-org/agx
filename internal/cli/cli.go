@@ -593,13 +593,25 @@ func daemonCommand(a *app) *cobra.Command {
 		},
 	}
 	command.AddCommand(start)
-	command.AddCommand(&cobra.Command{
+	recoverInstance := ""
+	connectCommand := &cobra.Command{
 		Use:   "connect",
 		Short: "Locate the authenticated daemon for a configuration consumer",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if _, err := a.client(cmd.Context()); err != nil {
-				return err
+			if recoverInstance == "" {
+				if _, err := a.client(cmd.Context()); err != nil {
+					return err
+				}
+			} else {
+				if crashed(a.paths, recoverInstance) {
+					if _, err := startDaemon(cmd.Context(), a.paths); err != nil {
+						return err
+					}
+				}
+				if _, err := control.ReadDiscovery(a.paths); err != nil {
+					return err
+				}
 			}
 			path, err := filepath.Abs(filepath.Join(a.paths.Runtime, "daemon.json"))
 			if err != nil {
@@ -610,7 +622,10 @@ func daemonCommand(a *app) *cobra.Command {
 			}{path}
 			return emit(document, func() error { _, err := fmt.Fprintln(ui.Stdout, path); return err })
 		},
-	})
+	}
+	connectCommand.Flags().
+		StringVar(&recoverInstance, "recover-instance", "", "Replace this daemon instance only if it crashed")
+	command.AddCommand(connectCommand)
 	status := &cobra.Command{
 		Use:   "status",
 		Short: "Show daemon version and launch count",

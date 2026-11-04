@@ -94,8 +94,8 @@ skills:
           #!/bin/sh
           set -eu
           make deploy
-      references/checklist.md: {path: ./docs/release-checklist.md}   # copied file
-      assets/: {path: ./deploy-assets/}                              # copied directory
+      references/checklist.md: { path: ./docs/release-checklist.md } # copied file
+      assets/: { path: ./deploy-assets/ } # copied directory
 ```
 
 For an inline skill, `description` is required and `content` is the body of
@@ -152,7 +152,7 @@ bundles:
     skills: [review]
     instructions: [standards]
 packages:
-  shared:                      # a dependency, named team/shared
+  shared: # a dependency, named team/shared
     git: https://github.com/example/shared.git
 ```
 
@@ -200,10 +200,10 @@ A source that names an exact version needs no lock entry:
 packages:
   team:
     git: https://github.com/example/agent-resources.git
-    ref: 3f2c9e1a8b7d6c5e4f3a2b1c0d9e8f7a6b5c4d3e   # a full commit
+    ref: 3f2c9e1a8b7d6c5e4f3a2b1c0d9e8f7a6b5c4d3e # a full commit
   vendored:
     path: ./vendor/resources
-    hash: 2610e87326d59c6c9d74031fc4e5bbec8f87d9cf0f63cf89ee7373113a1cc88d  # from the lockfile
+    hash: 2610e87326d59c6c9d74031fc4e5bbec8f87d9cf0f63cf89ee7373113a1cc88d # from the lockfile
 ```
 
 A `path` inside `/nix/store` is pinned too, which suits configuration generated

@@ -16,21 +16,21 @@ scopes:
   - directory: ~/work
     add:
       skills:
-        - review                          # reference
-        - ./skills/local-thing            # path; ID = folder name
-        - id: deploy                      # inline content
+        - review # reference
+        - ./skills/local-thing # path; ID = folder name
+        - id: deploy # inline content
           description: Deploy this service.
           content: |
             Run `make deploy` and report the release URL.
-        - git: https://github.com/team/skills.git   # inline Git source
+        - git: https://github.com/team/skills.git # inline Git source
           ref: 3f2c9e1a8b7d6c5e4f3a2b1c0d9e8f7a6b5c4d3e
-          path: skills/review-strict      # ID = folder name
+          path: skills/review-strict # ID = folder name
       instructions:
-        - ./AGENTS.md                     # ID = file stem
+        - ./AGENTS.md # ID = file stem
         - id: pnpm
           text: Use pnpm, not npm.
       mcp:
-        - github                          # reference
+        - github # reference
         - id: aperture
           url: https://aperture.tarik02.me/mcp
 ```
@@ -49,21 +49,21 @@ A skill with `content` is a whole skill directory described in YAML:
 ```yaml
 skills:
   deploy:
-    name: deploy-service          # native skill name; default: last ID segment
+    name: deploy-service # native skill name; default: last ID segment
     description: Deploy this service and report the release URL.
-    frontmatter:                  # extra SKILL.md front matter, passed through
+    frontmatter: # extra SKILL.md front matter, passed through
       allowed-tools: [Bash]
-    content: |                    # SKILL.md body
+    content: | # SKILL.md body
       Run `scripts/deploy.sh`, then follow `references/checklist.md`.
-    files:                        # other files, relative to the skill root
+    files: # other files, relative to the skill root
       scripts/deploy.sh:
         executable: true
         content: |
           #!/bin/sh
           set -eu
           make deploy
-      references/checklist.md: {path: ./docs/release-checklist.md}   # copied file
-      assets/: {path: ./deploy-assets/}   # copied directory (trailing slash)
+      references/checklist.md: { path: ./docs/release-checklist.md } # copied file
+      assets/: { path: ./deploy-assets/ } # copied directory (trailing slash)
 ```
 
 The ID addresses the skill in configuration (`team/deploy` in a package); `name`

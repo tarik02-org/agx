@@ -1,0 +1,44 @@
+{
+  "name": "agx-opencode",
+  "version": "0.0.0",
+  "description": "Directory-scoped AGX resources for OpenCode 2",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tarik02-org/agx.git",
+    "directory": "packages/opencode"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "dependencies": {
+    "@connectrpc/connect": "catalog:",
+    "agx-client": "workspace:^",
+    "yaml": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/language-service": "catalog:",
+    "@effect/platform-node": "catalog:",
+    "@opencode/cli": "catalog:",
+    "@opencode/client": "catalog:",
+    "@opencode/plugin": "catalog:",
+    "@opencode/schema": "catalog:",
+    "@types/node": "catalog:",
+    "effect": "catalog:",
+    "typescript": "catalog:",
+    "unplugin-license": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "peerDependencies": {
+    "@opencode/plugin": "catalog:",
+    "@opencode/schema": "catalog:",
+    "effect": "catalog:"
+  }
+}
