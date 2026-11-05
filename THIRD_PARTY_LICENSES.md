@@ -83,6 +83,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## @opencode/protocol@2.2.5
+
+- License: MIT
+- Repository: https://github.com/anomalyco/opencode
+
 ## @opencode/schema@2.2.5
 
 - License: MIT
