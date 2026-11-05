@@ -395,7 +395,6 @@ var selfAuthorized = map[string]bool{
 // startsWork are the procedures a stopping daemon refuses, so that callers retry them with the
 // next daemon.
 var startsWork = map[string]bool{
-	agxv1connect.SessionProviderServicePrepareSessionProcedure:    true,
 	agxv1connect.ResourceServicePrepareResourcesProcedure:         true,
 	agxv1connect.LaunchServicePrepareLaunchProcedure:              true,
 	agxv1connect.LaunchServiceAttachLaunchProcedure:               true,

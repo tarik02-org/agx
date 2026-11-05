@@ -7,8 +7,10 @@ own variants of them with extra arguments, environment, and resources.
 **OpenCode 2** (`opencode`) consumes configuration through a
 [native Effect plugin](../packages/opencode/README.md). OpenCode starts its own
 server and owns its conversations. `agx opencode` starts its native client; the
-plugin supplies resources and publishes sessions for the launcher. Custom AGX
-launcher profiles are unsupported for OpenCode's shared service.
+plugin supplies resources and publishes sessions for the launcher. Harness
+definitions can set the native client's executable, arguments and environment;
+set the plugin's `harness` option to the same definition name so its sessions
+resume with that configuration.
 
 ## Launching
 

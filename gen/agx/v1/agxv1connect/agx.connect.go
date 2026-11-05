@@ -51,6 +51,9 @@ const (
 	// ConfigurationServiceResolvePassthroughProcedure is the fully-qualified name of the
 	// ConfigurationService's ResolvePassthrough RPC.
 	ConfigurationServiceResolvePassthroughProcedure = "/agx.v1.ConfigurationService/ResolvePassthrough"
+	// ConfigurationServiceResolveClientCommandProcedure is the fully-qualified name of the
+	// ConfigurationService's ResolveClientCommand RPC.
+	ConfigurationServiceResolveClientCommandProcedure = "/agx.v1.ConfigurationService/ResolveClientCommand"
 	// ConfigurationServiceValidateProcedure is the fully-qualified name of the ConfigurationService's
 	// Validate RPC.
 	ConfigurationServiceValidateProcedure = "/agx.v1.ConfigurationService/Validate"
@@ -125,15 +128,9 @@ const (
 	// SessionProviderServicePublishSessionsProcedure is the fully-qualified name of the
 	// SessionProviderService's PublishSessions RPC.
 	SessionProviderServicePublishSessionsProcedure = "/agx.v1.SessionProviderService/PublishSessions"
-	// SessionProviderServiceWatchSessionCommandsProcedure is the fully-qualified name of the
-	// SessionProviderService's WatchSessionCommands RPC.
-	SessionProviderServiceWatchSessionCommandsProcedure = "/agx.v1.SessionProviderService/WatchSessionCommands"
-	// SessionProviderServiceReplySessionCommandProcedure is the fully-qualified name of the
-	// SessionProviderService's ReplySessionCommand RPC.
-	SessionProviderServiceReplySessionCommandProcedure = "/agx.v1.SessionProviderService/ReplySessionCommand"
-	// SessionProviderServicePrepareSessionProcedure is the fully-qualified name of the
-	// SessionProviderService's PrepareSession RPC.
-	SessionProviderServicePrepareSessionProcedure = "/agx.v1.SessionProviderService/PrepareSession"
+	// SessionProviderServiceConnectSessionSourceProcedure is the fully-qualified name of the
+	// SessionProviderService's ConnectSessionSource RPC.
+	SessionProviderServiceConnectSessionSourceProcedure = "/agx.v1.SessionProviderService/ConnectSessionSource"
 	// RuntimeServiceGetRuntimeProcedure is the fully-qualified name of the RuntimeService's GetRuntime
 	// RPC.
 	RuntimeServiceGetRuntimeProcedure = "/agx.v1.RuntimeService/GetRuntime"
@@ -176,6 +173,8 @@ type ConfigurationServiceClient interface {
 	GetLocalConfiguration(context.Context, *connect.Request[v1.GetLocalConfigurationRequest]) (*connect.Response[v1.GetLocalConfigurationResponse], error)
 	// Resolve native passthrough arguments and environment without creating a managed launch.
 	ResolvePassthrough(context.Context, *connect.Request[v1.ResolvePassthroughRequest]) (*connect.Response[v1.ResolvePassthroughResponse], error)
+	// Resolve client harness arguments and environment; resource delivery belongs to its plugin.
+	ResolveClientCommand(context.Context, *connect.Request[v1.ResolveClientCommandRequest]) (*connect.Response[v1.ResolveClientCommandResponse], error)
 	Validate(context.Context, *connect.Request[v1.ValidateRequest]) (*connect.Response[v1.ValidateResponse], error)
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
 	// The configuration as loaded, for browsing it: harnesses, scope directories, and files.
@@ -214,6 +213,12 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 			httpClient,
 			baseURL+ConfigurationServiceResolvePassthroughProcedure,
 			connect.WithSchema(configurationServiceMethods.ByName("ResolvePassthrough")),
+			connect.WithClientOptions(opts...),
+		),
+		resolveClientCommand: connect.NewClient[v1.ResolveClientCommandRequest, v1.ResolveClientCommandResponse](
+			httpClient,
+			baseURL+ConfigurationServiceResolveClientCommandProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ResolveClientCommand")),
 			connect.WithClientOptions(opts...),
 		),
 		validate: connect.NewClient[v1.ValidateRequest, v1.ValidateResponse](
@@ -277,6 +282,7 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 type configurationServiceClient struct {
 	getLocalConfiguration *connect.Client[v1.GetLocalConfigurationRequest, v1.GetLocalConfigurationResponse]
 	resolvePassthrough    *connect.Client[v1.ResolvePassthroughRequest, v1.ResolvePassthroughResponse]
+	resolveClientCommand  *connect.Client[v1.ResolveClientCommandRequest, v1.ResolveClientCommandResponse]
 	validate              *connect.Client[v1.ValidateRequest, v1.ValidateResponse]
 	resolve               *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
 	getConfiguration      *connect.Client[v1.GetConfigurationRequest, v1.GetConfigurationResponse]
@@ -296,6 +302,11 @@ func (c *configurationServiceClient) GetLocalConfiguration(ctx context.Context, 
 // ResolvePassthrough calls agx.v1.ConfigurationService.ResolvePassthrough.
 func (c *configurationServiceClient) ResolvePassthrough(ctx context.Context, req *connect.Request[v1.ResolvePassthroughRequest]) (*connect.Response[v1.ResolvePassthroughResponse], error) {
 	return c.resolvePassthrough.CallUnary(ctx, req)
+}
+
+// ResolveClientCommand calls agx.v1.ConfigurationService.ResolveClientCommand.
+func (c *configurationServiceClient) ResolveClientCommand(ctx context.Context, req *connect.Request[v1.ResolveClientCommandRequest]) (*connect.Response[v1.ResolveClientCommandResponse], error) {
+	return c.resolveClientCommand.CallUnary(ctx, req)
 }
 
 // Validate calls agx.v1.ConfigurationService.Validate.
@@ -349,6 +360,8 @@ type ConfigurationServiceHandler interface {
 	GetLocalConfiguration(context.Context, *connect.Request[v1.GetLocalConfigurationRequest]) (*connect.Response[v1.GetLocalConfigurationResponse], error)
 	// Resolve native passthrough arguments and environment without creating a managed launch.
 	ResolvePassthrough(context.Context, *connect.Request[v1.ResolvePassthroughRequest]) (*connect.Response[v1.ResolvePassthroughResponse], error)
+	// Resolve client harness arguments and environment; resource delivery belongs to its plugin.
+	ResolveClientCommand(context.Context, *connect.Request[v1.ResolveClientCommandRequest]) (*connect.Response[v1.ResolveClientCommandResponse], error)
 	Validate(context.Context, *connect.Request[v1.ValidateRequest]) (*connect.Response[v1.ValidateResponse], error)
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
 	// The configuration as loaded, for browsing it: harnesses, scope directories, and files.
@@ -383,6 +396,12 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 		ConfigurationServiceResolvePassthroughProcedure,
 		svc.ResolvePassthrough,
 		connect.WithSchema(configurationServiceMethods.ByName("ResolvePassthrough")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceResolveClientCommandHandler := connect.NewUnaryHandler(
+		ConfigurationServiceResolveClientCommandProcedure,
+		svc.ResolveClientCommand,
+		connect.WithSchema(configurationServiceMethods.ByName("ResolveClientCommand")),
 		connect.WithHandlerOptions(opts...),
 	)
 	configurationServiceValidateHandler := connect.NewUnaryHandler(
@@ -445,6 +464,8 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 			configurationServiceGetLocalConfigurationHandler.ServeHTTP(w, r)
 		case ConfigurationServiceResolvePassthroughProcedure:
 			configurationServiceResolvePassthroughHandler.ServeHTTP(w, r)
+		case ConfigurationServiceResolveClientCommandProcedure:
+			configurationServiceResolveClientCommandHandler.ServeHTTP(w, r)
 		case ConfigurationServiceValidateProcedure:
 			configurationServiceValidateHandler.ServeHTTP(w, r)
 		case ConfigurationServiceResolveProcedure:
@@ -478,6 +499,10 @@ func (UnimplementedConfigurationServiceHandler) GetLocalConfiguration(context.Co
 
 func (UnimplementedConfigurationServiceHandler) ResolvePassthrough(context.Context, *connect.Request[v1.ResolvePassthroughRequest]) (*connect.Response[v1.ResolvePassthroughResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.ResolvePassthrough is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) ResolveClientCommand(context.Context, *connect.Request[v1.ResolveClientCommandRequest]) (*connect.Response[v1.ResolveClientCommandResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.ResolveClientCommand is not implemented"))
 }
 
 func (UnimplementedConfigurationServiceHandler) Validate(context.Context, *connect.Request[v1.ValidateRequest]) (*connect.Response[v1.ValidateResponse], error) {
@@ -1069,9 +1094,8 @@ func (UnimplementedResourceServiceHandler) PrepareResources(context.Context, *co
 // SessionProviderServiceClient is a client for the agx.v1.SessionProviderService service.
 type SessionProviderServiceClient interface {
 	PublishSessions(context.Context, *connect.Request[v1.PublishSessionsRequest]) (*connect.Response[v1.PublishSessionsResponse], error)
-	WatchSessionCommands(context.Context, *connect.Request[v1.WatchSessionCommandsRequest]) (*connect.ServerStreamForClient[v1.WatchSessionCommandsResponse], error)
-	ReplySessionCommand(context.Context, *connect.Request[v1.ReplySessionCommandRequest]) (*connect.Response[v1.ReplySessionCommandResponse], error)
-	PrepareSession(context.Context, *connect.Request[v1.PrepareSessionRequest]) (*connect.Response[v1.PrepareSessionResponse], error)
+	// Registers a publisher while this connection remains open; its first frame confirms readiness.
+	ConnectSessionSource(context.Context, *connect.Request[v1.ConnectSessionSourceRequest]) (*connect.ServerStreamForClient[v1.ConnectSessionSourceResponse], error)
 }
 
 // NewSessionProviderServiceClient constructs a client for the agx.v1.SessionProviderService
@@ -1091,22 +1115,10 @@ func NewSessionProviderServiceClient(httpClient connect.HTTPClient, baseURL stri
 			connect.WithSchema(sessionProviderServiceMethods.ByName("PublishSessions")),
 			connect.WithClientOptions(opts...),
 		),
-		watchSessionCommands: connect.NewClient[v1.WatchSessionCommandsRequest, v1.WatchSessionCommandsResponse](
+		connectSessionSource: connect.NewClient[v1.ConnectSessionSourceRequest, v1.ConnectSessionSourceResponse](
 			httpClient,
-			baseURL+SessionProviderServiceWatchSessionCommandsProcedure,
-			connect.WithSchema(sessionProviderServiceMethods.ByName("WatchSessionCommands")),
-			connect.WithClientOptions(opts...),
-		),
-		replySessionCommand: connect.NewClient[v1.ReplySessionCommandRequest, v1.ReplySessionCommandResponse](
-			httpClient,
-			baseURL+SessionProviderServiceReplySessionCommandProcedure,
-			connect.WithSchema(sessionProviderServiceMethods.ByName("ReplySessionCommand")),
-			connect.WithClientOptions(opts...),
-		),
-		prepareSession: connect.NewClient[v1.PrepareSessionRequest, v1.PrepareSessionResponse](
-			httpClient,
-			baseURL+SessionProviderServicePrepareSessionProcedure,
-			connect.WithSchema(sessionProviderServiceMethods.ByName("PrepareSession")),
+			baseURL+SessionProviderServiceConnectSessionSourceProcedure,
+			connect.WithSchema(sessionProviderServiceMethods.ByName("ConnectSessionSource")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -1115,9 +1127,7 @@ func NewSessionProviderServiceClient(httpClient connect.HTTPClient, baseURL stri
 // sessionProviderServiceClient implements SessionProviderServiceClient.
 type sessionProviderServiceClient struct {
 	publishSessions      *connect.Client[v1.PublishSessionsRequest, v1.PublishSessionsResponse]
-	watchSessionCommands *connect.Client[v1.WatchSessionCommandsRequest, v1.WatchSessionCommandsResponse]
-	replySessionCommand  *connect.Client[v1.ReplySessionCommandRequest, v1.ReplySessionCommandResponse]
-	prepareSession       *connect.Client[v1.PrepareSessionRequest, v1.PrepareSessionResponse]
+	connectSessionSource *connect.Client[v1.ConnectSessionSourceRequest, v1.ConnectSessionSourceResponse]
 }
 
 // PublishSessions calls agx.v1.SessionProviderService.PublishSessions.
@@ -1125,27 +1135,16 @@ func (c *sessionProviderServiceClient) PublishSessions(ctx context.Context, req 
 	return c.publishSessions.CallUnary(ctx, req)
 }
 
-// WatchSessionCommands calls agx.v1.SessionProviderService.WatchSessionCommands.
-func (c *sessionProviderServiceClient) WatchSessionCommands(ctx context.Context, req *connect.Request[v1.WatchSessionCommandsRequest]) (*connect.ServerStreamForClient[v1.WatchSessionCommandsResponse], error) {
-	return c.watchSessionCommands.CallServerStream(ctx, req)
-}
-
-// ReplySessionCommand calls agx.v1.SessionProviderService.ReplySessionCommand.
-func (c *sessionProviderServiceClient) ReplySessionCommand(ctx context.Context, req *connect.Request[v1.ReplySessionCommandRequest]) (*connect.Response[v1.ReplySessionCommandResponse], error) {
-	return c.replySessionCommand.CallUnary(ctx, req)
-}
-
-// PrepareSession calls agx.v1.SessionProviderService.PrepareSession.
-func (c *sessionProviderServiceClient) PrepareSession(ctx context.Context, req *connect.Request[v1.PrepareSessionRequest]) (*connect.Response[v1.PrepareSessionResponse], error) {
-	return c.prepareSession.CallUnary(ctx, req)
+// ConnectSessionSource calls agx.v1.SessionProviderService.ConnectSessionSource.
+func (c *sessionProviderServiceClient) ConnectSessionSource(ctx context.Context, req *connect.Request[v1.ConnectSessionSourceRequest]) (*connect.ServerStreamForClient[v1.ConnectSessionSourceResponse], error) {
+	return c.connectSessionSource.CallServerStream(ctx, req)
 }
 
 // SessionProviderServiceHandler is an implementation of the agx.v1.SessionProviderService service.
 type SessionProviderServiceHandler interface {
 	PublishSessions(context.Context, *connect.Request[v1.PublishSessionsRequest]) (*connect.Response[v1.PublishSessionsResponse], error)
-	WatchSessionCommands(context.Context, *connect.Request[v1.WatchSessionCommandsRequest], *connect.ServerStream[v1.WatchSessionCommandsResponse]) error
-	ReplySessionCommand(context.Context, *connect.Request[v1.ReplySessionCommandRequest]) (*connect.Response[v1.ReplySessionCommandResponse], error)
-	PrepareSession(context.Context, *connect.Request[v1.PrepareSessionRequest]) (*connect.Response[v1.PrepareSessionResponse], error)
+	// Registers a publisher while this connection remains open; its first frame confirms readiness.
+	ConnectSessionSource(context.Context, *connect.Request[v1.ConnectSessionSourceRequest], *connect.ServerStream[v1.ConnectSessionSourceResponse]) error
 }
 
 // NewSessionProviderServiceHandler builds an HTTP handler from the service implementation. It
@@ -1161,34 +1160,18 @@ func NewSessionProviderServiceHandler(svc SessionProviderServiceHandler, opts ..
 		connect.WithSchema(sessionProviderServiceMethods.ByName("PublishSessions")),
 		connect.WithHandlerOptions(opts...),
 	)
-	sessionProviderServiceWatchSessionCommandsHandler := connect.NewServerStreamHandler(
-		SessionProviderServiceWatchSessionCommandsProcedure,
-		svc.WatchSessionCommands,
-		connect.WithSchema(sessionProviderServiceMethods.ByName("WatchSessionCommands")),
-		connect.WithHandlerOptions(opts...),
-	)
-	sessionProviderServiceReplySessionCommandHandler := connect.NewUnaryHandler(
-		SessionProviderServiceReplySessionCommandProcedure,
-		svc.ReplySessionCommand,
-		connect.WithSchema(sessionProviderServiceMethods.ByName("ReplySessionCommand")),
-		connect.WithHandlerOptions(opts...),
-	)
-	sessionProviderServicePrepareSessionHandler := connect.NewUnaryHandler(
-		SessionProviderServicePrepareSessionProcedure,
-		svc.PrepareSession,
-		connect.WithSchema(sessionProviderServiceMethods.ByName("PrepareSession")),
+	sessionProviderServiceConnectSessionSourceHandler := connect.NewServerStreamHandler(
+		SessionProviderServiceConnectSessionSourceProcedure,
+		svc.ConnectSessionSource,
+		connect.WithSchema(sessionProviderServiceMethods.ByName("ConnectSessionSource")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/agx.v1.SessionProviderService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SessionProviderServicePublishSessionsProcedure:
 			sessionProviderServicePublishSessionsHandler.ServeHTTP(w, r)
-		case SessionProviderServiceWatchSessionCommandsProcedure:
-			sessionProviderServiceWatchSessionCommandsHandler.ServeHTTP(w, r)
-		case SessionProviderServiceReplySessionCommandProcedure:
-			sessionProviderServiceReplySessionCommandHandler.ServeHTTP(w, r)
-		case SessionProviderServicePrepareSessionProcedure:
-			sessionProviderServicePrepareSessionHandler.ServeHTTP(w, r)
+		case SessionProviderServiceConnectSessionSourceProcedure:
+			sessionProviderServiceConnectSessionSourceHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1202,16 +1185,8 @@ func (UnimplementedSessionProviderServiceHandler) PublishSessions(context.Contex
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.SessionProviderService.PublishSessions is not implemented"))
 }
 
-func (UnimplementedSessionProviderServiceHandler) WatchSessionCommands(context.Context, *connect.Request[v1.WatchSessionCommandsRequest], *connect.ServerStream[v1.WatchSessionCommandsResponse]) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.SessionProviderService.WatchSessionCommands is not implemented"))
-}
-
-func (UnimplementedSessionProviderServiceHandler) ReplySessionCommand(context.Context, *connect.Request[v1.ReplySessionCommandRequest]) (*connect.Response[v1.ReplySessionCommandResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.SessionProviderService.ReplySessionCommand is not implemented"))
-}
-
-func (UnimplementedSessionProviderServiceHandler) PrepareSession(context.Context, *connect.Request[v1.PrepareSessionRequest]) (*connect.Response[v1.PrepareSessionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.SessionProviderService.PrepareSession is not implemented"))
+func (UnimplementedSessionProviderServiceHandler) ConnectSessionSource(context.Context, *connect.Request[v1.ConnectSessionSourceRequest], *connect.ServerStream[v1.ConnectSessionSourceResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.SessionProviderService.ConnectSessionSource is not implemented"))
 }
 
 // RuntimeServiceClient is a client for the agx.v1.RuntimeService service.

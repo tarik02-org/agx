@@ -30,6 +30,7 @@ func TestMain(m *testing.M) {
 			content, err = json.Marshal(nativeClientInvocation{
 				Arguments: os.Args[1:], Directory: directory,
 				Username: os.Getenv("OPENCODE_USERNAME"), Password: os.Getenv("OPENCODE_PASSWORD"),
+				Defined: os.Getenv("DEFINED"),
 			})
 			if err != nil {
 				os.Exit(1)

@@ -1,7 +1,6 @@
 package sessionprovider
 
 import (
-	"context"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -22,7 +21,7 @@ func TestCatalogScopesAndOfflineHistory(t *testing.T) {
 		ScopeId:  "alpha",
 		Epoch:    "one",
 		Builtin:  "opencode",
-		Harness:  "opencode",
+		Harness:  "opencode-work",
 	}
 	beta := proto.Clone(alpha).(*v1.SessionSource)
 	beta.ScopeId = "beta"
@@ -65,7 +64,8 @@ func TestCatalogScopesAndOfflineHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].ID != "same-native-id" || entries[0].Online {
+	if len(entries) != 1 || entries[0].ID != "same-native-id" || entries[0].Harness != "opencode-work" ||
+		entries[0].Online {
 		t.Fatalf("offline catalog did not retain native history: %+v", entries)
 	}
 }
@@ -83,26 +83,6 @@ func TestSupersededEpochCannotPublishOrReconnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-	defer cancel()
-	interrupted := make(chan error, 1)
-	go func() {
-		_, err := catalog.Prepare(
-			ctx,
-			&v1.PrepareSessionRequest{
-				SourceId:        oldSource.SourceId,
-				ScopeId:         oldSource.ScopeId,
-				NativeSessionId: "waiting",
-			},
-		)
-		interrupted <- err
-	}()
-	var abandoned *v1.SessionCommand
-	select {
-	case abandoned = <-old.Commands:
-	case <-ctx.Done():
-		t.Fatal(ctx.Err())
-	}
 	reconnected, err := catalog.Connect(proto.Clone(oldSource).(*v1.SessionSource))
 	if err != nil {
 		t.Fatalf("same instance could not replace its disconnected stream: %v", err)
@@ -111,28 +91,6 @@ func TestSupersededEpochCannotPublishOrReconnect(t *testing.T) {
 	case <-old.Done:
 	default:
 		t.Fatal("same-epoch reconnect left the old command stream active")
-	}
-	select {
-	case err := <-interrupted:
-		if !errors.Is(err, ErrOffline) {
-			t.Fatalf("command on the superseded stream was not canceled: %v", err)
-		}
-	case <-ctx.Done():
-		t.Fatal(ctx.Err())
-	}
-	if err := catalog.Reply(
-		&v1.ReplySessionCommandRequest{
-			Source:    oldSource,
-			CommandId: abandoned.Id,
-			Result: &v1.ReplySessionCommandRequest_Prepared{
-				Prepared: &v1.PreparedSession{Session: testSession("waiting", "location")},
-			},
-		},
-	); !errors.Is(
-		err,
-		ErrNotFound,
-	) {
-		t.Fatalf("late reply from the replaced stream was accepted: %v", err)
 	}
 	catalog.Disconnect(old)
 	select {
@@ -249,148 +207,6 @@ func TestMovedSessionKeepsNewestSummary(t *testing.T) {
 	}
 	if len(entries) != 2 || entries[0].SourceID == entries[1].SourceID {
 		t.Fatalf("the same native ID collided between native profiles: %+v", entries)
-	}
-}
-
-func TestPreparePreservesProviderFailureKinds(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		code v1.SessionCommandFailure_Code
-		want error
-	}{
-		{"missing", v1.SessionCommandFailure_CODE_NOT_FOUND, ErrNotFound},
-		{"unavailable", v1.SessionCommandFailure_CODE_UNAVAILABLE, ErrOffline},
-		{"rejected", v1.SessionCommandFailure_CODE_REJECTED, ErrRejected},
-		{"unspecified", v1.SessionCommandFailure_CODE_UNSPECIFIED, ErrInvalidReply},
-		{"unknown", v1.SessionCommandFailure_Code(99), ErrInvalidReply},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			catalog := New(filepath.Join(t.TempDir(), "cache.db"))
-			source := &v1.SessionSource{
-				SourceId: "profile",
-				ScopeId:  "location",
-				Epoch:    "one",
-				Builtin:  "opencode",
-				Harness:  "opencode",
-			}
-			connection, err := catalog.Connect(source)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer catalog.Disconnect(connection)
-			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-			defer cancel()
-			result := make(chan error, 1)
-			go func() {
-				response, err := catalog.Prepare(
-					ctx,
-					&v1.PrepareSessionRequest{
-						SourceId:        source.SourceId,
-						ScopeId:         source.ScopeId,
-						NativeSessionId: "session",
-					},
-				)
-				if response != nil {
-					result <- errors.New("provider failure produced a prepared session")
-					return
-				}
-				result <- err
-			}()
-			var command *v1.SessionCommand
-			select {
-			case command = <-connection.Commands:
-			case <-ctx.Done():
-				t.Fatal(ctx.Err())
-			}
-			if err := catalog.Reply(
-				&v1.ReplySessionCommandRequest{
-					Source:    source,
-					CommandId: command.Id,
-					Result: &v1.ReplySessionCommandRequest_Failure{
-						Failure: &v1.SessionCommandFailure{Code: tc.code, Message: "private native failure detail"},
-					},
-				},
-			); err != nil {
-				t.Fatal(err)
-			}
-			select {
-			case err := <-result:
-				if !errors.Is(err, tc.want) {
-					t.Fatalf("failure %s became %v, want %v", tc.name, err, tc.want)
-				}
-			case <-ctx.Done():
-				t.Fatal(ctx.Err())
-			}
-		})
-	}
-}
-
-func TestPrepareRequiresMatchingNativeValidation(t *testing.T) {
-	catalog := New(filepath.Join(t.TempDir(), "cache.db"))
-	source := &v1.SessionSource{
-		SourceId: "profile",
-		ScopeId:  "location",
-		Epoch:    "one",
-		Builtin:  "opencode",
-		Harness:  "opencode",
-	}
-	connection, err := catalog.Connect(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer catalog.Disconnect(connection)
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-	defer cancel()
-	type prepared struct {
-		response *v1.PrepareSessionResponse
-		err      error
-	}
-	result := make(chan prepared, 1)
-	go func() {
-		response, err := catalog.Prepare(
-			ctx,
-			&v1.PrepareSessionRequest{SourceId: "profile", ScopeId: "location", NativeSessionId: "wanted"},
-		)
-		result <- prepared{response, err}
-	}()
-	var command *v1.SessionCommand
-	select {
-	case command = <-connection.Commands:
-	case <-ctx.Done():
-		t.Fatal(ctx.Err())
-	}
-	wrong := &v1.ReplySessionCommandRequest{
-		Source:    source,
-		CommandId: command.Id,
-		Result: &v1.ReplySessionCommandRequest_Prepared{
-			Prepared: &v1.PreparedSession{
-				Session:        testSession("different", "location"),
-				LaunchDataJson: "private-routing",
-			},
-		},
-	}
-	if err := catalog.Reply(wrong); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("mismatched native validation accepted: %v", err)
-	}
-	wrong.GetPrepared().Session.Id = "wanted"
-	if err := catalog.Reply(wrong); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case reply := <-result:
-		if reply.err != nil || reply.response.Session.Id != "wanted" ||
-			reply.response.LaunchDataJson != "private-routing" {
-			t.Fatalf("unexpected preparation: %+v", reply)
-		}
-	case <-ctx.Done():
-		t.Fatal(ctx.Err())
-	}
-	entries, err := catalog.List(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 0 {
-		t.Fatalf("private preparation was persisted: %+v", entries)
 	}
 }
 

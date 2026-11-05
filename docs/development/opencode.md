@@ -63,17 +63,16 @@ npm packages live under `packages/opencode/licenses`.
 
 ## Options
 
-| Option            | Default                     | Meaning                                                                                                                      |
-| ----------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `executable`      | `agx`                       | AGX client executable on the OpenCode server.                                                                                |
-| `config`          | AGX's normal root           | Explicit AGX root configuration file.                                                                                        |
-| `discovery`       | CLI discovery               | Explicit private discovery file; disables automatic daemon startup.                                                          |
-| `harness`         | `opencode`                  | AGX consumer or a definition based on it.                                                                                    |
-| `scopeDirectory`  | OpenCode location directory | Directory in AGX's scope namespace. Override when mapping a workspace.                                                       |
-| `mcpDirectory`    | OpenCode location directory | Explicit MCP execution directory on the daemon host. Set `""` when unnecessary, for example for HTTP-only MCP.               |
-| `codemode`        | OpenCode's default          | Explicitly enable/disable Code Mode for AGX's native MCP servers.                                                            |
-| `sessionSourceId` | Persisted native profile ID | Stable source identity; set distinct values for independent servers.                                                         |
-| `sessionServer`   | Registered native service   | Server URL reachable by the client; required for custom/manual servers. Credentials come from the native server environment. |
+| Option            | Default                     | Meaning                                                                                                        |
+| ----------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `executable`      | `agx`                       | AGX client executable on the OpenCode server.                                                                  |
+| `config`          | AGX's normal root           | Explicit AGX root configuration file.                                                                          |
+| `discovery`       | CLI discovery               | Explicit private discovery file; disables automatic daemon startup.                                            |
+| `harness`         | `opencode`                  | Existing AGX harness selecting resources and the launch configuration for published sessions.                  |
+| `scopeDirectory`  | OpenCode location directory | Directory in AGX's scope namespace. Override when mapping a workspace.                                         |
+| `mcpDirectory`    | OpenCode location directory | Explicit MCP execution directory on the daemon host. Set `""` when unnecessary, for example for HTTP-only MCP. |
+| `codemode`        | OpenCode's default          | Explicitly enable/disable Code Mode for AGX's native MCP servers.                                              |
+| `sessionSourceId` | Persisted native profile ID | Stable source identity; set distinct values for independent servers.                                           |
 
 ## Runtime behavior
 
@@ -115,17 +114,25 @@ identity belongs to the native profile; scope identity belongs to the location.
 The generic daemon catalog persists summaries and marks disconnected scopes
 offline. Listing does not activate OpenCode or create conversations.
 
-Resume sends a command to the live provider, which validates the native session
-and returns private connection data. Server credentials are transient: they are
-absent from cached summaries and public listings and reach the client through
-its environment. Custom servers require `sessionServer`; normal shared services
-are discovered inside the plugin and checked against its process identity.
+`ConnectSessionSource` registers the publisher and stays open for presence and
+instance fencing. It carries no commands. Once the daemon confirms registration,
+the plugin publishes a full snapshot, then refreshes on debounced native events
+and every ten seconds. Closing the connection marks the source offline without
+discarding its summaries. The daemon verifies that the source's harness exists
+and resolves to the declared built-in consumer.
 
-`agx opencode` starts the native client without a process resource lease. Resuming
-an offline local location first runs a native read-only listing to activate its
-provider; this requires the matching native profile and an existing local directory.
-Only activated locations are discoverable. Custom AGX launcher definitions are
-rejected because a shared service cannot honor their per-launch resource settings.
+Each cached session retains the publisher's harness name. New and resumed clients
+use that harness's executable, mode-specific arguments and resolved environment.
+`ResolveClientCommand` resolves configuration values and stored credentials
+through the daemon without creating a process/resource lease. Credentials belong
+to harness configuration; the plugin does not discover or supply native server
+routes, read native service registration files, or validate sessions for launching.
+
+Resume directly starts the native client with `--session <id>` in the session's
+existing local directory. OpenCode handles its session and service lifecycle.
+An offline publisher does not prevent resume. Only activated native locations
+publish discoverable history. Configure profiles, `--server` and authentication
+through the harness and set the plugin's `harness` option to the same name.
 
 ## Tooling
 

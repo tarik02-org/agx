@@ -14,6 +14,8 @@ service ConfigurationService {
   rpc GetLocalConfiguration(GetLocalConfigurationRequest) returns (GetLocalConfigurationResponse);
   // Resolve native passthrough arguments and environment without creating a managed launch.
   rpc ResolvePassthrough(ResolvePassthroughRequest) returns (ResolvePassthroughResponse);
+  // Resolve client harness arguments and environment; resource delivery belongs to its plugin.
+  rpc ResolveClientCommand(ResolveClientCommandRequest) returns (ResolveClientCommandResponse);
   rpc Validate(ValidateRequest) returns (ValidateResponse);
   rpc Resolve(ResolveRequest) returns (ResolveResponse);
   // The configuration as loaded, for browsing it: harnesses, scope directories, and files.
@@ -70,13 +72,11 @@ service ResourceService {
   rpc PrepareResources(PrepareResourcesRequest) returns (PrepareResourcesResponse);
 }
 
-// Integrations publish native session summaries and handle session operations themselves.
-// The daemon indexes sessions and brokers commands without knowing the native server protocol.
+// Integrations publish session summaries bound to configured harnesses.
 service SessionProviderService {
   rpc PublishSessions(PublishSessionsRequest) returns (PublishSessionsResponse);
-  rpc WatchSessionCommands(WatchSessionCommandsRequest) returns (stream WatchSessionCommandsResponse);
-  rpc ReplySessionCommand(ReplySessionCommandRequest) returns (ReplySessionCommandResponse);
-  rpc PrepareSession(PrepareSessionRequest) returns (PrepareSessionResponse);
+  // Registers a publisher while this connection remains open; its first frame confirms readiness.
+  rpc ConnectSessionSource(ConnectSessionSourceRequest) returns (stream ConnectSessionSourceResponse);
 }
 
 service RuntimeService {
@@ -560,54 +560,10 @@ message PublishSessionsRequest {
   bool replace = 4;
 }
 message PublishSessionsResponse {}
-message WatchSessionCommandsRequest {
+message ConnectSessionSourceRequest {
   SessionSource source = 1;
 }
-message SessionProviderReady {}
-message SessionCommand {
-  string id = 1;
-  string native_session_id = 2;
-}
-message WatchSessionCommandsResponse {
-  oneof event {
-    SessionProviderReady ready = 1;
-    SessionCommand command = 2;
-  }
-}
-message PreparedSession {
-  ProviderSession session = 1;
-  // Sensitive: private, adapter-owned launch routing. Never part of cached/public listings.
-  string launch_data_json = 2;
-}
-message SessionCommandFailure {
-  enum Code {
-    CODE_UNSPECIFIED = 0;
-    CODE_NOT_FOUND = 1;
-    CODE_UNAVAILABLE = 2;
-    CODE_REJECTED = 3;
-  }
-  Code code = 1;
-  string message = 2;
-}
-message ReplySessionCommandRequest {
-  SessionSource source = 1;
-  string command_id = 2;
-  oneof result {
-    PreparedSession prepared = 3;
-    SessionCommandFailure failure = 4;
-  }
-}
-message ReplySessionCommandResponse {}
-message PrepareSessionRequest {
-  string source_id = 1;
-  string scope_id = 2;
-  string native_session_id = 3;
-}
-message PrepareSessionResponse {
-  ProviderSession session = 1;
-  // Sensitive: transient routing passed only to the local native client launcher.
-  string launch_data_json = 2;
-}
+message ConnectSessionSourceResponse {}
 
 message ListSessionsResponse {
   repeated StoredSession sessions = 1;
@@ -1011,6 +967,17 @@ message ResolvePassthroughRequest {
   map<string, string> environment_inputs = 3;
 }
 message ResolvePassthroughResponse {
+  repeated string arguments = 1;
+  // Sensitive: resolved configuration environment, including stored credentials.
+  map<string, string> environment = 2;
+}
+message ResolveClientCommandRequest {
+  string harness = 1;
+  repeated string native_arguments = 2;
+  // Sensitive: only variables referenced by this harness are accepted.
+  map<string, string> environment_inputs = 3;
+}
+message ResolveClientCommandResponse {
   repeated string arguments = 1;
   // Sensitive: resolved configuration environment, including stored credentials.
   map<string, string> environment = 2;

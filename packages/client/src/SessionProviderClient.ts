@@ -11,9 +11,8 @@ import * as Stream from "effect/Stream";
 import {
   SessionProviderService,
   type PublishSessionsRequestSchema,
-  type ReplySessionCommandRequestSchema,
-  type WatchSessionCommandsRequestSchema,
-  type WatchSessionCommandsResponse,
+  type ConnectSessionSourceRequestSchema,
+  type ConnectSessionSourceResponse,
   type SessionSourceSchema,
   type ProviderSessionSchema,
 } from "../gen/agx/v1/agx_pb.ts";
@@ -21,8 +20,7 @@ import { DaemonError } from "./error.ts";
 import type { Discovery } from "./schema.ts";
 
 export type PublishInput = MessageInitShape<typeof PublishSessionsRequestSchema>;
-export type ReplyInput = MessageInitShape<typeof ReplySessionCommandRequestSchema>;
-export type WatchInput = MessageInitShape<typeof WatchSessionCommandsRequestSchema>;
+export type ConnectInput = MessageInitShape<typeof ConnectSessionSourceRequestSchema>;
 export type SessionSourceInput = MessageInitShape<typeof SessionSourceSchema>;
 export type ProviderSessionInput = MessageInitShape<typeof ProviderSessionSchema>;
 
@@ -30,11 +28,10 @@ export class SessionProviderClient extends Context.Service<
   SessionProviderClient,
   {
     readonly publish: (target: Discovery, input: PublishInput) => Effect.Effect<void, DaemonError>;
-    readonly reply: (target: Discovery, input: ReplyInput) => Effect.Effect<void, DaemonError>;
-    readonly watch: (
+    readonly connect: (
       target: Discovery,
-      input: WatchInput,
-    ) => Stream.Stream<WatchSessionCommandsResponse, DaemonError>;
+      input: ConnectInput,
+    ) => Stream.Stream<ConnectSessionSourceResponse, DaemonError>;
   }
 >()("agx-client/SessionProviderClient") {}
 
@@ -71,14 +68,7 @@ export const makeSessionProviderClient = Effect.fn("makeSessionProviderClient")(
           ),
         Effect.asVoid,
       ),
-      reply: Effect.fn("SessionProviderClient.reply")(
-        (target: Discovery, input: ReplyInput) =>
-          call(target, "reply to session command", (transport, options) =>
-            createClient(SessionProviderService, transport).replySessionCommand(input, options),
-          ),
-        Effect.asVoid,
-      ),
-      watch: (target, input) =>
+      connect: (target, input) =>
         Stream.unwrap(
           Effect.gen(function* () {
             const controller = yield* Effect.acquireRelease(
@@ -90,7 +80,7 @@ export const makeSessionProviderClient = Effect.fn("makeSessionProviderClient")(
               createConnectTransport({ baseUrl: target.url.origin }),
             );
             return Stream.fromAsyncIterable(
-              client.watchSessionCommands(input, {
+              client.connectSessionSource(input, {
                 signal: controller.signal,
                 headers: { Authorization: `Bearer ${target.token}` },
               }),
@@ -98,7 +88,7 @@ export const makeSessionProviderClient = Effect.fn("makeSessionProviderClient")(
             ).pipe(
               Stream.catchTag("UnknownError", (error) =>
                 Schema.is(Schema.instanceOf(ConnectError))(error.cause)
-                  ? Stream.fail(failure("watch session commands", error.cause))
+                  ? Stream.fail(failure("connect session source", error.cause))
                   : Stream.die(error.cause),
               ),
             );

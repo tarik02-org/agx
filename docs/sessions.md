@@ -73,8 +73,9 @@ from locations opened in OpenCode. Session summaries remain available when their
 provider disconnects and are marked `(offline)`. Listing history does not start
 OpenCode or read its database.
 
-Resuming asks the plugin to validate the session and provide its server route.
-For the normal local service, AGX can activate an offline location through the
-native CLI using the same OpenCode profile. Custom or remote servers must be
-running and configured with the plugin's `sessionServer` option. The client can
-use a server directory without requiring that directory to exist locally.
+The plugin's `harness` option binds its source to an existing AGX harness.
+Resuming starts that harness in the selected session's directory with
+`--session <id>`, even when the source is offline. OpenCode handles session
+validation and its native service lifecycle. The local directory must exist.
+Configure the harness's arguments and environment for the intended OpenCode
+profile, server and authentication; the plugin does not supply native credentials.

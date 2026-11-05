@@ -47,19 +47,31 @@ agx opencode
 
 Open `agx` to pick a session, or list sessions with `agx sessions --all`.
 The plugin publishes session summaries from locations opened in OpenCode. AGX
-keeps these summaries when a location goes offline; resuming asks the plugin to
-validate the session and provide its server connection.
+keeps these summaries when a location goes offline. Resume runs the session's
+harness in its directory with `--session <id>`, including the harness's configured
+arguments and environment. The plugin does not need to be connected for resume.
 
-The normal local OpenCode service is detected automatically. For a manually
-started or remote server, set the plugin's `sessionServer` option to its URL
-reachable from the client. Authentication comes from the server's
-`OPENCODE_USERNAME` and `OPENCODE_PASSWORD` environment variables. An offline
-location can be activated automatically when resuming with the same local
-OpenCode profile; otherwise start its server first.
+To use a different OpenCode profile or server, define an AGX harness:
+
+```yaml
+harnesses:
+  opencode-work:
+    base: opencode
+    args: [--server, https://opencode.example.com]
+    environment:
+      OPENCODE_PASSWORD: !env OPENCODE_WORK_PASSWORD
+```
+
+Set `options.harness` to `opencode-work` in that OpenCode server's AGX plugin
+configuration. Its published sessions will open with this harness. The default
+is `opencode`, which uses the client's normal OpenCode profile. Keep native
+profile environment settings in the harness consistent with the server loading
+the plugin. AGX requires the selected session directory to exist locally.
 
 AGX starts the native client; the plugin supplies resources for its location.
-Custom AGX launcher profiles with per-launch resources, arguments or environment
-settings are unsupported for this integration.
+The plugin's harness also selects its AGX resources. Client arguments and
+environment apply at launch; changing them does not reconfigure an existing
+OpenCode service.
 
 To see what AGX selects for the current directory:
 

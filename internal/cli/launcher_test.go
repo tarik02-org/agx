@@ -8,18 +8,21 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
-	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/sessionprovider"
 	"github.com/tarik02-org/agx/internal/sessions"
+	"github.com/tarik02-org/agx/internal/storage"
 )
 
 type nativeClientInvocation struct {
@@ -27,6 +30,7 @@ type nativeClientInvocation struct {
 	Directory string
 	Username  string
 	Password  string
+	Defined   string
 }
 
 func TestLauncherHarnessesSkipHidden(t *testing.T) {
@@ -57,8 +61,9 @@ func TestLauncherHarnessesSkipHidden(t *testing.T) {
 	}
 }
 
-func TestNativeClientLaunchAndValidatedResume(t *testing.T) {
+func TestNativeClientUsesNamedHarnessForNewAndOfflineSessions(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
+	t.Setenv("AGX_NO_AUTOSTART", "0")
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -79,10 +84,27 @@ func TestNativeClientLaunchAndValidatedResume(t *testing.T) {
 	if copyErr != nil || closeErr != nil {
 		t.Fatalf("copy native fixture: %v, %v", copyErr, closeErr)
 	}
-	isolate(t, fmt.Sprintf("harnesses:\n  opencode:\n    executable: '%s'\n", filepath.ToSlash(native)))
+	fragment := isolate(t, fmt.Sprintf(`secrets:
+  token: {kind: keychain}
+harnesses:
+  opencode:
+    executable: '%s'
+  opencode-work:
+    base: opencode
+    args:
+      - {values: [--server, http://configured.example]}
+      - {values: [--prompt, configured-new-session], modes: [interactive]}
+      - {values: [--auto], modes: [resume]}
+      - {values: [--log-level, debug], modes: [passthrough]}
+    environment:
+      OPENCODE_USERNAME: !env NATIVE_USER
+      OPENCODE_PASSWORD: !secret token
+      DEFINED: literal-environment
+`, filepath.ToSlash(native)))
 	t.Setenv("AGX_TEST_HARNESS_DETAILS", "1")
-	t.Setenv("OPENCODE_USERNAME", "caller-user")
-	t.Setenv("OPENCODE_PASSWORD", "caller-password")
+	t.Setenv("OPENCODE_USERNAME", "inherited-user")
+	t.Setenv("OPENCODE_PASSWORD", "inherited-password")
+	t.Setenv("NATIVE_USER", "caller-user")
 	t.Chdir(t.TempDir())
 	directory, err := os.Getwd()
 	if err != nil {
@@ -96,104 +118,103 @@ func TestNativeClientLaunchAndValidatedResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := builtin.Registry()
-	a := &app{paths: paths, registry: registry, builtins: registry.Builtins(nil)}
-	harnesses := a.fragments()
+	harnesses := loadHarnesses(paths, registry.Builtins(nil), config.EmptyLocal())
 	if harnesses.err != nil {
 		t.Fatal(harnesses.err)
 	}
+	t.Run("builtin without daemon", func(t *testing.T) {
+		t.Setenv("AGX_NO_AUTOSTART", "1")
+		output := filepath.Join(t.TempDir(), "native.json")
+		t.Setenv("AGX_TEST_HARNESS_OUTPUT", output)
+		if err := runHarness(t.Context(), paths, registry, harnesses, "opencode", nil, ""); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(output); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(paths.Runtime, "daemon.json")); !os.IsNotExist(err) {
+			t.Fatalf("plain native client needed a daemon: %v", err)
+		}
+	})
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	client, err := daemonClient(ctx, paths, autostart(harnesses.config))
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider := &v1.SessionSource{
-		SourceId: "native-profile",
-		ScopeId:  "native-location",
-		Epoch:    "one",
-		Builtin:  "opencode",
-		Harness:  "opencode",
-	}
-	stream, err := client.providers.WatchSessionCommands(
+	if _, err := client.secrets.SetSecret(
 		ctx,
-		connect.NewRequest(&v1.WatchSessionCommandsRequest{Source: provider}),
-	)
+		connect.NewRequest(&v1.SetSecretRequest{SecretId: "token", Value: []byte("configured-password")}),
+	); err != nil {
+		t.Fatal(err)
+	}
+	sessionDirectory, err := platform.Canonical(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = stream.Close() }()
-	if !stream.Receive() || stream.Msg().GetReady() == nil {
-		t.Fatalf("provider registration did not become ready: %v", stream.Err())
+	catalog := sessionprovider.New(storage.Cache(paths.Cache))
+	publisher := &v1.SessionSource{
+		SourceId: "profile",
+		ScopeId:  "location",
+		Epoch:    "one",
+		Builtin:  "opencode",
+		Harness:  "opencode-work",
 	}
-	entry := sessions.Entry{
-		Session: adapters.Session{ID: "native-session", Directory: "/native/server/location"},
-		Builtin: "opencode", Harness: "opencode", SourceID: provider.SourceId, ScopeID: provider.ScopeId, Online: true,
+	connection, err := catalog.Connect(publisher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.Publish(
+		ctx,
+		&v1.PublishSessionsRequest{
+			Source: publisher,
+			Sessions: []*v1.ProviderSession{
+				{
+					Id:        "native-session",
+					Directory: sessionDirectory,
+					StartedAt: timestamppb.Now(),
+					UpdatedAt: timestamppb.Now(),
+				},
+			},
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	catalog.Disconnect(connection)
+	listing, err := listSessions(ctx, paths, registry, harnesses, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := slices.IndexFunc(listing.Entries, func(entry sessions.Entry) bool { return entry.ID == "native-session" })
+	if index < 0 {
+		t.Fatal("offline cached session was not listed")
+	}
+	entry := listing.Entries[index]
+	if entry.Online || entry.Harness != "opencode-work" {
+		t.Fatalf("cached session lost offline state or named harness: %+v", entry)
 	}
 	for _, tc := range []struct {
-		name    string
-		failure *v1.SessionCommandFailure
-		want    connect.Code
+		name          string
+		args          []string
+		want          []string
+		wantDirectory string
 	}{
-		{"validated", nil, connect.CodeUnknown},
-		{"missing", &v1.SessionCommandFailure{Code: v1.SessionCommandFailure_CODE_NOT_FOUND}, connect.CodeNotFound},
-		{"rejected", &v1.SessionCommandFailure{Code: v1.SessionCommandFailure_CODE_REJECTED}, connect.CodeFailedPrecondition},
+		{"new", nil, []string{"--server", "http://configured.example", "--prompt", "configured-new-session"}, directory},
+		{"offline resume", nil, []string{"--server", "http://configured.example", "--auto", "--session", entry.ID}, sessionDirectory},
+		{"passthrough", []string{"--help"}, []string{"--log-level", "debug", "--help"}, directory},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(directory)
 			output := filepath.Join(t.TempDir(), "native.json")
 			t.Setenv("AGX_TEST_HARNESS_OUTPUT", output)
-			finished := make(chan error, 1)
-			go func() {
-				finished <- resumeSession(t.Context(), paths, registry, harnesses, entry, "opencode")
-			}()
-			if !stream.Receive() || stream.Msg().GetCommand() == nil {
-				t.Fatalf("resume did not request native validation: %v", stream.Err())
-			}
-			command := stream.Msg().GetCommand()
-			if command.NativeSessionId != entry.ID {
-				t.Fatalf("validated native ID = %q, want %q", command.NativeSessionId, entry.ID)
-			}
-			select {
-			case err := <-finished:
-				t.Fatalf("resume finished before provider validation: %v", err)
-			case <-time.After(30 * time.Millisecond):
-			}
-			if _, err := os.Stat(output); !os.IsNotExist(err) {
-				t.Fatalf("native client spawned before validation: %v", err)
-			}
-			reply := &v1.ReplySessionCommandRequest{Source: provider, CommandId: command.Id}
-			if tc.failure == nil {
-				reply.Result = &v1.ReplySessionCommandRequest_Prepared{Prepared: &v1.PreparedSession{
-					Session: &v1.ProviderSession{
-						Id:        entry.ID,
-						Directory: entry.Directory,
-						StartedAt: timestamppb.Now(),
-						UpdatedAt: timestamppb.Now(),
-					},
-					LaunchDataJson: `{"sessionId":"native-session","directory":"/native/server/location","server":"http://127.0.0.1:1234","username":"native-user","password":"private-native-password"}`,
-				}}
+			var err error
+			if tc.name == "offline resume" {
+				err = resumeSession(t.Context(), paths, registry, harnesses, entry, entry.Harness)
 			} else {
-				reply.Result = &v1.ReplySessionCommandRequest_Failure{Failure: tc.failure}
+				err = runHarness(t.Context(), paths, registry, harnesses, "opencode-work", tc.args, "")
 			}
-			if _, err := client.providers.ReplySessionCommand(t.Context(), connect.NewRequest(reply)); err != nil {
+			if err != nil {
 				t.Fatal(err)
-			}
-			select {
-			case err := <-finished:
-				if tc.failure == nil {
-					if err != nil {
-						t.Fatal(err)
-					}
-				} else if connect.CodeOf(err) != tc.want {
-					t.Fatalf("native failure returned %v, want %v", err, tc.want)
-				}
-			case <-ctx.Done():
-				t.Fatal(ctx.Err())
-			}
-			if tc.failure != nil {
-				if _, err := os.Stat(output); !os.IsNotExist(err) {
-					t.Fatalf("failed validation spawned a native process: %v", err)
-				}
-				return
 			}
 			content, err := os.ReadFile(output)
 			if err != nil {
@@ -203,48 +224,62 @@ func TestNativeClientLaunchAndValidatedResume(t *testing.T) {
 			if err := json.Unmarshal(content, &invocation); err != nil {
 				t.Fatal(err)
 			}
-			if want := []string{
-				"--session",
-				entry.ID,
-				"--server",
-				"http://127.0.0.1:1234",
-				entry.Directory,
-			}; !slices.Equal(
-				invocation.Arguments,
-				want,
-			) {
-				t.Fatalf("native resume arguments = %v, want %v", invocation.Arguments, want)
+			if !slices.Equal(invocation.Arguments, tc.want) || invocation.Directory != tc.wantDirectory {
+				t.Fatalf("native invocation = %+v, want arguments %v in %s", invocation, tc.want, tc.wantDirectory)
 			}
-			if invocation.Username != "native-user" || invocation.Password != "private-native-password" ||
-				invocation.Directory != directory {
-				t.Fatal("native resume did not use the provider's credentials and the client's working directory")
+			if invocation.Username != "caller-user" || invocation.Password != "configured-password" ||
+				invocation.Defined != "literal-environment" {
+				t.Fatal("named harness did not apply caller input, stored secret, and literal environment")
 			}
 		})
 	}
-	t.Run("new", func(t *testing.T) {
-		output := filepath.Join(t.TempDir(), "native.json")
-		t.Setenv("AGX_TEST_HARNESS_OUTPUT", output)
-		args := []string{"--prompt", "new native session"}
-		if err := runHarness(t.Context(), paths, registry, harnesses, "opencode", args, ""); err != nil {
-			t.Fatal(err)
-		}
-		content, err := os.ReadFile(output)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var invocation nativeClientInvocation
-		if err := json.Unmarshal(content, &invocation); err != nil {
-			t.Fatal(err)
-		}
-		if !slices.Equal(invocation.Arguments, args) {
-			t.Fatalf("native new-session arguments = %v, want %v", invocation.Arguments, args)
-		}
-	})
+	for _, tc := range []struct {
+		name       string
+		definition string
+	}{
+		{"removed harness", ""},
+		{"rebased harness", fmt.Sprintf("  opencode-work: {base: pi, executable: '%s'}\n", filepath.ToSlash(native))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configuration := fmt.Sprintf(
+				"harnesses:\n  opencode: {executable: '%s'}\n%s",
+				filepath.ToSlash(native),
+				tc.definition,
+			)
+			if err := os.WriteFile(fragment, []byte(configuration), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			changed := loadHarnesses(paths, registry.Builtins(nil), config.EmptyLocal())
+			if changed.err != nil {
+				t.Fatal(changed.err)
+			}
+			listing, err := listSessions(t.Context(), paths, registry, changed, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			index := slices.IndexFunc(
+				listing.Entries,
+				func(candidate sessions.Entry) bool { return candidate.ID == entry.ID },
+			)
+			if index < 0 || listing.Entries[index].Harness != entry.Harness {
+				t.Fatalf("published harness silently fell back in the listing: %+v", listing.Entries)
+			}
+			output := filepath.Join(t.TempDir(), "native.json")
+			t.Setenv("AGX_TEST_HARNESS_OUTPUT", output)
+			err = resumeSession(t.Context(), paths, registry, changed, listing.Entries[index], entry.Harness)
+			if err == nil || !strings.Contains(err.Error(), entry.Harness) {
+				t.Fatalf("invalid published harness did not fail clearly: %v", err)
+			}
+			if _, err := os.Stat(output); !os.IsNotExist(err) {
+				t.Fatalf("invalid published harness spawned a native process: %v", err)
+			}
+		})
+	}
 	runtime, err := client.runtime.GetRuntime(ctx, connect.NewRequest(&v1.GetRuntimeRequest{}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if runtime.Msg.Runtime == nil || len(runtime.Msg.Runtime.Launches) != 0 {
-		t.Fatalf("thin native launch created a daemon resource/process lease: %+v", runtime.Msg.Runtime)
+		t.Fatalf("native client created a resource/process lease: %+v", runtime.Msg.Runtime)
 	}
 }

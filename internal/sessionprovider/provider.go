@@ -1,5 +1,5 @@
-// Package sessionprovider indexes sessions reported by native integrations and routes commands
-// back to the connected integration. It does not read native stores or call native services.
+// Package sessionprovider indexes summaries reported by native integrations.
+// It does not read native stores or call native services.
 package sessionprovider
 
 import (
@@ -10,33 +10,22 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
-	"github.com/tarik02-org/agx/internal/securefs"
 	"github.com/tarik02-org/agx/internal/sessions"
 	"github.com/tarik02-org/agx/internal/storage"
 	"github.com/tarik02-org/agx/internal/storage/cachedb"
 )
 
 var (
-	ErrOffline      = errors.New("session provider is offline")
-	ErrStale        = errors.New("session provider instance has been replaced")
-	ErrNotFound     = errors.New("native session is unavailable")
-	ErrRejected     = errors.New("session provider rejected the request; check its native integration configuration")
-	ErrInvalidReply = errors.New("session provider returned an invalid command reply")
+	ErrOffline = errors.New("session provider is offline")
+	ErrStale   = errors.New("session provider instance has been replaced")
 )
 
 type sourceKey struct{ source, scope string }
 
-type pending struct {
-	id     string
-	result chan *v1.ReplySessionCommandRequest
-}
-
-// Connection belongs to one plugin instance. Replacing it cancels its stream and pending work.
+// Connection tracks the lifetime of one publisher instance.
 type Connection struct {
-	Source   *v1.SessionSource
-	Commands chan *v1.SessionCommand
-	Done     chan struct{}
-	pending  map[string]pending
+	Source *v1.SessionSource
+	Done   chan struct{}
 }
 
 type Catalog struct {
@@ -81,12 +70,7 @@ func (c *Catalog) Connect(source *v1.SessionSource) (*Connection, error) {
 		}
 		close(old.Done)
 	}
-	connection := &Connection{
-		Source:   source,
-		Commands: make(chan *v1.SessionCommand, 16),
-		Done:     make(chan struct{}),
-		pending:  map[string]pending{},
-	}
+	connection := &Connection{Source: source, Done: make(chan struct{})}
 	c.connections[k] = connection
 	return connection, nil
 }
@@ -214,72 +198,4 @@ func (c *Catalog) List(ctx context.Context) ([]sessions.Entry, error) {
 		})
 	}
 	return entries, nil
-}
-
-// Prepare waits for native validation. Private routing lives only in this reply.
-func (c *Catalog) Prepare(ctx context.Context, request *v1.PrepareSessionRequest) (*v1.PrepareSessionResponse, error) {
-	c.mu.Lock()
-	connection := c.connections[sourceKey{request.SourceId, request.ScopeId}]
-	if connection == nil {
-		c.mu.Unlock()
-		return nil, ErrOffline
-	}
-	id := securefs.Token()
-	result := make(chan *v1.ReplySessionCommandRequest, 1)
-	connection.pending[id] = pending{id: request.NativeSessionId, result: result}
-	c.mu.Unlock()
-	defer func() { c.mu.Lock(); delete(connection.pending, id); c.mu.Unlock() }()
-	select {
-	case connection.Commands <- &v1.SessionCommand{Id: id, NativeSessionId: request.NativeSessionId}:
-	case <-connection.Done:
-		return nil, ErrOffline
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-	select {
-	case reply := <-result:
-		if failure := reply.GetFailure(); failure != nil {
-			switch failure.Code {
-			case v1.SessionCommandFailure_CODE_NOT_FOUND:
-				return nil, ErrNotFound
-			case v1.SessionCommandFailure_CODE_UNAVAILABLE:
-				return nil, ErrOffline
-			case v1.SessionCommandFailure_CODE_REJECTED:
-				return nil, ErrRejected
-			case v1.SessionCommandFailure_CODE_UNSPECIFIED:
-				return nil, ErrInvalidReply
-			default:
-				return nil, ErrInvalidReply
-			}
-		}
-		prepared := reply.GetPrepared()
-		return &v1.PrepareSessionResponse{Session: prepared.Session, LaunchDataJson: prepared.LaunchDataJson}, nil
-	case <-connection.Done:
-		return nil, ErrOffline
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
-func (c *Catalog) Reply(request *v1.ReplySessionCommandRequest) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	connection, err := c.current(request.Source)
-	if err != nil {
-		return err
-	}
-	pending, ok := connection.pending[request.CommandId]
-	if !ok {
-		return ErrNotFound
-	}
-	if prepared := request.GetPrepared(); prepared != nil {
-		if prepared.Session == nil || prepared.Session.Id != pending.id {
-			return ErrNotFound
-		}
-	} else if request.GetFailure() == nil {
-		return ErrNotFound
-	}
-	delete(connection.pending, request.CommandId)
-	pending.result <- request
-	return nil
 }

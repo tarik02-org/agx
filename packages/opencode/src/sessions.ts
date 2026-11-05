@@ -9,7 +9,6 @@ import {
 } from "@opencode/protocol/errors";
 import { Session } from "@opencode/schema/session";
 import { AgxConnection } from "agx-client/AgxConnection";
-import { SessionCommandFailure_Code, type SessionCommand } from "agx-client/protocol";
 import type { Discovery } from "agx-client/schema";
 import {
   SessionProviderClient,
@@ -30,7 +29,6 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import { Configuration } from "./Configuration.ts";
-import { NativeRoute, NativeSessionRouting } from "./NativeSessionRouting.ts";
 
 class NativeSessionError extends Schema.TaggedError<NativeSessionError>()("NativeSessionError", {
   operation: Schema.String,
@@ -46,23 +44,6 @@ const sourceIdentityGate = Semaphore.makeUnsafe(1);
 
 const SessionOptions = Schema.Struct({
   sessionSourceId: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(256))),
-  sessionServer: Schema.optionalKey(
-    Schema.URLFromString.check(
-      Schema.makeFilter(
-        (url) =>
-          (url.protocol === "http:" || url.protocol === "https:") &&
-          url.username === "" &&
-          url.password === "" &&
-          url.search === "" &&
-          url.hash === "",
-      ),
-    ),
-  ),
-});
-const LaunchData = Schema.Struct({
-  sessionId: Schema.NonEmptyString,
-  directory: Schema.NonEmptyString,
-  ...NativeRoute.fields,
 });
 
 const NativeFailure = Schema.Union([
@@ -86,18 +67,18 @@ const failNative = Effect.fn("sessions.failNative")(function* (
   }
   return yield* Match.value(parsed.value).pipe(
     Match.tagsExhaustive({
-      "Session.NotFoundError": (cause) =>
-        new NativeSessionError({ operation, reason: "not-found", cause }),
-      SessionNotFoundError: (cause) =>
-        new NativeSessionError({ operation, reason: "not-found", cause }),
-      LocationNotFoundError: (cause) =>
-        new NativeSessionError({ operation, reason: "not-found", cause }),
-      ServiceUnavailableError: (cause) =>
-        new NativeSessionError({ operation, reason: "unavailable", cause }),
-      UnauthorizedError: (cause) =>
-        new NativeSessionError({ operation, reason: "rejected", cause }),
-      InvalidRequestError: (cause) =>
-        new NativeSessionError({ operation, reason: "rejected", cause }),
+      "Session.NotFoundError": () =>
+        new NativeSessionError({ operation, reason: "not-found", cause: failure }),
+      SessionNotFoundError: () =>
+        new NativeSessionError({ operation, reason: "not-found", cause: failure }),
+      LocationNotFoundError: () =>
+        new NativeSessionError({ operation, reason: "not-found", cause: failure }),
+      ServiceUnavailableError: () =>
+        new NativeSessionError({ operation, reason: "unavailable", cause: failure }),
+      UnauthorizedError: () =>
+        new NativeSessionError({ operation, reason: "rejected", cause: failure }),
+      InvalidRequestError: () =>
+        new NativeSessionError({ operation, reason: "rejected", cause: failure }),
     }),
   );
 });
@@ -122,7 +103,6 @@ export const registerSessions = Effect.fn("registerSessions")(function* (ctx: Co
   const connection = yield* AgxConnection;
   const client = yield* SessionProviderClient;
   const crypto = yield* Crypto.Crypto;
-  const routing = yield* NativeSessionRouting;
   const options = yield* Schema.decodeUnknownEffect(SessionOptions)(ctx.options);
   const sourceId = yield* Effect.gen(function* () {
     if (options.sessionSourceId !== undefined) {
@@ -200,9 +180,10 @@ export const registerSessions = Effect.fn("registerSessions")(function* (ctx: Co
   const reconcile = Effect.fn("sessions.reconcile")(
     (target: Discovery, source: SessionSourceInput) => publish(target, source),
     Effect.catchTags({
-      NativeSessionError: (error) => Effect.logWarning(error.message),
-      SchemaError: () => Effect.logWarning("OpenCode session catalog returned invalid data"),
-      DaemonError: (error) => Effect.logWarning(error.message),
+      NativeSessionError: (error) => Effect.logWarning(error),
+      SchemaError: (cause) =>
+        Effect.logWarning("OpenCode session catalog returned invalid data", cause),
+      DaemonError: (error) => Effect.logWarning(error),
     }),
   );
 
@@ -216,93 +197,6 @@ export const registerSessions = Effect.fn("registerSessions")(function* (ctx: Co
       harness: configuration.harness,
     };
     const ready = yield* Deferred.make<void>();
-    const command = Effect.fn("sessions.command")(function* (request: SessionCommand) {
-      return yield* Effect.gen(function* () {
-        const sessionID = yield* Schema.decodeUnknownEffect(Session.ID)(request.nativeSessionId);
-        const response = yield* Effect.result(ctx.session.get({ sessionID }));
-        if (Result.isFailure(response)) {
-          return yield* failNative("session validation", response.failure);
-        }
-        const session = response.success;
-        const validated = yield* Schema.decodeUnknownEffect(Schema.toType(Session.Info))(session);
-        if (
-          validated.location.directory !== ctx.location.directory ||
-          validated.location.workspaceID !== ctx.location.workspaceID ||
-          validated.parentID !== undefined ||
-          validated.time.archived !== undefined
-        ) {
-          return yield* client.reply(target, {
-            source,
-            commandId: request.id,
-            result: {
-              case: "failure",
-              value: {
-                code: SessionCommandFailure_Code.REJECTED,
-                message: "Session is outside this location or is not listable",
-              },
-            },
-          });
-        }
-        const launchDataJson = yield* Schema.encodeEffect(Schema.fromJsonString(LaunchData))({
-          sessionId: validated.id,
-          directory: validated.location.directory,
-          ...(yield* routing.route(options.sessionServer ?? null)),
-        });
-        return yield* client.reply(target, {
-          source,
-          commandId: request.id,
-          result: { case: "prepared", value: { session: summary(validated), launchDataJson } },
-        });
-      }).pipe(
-        Effect.catchTags({
-          NativeRoutingError: (error) =>
-            Effect.logWarning(error.message).pipe(
-              Effect.andThen(
-                client.reply(target, {
-                  source,
-                  commandId: request.id,
-                  result: {
-                    case: "failure",
-                    value: {
-                      code: SessionCommandFailure_Code.REJECTED,
-                      message: "Native resume routing is unavailable",
-                    },
-                  },
-                }),
-              ),
-            ),
-          NativeSessionError: (error) =>
-            client.reply(target, {
-              source,
-              commandId: request.id,
-              result: {
-                case: "failure",
-                value: {
-                  code:
-                    error.reason === "not-found"
-                      ? SessionCommandFailure_Code.NOT_FOUND
-                      : error.reason === "unavailable"
-                        ? SessionCommandFailure_Code.UNAVAILABLE
-                        : SessionCommandFailure_Code.REJECTED,
-                  message: "Native session could not be validated",
-                },
-              },
-            }),
-          SchemaError: () =>
-            client.reply(target, {
-              source,
-              commandId: request.id,
-              result: {
-                case: "failure",
-                value: {
-                  code: SessionCommandFailure_Code.REJECTED,
-                  message: "Invalid native session",
-                },
-              },
-            }),
-        }),
-      );
-    });
     yield* Effect.scoped(
       Effect.gen(function* () {
         yield* Deferred.await(ready).pipe(
@@ -330,7 +224,7 @@ export const registerSessions = Effect.fn("registerSessions")(function* (ctx: Co
               ),
           ),
           Effect.catchTags({
-            NativeSessionError: (error) => Effect.logWarning(error.message),
+            NativeSessionError: (error) => Effect.logWarning(error),
           }),
           Effect.forkScoped,
         );
@@ -343,24 +237,21 @@ export const registerSessions = Effect.fn("registerSessions")(function* (ctx: Co
           ),
           Effect.forkScoped,
         );
-        yield* client.watch(target, { source }).pipe(
-          Stream.runForEach((event) => {
-            if (event.event.case === "ready") {
-              return Deferred.succeed(ready, undefined).pipe(
+        yield* client
+          .connect(target, { source })
+          .pipe(
+            Stream.runForEach(() =>
+              Deferred.succeed(ready, undefined).pipe(
                 Effect.andThen(publish(target, source)),
                 Effect.andThen(Deferred.succeed(initialized, undefined)),
-              );
-            }
-            if (event.event.case === "command") {
-              return command(event.event.value);
-            }
-            return Effect.void;
-          }),
-        );
+              ),
+            ),
+          );
       }),
     ).pipe(
       Effect.catchTag("DaemonError", (error) =>
-        error.code === Code.FailedPrecondition
+        error.code === Code.FailedPrecondition &&
+        error.cause.metadata.get("Agx-Session-Source-Replaced") === "1"
           ? Effect.never
           : connection.reconnect(target.instance_id).pipe(Effect.andThen(Effect.fail(error))),
       ),
@@ -368,10 +259,11 @@ export const registerSessions = Effect.fn("registerSessions")(function* (ctx: Co
   });
   yield* serve().pipe(
     Effect.catchTags({
-      ConnectionError: (error) => Effect.logWarning(error.message),
-      DaemonError: (error) => Effect.logWarning(error.message),
-      NativeSessionError: (error) => Effect.logWarning(error.message),
-      SchemaError: () => Effect.logWarning("OpenCode session catalog returned invalid data"),
+      ConnectionError: (error) => Effect.logWarning(error),
+      DaemonError: (error) => Effect.logWarning(error),
+      NativeSessionError: (error) => Effect.logWarning(error),
+      SchemaError: (cause) =>
+        Effect.logWarning("OpenCode session catalog returned invalid data", cause),
     }),
     Effect.repeat(Schedule.spaced("1 second")),
     Effect.forkScoped,

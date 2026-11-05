@@ -102,6 +102,9 @@ func listSessions(
 		maps.Copy(listing.Errors, problems)
 		for i := range listing.Entries {
 			entry := &listing.Entries[i]
+			if entry.SourceID != "" {
+				continue
+			}
 			if h, err := harnesses.config.Harness(entry.Harness); err != nil || h.Builtin != entry.Builtin {
 				entry.Harness = entry.Builtin
 			}
@@ -337,7 +340,13 @@ func resumeSession(
 	name string,
 ) error {
 	if session.SourceID != "" {
-		return resumeProviderSession(ctx, paths, registry, harnesses, session, name)
+		h, err := harnesses.config.Harness(name)
+		if err != nil {
+			return fmt.Errorf("cannot resume session with harness %s: %w", name, err)
+		}
+		if h.Builtin != session.Builtin {
+			return fmt.Errorf("session harness %s now uses %s instead of %s", name, h.Builtin, session.Builtin)
+		}
 	}
 	adapter, ok := registry.Adapter(session.Builtin)
 	if !ok {
@@ -348,7 +357,10 @@ func resumeSession(
 		return fmt.Errorf("harness %s cannot resume native sessions", session.Builtin)
 	}
 	info, err := os.Stat(session.Directory)
-	if errors.Is(err, fs.ErrNotExist) || err == nil && !info.IsDir() {
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("session directory %s no longer exists: %w", session.Directory, err)
+	}
+	if err == nil && !info.IsDir() {
 		return fmt.Errorf("session directory %s no longer exists", session.Directory)
 	}
 	if err != nil {

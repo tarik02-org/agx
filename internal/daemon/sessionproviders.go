@@ -3,7 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
-	"time"
+	"fmt"
 
 	"connectrpc.com/connect"
 
@@ -21,14 +21,27 @@ func (s *Server) sessionProviders() *sessionprovider.Catalog {
 	return s.providers
 }
 
-func validSessionSource(source *v1.SessionSource) bool {
-	return source != nil && source.SourceId != "" && source.ScopeId != "" && source.Epoch != "" &&
-		source.Builtin != "" &&
-		source.Harness != "" &&
-		len(source.SourceId) <= 256 &&
-		len(source.ScopeId) <= 256 &&
-		len(source.Epoch) <= 256 &&
-		len(source.Harness) <= 256
+func (s *Server) validateSessionSource(source *v1.SessionSource) error {
+	if source == nil || source.SourceId == "" || source.ScopeId == "" || source.Epoch == "" || source.Builtin == "" ||
+		source.Harness == "" ||
+		len(source.SourceId) > 256 ||
+		len(source.ScopeId) > 256 ||
+		len(source.Epoch) > 256 ||
+		len(source.Harness) > 256 {
+		return rpcError(connect.CodeInvalidArgument, "invalid session source")
+	}
+	c, err := s.reload()
+	if err != nil {
+		return configError(err)
+	}
+	h, err := c.Harness(source.Harness)
+	if err != nil {
+		return connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	if h.Builtin != source.Builtin {
+		return rpcError(connect.CodeInvalidArgument, "session source builtin does not match its harness")
+	}
+	return nil
 }
 
 func validProviderSession(session *v1.ProviderSession) bool {
@@ -39,21 +52,17 @@ func validProviderSession(session *v1.ProviderSession) bool {
 func providerError(err error) error {
 	switch {
 	case errors.Is(err, sessionprovider.ErrStale):
-		return rpcError(connect.CodeFailedPrecondition, err.Error())
+		replaced := connect.NewError(connect.CodeFailedPrecondition, err)
+		replaced.Meta().Set("Agx-Session-Source-Replaced", "1")
+		return replaced
 	case errors.Is(err, sessionprovider.ErrOffline):
-		return rpcError(connect.CodeUnavailable, err.Error())
-	case errors.Is(err, sessionprovider.ErrRejected):
-		return rpcError(connect.CodeFailedPrecondition, err.Error())
-	case errors.Is(err, sessionprovider.ErrNotFound):
-		return rpcError(connect.CodeNotFound, err.Error())
-	case errors.Is(err, sessionprovider.ErrInvalidReply):
-		return rpcError(connect.CodeInternal, err.Error())
+		return connect.NewError(connect.CodeUnavailable, err)
 	case errors.Is(err, context.Canceled):
-		return rpcError(connect.CodeCanceled, "session operation canceled")
+		return connect.NewError(connect.CodeCanceled, err)
 	case errors.Is(err, context.DeadlineExceeded):
-		return rpcError(connect.CodeDeadlineExceeded, "session provider did not respond")
+		return connect.NewError(connect.CodeDeadlineExceeded, err)
 	default:
-		return rpcError(connect.CodeInternal, "session catalog unavailable")
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("session catalog unavailable: %w", err))
 	}
 }
 
@@ -61,11 +70,8 @@ func (s *Server) PublishSessions(
 	ctx context.Context,
 	req *connect.Request[v1.PublishSessionsRequest],
 ) (*connect.Response[v1.PublishSessionsResponse], error) {
-	if !validSessionSource(req.Msg.Source) {
-		return nil, rpcError(connect.CodeInvalidArgument, "invalid session source")
-	}
-	if _, ok := s.adapters.Adapter(req.Msg.Source.Builtin); !ok {
-		return nil, rpcError(connect.CodeInvalidArgument, "unknown session consumer")
+	if err := s.validateSessionSource(req.Msg.Source); err != nil {
+		return nil, err
 	}
 	if len(req.Msg.Sessions) > 100000 || len(req.Msg.DeletedIds) > 100000 {
 		return nil, rpcError(connect.CodeInvalidArgument, "session publication too large")
@@ -81,19 +87,16 @@ func (s *Server) PublishSessions(
 	return connect.NewResponse(&v1.PublishSessionsResponse{}), nil
 }
 
-func (s *Server) WatchSessionCommands(
+func (s *Server) ConnectSessionSource(
 	ctx context.Context,
-	req *connect.Request[v1.WatchSessionCommandsRequest],
-	stream *connect.ServerStream[v1.WatchSessionCommandsResponse],
+	req *connect.Request[v1.ConnectSessionSourceRequest],
+	stream *connect.ServerStream[v1.ConnectSessionSourceResponse],
 ) error {
 	if !equalBearer(req.Header().Get("Authorization"), s.discovery.Token) {
 		return rpcError(connect.CodeUnauthenticated, "management credential required")
 	}
-	if !validSessionSource(req.Msg.Source) {
-		return rpcError(connect.CodeInvalidArgument, "invalid session source")
-	}
-	if _, ok := s.adapters.Adapter(req.Msg.Source.Builtin); !ok {
-		return rpcError(connect.CodeInvalidArgument, "unknown session consumer")
+	if err := s.validateSessionSource(req.Msg.Source); err != nil {
+		return err
 	}
 	if s.drain.draining() {
 		return refusal()
@@ -104,79 +107,15 @@ func (s *Server) WatchSessionCommands(
 		return providerError(err)
 	}
 	defer catalog.Disconnect(connection)
-	// Flush registration before the integration sends its first publication.
-	if err := stream.Send(
-		&v1.WatchSessionCommandsResponse{
-			Event: &v1.WatchSessionCommandsResponse_Ready{Ready: &v1.SessionProviderReady{}},
-		},
-	); err != nil {
+	if err := stream.Send(&v1.ConnectSessionSourceResponse{}); err != nil {
 		return err
 	}
-	for {
-		select {
-		case command := <-connection.Commands:
-			if err := stream.Send(
-				&v1.WatchSessionCommandsResponse{Event: &v1.WatchSessionCommandsResponse_Command{Command: command}},
-			); err != nil {
-				return err
-			}
-		case <-connection.Done:
-			return providerError(sessionprovider.ErrStale)
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-s.ctx.Done():
-			return nil
-		}
+	select {
+	case <-connection.Done:
+		return providerError(sessionprovider.ErrStale)
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.ctx.Done():
+		return nil
 	}
-}
-
-func (s *Server) ReplySessionCommand(
-	_ context.Context,
-	req *connect.Request[v1.ReplySessionCommandRequest],
-) (*connect.Response[v1.ReplySessionCommandResponse], error) {
-	if !validSessionSource(req.Msg.Source) || req.Msg.CommandId == "" {
-		return nil, rpcError(connect.CodeInvalidArgument, "invalid session command reply")
-	}
-	switch result := req.Msg.Result.(type) {
-	case *v1.ReplySessionCommandRequest_Prepared:
-		if result.Prepared == nil || len(result.Prepared.LaunchDataJson) > 65536 ||
-			!validProviderSession(result.Prepared.Session) {
-			return nil, rpcError(connect.CodeInvalidArgument, "invalid prepared session")
-		}
-	case *v1.ReplySessionCommandRequest_Failure:
-		if result.Failure == nil {
-			return nil, rpcError(connect.CodeInvalidArgument, "invalid session command failure")
-		}
-		switch result.Failure.Code {
-		case v1.SessionCommandFailure_CODE_NOT_FOUND,
-			v1.SessionCommandFailure_CODE_UNAVAILABLE,
-			v1.SessionCommandFailure_CODE_REJECTED:
-		case v1.SessionCommandFailure_CODE_UNSPECIFIED:
-			return nil, rpcError(connect.CodeInvalidArgument, "session command failure code required")
-		default:
-			return nil, rpcError(connect.CodeInvalidArgument, "unknown session command failure code")
-		}
-	default:
-		return nil, rpcError(connect.CodeInvalidArgument, "session command result required")
-	}
-	if err := s.sessionProviders().Reply(req.Msg); err != nil {
-		return nil, providerError(err)
-	}
-	return connect.NewResponse(&v1.ReplySessionCommandResponse{}), nil
-}
-
-func (s *Server) PrepareSession(
-	ctx context.Context,
-	req *connect.Request[v1.PrepareSessionRequest],
-) (*connect.Response[v1.PrepareSessionResponse], error) {
-	if req.Msg.SourceId == "" || req.Msg.ScopeId == "" || req.Msg.NativeSessionId == "" {
-		return nil, rpcError(connect.CodeInvalidArgument, "session source and native ID required")
-	}
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	response, err := s.sessionProviders().Prepare(ctx, req.Msg)
-	if err != nil {
-		return nil, providerError(err)
-	}
-	return connect.NewResponse(response), nil
 }
