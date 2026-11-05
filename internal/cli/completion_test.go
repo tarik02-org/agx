@@ -143,7 +143,6 @@ func TestCompletion(t *testing.T) {
 		{[]string{"use", "fs", "--scope", "./"}, []string{}, cobra.ShellCompDirectiveFilterDirs},
 		{[]string{"skill", "add", ""}, []string{}, cobra.ShellCompDirectiveDefault},
 		{[]string{"sessions", ""}, []string{}, cobra.ShellCompDirectiveNoFileComp},
-		{[]string{"daemon", "re"}, []string{"restart\tStop the daemon and start one of this build"}, cobra.ShellCompDirectiveNoFileComp},
 		{[]string{"daemon", "restart", "--timeout", "1"}, []string{"10s", "1m"}, cobra.ShellCompDirectiveNoFileComp},
 		// No daemon runs, and completion must not start one.
 		{[]string{"launch", "show", ""}, []string{}, cobra.ShellCompDirectiveNoFileComp},
@@ -157,6 +156,17 @@ func TestCompletion(t *testing.T) {
 				t.Errorf("directive = %d, want %d", directive, test.directive)
 			}
 		})
+	}
+}
+
+func TestCompletionDaemonRestart(t *testing.T) {
+	isolate(t, "")
+	got, directive := complete(t, "daemon", "re")
+	for i := range got {
+		got[i], _, _ = strings.Cut(got[i], "\t")
+	}
+	if !slices.Equal(got, []string{"restart"}) || directive != cobra.ShellCompDirectiveNoFileComp {
+		t.Fatalf("daemon restart completion = %q, directive %d", got, directive)
 	}
 }
 

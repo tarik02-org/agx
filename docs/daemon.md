@@ -72,15 +72,50 @@ agxd
 # or: agxd --config /path/to/agx.yaml --cache /path/to/cache
 ```
 
-and turn off automatic starting in the root `agx.yaml`, so commands fail instead
-of starting a second copy outside the service manager:
+and give the manager exclusive ownership in the root `agx.yaml`:
 
 ```yaml
 daemon:
-  autostart: false
+  managed: true
 ```
 
-`AGX_NO_AUTOSTART=1` in the environment does the same for one shell.
+In this mode CLI commands, harness wrappers, and native plugin recovery never
+spawn a daemon, including after crashes or when a newer client is installed.
+`agx daemon start` only checks an existing daemon; if none is ready, it tells you
+to start it through the manager. `agx daemon restart` asks the daemon to drain
+and exit with status **75**, then waits for a different, authenticated, ready
+instance. It reports the version the manager actually started. If the manager
+does not bring one back, the command fails after a bounded wait and never falls
+back to starting its own process. Running harnesses reattach to the next daemon.
+
+Configure the manager to restart on failure, with status **0** classified as
+success. `agx daemon stop` and a normal shutdown signal then exit with status 0
+and stay stopped for the current manager session. This is not a persistent
+disable: the manager may start the workload again at the next login or boot.
+Intentional restarts use the manager's normal retry budget and backoff, so choose
+those limits accordingly.
+
+| Manager | Restart configuration                                                          |
+| ------- | ------------------------------------------------------------------------------ |
+| SUSM    | `success_exit_codes = [0]` and `[restart] policy = "on-failure"`               |
+| systemd | `Restart=on-failure`                                                           |
+| launchd | `KeepAlive = { SuccessfulExit = false; }`, without other keep-alive conditions |
+
+On Windows, run the per-user manager and `agxd` in the interactive user's logon
+session. A daemon started by SSH can lack access to that user's Credential
+Manager even when both processes have the same username. Keep the manager's
+launch command pointed at the selected installation so its next start picks up
+both updated binaries; package updates alone do not restart a managed daemon.
+
+`daemon.autostart: false`, or `AGX_NO_AUTOSTART=1` for one shell, only disables
+implicit startup by ordinary commands. Explicit lifecycle commands and existing
+wrappers' recovery still work in that mode. Use `managed: true` when the manager
+must be the only process owner. Managed ownership is advertised in discovery
+when `agxd` starts; stop the existing daemon through its current owner before
+changing ownership modes. Client-side spawning requires a valid root file;
+foreground `agxd` can still serve diagnostics when configuration is broken.
+Upgrade old CLI binaries and let wrappers from versions without managed mode
+finish before migrating: those older processes do not enforce this ownership.
 
 Each canonical root configuration path gets its own daemon within a cache.
 Discovery, the lock and log live in `<cache>/runtime/<root-hash>/`, where
@@ -95,7 +130,7 @@ spawn a daemon; the extras exit and every command connects to the winner. A
 command reports a failed start, with the log's last line, only once the lock is
 free and nothing answers.
 
-When a daemon dies without shutting down, the wrappers of running harnesses
+When a self-managed daemon dies without shutting down, the wrappers of running harnesses
 start a new one: a wrapper does so only when no daemon holds the lock and the
 discovery file still names the daemon it used, so it never races a daemon
 another command is starting.
@@ -103,8 +138,9 @@ another command is starting.
 Wrappers report durable launch history through the daemon, separately from leased
 MCP access. When a wrapper finishes while no daemon runs, it reconnects or starts
 one to record the original exit time, even after a graceful stop or broken YAML.
-This recovery also applies when initial autostart was disabled: the launch already
-had a daemon. An unreadable database remains an error; wrappers never write a
+This recovery also applies when initial autostart was disabled, but never when
+`daemon.managed` is true: those wrappers wait for their manager instead. An
+unreadable database remains an error; wrappers never write a
 fallback history file. The daemon can start with invalid YAML so diagnostics,
 history reporting and credential reset remain available.
 

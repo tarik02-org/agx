@@ -4526,7 +4526,10 @@ type StopRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Force bool                   `protobuf:"varint,1,opt,name=force,proto3" json:"force,omitempty"`
 	// How long requests in flight may finish; unset for the daemon's default.
-	Grace         *durationpb.Duration `protobuf:"bytes,2,opt,name=grace,proto3" json:"grace,omitempty"`
+	Grace *durationpb.Duration `protobuf:"bytes,2,opt,name=grace,proto3" json:"grace,omitempty"`
+	// Exit with code 75 after draining, so an external manager restarts the daemon.
+	// Only supported by a daemon started with daemon.managed enabled.
+	Restart       bool `protobuf:"varint,3,opt,name=restart,proto3" json:"restart,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4573,6 +4576,13 @@ func (x *StopRequest) GetGrace() *durationpb.Duration {
 		return x.Grace
 	}
 	return nil
+}
+
+func (x *StopRequest) GetRestart() bool {
+	if x != nil {
+		return x.Restart
+	}
+	return false
 }
 
 type StopResponse struct {
@@ -8131,10 +8141,11 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\bstops_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\astopsAt\")\n" +
 	"\x15StopMcpProcessRequest\x12\x10\n" +
 	"\x03pid\x18\x01 \x01(\x03R\x03pid\"\x18\n" +
-	"\x16StopMcpProcessResponse\"T\n" +
+	"\x16StopMcpProcessResponse\"n\n" +
 	"\vStopRequest\x12\x14\n" +
 	"\x05force\x18\x01 \x01(\bR\x05force\x12/\n" +
-	"\x05grace\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x05grace\"3\n" +
+	"\x05grace\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x05grace\x12\x18\n" +
+	"\arestart\x18\x03 \x01(\bR\arestart\"3\n" +
 	"\fStopResponse\x12#\n" +
 	"\rkept_launches\x18\x01 \x01(\rR\fkeptLaunches\"U\n" +
 	"\x10ListToolsRequest\x12*\n" +
