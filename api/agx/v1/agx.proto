@@ -68,6 +68,12 @@ service LaunchService {
 service ResourceService {
   rpc ResolveResources(ResolveResourcesRequest) returns (ResolveResourcesResponse);
   rpc PrepareResources(PrepareResourcesRequest) returns (PrepareResourcesResponse);
+  // Current resource manifests and subsequent changes, scoped to one consumer context.
+  rpc WatchResources(WatchResourcesRequest) returns (stream WatchResourcesResponse);
+  // Lifecycle-authorized handover from an active resource lease to its successor.
+  rpc RefreshResources(RefreshResourcesRequest) returns (RefreshResourcesResponse);
+  // Releases a superseded member without ending its authorization family.
+  rpc RetireResources(RetireResourcesRequest) returns (RetireResourcesResponse);
 }
 
 service RuntimeService {
@@ -276,7 +282,48 @@ message ResolveResourcesResponse {
   repeated ResourceTrace traces = 2;
   repeated Diagnostic diagnostics = 3;
   repeated HarnessSetting settings = 4;
+  ResourceManifest manifest = 5;
 }
+message ResourceManifestEntry {
+  ResourceRef resource = 1;
+  string digest = 2;
+}
+// Desired resource state. Digests identify content; file bytes and credentials are not streamed.
+message ResourceManifest {
+  string revision = 1;
+  Snapshot snapshot = 2;
+  repeated ResourceManifestEntry resources = 3;
+  repeated HarnessSetting settings = 4;
+  repeated Diagnostic diagnostics = 5;
+}
+message WatchResourcesRequest {
+  string directory = 1;
+  string harness = 2;
+}
+message ResourceWatchInvalid {
+  repeated Diagnostic diagnostics = 1;
+}
+message WatchResourcesResponse {
+  oneof state {
+    ResourceManifest manifest = 1;
+    ResourceWatchInvalid invalid = 2;
+  }
+}
+message RefreshResourcesRequest {
+  string launch_id = 1;
+  string snapshot_id = 2;
+  // Sensitive: only resource environment names declared by the expected snapshot are accepted.
+  map<string, string> environment_inputs = 3;
+  string mcp_directory = 4;
+}
+message RefreshResourcesResponse {
+  PrepareResourcesResponse resources = 1;
+}
+message RetireResourcesRequest {
+  string launch_id = 1;
+  string successor_launch_id = 2;
+}
+message RetireResourcesResponse {}
 message PrepareResourcesRequest {
   string snapshot_id = 1;
   string directory = 2;
@@ -299,6 +346,7 @@ message PrepareResourcesResponse {
   uint32 renew_after_seconds = 6;
   // Canonical daemon-side directory, retained for AttachLaunch; empty when unnecessary.
   string mcp_directory = 7;
+  ResourceManifest manifest = 8;
 }
 message ResourceContent {
   repeated SkillContent skills = 1;

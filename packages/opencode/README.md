@@ -31,7 +31,9 @@ Start OpenCode normally in a project directory:
 Sessions in the same directory share its resources. Opening another directory
 selects the AGX scopes for that directory.
 
-After changing your AGX configuration, run this command inside OpenCode:
+Changes to AGX configuration, selected skill files and instruction files reload
+automatically. Invalid edits keep the last working resources until fixed. You can
+also request a refresh inside OpenCode:
 
 ```text
 /agx-reload

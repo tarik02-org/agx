@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -14,6 +15,161 @@ import (
 	"github.com/tarik02-org/agx/internal/resources"
 	"github.com/tarik02-org/agx/internal/securefs"
 )
+
+// Resource handovers share authorization across generations. A concurrent finish or
+// revocation must reach every successor, including through a retired predecessor.
+type resourceFamily struct {
+	ending bool
+}
+
+// endResourceFamily is called with s.mu held by end, including while a handover is being
+// published. Expiry stays recoverable under the existing AttachLaunch contract.
+func (s *Server) endResourceFamily(l *launch, state v1.Launch_State) bool {
+	family := l.resourceFamily
+	if family == nil || family.ending || state != v1.Launch_STATE_REVOKED && state != v1.Launch_STATE_FINISHED {
+		return false
+	}
+	family.ending = true
+	defer func() { family.ending = false }()
+	for _, member := range s.launches {
+		if member.resourceFamily == family {
+			if state == v1.Launch_STATE_REVOKED {
+				if s.revoked == nil {
+					s.revoked = map[string]time.Time{}
+				}
+				s.revoked[member.view.Id] = time.Now()
+			} else {
+				if s.finishedResources == nil {
+					s.finishedResources = map[string]time.Time{}
+				}
+				s.finishedResources[member.view.Id] = time.Now()
+			}
+			// Expiry is recoverable; a later terminal family outcome must revoke that
+			// recovery path too, including for an overlapped predecessor.
+			if member.view.State == v1.Launch_STATE_EXPIRED {
+				member.view.State = state
+				member.ended = time.Now()
+				s.changed.notify()
+			}
+			s.end(member, state)
+		}
+	}
+	if state == v1.Launch_STATE_FINISHED {
+		s.saveState()
+	}
+	return true
+}
+
+func (s *Server) RefreshResources(
+	ctx context.Context,
+	req *connect.Request[v1.RefreshResourcesRequest],
+) (*connect.Response[v1.RefreshResourcesResponse], error) {
+	s.mu.Lock()
+	previous, err := s.refreshableResources(req.Msg.LaunchId, req.Header().Get("Authorization"))
+	var directory, harness string
+	if err == nil {
+		directory, harness = previous.view.Directory, previous.view.Harness
+	}
+	s.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	snapshot, err := s.resourceSnapshot(directory, harness)
+	if err != nil {
+		return nil, err
+	}
+	if req.Msg.SnapshotId == "" || snapshot.ID != req.Msg.SnapshotId {
+		return nil, rpcError(connect.CodeAborted, "snapshot changed; resolve again before forwarding credentials")
+	}
+	response, successor, err := s.prepareResources(snapshot, req.Msg.EnvironmentInputs, req.Msg.McpDirectory)
+	if err != nil {
+		return nil, err
+	}
+	// Checking and publishing under one lock makes either race ordering terminal: revoke
+	// before insertion refuses it; revoke after insertion reaches the shared family.
+	s.mu.Lock()
+	_, err = s.refreshableResources(previous.view.Id, req.Header().Get("Authorization"))
+	if err == nil && s.launches[previous.view.Id] != previous {
+		err = rpcError(connect.CodeAborted, "resource predecessor changed; retry")
+	}
+	if err == nil && len(s.launches) >= 10000 {
+		err = rpcError(connect.CodeResourceExhausted, "launch history full; retry after ended launches are pruned")
+	}
+	if err == nil {
+		if previous.resourceFamily == nil {
+			previous.resourceFamily = &resourceFamily{}
+		}
+		successor.resourceFamily = previous.resourceFamily
+		s.launches[successor.view.Id] = successor
+		s.changed.notify()
+	}
+	s.mu.Unlock()
+	if err != nil {
+		successor.cancel()
+		s.release(successor.view.Id, successor.endpoints)
+		return nil, err
+	}
+	return connect.NewResponse(&v1.RefreshResourcesResponse{Resources: response}), nil
+}
+
+// refreshableResources must run with s.mu held. Management credentials cannot create a
+// successor for an ended lease: only its current lifecycle authorization can refresh it.
+func (s *Server) refreshableResources(id, authorization string) (*launch, error) {
+	l, err := s.lifecycleLaunch(id, authorization)
+	if err != nil {
+		return nil, err
+	}
+	if _, ended := s.revoked[id]; ended {
+		return nil, endedError(v1.Launch_STATE_REVOKED)
+	}
+	if _, ended := s.finishedResources[id]; ended {
+		return nil, endedError(v1.Launch_STATE_FINISHED)
+	}
+	if l.view.Kind != v1.Launch_KIND_RESOURCES {
+		return nil, rpcError(connect.CodeInvalidArgument, "resource lease required")
+	}
+	if !active(l.view.State) {
+		return nil, endedError(l.view.State)
+	}
+	if time.Now().After(l.expires) {
+		s.end(l, v1.Launch_STATE_EXPIRED)
+		return nil, endedError(l.view.State)
+	}
+	if s.stopped {
+		return nil, refusal()
+	}
+	return l, nil
+}
+
+func (s *Server) RetireResources(
+	ctx context.Context,
+	req *connect.Request[v1.RetireResourcesRequest],
+) (*connect.Response[v1.RetireResourcesResponse], error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	previous, err := s.lifecycleLaunch(req.Msg.LaunchId, req.Header().Get("Authorization"))
+	if err != nil {
+		return nil, err
+	}
+	next := s.launches[req.Msg.SuccessorLaunchId]
+	if previous.view.Kind != v1.Launch_KIND_RESOURCES || next == nil || previous == next ||
+		previous.resourceFamily == nil || previous.resourceFamily != next.resourceFamily {
+		return nil, rpcError(connect.CodeInvalidArgument, "resource successor required")
+	}
+	// This is the explicit successful/abandoned handover cleanup, not an intentional
+	// resource release. Its peer may already have ended; cleanup must still run.
+	// Generic FinishLaunch ends the entire authorization family.
+	family := previous.resourceFamily
+	previous.resourceFamily = nil
+	s.end(previous, v1.Launch_STATE_FINISHED)
+	previous.resourceFamily = family
+	if s.finishedResources == nil {
+		s.finishedResources = map[string]time.Time{}
+	}
+	s.finishedResources[previous.view.Id] = time.Now()
+	s.saveState()
+	return connect.NewResponse(&v1.RetireResourcesResponse{}), nil
+}
 
 func (s *Server) resourceSnapshot(directory, harness string) (*config.Snapshot, error) {
 	if !filepath.IsAbs(directory) {
@@ -29,6 +185,15 @@ func (s *Server) resourceSnapshot(directory, harness string) (*config.Snapshot, 
 	}
 	// Process arguments and environment are outside a resource consumer's contract.
 	snapshot.RequiredEnvironment = snapshot.MCPEnvironment()
+	content, err := snapshot.Content()
+	if err != nil {
+		return nil, rpcError(connect.CodeAborted, err.Error())
+	}
+	manifest, err := resourceManifest(snapshot, content)
+	if err != nil {
+		return nil, rpcError(connect.CodeFailedPrecondition, err.Error())
+	}
+	snapshot.ID = manifest.Revision
 	return snapshot, nil
 }
 
@@ -41,9 +206,20 @@ func (s *Server) ResolveResources(
 		return nil, err
 	}
 	resolved := resolveMessage(snapshot)
+	content, err := snapshot.Content()
+	if err != nil {
+		return nil, rpcError(connect.CodeAborted, err.Error())
+	}
+	manifest, err := resourceManifest(snapshot, content)
+	if err != nil {
+		return nil, rpcError(connect.CodeFailedPrecondition, err.Error())
+	}
+	if manifest.Revision != snapshot.ID {
+		return nil, rpcError(connect.CodeAborted, "resources changed while resolving; retry")
+	}
 	return connect.NewResponse(&v1.ResolveResourcesResponse{
 		Snapshot: resolved.Snapshot, Traces: resolved.Traces,
-		Diagnostics: resolved.Diagnostics, Settings: resolved.Settings,
+		Diagnostics: resolved.Diagnostics, Settings: resolved.Settings, Manifest: manifest,
 	}), nil
 }
 
@@ -61,17 +237,42 @@ func (s *Server) PrepareResources(
 	if snapshot.ID != req.Msg.SnapshotId {
 		return nil, rpcError(connect.CodeAborted, "snapshot changed; resolve again before forwarding credentials")
 	}
-	inputs, err := launchInputs(snapshot, req.Msg.EnvironmentInputs, nil)
+	response, l, err := s.prepareResources(snapshot, req.Msg.EnvironmentInputs, req.Msg.McpDirectory)
 	if err != nil {
 		return nil, err
 	}
-	directory, err := resourceMCPDirectory(snapshot, req.Msg.McpDirectory)
-	if err != nil {
+	l.resourceFamily = &resourceFamily{}
+	if err := s.addLaunch(l); err != nil {
+		l.cancel()
+		s.release(l.view.Id, l.endpoints)
 		return nil, err
+	}
+	return connect.NewResponse(response), nil
+}
+
+func (s *Server) prepareResources(
+	snapshot *config.Snapshot,
+	environment map[string]string,
+	mcpDirectory string,
+) (*v1.PrepareResourcesResponse, *launch, error) {
+	inputs, err := launchInputs(snapshot, environment, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	directory, err := resourceMCPDirectory(snapshot, mcpDirectory)
+	if err != nil {
+		return nil, nil, err
 	}
 	content, err := snapshot.Content()
 	if err != nil {
-		return nil, rpcError(connect.CodeAborted, err.Error())
+		return nil, nil, rpcError(connect.CodeAborted, err.Error())
+	}
+	manifest, err := resourceManifest(snapshot, content)
+	if err != nil {
+		return nil, nil, rpcError(connect.CodeFailedPrecondition, err.Error())
+	}
+	if manifest.Revision != snapshot.ID {
+		return nil, nil, rpcError(connect.CodeAborted, "resources changed while preparing; resolve again")
 	}
 	warnMissing(snapshot)
 	id, grant, lifecycle := securefs.Token(), securefs.Token(), securefs.Token()
@@ -86,16 +287,12 @@ func (s *Server) PrepareResources(
 		Grant: grant, LifecycleToken: lifecycle,
 		RenewAfterSeconds: uint32(snapshot.Config.Daemon.RenewSeconds),
 		McpDirectory:      directory,
+		Manifest:          manifest,
 	}
 	for _, endpoint := range native {
 		response.Mcp = append(response.Mcp, &v1.McpEndpoint{Id: string(endpoint.ID), Url: endpoint.URL})
 	}
-	if err := s.addLaunch(l); err != nil {
-		l.cancel()
-		s.release(id, endpoints)
-		return nil, err
-	}
-	return connect.NewResponse(response), nil
+	return response, l, nil
 }
 
 func resourceContent(content resources.Set) *v1.ResourceContent {
@@ -138,6 +335,7 @@ func (s *Server) attachResources(msg *v1.AttachLaunchRequest) (*launch, error) {
 		return nil, err
 	}
 	l := s.newLaunch(view, launchBasis{config: snapshot.Config, snapshot: snapshot}, msg.Grant, msg.LifecycleToken, nil)
+	l.resourceFamily = &resourceFamily{}
 	if snapshot.ID != view.SnapshotId {
 		l.unavailable = staleSnapshot
 		return l, nil

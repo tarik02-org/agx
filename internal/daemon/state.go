@@ -26,10 +26,12 @@ type savedState struct {
 	// Revoked maps launches revoked within revokedRetention to when, so that their wrappers
 	// cannot attach them again.
 	Revoked map[string]time.Time `json:"revoked,omitempty"`
+	// ResourceFinishes keeps explicit resource releases terminal across daemon replacement.
+	ResourceFinishes map[string]time.Time `json:"resource_finishes,omitempty"`
 }
 
 func loadState(paths platform.Paths, now time.Time) (savedState, error) {
-	state := savedState{Revoked: map[string]time.Time{}}
+	state := savedState{Revoked: map[string]time.Time{}, ResourceFinishes: map[string]time.Time{}}
 	db, err := storage.Open(context.Background(), storage.State(paths.State))
 	if err != nil {
 		return state, err
@@ -49,6 +51,15 @@ func loadState(paths platform.Paths, now time.Time) (savedState, error) {
 	}
 	for _, row := range rows {
 		state.Revoked[row.Launch] = time.Unix(0, row.RevokedAt)
+	}
+	finishes, err := q.ListResourceFinishes(context.Background(), statedb.ListResourceFinishesParams{
+		Configuration: paths.Config, FinishedAt: now.Add(-revokedRetention).UnixNano(),
+	})
+	if err != nil {
+		return state, err
+	}
+	for _, row := range finishes {
+		state.ResourceFinishes[row.Launch] = time.Unix(0, row.FinishedAt)
 	}
 	return state, nil
 }
@@ -89,6 +100,15 @@ func (s *Server) writeState() error {
 			}
 		}
 	}
+	for id, at := range s.finishedResources {
+		if time.Since(at) < revokedRetention {
+			if err := q.PutResourceFinish(ctx, statedb.PutResourceFinishParams{
+				Configuration: s.paths.Config, Launch: id, FinishedAt: at.UnixNano(),
+			}); err != nil {
+				return err
+			}
+		}
+	}
 	if err := q.PruneRevocations(
 		ctx,
 		statedb.PruneRevocationsParams{
@@ -96,6 +116,11 @@ func (s *Server) writeState() error {
 			RevokedAt:     time.Now().Add(-revokedRetention).UnixNano(),
 		},
 	); err != nil {
+		return err
+	}
+	if err := q.PruneResourceFinishes(ctx, statedb.PruneResourceFinishesParams{
+		Configuration: s.paths.Config, FinishedAt: time.Now().Add(-revokedRetention).UnixNano(),
+	}); err != nil {
 		return err
 	}
 	return tx.Commit()

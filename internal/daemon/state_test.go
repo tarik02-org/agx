@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -90,6 +91,177 @@ func TestAttachable(t *testing.T) {
 			e.Meta().Get(control.EndedHeader) != how {
 			t.Errorf("%s launch: %v", id, err)
 		}
+	}
+}
+
+func TestResourceFinishRefusesRecovery(t *testing.T) {
+	s := stateServer(t)
+	s.ctx, s.clients = t.Context(), newClientPool()
+	c := config.Bare(config.Builtins{})
+	c.Daemon = config.Daemon{LeaseSeconds: 60, RenewSeconds: 20}
+	s.config, s.inputs = c, &config.Inputs{}
+	directory := t.TempDir()
+	snapshot, err := s.resourceSnapshot(directory, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := s.PrepareResources(t.Context(), connect.NewRequest(&v1.PrepareResourcesRequest{
+		Directory: directory, SnapshotId: snapshot.ID,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := prepared.Msg
+	refresh := connect.NewRequest(&v1.RefreshResourcesRequest{LaunchId: previous.Launch.Id, SnapshotId: snapshot.ID})
+	refresh.Header().Set("Authorization", "Bearer "+previous.LifecycleToken)
+	refreshed, err := s.RefreshResources(t.Context(), refresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	successor := refreshed.Msg.Resources
+	retire := connect.NewRequest(&v1.RetireResourcesRequest{
+		LaunchId: previous.Launch.Id, SuccessorLaunchId: successor.Launch.Id,
+	})
+	retire.Header().Set("Authorization", "Bearer "+previous.LifecycleToken)
+	if _, err := s.RetireResources(t.Context(), retire); err != nil {
+		t.Fatal(err)
+	}
+	if _, refused := s.finishedResources[previous.Launch.Id]; !refused {
+		t.Fatal("retired resource ID can recover")
+	}
+	if _, refused := s.finishedResources[successor.Launch.Id]; refused {
+		t.Fatal("retirement ended the successor's authorization")
+	}
+	s.prune(time.Now().Add(historyRetention + time.Minute))
+	retiredState, err := loadState(s.paths, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored := stateServer(t)
+	restored.ctx, restored.clients = t.Context(), newClientPool()
+	restored.config, restored.inputs = c, &config.Inputs{}
+	restored.finishedResources = retiredState.ResourceFinishes
+	for _, server := range []*Server{s, restored} {
+		var refused *connect.Error
+		if _, err := server.AttachLaunch(t.Context(), connect.NewRequest(&v1.AttachLaunchRequest{
+			Launch: previous.Launch, Grant: previous.Grant, LifecycleToken: previous.LifecycleToken,
+		})); !errors.As(err, &refused) || refused.Meta().Get(control.EndedHeader) != "finished" {
+			t.Errorf("retired resources recovered after pruning or replacement: %v", err)
+		}
+		if _, err := server.AttachLaunch(t.Context(), connect.NewRequest(&v1.AttachLaunchRequest{
+			Launch: successor.Launch, Grant: successor.Grant, LifecycleToken: successor.LifecycleToken,
+		})); err != nil {
+			t.Fatalf("retirement prevented successor recovery: %v", err)
+		}
+		renew := connect.NewRequest(&v1.RenewLaunchRequest{LaunchId: successor.Launch.Id})
+		renew.Header().Set("Authorization", "Bearer "+successor.LifecycleToken)
+		if _, err := server.RenewLaunch(t.Context(), renew); err != nil {
+			t.Errorf("retirement prevented successor renewal: %v", err)
+		}
+	}
+	finish := connect.NewRequest(&v1.FinishLaunchRequest{
+		LaunchId: successor.Launch.Id,
+		Outcome:  &v1.FinishLaunchRequest_ResourcesReleased{ResourcesReleased: true},
+	})
+	finish.Header().Set("Authorization", "Bearer "+successor.LifecycleToken)
+	if _, err := s.FinishLaunch(t.Context(), finish); err != nil {
+		t.Fatal(err)
+	}
+	state, err := loadState(s.paths, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := stateServer(t)
+	replacement.finishedResources, replacement.revoked = state.ResourceFinishes, state.Revoked
+	s.prune(time.Now().Add(historyRetention + time.Minute))
+	for _, server := range []*Server{s, replacement} {
+		for _, lease := range []*v1.PrepareResourcesResponse{previous, successor} {
+			request := connect.NewRequest(&v1.AttachLaunchRequest{
+				Launch: lease.Launch, Grant: lease.Grant, LifecycleToken: lease.LifecycleToken,
+			})
+			var refused *connect.Error
+			if _, err := server.AttachLaunch(
+				t.Context(),
+				request,
+			); !errors.As(err, &refused) ||
+				refused.Meta().Get(control.EndedHeader) != "finished" {
+				t.Errorf("finished resources recovered after pruning or replacement: %v", err)
+			}
+		}
+	}
+}
+
+func TestResourceAttachRefusesConcurrentEnd(t *testing.T) {
+	for _, outcome := range []v1.Launch_State{v1.Launch_STATE_REVOKED, v1.Launch_STATE_FINISHED} {
+		t.Run(outcome.String(), func(t *testing.T) {
+			s := stateServer(t)
+			s.ctx, s.clients = t.Context(), newClientPool()
+			c := config.Bare(config.Builtins{})
+			c.Daemon = config.Daemon{LeaseSeconds: 60, RenewSeconds: 20}
+			s.config, s.inputs = c, &config.Inputs{}
+			directory := t.TempDir()
+			snapshot, err := s.resourceSnapshot(directory, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			prepared, err := s.PrepareResources(t.Context(), connect.NewRequest(&v1.PrepareResourcesRequest{
+				Directory: directory, SnapshotId: snapshot.ID,
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			lease := prepared.Msg
+			s.mu.Lock()
+			s.end(s.launches[lease.Launch.Id], v1.Launch_STATE_EXPIRED)
+			s.mu.Unlock()
+			started, resume := make(chan struct{}), make(chan struct{})
+			release := sync.OnceFunc(func() { close(resume) })
+			defer release()
+			// Configuration inspection runs after the first authorization check, outside s.mu.
+			s.inputs.TrackRevision("same", func() string {
+				close(started)
+				<-resume
+				return "same"
+			})
+			attached := make(chan error, 1)
+			go func() {
+				_, err := s.AttachLaunch(t.Context(), connect.NewRequest(&v1.AttachLaunchRequest{
+					Launch: lease.Launch, Grant: lease.Grant, LifecycleToken: lease.LifecycleToken,
+				}))
+				attached <- err
+			}()
+			select {
+			case <-started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("attach did not reach configuration inspection")
+			}
+			if outcome == v1.Launch_STATE_REVOKED {
+				if _, err := s.RevokeLaunch(
+					t.Context(),
+					connect.NewRequest(&v1.RevokeLaunchRequest{LaunchId: lease.Launch.Id}),
+				); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				finish := connect.NewRequest(&v1.FinishLaunchRequest{
+					LaunchId: lease.Launch.Id,
+					Outcome:  &v1.FinishLaunchRequest_ResourcesReleased{ResourcesReleased: true},
+				})
+				finish.Header().Set("Authorization", "Bearer "+lease.LifecycleToken)
+				if _, err := s.FinishLaunch(t.Context(), finish); err != nil {
+					t.Fatal(err)
+				}
+			}
+			release()
+			select {
+			case err := <-attached:
+				if connect.CodeOf(err) != connect.CodeUnauthenticated {
+					t.Fatalf("concurrent terminal outcome allowed attachment: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("attachment did not finish")
+			}
+		})
 	}
 }
 
