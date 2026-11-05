@@ -7,6 +7,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 export const NativeRoute = Schema.Struct({
@@ -20,6 +21,13 @@ export class NativeRoutingError extends Schema.TaggedError<NativeRoutingError>()
   "NativeRoutingError",
   {
     reason: Schema.Literals(["custom-server", "discovery", "configuration"]),
+    cause: Schema.optionalKey(
+      Schema.Union([
+        Schema.instanceOf(PlatformError.PlatformError),
+        Schema.instanceOf(Schema.SchemaError),
+        Schema.instanceOf(Config.ConfigError),
+      ]),
+    ),
   },
 ) {
   override get message() {
@@ -70,9 +78,11 @@ export const makeNativeSessionRouting = Effect.fn("makeNativeSessionRouting")(fu
       };
     },
     Effect.catchTags({
-      PlatformError: () => Effect.fail(new NativeRoutingError({ reason: "custom-server" })),
-      SchemaError: () => Effect.fail(new NativeRoutingError({ reason: "discovery" })),
-      ConfigError: () => Effect.fail(new NativeRoutingError({ reason: "configuration" })),
+      PlatformError: (cause) =>
+        Effect.fail(new NativeRoutingError({ reason: "custom-server", cause })),
+      SchemaError: (cause) => Effect.fail(new NativeRoutingError({ reason: "discovery", cause })),
+      ConfigError: (cause) =>
+        Effect.fail(new NativeRoutingError({ reason: "configuration", cause })),
     }),
   );
   return NativeSessionRouting.of({ route });

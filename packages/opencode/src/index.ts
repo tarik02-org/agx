@@ -20,13 +20,21 @@ const register = Effect.fn("register")(function* (ctx: Context) {
   const lease = yield* acquireLease(reload);
   yield* registerSessions(ctx).pipe(
     Effect.catchTags({
-      SchemaError: () =>
+      SchemaError: (cause) =>
         Effect.die(
-          new IntegrationError({ operation: "session provider configuration", reason: "options" }),
+          new IntegrationError({
+            operation: "session provider configuration",
+            reason: "options",
+            cause,
+          }),
         ),
-      PlatformError: () =>
+      PlatformError: (cause) =>
         Effect.die(
-          new IntegrationError({ operation: "session provider identity", reason: "filesystem" }),
+          new IntegrationError({
+            operation: "session provider identity",
+            reason: "filesystem",
+            cause,
+          }),
         ),
     }),
   );
