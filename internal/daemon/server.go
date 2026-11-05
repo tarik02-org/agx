@@ -74,6 +74,8 @@ type launch struct {
 	// wrapperPID and harnessPID are the processes the last renewal reported, for telling why the
 	// lease ran out; zero when unknown.
 	wrapperPID, harnessPID int
+	// Resource handovers keep one revocable authority across overlapping members.
+	resourceFamily *resourceFamily
 }
 
 type Server struct {
@@ -96,6 +98,8 @@ type Server struct {
 	// revoked maps launches revoked within revokedRetention, by this daemon or one before it, to
 	// when; their wrappers cannot attach them again.
 	revoked map[string]time.Time
+	// finishedResources refuses recovery of explicitly released resource authorization.
+	finishedResources map[string]time.Time
 	// attachMu serializes AttachLaunch.
 	attachMu sync.Mutex
 	// grace, when set by a stop, replaces control.ShutdownGrace.
@@ -217,24 +221,25 @@ func Serve(
 		PID:        os.Getpid(),
 	}
 	s := &Server{
-		paths:     paths,
-		adapters:  registry,
-		builtins:  builtins,
-		config:    c,
-		configErr: configErr,
-		inputs:    inputs,
-		discovery: discovery,
-		ctx:       serverCtx,
-		cancel:    cancel,
-		stop:      make(chan struct{}),
-		drain:     newDrain(),
-		launches:  map[string]*launch{},
-		revoked:   state.Revoked,
-		port:      listener.Addr().(*net.TCPAddr).Port,
-		clients:   newClientPool(),
-		sessions:  sessionstore.NewCatalog(serverCtx, registry, paths.Cache, paths.State),
-		icons:     newMCPIcons(storage.Cache(paths.Cache)),
-		changed:   &notifier{},
+		paths:             paths,
+		adapters:          registry,
+		builtins:          builtins,
+		config:            c,
+		configErr:         configErr,
+		inputs:            inputs,
+		discovery:         discovery,
+		ctx:               serverCtx,
+		cancel:            cancel,
+		stop:              make(chan struct{}),
+		drain:             newDrain(),
+		launches:          map[string]*launch{},
+		revoked:           state.Revoked,
+		finishedResources: state.ResourceFinishes,
+		port:              listener.Addr().(*net.TCPAddr).Port,
+		clients:           newClientPool(),
+		sessions:          sessionstore.NewCatalog(serverCtx, registry, paths.Cache, paths.State),
+		icons:             newMCPIcons(storage.Cache(paths.Cache)),
+		changed:           &notifier{},
 	}
 	s.shared = mcpruntime.NewShared(serverCtx, control.Version, s.changed.notify)
 	if port != 0 && port != s.port {
@@ -382,15 +387,18 @@ loop:
 
 // selfAuthorized are the procedures that check their own credentials.
 var selfAuthorized = map[string]bool{
-	agxv1connect.LaunchServiceRenewLaunchProcedure:  true,
-	agxv1connect.LaunchServiceFinishLaunchProcedure: true,
-	agxv1connect.RuntimeServiceListToolsProcedure:   true,
-	agxv1connect.RuntimeServiceCallToolProcedure:    true,
+	agxv1connect.ResourceServiceRefreshResourcesProcedure: true,
+	agxv1connect.ResourceServiceRetireResourcesProcedure:  true,
+	agxv1connect.LaunchServiceRenewLaunchProcedure:        true,
+	agxv1connect.LaunchServiceFinishLaunchProcedure:       true,
+	agxv1connect.RuntimeServiceListToolsProcedure:         true,
+	agxv1connect.RuntimeServiceCallToolProcedure:          true,
 }
 
 // startsWork are the procedures a stopping daemon refuses, so that callers retry them with the
 // next daemon.
 var startsWork = map[string]bool{
+	agxv1connect.ResourceServiceRefreshResourcesProcedure:         true,
 	agxv1connect.ResourceServicePrepareResourcesProcedure:         true,
 	agxv1connect.LaunchServicePrepareLaunchProcedure:              true,
 	agxv1connect.LaunchServiceAttachLaunchProcedure:               true,
@@ -489,6 +497,9 @@ func (l *launch) extend(expires time.Time) {
 // end must be called with s.mu held; endpoint and cache cleanup run outside it. A launch's
 // thread launches end with it. A revocation is saved by the caller.
 func (s *Server) end(l *launch, state v1.Launch_State) {
+	if s.endResourceFamily(l, state) {
+		return
+	}
 	if !active(l.view.State) {
 		return
 	}
