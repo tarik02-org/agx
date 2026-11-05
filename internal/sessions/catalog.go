@@ -17,6 +17,9 @@ type Entry struct {
 	Builtin  string `json:"builtin"`
 	Harness  string `json:"harness"`
 	Recorded bool   `json:"recorded"`
+	SourceID string `json:"sourceId,omitempty"`
+	ScopeID  string `json:"scopeId,omitempty"`
+	Online   bool   `json:"online,omitempty"`
 	Store    string `json:"-"`
 }
 

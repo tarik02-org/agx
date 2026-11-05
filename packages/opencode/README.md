@@ -37,6 +37,42 @@ After changing your AGX configuration, run this command inside OpenCode:
 /agx-reload
 ```
 
+## Launch and resume
+
+With the plugin installed, launch OpenCode through AGX:
+
+```sh
+agx opencode
+```
+
+Open `agx` to pick a session, or list sessions with `agx sessions --all`.
+The plugin publishes session summaries from locations opened in OpenCode. AGX
+keeps these summaries when a location goes offline. Resume runs the session's
+harness in its directory with `--session <id>`, including the harness's configured
+arguments and environment. The plugin does not need to be connected for resume.
+
+To use a different OpenCode profile or server, define an AGX harness:
+
+```yaml
+harnesses:
+  opencode-work:
+    base: opencode
+    args: [--server, https://opencode.example.com]
+    environment:
+      OPENCODE_PASSWORD: !env OPENCODE_WORK_PASSWORD
+```
+
+Set `options.harness` to `opencode-work` in that OpenCode server's AGX plugin
+configuration. Its published sessions will open with this harness. The default
+is `opencode`, which uses the client's normal OpenCode profile. Keep native
+profile environment settings in the harness consistent with the server loading
+the plugin. AGX requires the selected session directory to exist locally.
+
+AGX starts the native client; the plugin supplies resources for its location.
+The plugin's harness also selects its AGX resources. Client arguments and
+environment apply at launch; changing them does not reconfigure an existing
+OpenCode service.
+
 To see what AGX selects for the current directory:
 
 ```sh

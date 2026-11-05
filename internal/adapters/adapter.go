@@ -370,6 +370,8 @@ func (r Registry) Launchable(c *config.Config) []string {
 		}
 		if _, ok := r.Launcher(h.Builtin); ok {
 			names = append(names, name)
+		} else if _, ok := r.ClientLauncher(h.Builtin); ok {
+			names = append(names, name)
 		}
 	}
 	return names
@@ -386,6 +388,8 @@ func (r Registry) Builtins(commands []string) config.Builtins {
 		harnesses[name] = nil
 		if launcher, ok := a.(Launcher); ok {
 			harnesses[name] = launcher.Modes()
+		} else if client, ok := a.(ClientLauncher); ok {
+			harnesses[name] = client.Modes()
 		}
 		if s, ok := a.(SettingsValidator); ok {
 			settings[name] = s.ValidateSettings

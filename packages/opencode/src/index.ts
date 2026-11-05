@@ -11,12 +11,33 @@ import { IntegrationError, type IntegrationFailure } from "./error.ts";
 import { acquireLease } from "./lease.ts";
 import { runtime } from "./runtime.ts";
 import { Options } from "./schema.ts";
+import { registerSessions } from "./sessions.ts";
 
 const register = Effect.fn("register")(function* (ctx: Context) {
   const configuration = yield* Configuration;
   const path = yield* Path.Path;
   const reload = Effect.all([ctx.skill.reload(), ctx.mcp.reload()]).pipe(Effect.asVoid);
   const lease = yield* acquireLease(reload);
+  yield* registerSessions(ctx).pipe(
+    Effect.catchTags({
+      SchemaError: (cause) =>
+        Effect.die(
+          new IntegrationError({
+            operation: "session provider configuration",
+            reason: "options",
+            cause,
+          }),
+        ),
+      PlatformError: (cause) =>
+        Effect.die(
+          new IntegrationError({
+            operation: "session provider identity",
+            reason: "filesystem",
+            cause,
+          }),
+        ),
+    }),
+  );
   yield* ctx.skill.transform((editor) => {
     for (const skill of lease.current().skills) {
       editor.add(skill);

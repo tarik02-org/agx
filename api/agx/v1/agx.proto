@@ -14,6 +14,8 @@ service ConfigurationService {
   rpc GetLocalConfiguration(GetLocalConfigurationRequest) returns (GetLocalConfigurationResponse);
   // Resolve native passthrough arguments and environment without creating a managed launch.
   rpc ResolvePassthrough(ResolvePassthroughRequest) returns (ResolvePassthroughResponse);
+  // Resolve client harness arguments and environment; resource delivery belongs to its plugin.
+  rpc ResolveClientCommand(ResolveClientCommandRequest) returns (ResolveClientCommandResponse);
   rpc Validate(ValidateRequest) returns (ValidateResponse);
   rpc Resolve(ResolveRequest) returns (ResolveResponse);
   // The configuration as loaded, for browsing it: harnesses, scope directories, and files.
@@ -68,6 +70,13 @@ service LaunchService {
 service ResourceService {
   rpc ResolveResources(ResolveResourcesRequest) returns (ResolveResourcesResponse);
   rpc PrepareResources(PrepareResourcesRequest) returns (PrepareResourcesResponse);
+}
+
+// Integrations publish session summaries bound to configured harnesses.
+service SessionProviderService {
+  rpc PublishSessions(PublishSessionsRequest) returns (PublishSessionsResponse);
+  // Registers a publisher while this connection remains open; its first frame confirms readiness.
+  rpc ConnectSessionSource(ConnectSessionSourceRequest) returns (stream ConnectSessionSourceResponse);
 }
 
 service RuntimeService {
@@ -518,7 +527,43 @@ message StoredSession {
   string builtin = 7;
   string harness = 8;
   bool recorded = 9;
+  // Empty for native file stores; otherwise identifies the integration-owned catalog.
+  string source_id = 10;
+  string scope_id = 11;
+  bool online = 12;
 }
+
+message SessionSource {
+  // Stable identity of a native server/profile, independent of its port or current process.
+  string source_id = 1;
+  // Stable publication scope, such as one native location within that source.
+  string scope_id = 2;
+  // Publisher instance; stale publishers cannot overwrite a newer active scope.
+  string epoch = 3;
+  string builtin = 4;
+  string harness = 5;
+}
+message ProviderSession {
+  string id = 1;
+  // Scope namespace, not a filesystem root on the daemon's machine.
+  string directory = 2;
+  string title = 3;
+  string message = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+message PublishSessionsRequest {
+  SessionSource source = 1;
+  repeated ProviderSession sessions = 2;
+  repeated string deleted_ids = 3;
+  // Replace only this source/scope's catalog; other locations remain intact.
+  bool replace = 4;
+}
+message PublishSessionsResponse {}
+message ConnectSessionSourceRequest {
+  SessionSource source = 1;
+}
+message ConnectSessionSourceResponse {}
 
 message ListSessionsResponse {
   repeated StoredSession sessions = 1;
@@ -925,6 +970,17 @@ message ResolvePassthroughRequest {
   map<string, string> environment_inputs = 3;
 }
 message ResolvePassthroughResponse {
+  repeated string arguments = 1;
+  // Sensitive: resolved configuration environment, including stored credentials.
+  map<string, string> environment = 2;
+}
+message ResolveClientCommandRequest {
+  string harness = 1;
+  repeated string native_arguments = 2;
+  // Sensitive: only variables referenced by this harness are accepted.
+  map<string, string> environment_inputs = 3;
+}
+message ResolveClientCommandResponse {
   repeated string arguments = 1;
   // Sensitive: resolved configuration environment, including stored credentials.
   map<string, string> environment = 2;

@@ -6,7 +6,11 @@ own variants of them with extra arguments, environment, and resources.
 
 **OpenCode 2** (`opencode`) consumes configuration through a
 [native Effect plugin](../packages/opencode/README.md). OpenCode starts its own
-server and owns its conversations; it uses no agx shim or launch command.
+server and owns its conversations. `agx opencode` starts its native client; the
+plugin supplies resources and publishes sessions for the launcher. Harness
+definitions can set the native client's executable, arguments and environment;
+set the plugin's `harness` option to the same definition name so its sessions
+resume with that configuration.
 
 ## Launching
 
@@ -14,6 +18,7 @@ server and owns its conversations; it uses no agx shim or launch command.
 agx codex
 agx claude --print 'Review the current change'
 agx pi --mode rpc
+agx opencode                    # requires the native AGX plugin
 agx codex-work                   # a harness definition of yours
 agx run codex-work -- --help     # the same, by name
 ```

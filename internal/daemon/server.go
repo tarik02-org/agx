@@ -37,6 +37,7 @@ import (
 	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/secretstore"
 	"github.com/tarik02-org/agx/internal/securefs"
+	"github.com/tarik02-org/agx/internal/sessionprovider"
 	"github.com/tarik02-org/agx/internal/sessionstore"
 	"github.com/tarik02-org/agx/internal/storage"
 )
@@ -117,8 +118,9 @@ type Server struct {
 	// changed wakes runtime watchers when launches or their MCP servers change.
 	changed *notifier
 	// clients pools the daemon's own MCP client sessions for ListTools and CallTool.
-	clients  *clientPool
-	sessions *sessionstore.Catalog
+	clients   *clientPool
+	sessions  *sessionstore.Catalog
+	providers *sessionprovider.Catalog
 	// shared runs the stdio MCP servers launches share.
 	shared *mcpruntime.Shared
 	// editMu serializes planning and applying configuration changes, so an apply checks and
@@ -293,6 +295,8 @@ func Serve(
 	path, handler = agxv1connect.NewLaunchServiceHandler(s, opts...)
 	mux.Handle(path, handler)
 	path, handler = agxv1connect.NewResourceServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewSessionProviderServiceHandler(s, opts...)
 	mux.Handle(path, handler)
 	path, handler = agxv1connect.NewRuntimeServiceHandler(s, opts...)
 	mux.Handle(path, handler)

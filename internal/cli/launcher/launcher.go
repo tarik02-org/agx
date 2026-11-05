@@ -235,7 +235,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, candidate := range m.rows {
 			if selected.harness != nil && candidate.harness != nil && selected.harness.Name == candidate.harness.Name ||
 				selected.entry != nil && candidate.entry != nil && selected.entry.Builtin == candidate.entry.Builtin &&
-					selected.entry.ID == candidate.entry.ID {
+					selected.entry.ID == candidate.entry.ID && selected.entry.SourceID == candidate.entry.SourceID && selected.entry.ScopeID == candidate.entry.ScopeID {
 				m.cursor = i
 				break
 			}
@@ -504,6 +504,9 @@ func (m model) sessionRow(e sessions.Entry, harnessWidth int, selected bool) str
 	if text == "" {
 		text = "(no message)"
 		style = m.styles.muted
+	}
+	if e.SourceID != "" && !e.Online {
+		text = "(offline) " + text
 	}
 	text = ansi.Truncate(text, max(room, 8), "…")
 	line := m.render(m.styles.harness, pad(e.Harness, harnessWidth)) + "  " + m.render(m.styles.muted, ago) + "  " +
