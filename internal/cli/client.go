@@ -24,6 +24,7 @@ type client struct {
 	packages  agxv1connect.PackageServiceClient
 	launches  agxv1connect.LaunchServiceClient
 	runtime   agxv1connect.RuntimeServiceClient
+	providers agxv1connect.SessionProviderServiceClient
 	secrets   agxv1connect.SecretServiceClient
 }
 
@@ -46,6 +47,7 @@ func dial(d control.Discovery) *client {
 		packages:  agxv1connect.NewPackageServiceClient(httpClient, d.URL, options),
 		launches:  agxv1connect.NewLaunchServiceClient(httpClient, d.URL, options),
 		runtime:   agxv1connect.NewRuntimeServiceClient(httpClient, d.URL, options),
+		providers: agxv1connect.NewSessionProviderServiceClient(httpClient, d.URL, options),
 		secrets:   agxv1connect.NewSecretServiceClient(httpClient, d.URL, options),
 	}
 }

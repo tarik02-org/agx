@@ -7,10 +7,12 @@ import {
   type Transport,
 } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 
 import {
   LaunchService,
@@ -18,7 +20,11 @@ import {
   type AttachLaunchRequestSchema,
   type PrepareResourcesRequestSchema,
   type ResolveResourcesRequestSchema,
+  type RefreshResourcesRequestSchema,
+  type WatchResourcesRequestSchema,
+  type WatchResourcesResponse,
   type PrepareResourcesResponse,
+  type RefreshResourcesResponse,
   type ResolveResourcesResponse,
 } from "../gen/agx/v1/agx_pb.ts";
 import { DaemonError, EndState } from "./error.ts";
@@ -26,6 +32,8 @@ import type { Discovery, LifecycleToken } from "./schema.ts";
 
 export type ResolveInput = MessageInitShape<typeof ResolveResourcesRequestSchema>;
 export type PrepareInput = MessageInitShape<typeof PrepareResourcesRequestSchema>;
+export type RefreshInput = MessageInitShape<typeof RefreshResourcesRequestSchema>;
+export type WatchInput = MessageInitShape<typeof WatchResourcesRequestSchema>;
 export type AttachInput = MessageInitShape<typeof AttachLaunchRequestSchema>;
 
 export class AgxClient extends Context.Service<
@@ -39,6 +47,21 @@ export class AgxClient extends Context.Service<
       target: Discovery,
       input: PrepareInput,
     ) => Effect.Effect<PrepareResourcesResponse, DaemonError>;
+    readonly refresh: (
+      target: Discovery,
+      input: RefreshInput,
+      token: LifecycleToken,
+    ) => Effect.Effect<RefreshResourcesResponse, DaemonError>;
+    readonly retire: (
+      target: Discovery,
+      launchId: string,
+      successorLaunchId: string,
+      token: LifecycleToken,
+    ) => Effect.Effect<void, DaemonError>;
+    readonly watch: (
+      target: Discovery,
+      input: WatchInput,
+    ) => Stream.Stream<WatchResourcesResponse, DaemonError>;
     readonly renew: (
       target: Discovery,
       launchId: string,
@@ -83,6 +106,38 @@ const call = <A>(
     }),
   );
 
+const watch = (target: Discovery, input: WatchInput) =>
+  Stream.unwrap(
+    Effect.fn("AgxClient.watch")(function* () {
+      const controller = new AbortController();
+      yield* Effect.addFinalizer(() => Effect.sync(() => controller.abort()));
+      const responses = createClient(
+        ResourceService,
+        createConnectTransport({ baseUrl: target.url.origin }),
+      ).watchResources(input, {
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${target.token}` },
+      });
+      return Stream.fromAsyncIterable(responses, (cause) => new Cause.UnknownError(cause)).pipe(
+        Stream.catchTag("UnknownError", (error) => {
+          if (!Schema.is(Schema.instanceOf(ConnectError))(error.cause)) {
+            return Stream.die(error.cause);
+          }
+          const cause = error.cause;
+          const ended = cause.metadata.get("Agx-Launch-Ended");
+          return Stream.fail(
+            new DaemonError({
+              operation: "watch resources",
+              code: cause.code,
+              ended: Schema.is(EndState)(ended) ? ended : null,
+              cause,
+            }),
+          );
+        }),
+      );
+    })(),
+  );
+
 export const makeAgxClient = Effect.fn("makeAgxClient")(() =>
   Effect.sync(() => {
     const resolve = Effect.fn("AgxClient.resolve")((target: Discovery, input: ResolveInput) =>
@@ -94,6 +149,27 @@ export const makeAgxClient = Effect.fn("makeAgxClient")(() =>
     const prepare = Effect.fn("AgxClient.prepare")((target: Discovery, input: PrepareInput) =>
       call(target, "prepare resources", target.token, (transport, options) =>
         createClient(ResourceService, transport).prepareResources(input, options),
+      ),
+    );
+
+    const refresh = Effect.fn("AgxClient.refresh")(
+      (target: Discovery, input: RefreshInput, token: LifecycleToken) =>
+        call(target, "refresh resources", token, (transport, options) =>
+          createClient(ResourceService, transport).refreshResources(input, options),
+        ),
+    );
+
+    const retire = Effect.fn("AgxClient.retire")(
+      (target: Discovery, launchId: string, successorLaunchId: string, token: LifecycleToken) =>
+        call(target, "retire resources", token, (transport, options) =>
+          createClient(ResourceService, transport).retireResources(
+            { launchId, successorLaunchId },
+            options,
+          ),
+        ),
+      Effect.asVoid,
+      Effect.catchTag("DaemonError", (error) =>
+        error.code === Code.NotFound || error.ended !== null ? Effect.void : Effect.fail(error),
       ),
     );
 
@@ -130,7 +206,7 @@ export const makeAgxClient = Effect.fn("makeAgxClient")(() =>
       ),
     );
 
-    return AgxClient.of({ resolve, prepare, renew, attach, release });
+    return AgxClient.of({ resolve, prepare, refresh, retire, watch, renew, attach, release });
   }),
 );
 

@@ -60,15 +60,26 @@ func (s *Server) AttachLaunch(
 			return nil, err
 		}
 		s.mu.Lock()
-		if s.stopped {
+		held, attachErr := s.attachable(view.Id, msg.Grant, msg.LifecycleToken)
+		if attachErr == nil && held != nil {
+			attachErr = rpcError(connect.CodeAborted, "launch changed while attaching; retry")
+		}
+		if s.stopped || attachErr != nil {
 			s.mu.Unlock()
 			l.cancel()
 			go closeEndpoints(l.endpoints)
+			if attachErr != nil {
+				return nil, attachErr
+			}
 			return nil, refusal()
 		}
 		previously = "unknown"
 		if expired := s.launches[view.Id]; expired != nil {
 			previously = "expired"
+			if expired.view.Kind == v1.Launch_KIND_RESOURCES && l.view.Kind == v1.Launch_KIND_RESOURCES &&
+				expired.resourceFamily != nil {
+				l.resourceFamily = expired.resourceFamily
+			}
 			// Its thread launches ended with it; the wrapper sent those still serving threads.
 			for _, child := range s.children(expired) {
 				delete(s.launches, child.view.Id)
@@ -104,6 +115,9 @@ func (s *Server) AttachLaunch(
 func (s *Server) attachable(id, grant, lifecycle string) (*launch, error) {
 	if _, ok := s.revoked[id]; ok {
 		return nil, endedError(v1.Launch_STATE_REVOKED)
+	}
+	if _, ok := s.finishedResources[id]; ok {
+		return nil, endedError(v1.Launch_STATE_FINISHED)
 	}
 	l := s.launches[id]
 	if l == nil {

@@ -83,8 +83,10 @@ func (d *drain) wait(ctx context.Context) bool {
 
 // streams are the Connect procedures that stay open until their caller or the daemon ends them.
 var streams = map[string]bool{
-	agxv1connect.RuntimeServiceWatchRuntimeProcedure: true,
-	agxv1connect.SecretServiceLoginProcedure:         true,
+	agxv1connect.ResourceServiceWatchResourcesProcedure:              true,
+	agxv1connect.SessionProviderServiceWatchSessionCommandsProcedure: true,
+	agxv1connect.RuntimeServiceWatchRuntimeProcedure:                 true,
+	agxv1connect.SecretServiceLoginProcedure:                         true,
 }
 
 // track counts the requests next serves, except long-lived streams: an MCP event stream (GET)

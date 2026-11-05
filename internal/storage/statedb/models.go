@@ -236,6 +236,12 @@ type LocalSkillFile struct {
 	Executable bool
 }
 
+type ResourceFinish struct {
+	Configuration string
+	Launch        string
+	FinishedAt    int64
+}
+
 type Revocation struct {
 	Configuration string
 	Launch        string

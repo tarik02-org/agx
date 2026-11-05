@@ -53,3 +53,10 @@ INSERT INTO revocations(configuration, launch, revoked_at) VALUES (?, ?, ?)
 ON CONFLICT(configuration, launch) DO UPDATE SET revoked_at = max(revocations.revoked_at, excluded.revoked_at);
 -- name: PruneRevocations :exec
 DELETE FROM revocations WHERE configuration = ? AND revoked_at <= ?;
+-- name: ListResourceFinishes :many
+SELECT launch, finished_at FROM resource_finishes WHERE configuration = ? AND finished_at > ?;
+-- name: PutResourceFinish :exec
+INSERT INTO resource_finishes(configuration, launch, finished_at) VALUES (?, ?, ?)
+ON CONFLICT(configuration, launch) DO UPDATE SET finished_at = max(resource_finishes.finished_at, excluded.finished_at);
+-- name: PruneResourceFinishes :exec
+DELETE FROM resource_finishes WHERE configuration = ? AND finished_at <= ?;

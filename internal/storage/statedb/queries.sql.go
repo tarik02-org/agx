@@ -166,6 +166,43 @@ func (q *Queries) ListLaunches(ctx context.Context) ([]Launch, error) {
 	return items, nil
 }
 
+const listResourceFinishes = `-- name: ListResourceFinishes :many
+SELECT launch, finished_at FROM resource_finishes WHERE configuration = ? AND finished_at > ?
+`
+
+type ListResourceFinishesParams struct {
+	Configuration string
+	FinishedAt    int64
+}
+
+type ListResourceFinishesRow struct {
+	Launch     string
+	FinishedAt int64
+}
+
+func (q *Queries) ListResourceFinishes(ctx context.Context, arg ListResourceFinishesParams) ([]ListResourceFinishesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listResourceFinishes, arg.Configuration, arg.FinishedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListResourceFinishesRow{}
+	for rows.Next() {
+		var i ListResourceFinishesRow
+		if err := rows.Scan(&i.Launch, &i.FinishedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRevocations = `-- name: ListRevocations :many
 SELECT launch, revoked_at FROM revocations WHERE configuration = ? AND revoked_at > ?
 `
@@ -307,6 +344,20 @@ func (q *Queries) PruneLaunches(ctx context.Context, arg PruneLaunchesParams) er
 	return err
 }
 
+const pruneResourceFinishes = `-- name: PruneResourceFinishes :exec
+DELETE FROM resource_finishes WHERE configuration = ? AND finished_at <= ?
+`
+
+type PruneResourceFinishesParams struct {
+	Configuration string
+	FinishedAt    int64
+}
+
+func (q *Queries) PruneResourceFinishes(ctx context.Context, arg PruneResourceFinishesParams) error {
+	_, err := q.db.ExecContext(ctx, pruneResourceFinishes, arg.Configuration, arg.FinishedAt)
+	return err
+}
+
 const pruneRevocations = `-- name: PruneRevocations :exec
 DELETE FROM revocations WHERE configuration = ? AND revoked_at <= ?
 `
@@ -333,6 +384,22 @@ type PutDaemonPortParams struct {
 
 func (q *Queries) PutDaemonPort(ctx context.Context, arg PutDaemonPortParams) error {
 	_, err := q.db.ExecContext(ctx, putDaemonPort, arg.Configuration, arg.Port)
+	return err
+}
+
+const putResourceFinish = `-- name: PutResourceFinish :exec
+INSERT INTO resource_finishes(configuration, launch, finished_at) VALUES (?, ?, ?)
+ON CONFLICT(configuration, launch) DO UPDATE SET finished_at = max(resource_finishes.finished_at, excluded.finished_at)
+`
+
+type PutResourceFinishParams struct {
+	Configuration string
+	Launch        string
+	FinishedAt    int64
+}
+
+func (q *Queries) PutResourceFinish(ctx context.Context, arg PutResourceFinishParams) error {
+	_, err := q.db.ExecContext(ctx, putResourceFinish, arg.Configuration, arg.Launch, arg.FinishedAt)
 	return err
 }
 

@@ -49,6 +49,39 @@ export const Snapshot = Schema.Struct({
   requiredEnvironment: Schema.Array(Schema.NonEmptyString),
 });
 
+export const Manifest = Schema.Struct({
+  revision: Schema.NonEmptyString,
+  snapshot: Snapshot,
+  resources: Schema.Array(
+    Schema.Struct({
+      resource: Schema.Struct({
+        resource: Schema.Union([
+          Schema.Struct({ case: Schema.Literal("skillId"), value: Schema.NonEmptyString }),
+          Schema.Struct({ case: Schema.Literal("instructionsId"), value: Schema.NonEmptyString }),
+          Schema.Struct({ case: Schema.Literal("mcpId"), value: Schema.NonEmptyString }),
+        ]),
+      }),
+      digest: Schema.NonEmptyString,
+    }),
+  ),
+  settings: Schema.Array(
+    Schema.Struct({ path: Schema.Array(Schema.String), valueJson: Schema.String }),
+  ),
+});
+export type Manifest = typeof Manifest.Type;
+
+export const ResourceWatchEvent = Schema.Struct({
+  state: Schema.Union([
+    Schema.Struct({ case: Schema.Literal("manifest"), value: Manifest }),
+    Schema.Struct({
+      case: Schema.Literal("invalid"),
+      value: Schema.Struct({
+        diagnostics: Schema.Array(Schema.Struct({ code: Schema.String, summary: Schema.String })),
+      }),
+    }),
+  ]),
+});
+
 export const LeaseEnvelope = Schema.Struct({
   launch: Schema.Struct({
     id: Schema.NonEmptyString,
@@ -67,5 +100,6 @@ export const Prepared = Schema.Struct({
   grant: McpGrant,
   renewAfterSeconds: Schema.Int.check(Schema.isGreaterThan(0)),
   mcpDirectory: Schema.String,
+  manifest: Manifest,
 });
 export type Prepared = typeof Prepared.Type;

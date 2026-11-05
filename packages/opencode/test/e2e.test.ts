@@ -45,6 +45,26 @@ const ShellEnvironment = Schema.Struct({
   launch: Schema.String,
   grant: Schema.String,
 });
+const SessionCatalog = Schema.Struct({
+  data: Schema.Struct({
+    sessions: Schema.NullOr(
+      Schema.Array(
+        Schema.Struct({
+          id: Schema.String,
+          directory: Schema.String,
+          title: Schema.optionalKey(Schema.String),
+          sourceId: Schema.optionalKey(Schema.String),
+          scopeId: Schema.optionalKey(Schema.String),
+          online: Schema.optionalKey(Schema.Boolean),
+        }),
+      ),
+    ),
+  }),
+});
+const PreparedNativeSession = Schema.Struct({
+  session: Schema.Struct({ id: Schema.String }),
+  launchDataJson: Schema.String,
+});
 const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
 const ServerStarting = Schema.Struct({
   reason: Schema.Literal("UnexpectedStatus"),
@@ -73,7 +93,20 @@ await test(
     const beta = path.join(root, "beta");
     const invalid = path.join(root, "invalid");
     const invalidSkill = path.join(root, "invalid-skill");
-    await Promise.all([mkdir(alpha), mkdir(beta), mkdir(invalid), mkdir(invalidSkill)]);
+    const localSkill = path.join(root, "local-skill");
+    const localInstructions = path.join(root, "local-instructions.md");
+    await Promise.all([
+      mkdir(alpha),
+      mkdir(beta),
+      mkdir(invalid),
+      mkdir(invalidSkill),
+      mkdir(localSkill),
+    ]);
+    await writeFile(
+      path.join(localSkill, "SKILL.md"),
+      "---\nname: local\ndescription: Local skill.\n---\nLOCAL_SKILL_INITIAL",
+    );
+    await writeFile(localInstructions, "LOCAL_INSTRUCTIONS_INITIAL");
     await writeFile(
       path.join(invalidSkill, "SKILL.md"),
       "---\nname: invalid\ndescription: Invalid skill.\n---\nInvalid.",
@@ -92,6 +125,10 @@ await test(
       AGX_CACHE: path.join(root, "cache"),
       AGX_STATE: path.join(root, "state"),
       AGX_DAEMON: daemon,
+      CODEX_HOME: path.join(root, "other-native-stores/codex"),
+      CLAUDE_CONFIG_DIR: path.join(root, "other-native-stores/claude"),
+      PI_CODING_AGENT_DIR: path.join(root, "other-native-stores/pi"),
+      PI_CODING_AGENT_SESSION_DIR: path.join(root, "other-native-stores/pi-sessions"),
       AGX_MANAGEMENT_TOKEN: "must-not-reach-shell",
       AGX_LIFECYCLE_TOKEN: "must-not-reach-shell",
       MCP_INPUT_SECRET: "fixture-input",
@@ -134,6 +171,7 @@ await test(
     const fragment = {
       skills: {
         invalid: { path: invalidSkill },
+        local: { path: localSkill },
         memory: { description: "Memory-only instructions", content: "Memory skill body." },
         assets: {
           description: "Asset-bearing instructions",
@@ -145,7 +183,11 @@ await test(
         },
         hidden: { description: "Beta only", content: "Beta skill body." },
       },
-      instructions: { alpha: { text: "AGX_ALPHA_SENTINEL" }, beta: { text: "AGX_BETA_SENTINEL" } },
+      instructions: {
+        alpha: { text: "AGX_ALPHA_SENTINEL" },
+        beta: { text: "AGX_BETA_SENTINEL" },
+        local: { path: localInstructions },
+      },
       mcp: {
         "team/echo": { command: [mcp], environment: { ECHO_TOKEN: "!env MCP_INPUT_SECRET" } },
         deferred: { command: [mcp], load: "on_demand" },
@@ -155,8 +197,8 @@ await test(
         {
           directory: alpha,
           add: {
-            skills: ["memory", "assets"],
-            instructions: ["alpha"],
+            skills: ["memory", "assets", "local"],
+            instructions: ["alpha", "local"],
             mcp: ["team/echo", "deferred"],
           },
         },
@@ -325,7 +367,11 @@ export default define({
         { package: catalogPlugin },
         {
           package: pluginTarget,
-          options: { executable: binary, codemode: false },
+          options: {
+            executable: binary,
+            codemode: false,
+            sessionServer: `http://127.0.0.1:${port}`,
+          },
         },
       ],
       providers: {
@@ -423,7 +469,7 @@ export default define({
     const skills = (await api.skill.list({ location: { directory: alpha } })).data.filter((entry) =>
       entry.id.startsWith("agx-"),
     );
-    assert.deepEqual(skills.map((entry) => entry.name).toSorted(), ["assets", "memory"]);
+    assert.deepEqual(skills.map((entry) => entry.name).toSorted(), ["assets", "local", "memory"]);
     const memory = skills.find((entry) => entry.name === "memory");
     const asset = skills.find((entry) => entry.name === "assets");
     assert.ok(memory?.path.startsWith("skill://"));
@@ -483,6 +529,74 @@ export default define({
       model: { providerID: "fixture", id: "fixture" },
       permissions: [{ action: "*", resource: "*", effect: "allow" }],
     });
+    const betaSession = await api.session.create({
+      location: { directory: beta },
+      title: "Beta indexed session",
+    });
+    const readSessions = async () => {
+      const output = (await exec(binary, ["--json", "sessions", "--all"], { env, cwd: alpha }))
+        .stdout;
+      assert.ok(
+        !output.includes(env.OPENCODE_PASSWORD),
+        "native credentials entered the public session catalog",
+      );
+      assert.ok(
+        !output.includes("launchDataJson"),
+        "private routing entered the public session catalog",
+      );
+      return (
+        Schema.decodeUnknownSync(Schema.fromJsonString(SessionCatalog))(output).data.sessions ?? []
+      );
+    };
+    let indexed = await readSessions();
+    for (
+      let attempt = 0;
+      attempt < 100 && !indexed.some((entry) => entry.id === session.id && entry.online === true);
+      attempt++
+    ) {
+      await setTimeout(100);
+      indexed = await readSessions();
+    }
+    const alphaSource = indexed.find((entry) => entry.id === session.id);
+    assert.ok(
+      alphaSource?.sourceId !== undefined &&
+        alphaSource.scopeId !== undefined &&
+        alphaSource.online === true,
+      "native session was not published to AGX",
+    );
+    for (
+      let attempt = 0;
+      attempt < 100 && !indexed.some((entry) => entry.id === betaSession.id);
+      attempt++
+    ) {
+      await setTimeout(100);
+      indexed = await readSessions();
+    }
+    const betaSource = indexed.find((entry) => entry.id === betaSession.id);
+    assert.ok(betaSource?.scopeId !== undefined && betaSource.online === true);
+    assert.equal(
+      betaSource.sourceId,
+      alphaSource.sourceId,
+      "one native profile published inconsistent source identities",
+    );
+    assert.notEqual(betaSource.scopeId, alphaSource.scopeId);
+    await api.session.update({ sessionID: betaSession.id, title: "Beta renamed session" });
+    for (
+      let attempt = 0;
+      attempt < 100 &&
+      !indexed.some(
+        (entry) => entry.id === betaSession.id && entry.title === "Beta renamed session",
+      );
+      attempt++
+    ) {
+      await setTimeout(100);
+      indexed = await readSessions();
+    }
+    assert.ok(
+      indexed.some(
+        (entry) => entry.id === betaSession.id && entry.title === "Beta renamed session",
+      ),
+    );
     // MCP connection status precedes OpenCode's debounced native tool registration.
     let catalog: ReadonlyArray<string> = [];
     for (let attempt = 0; attempt < 100; attempt++) {
@@ -544,6 +658,55 @@ export default define({
       const view = Schema.decodeUnknownSync(Schema.fromJsonString(Runtime))(result).runtime;
       return { ...view, launches: view.launches ?? [] };
     };
+    const prepareNative = async (id: string) =>
+      fetch(`${discovery.url}/agx.v1.SessionProviderService/PrepareSession`, {
+        method: "POST",
+        headers: { "content-type": "application/json", Authorization: `Bearer ${discovery.token}` },
+        body: JSON.stringify({
+          sourceId: alphaSource.sourceId,
+          scopeId: alphaSource.scopeId,
+          nativeSessionId: id,
+        }),
+      });
+    const preparedResponse = await prepareNative(session.id);
+    assert.equal(preparedResponse.status, 200);
+    const preparedNative = Schema.decodeUnknownSync(PreparedNativeSession)(
+      await preparedResponse.json(),
+    );
+    assert.equal(preparedNative.session.id, session.id);
+    const nativeRoute = Schema.decodeUnknownSync(
+      Schema.fromJsonString(
+        Schema.Struct({
+          sessionId: Schema.String,
+          server: Schema.String,
+          password: Schema.String,
+        }),
+      ),
+    )(preparedNative.launchDataJson);
+    assert.equal(nativeRoute.sessionId, session.id);
+    assert.equal(nativeRoute.server, `http://127.0.0.1:${port}/`);
+    assert.equal(nativeRoute.password, env.OPENCODE_PASSWORD);
+    const missing = await prepareNative("ses_missing_native_session");
+    assert.equal(
+      missing.status,
+      404,
+      `missing native ID must fail rather than become a new session: ${await missing.text()}\n${logs}`,
+    );
+    const childSession = await api.session.create({
+      location: { directory: alpha },
+      parentID: session.id,
+    });
+    const archivedSession = await api.session.create({
+      location: { directory: alpha },
+      title: "Archived session",
+    });
+    await api.session.update({ sessionID: archivedSession.id, archived: true });
+    await setTimeout(500);
+    indexed = await readSessions();
+    assert.ok(
+      !indexed.some((entry) => entry.id === childSession.id || entry.id === archivedSession.id),
+      "non-listable native sessions entered the launcher catalog",
+    );
     assert.equal(
       (await readRuntime()).launches.filter(
         (entry) => entry.kind === "KIND_RESOURCES" && entry.state === "STATE_RUNNING",
@@ -678,6 +841,100 @@ export default define({
     });
     await api.experimental.session.wait({ sessionID: session.id });
     assert.ok(requests.filter(echoCompleted).length > priorCalls);
+    fragment.instructions.alpha.text = "AGX_AUTORELOADED_SENTINEL";
+    fragment.skills.memory.content = "AUTORELOADED_MEMORY_BODY";
+    await writeFragment();
+    let automaticSkills = (await api.skill.list({ location: { directory: alpha } })).data;
+    for (
+      let attempt = 0;
+      attempt < 100 &&
+      !automaticSkills.some(
+        (skill) => skill.name === "memory" && skill.content.includes("AUTORELOADED_MEMORY_BODY"),
+      );
+      attempt++
+    ) {
+      await setTimeout(100);
+      automaticSkills = (await api.skill.list({ location: { directory: alpha } })).data;
+    }
+    assert.ok(
+      automaticSkills.some(
+        (skill) => skill.name === "memory" && skill.content.includes("AUTORELOADED_MEMORY_BODY"),
+      ),
+      "configuration edits did not update native skills automatically",
+    );
+    await api.session.generate({
+      sessionID: session.id,
+      prompt: "Confirm automatic configuration reload.",
+    });
+    assert.ok(
+      requests.some((request) =>
+        request.messages.some(
+          (message) =>
+            message.role === "system" &&
+            JSON.stringify(message.content).includes("AGX_AUTORELOADED_SENTINEL"),
+        ),
+      ),
+    );
+    await writeFile(
+      path.join(localSkill, "SKILL.md"),
+      "---\nname: local\ndescription: Local skill.\n---\nLOCAL_SKILL_UPDATED",
+    );
+    await writeFile(localInstructions, "LOCAL_INSTRUCTIONS_UPDATED");
+    for (let attempt = 0; attempt < 100; attempt++) {
+      automaticSkills = (await api.skill.list({ location: { directory: alpha } })).data;
+      if (
+        automaticSkills.some(
+          (skill) => skill.name === "local" && skill.content.includes("LOCAL_SKILL_UPDATED"),
+        )
+      ) {
+        break;
+      }
+      await setTimeout(100);
+    }
+    assert.ok(
+      automaticSkills.some(
+        (skill) => skill.name === "local" && skill.content.includes("LOCAL_SKILL_UPDATED"),
+      ),
+      "local file edits did not update native skills automatically",
+    );
+    await api.session.generate({
+      sessionID: session.id,
+      prompt: "Confirm automatic local file reload.",
+    });
+    assert.ok(
+      requests.some((request) =>
+        request.messages.some(
+          (message) =>
+            message.role === "system" &&
+            JSON.stringify(message.content).includes("LOCAL_INSTRUCTIONS_UPDATED"),
+        ),
+      ),
+    );
+    const leaseBeforeInvalid = (await readRuntime()).launches.find(
+      (entry) => entry.directory === alpha && entry.state === "STATE_RUNNING",
+    );
+    assert.ok(leaseBeforeInvalid);
+    await writeFile(path.join(root, "main.yaml"), "scopes: [\n");
+    await setTimeout(1250);
+    await api.session.generate({
+      sessionID: session.id,
+      prompt: "Keep the last valid configuration during an invalid edit.",
+    });
+    assert.equal(
+      (await readRuntime()).launches.find(
+        (entry) => entry.directory === alpha && entry.state === "STATE_RUNNING",
+      )?.id,
+      leaseBeforeInvalid.id,
+    );
+    await writeFragment();
+    await setTimeout(1250);
+    assert.equal(
+      (await readRuntime()).launches.find(
+        (entry) => entry.directory === alpha && entry.state === "STATE_RUNNING",
+      )?.id,
+      leaseBeforeInvalid.id,
+      "recovery to the same manifest unnecessarily replaced its lease",
+    );
     fragment.instructions.alpha.text = "AGX_RELOADED_SENTINEL";
     await writeFragment();
     await api.session.command({ sessionID: session.id, name: "agx-reload", text: "" });
@@ -699,6 +956,20 @@ export default define({
     assert.equal(
       (await readRuntime()).launches.find((entry) => entry.id === betaLease.id)?.state,
       "STATE_FINISHED",
+    );
+    indexed = await readSessions();
+    for (
+      let attempt = 0;
+      attempt < 100 &&
+      !indexed.some((entry) => entry.id === betaSession.id && entry.online !== true);
+      attempt++
+    ) {
+      await setTimeout(100);
+      indexed = await readSessions();
+    }
+    assert.ok(
+      indexed.some((entry) => entry.id === betaSession.id && entry.online !== true),
+      "location disposal discarded offline native history",
     );
     await writeFile(path.join(pluginRepository, "README.md"), "Updated fixture Git release.\n");
     await commitPlugin("fixture plugin update");
@@ -740,6 +1011,9 @@ export default define({
     );
     await exec(binary, ["daemon", "start"], { env });
     await setTimeout(1200);
+    fragment.instructions.alpha.text = "MUST_NOT_REAUTHORIZE_REVOKED_LEASE";
+    await writeFragment();
+    await setTimeout(1250);
     const requestsBeforeRevoked = requests.length;
     await assert.rejects(
       api.session.generate({ sessionID: session.id, prompt: "Do not bypass revocation." }),

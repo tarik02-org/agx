@@ -68,6 +68,21 @@ service LaunchService {
 service ResourceService {
   rpc ResolveResources(ResolveResourcesRequest) returns (ResolveResourcesResponse);
   rpc PrepareResources(PrepareResourcesRequest) returns (PrepareResourcesResponse);
+  // Current resource manifests and subsequent changes, scoped to one consumer context.
+  rpc WatchResources(WatchResourcesRequest) returns (stream WatchResourcesResponse);
+  // Lifecycle-authorized handover from an active resource lease to its successor.
+  rpc RefreshResources(RefreshResourcesRequest) returns (RefreshResourcesResponse);
+  // Releases a superseded member without ending its authorization family.
+  rpc RetireResources(RetireResourcesRequest) returns (RetireResourcesResponse);
+}
+
+// Integrations publish native session summaries and handle session operations themselves.
+// The daemon indexes sessions and brokers commands without knowing the native server protocol.
+service SessionProviderService {
+  rpc PublishSessions(PublishSessionsRequest) returns (PublishSessionsResponse);
+  rpc WatchSessionCommands(WatchSessionCommandsRequest) returns (stream WatchSessionCommandsResponse);
+  rpc ReplySessionCommand(ReplySessionCommandRequest) returns (ReplySessionCommandResponse);
+  rpc PrepareSession(PrepareSessionRequest) returns (PrepareSessionResponse);
 }
 
 service RuntimeService {
@@ -276,7 +291,48 @@ message ResolveResourcesResponse {
   repeated ResourceTrace traces = 2;
   repeated Diagnostic diagnostics = 3;
   repeated HarnessSetting settings = 4;
+  ResourceManifest manifest = 5;
 }
+message ResourceManifestEntry {
+  ResourceRef resource = 1;
+  string digest = 2;
+}
+// Desired resource state. Digests identify content; file bytes and credentials are not streamed.
+message ResourceManifest {
+  string revision = 1;
+  Snapshot snapshot = 2;
+  repeated ResourceManifestEntry resources = 3;
+  repeated HarnessSetting settings = 4;
+  repeated Diagnostic diagnostics = 5;
+}
+message WatchResourcesRequest {
+  string directory = 1;
+  string harness = 2;
+}
+message ResourceWatchInvalid {
+  repeated Diagnostic diagnostics = 1;
+}
+message WatchResourcesResponse {
+  oneof state {
+    ResourceManifest manifest = 1;
+    ResourceWatchInvalid invalid = 2;
+  }
+}
+message RefreshResourcesRequest {
+  string launch_id = 1;
+  string snapshot_id = 2;
+  // Sensitive: only resource environment names declared by the expected snapshot are accepted.
+  map<string, string> environment_inputs = 3;
+  string mcp_directory = 4;
+}
+message RefreshResourcesResponse {
+  PrepareResourcesResponse resources = 1;
+}
+message RetireResourcesRequest {
+  string launch_id = 1;
+  string successor_launch_id = 2;
+}
+message RetireResourcesResponse {}
 message PrepareResourcesRequest {
   string snapshot_id = 1;
   string directory = 2;
@@ -299,6 +355,7 @@ message PrepareResourcesResponse {
   uint32 renew_after_seconds = 6;
   // Canonical daemon-side directory, retained for AttachLaunch; empty when unnecessary.
   string mcp_directory = 7;
+  ResourceManifest manifest = 8;
 }
 message ResourceContent {
   repeated SkillContent skills = 1;
@@ -518,6 +575,86 @@ message StoredSession {
   string builtin = 7;
   string harness = 8;
   bool recorded = 9;
+  // Empty for native file stores; otherwise identifies the integration-owned catalog.
+  string source_id = 10;
+  string scope_id = 11;
+  bool online = 12;
+}
+
+message SessionSource {
+  // Stable identity of a native server/profile, independent of its port or current process.
+  string source_id = 1;
+  // Stable publication scope, such as one native location within that source.
+  string scope_id = 2;
+  // Publisher instance; stale publishers cannot overwrite a newer active scope.
+  string epoch = 3;
+  string builtin = 4;
+  string harness = 5;
+}
+message ProviderSession {
+  string id = 1;
+  // Scope namespace, not a filesystem root on the daemon's machine.
+  string directory = 2;
+  string title = 3;
+  string message = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+message PublishSessionsRequest {
+  SessionSource source = 1;
+  repeated ProviderSession sessions = 2;
+  repeated string deleted_ids = 3;
+  // Replace only this source/scope's catalog; other locations remain intact.
+  bool replace = 4;
+}
+message PublishSessionsResponse {}
+message WatchSessionCommandsRequest {
+  SessionSource source = 1;
+}
+message SessionProviderReady {}
+message SessionCommand {
+  string id = 1;
+  string native_session_id = 2;
+}
+message WatchSessionCommandsResponse {
+  oneof event {
+    SessionProviderReady ready = 1;
+    SessionCommand command = 2;
+  }
+}
+message PreparedSession {
+  ProviderSession session = 1;
+  // Sensitive: private, adapter-owned launch routing. Never part of cached/public listings.
+  string launch_data_json = 2;
+}
+message SessionCommandFailure {
+  enum Code {
+    CODE_UNSPECIFIED = 0;
+    CODE_NOT_FOUND = 1;
+    CODE_UNAVAILABLE = 2;
+    CODE_REJECTED = 3;
+  }
+  Code code = 1;
+  string message = 2;
+}
+message ReplySessionCommandRequest {
+  SessionSource source = 1;
+  string command_id = 2;
+  oneof result {
+    PreparedSession prepared = 3;
+    SessionCommandFailure failure = 4;
+  }
+}
+message ReplySessionCommandResponse {}
+message PrepareSessionRequest {
+  string source_id = 1;
+  string scope_id = 2;
+  string native_session_id = 3;
+}
+message PrepareSessionResponse {
+  ProviderSession session = 1;
+  // Sensitive: transient routing passed only to the local native client launcher.
+  string launch_data_json = 2;
 }
 
 message ListSessionsResponse {

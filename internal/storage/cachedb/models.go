@@ -14,6 +14,19 @@ type Icon struct {
 	Icon   string
 }
 
+type ProviderSession struct {
+	SourceID  string
+	ScopeID   string
+	Builtin   string
+	Harness   string
+	SessionID string
+	Directory string
+	Title     string
+	Message   string
+	Started   int64
+	Updated   int64
+}
+
 type SessionFile struct {
 	Store     string
 	Path      string

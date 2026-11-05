@@ -154,6 +154,7 @@ func listSessions(
 					Builtin:  entry.Builtin,
 					Harness:  entry.Harness,
 					Recorded: entry.Recorded,
+					SourceID: entry.SourceId, ScopeID: entry.ScopeId, Online: entry.Online,
 				},
 			)
 		}
@@ -218,7 +219,11 @@ func printSessions(entries []sessions.Entry, directory string, all, searched boo
 		for i, cell := range row {
 			fixed[i] = max(fixed[i], ansi.StringWidth(cell))
 		}
-		rows = append(rows, append(row, cmp.Or(e.Title, e.Message)))
+		title := cmp.Or(e.Title, e.Message)
+		if e.SourceID != "" && !e.Online {
+			title = "(offline) " + title
+		}
+		rows = append(rows, append(row, title))
 	}
 	// On a terminal the title takes what the other columns leave; identifiers are never cut.
 	if width := out.Width(); width > 0 {
@@ -331,6 +336,9 @@ func resumeSession(
 	session sessions.Entry,
 	name string,
 ) error {
+	if session.SourceID != "" {
+		return resumeProviderSession(ctx, paths, registry, harnesses, session, name)
+	}
 	adapter, ok := registry.Adapter(session.Builtin)
 	if !ok {
 		return fmt.Errorf("no adapter for harness %s", session.Builtin)
