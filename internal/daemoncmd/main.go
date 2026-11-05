@@ -71,6 +71,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}()
 	registry := builtin.Registry()
 	if err := daemon.Serve(ctx, stop, paths, registry, registry.Builtins(control.CommandNames)); err != nil {
+		if errors.Is(err, daemon.ErrRestart) {
+			return control.RestartExitCode
+		}
 		_, _ = fmt.Fprintln(stderr, "agxd:", err)
 		return 1
 	}

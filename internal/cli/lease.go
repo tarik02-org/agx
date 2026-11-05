@@ -113,6 +113,9 @@ const crashRestartInterval = 10 * time.Second
 // Nothing else would start a daemon for the harness, whose MCP requests go straight to the port.
 // It reports whether a daemon answers afterwards.
 func (l *lease) replaceCrashed(ctx context.Context) bool {
+	if l.current().discovery.Managed {
+		return false
+	}
 	if time.Since(l.started) < crashRestartInterval || !crashed(l.paths, l.current().discovery.InstanceID) {
 		return false
 	}
@@ -295,7 +298,8 @@ func (l *lease) record(ctx context.Context, record *v1.RecordLaunchRequest) erro
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if (stopping(err) || connect.CodeOf(err) == connect.CodeUnauthenticated) && time.Now().Before(deadline) {
+		if (stopping(err) || connect.CodeOf(err) == connect.CodeUnauthenticated || l.current().discovery.Managed) &&
+			time.Now().Before(deadline) {
 			if err := pause(ctx, backoff(attempt)); err != nil {
 				return err
 			}

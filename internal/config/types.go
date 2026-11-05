@@ -285,6 +285,7 @@ type Daemon struct {
 	LeaseSeconds int   `yaml:"lease_seconds" json:"lease_seconds"       jsonschema:"minimum=3" jsonschema_description:"Launch lease length; defaults to 60."`
 	RenewSeconds int   `yaml:"renew_seconds" json:"renew_seconds"       jsonschema:"minimum=1" jsonschema_description:"Lease renewal interval, shorter than the lease; defaults to 20."`
 	Autostart    *bool `yaml:"autostart"     json:"autostart,omitempty"                        jsonschema_description:"Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."`
+	Managed      bool  `yaml:"managed"       json:"managed,omitempty"                          jsonschema_description:"An external service manager owns daemon startup and recovery. Commands never spawn a daemon; restart requests exit code 75 and waits for the manager."`
 }
 
 // RootFile is the root configuration file: the fragments it lists and machine-level settings.
