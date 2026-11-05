@@ -33,6 +33,9 @@ const (
 // autostart reports whether commands may start the daemon: AGX_NO_AUTOSTART overrides
 // daemon.autostart, which defaults to true.
 func autostart(c *config.Config) bool {
+	if c != nil && c.Daemon.Managed {
+		return false
+	}
 	if value := os.Getenv("AGX_NO_AUTOSTART"); value != "" && value != "0" {
 		return false
 	}
@@ -112,6 +115,9 @@ func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*cli
 		return newClient(paths)
 	}
 	_, current, state := probeDaemon(ctx, paths)
+	if current != nil && current.discovery.Managed {
+		return current, nil
+	}
 	switch state.action() {
 	case useDaemon:
 		return current, nil
@@ -156,6 +162,13 @@ const maxDaemonLog = 1 << 20
 // Concurrent starters each spawn one; the startup lock lets one serve, and the others connect to
 // it.
 func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
+	managed, err := externallyManaged(paths)
+	if err != nil {
+		return "", err
+	}
+	if managed {
+		return "", errManagedDaemon
+	}
 	executable, err := daemonExecutable()
 	if err != nil {
 		return "", err

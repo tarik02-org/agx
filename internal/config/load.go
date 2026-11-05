@@ -115,6 +115,7 @@ func read(root string, builtins Builtins, inputs *Inputs, local *Local) (*Config
 		LeaseSeconds: cmp.Or(r.Daemon.LeaseSeconds, 60),
 		RenewSeconds: cmp.Or(r.Daemon.RenewSeconds, 20),
 		Autostart:    r.Daemon.Autostart,
+		Managed:      r.Daemon.Managed,
 	}
 	// A glob matching the root, or two entries matching one fragment, load it once.
 	seen := map[string]bool{root: true}

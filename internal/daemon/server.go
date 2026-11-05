@@ -45,6 +45,9 @@ import (
 // historyRetention keeps ended launches around for status inspection.
 const historyRetention = time.Hour
 
+// ErrRestart reports a graceful restart requested from an external service manager.
+var ErrRestart = errors.New("external daemon restart requested")
+
 // verifier hashes a launch credential, so the daemon never holds one it could leak.
 func verifier(value string) [32]byte { return sha256.Sum256([]byte(value)) }
 
@@ -94,6 +97,8 @@ type Server struct {
 	stop      chan struct{}
 	// forced is set by a stop that revokes active launches instead of keeping them.
 	forced bool
+	// restart requests the service manager's on-failure restart exit status.
+	restart bool
 	// revoked maps launches revoked within revokedRetention, by this daemon or one before it, to
 	// when; their wrappers cannot attach them again.
 	revoked map[string]time.Time
@@ -192,6 +197,9 @@ func Serve(
 		c = config.Bare(builtins)
 		c.Root = paths.Config
 		c.Daemon = config.Daemon{LeaseSeconds: 60, RenewSeconds: 20}
+		if root, err := config.ReadRoot(paths.Config, builtins); err == nil {
+			c.Daemon.Managed = root.Daemon.Managed
+		}
 	}
 	// Holding the startup lock, no other daemon writes these directories.
 	removeAbandonedTemporaries(paths.State, time.Now())
@@ -217,6 +225,7 @@ func Serve(
 		Token:      securefs.Token(),
 		Config:     paths.Config,
 		PID:        os.Getpid(),
+		Managed:    c.Daemon.Managed,
 	}
 	s := &Server{
 		paths:     paths,
@@ -380,6 +389,12 @@ loop:
 	stopInstalls()
 	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 		return serveErr
+	}
+	s.mu.Lock()
+	restart := s.restart
+	s.mu.Unlock()
+	if restart {
+		return ErrRestart
 	}
 	return nil
 }
@@ -555,6 +570,9 @@ func (s *Server) Stop(
 	if req.Msg.Grace != nil && grace <= 0 {
 		return nil, rpcError(connect.CodeInvalidArgument, "grace must be a positive duration")
 	}
+	if req.Msg.Restart && !s.discovery.Managed {
+		return nil, rpcError(connect.CodeFailedPrecondition, "daemon is not externally managed")
+	}
 	s.expire()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -571,6 +589,7 @@ func (s *Server) Stop(
 	select {
 	case <-s.stop:
 	default:
+		s.restart = req.Msg.Restart
 		close(s.stop)
 	}
 	return connect.NewResponse(&v1.StopResponse{KeptLaunches: kept}), nil

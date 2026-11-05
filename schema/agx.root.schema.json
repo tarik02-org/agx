@@ -17,6 +17,10 @@
         "autostart": {
           "type": "boolean",
           "description": "Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."
+        },
+        "managed": {
+          "type": "boolean",
+          "description": "An external service manager owns daemon startup and recovery. Commands never spawn a daemon; restart requests exit code 75 and waits for the manager."
         }
       },
       "additionalProperties": false,
