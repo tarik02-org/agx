@@ -29,6 +29,8 @@ const (
 	LaunchServiceName = "agx.v1.LaunchService"
 	// ResourceServiceName is the fully-qualified name of the ResourceService service.
 	ResourceServiceName = "agx.v1.ResourceService"
+	// SessionProviderServiceName is the fully-qualified name of the SessionProviderService service.
+	SessionProviderServiceName = "agx.v1.SessionProviderService"
 	// RuntimeServiceName is the fully-qualified name of the RuntimeService service.
 	RuntimeServiceName = "agx.v1.RuntimeService"
 	// SecretServiceName is the fully-qualified name of the SecretService service.
@@ -120,6 +122,18 @@ const (
 	// ResourceServicePrepareResourcesProcedure is the fully-qualified name of the ResourceService's
 	// PrepareResources RPC.
 	ResourceServicePrepareResourcesProcedure = "/agx.v1.ResourceService/PrepareResources"
+	// SessionProviderServicePublishSessionsProcedure is the fully-qualified name of the
+	// SessionProviderService's PublishSessions RPC.
+	SessionProviderServicePublishSessionsProcedure = "/agx.v1.SessionProviderService/PublishSessions"
+	// SessionProviderServiceWatchSessionCommandsProcedure is the fully-qualified name of the
+	// SessionProviderService's WatchSessionCommands RPC.
+	SessionProviderServiceWatchSessionCommandsProcedure = "/agx.v1.SessionProviderService/WatchSessionCommands"
+	// SessionProviderServiceReplySessionCommandProcedure is the fully-qualified name of the
+	// SessionProviderService's ReplySessionCommand RPC.
+	SessionProviderServiceReplySessionCommandProcedure = "/agx.v1.SessionProviderService/ReplySessionCommand"
+	// SessionProviderServicePrepareSessionProcedure is the fully-qualified name of the
+	// SessionProviderService's PrepareSession RPC.
+	SessionProviderServicePrepareSessionProcedure = "/agx.v1.SessionProviderService/PrepareSession"
 	// RuntimeServiceGetRuntimeProcedure is the fully-qualified name of the RuntimeService's GetRuntime
 	// RPC.
 	RuntimeServiceGetRuntimeProcedure = "/agx.v1.RuntimeService/GetRuntime"
@@ -1050,6 +1064,154 @@ func (UnimplementedResourceServiceHandler) ResolveResources(context.Context, *co
 
 func (UnimplementedResourceServiceHandler) PrepareResources(context.Context, *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ResourceService.PrepareResources is not implemented"))
+}
+
+// SessionProviderServiceClient is a client for the agx.v1.SessionProviderService service.
+type SessionProviderServiceClient interface {
+	PublishSessions(context.Context, *connect.Request[v1.PublishSessionsRequest]) (*connect.Response[v1.PublishSessionsResponse], error)
+	WatchSessionCommands(context.Context, *connect.Request[v1.WatchSessionCommandsRequest]) (*connect.ServerStreamForClient[v1.WatchSessionCommandsResponse], error)
+	ReplySessionCommand(context.Context, *connect.Request[v1.ReplySessionCommandRequest]) (*connect.Response[v1.ReplySessionCommandResponse], error)
+	PrepareSession(context.Context, *connect.Request[v1.PrepareSessionRequest]) (*connect.Response[v1.PrepareSessionResponse], error)
+}
+
+// NewSessionProviderServiceClient constructs a client for the agx.v1.SessionProviderService
+// service. By default, it uses the Connect protocol with the binary Protobuf Codec, asks for
+// gzipped responses, and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply
+// the connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewSessionProviderServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) SessionProviderServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	sessionProviderServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("SessionProviderService").Methods()
+	return &sessionProviderServiceClient{
+		publishSessions: connect.NewClient[v1.PublishSessionsRequest, v1.PublishSessionsResponse](
+			httpClient,
+			baseURL+SessionProviderServicePublishSessionsProcedure,
+			connect.WithSchema(sessionProviderServiceMethods.ByName("PublishSessions")),
+			connect.WithClientOptions(opts...),
+		),
+		watchSessionCommands: connect.NewClient[v1.WatchSessionCommandsRequest, v1.WatchSessionCommandsResponse](
+			httpClient,
+			baseURL+SessionProviderServiceWatchSessionCommandsProcedure,
+			connect.WithSchema(sessionProviderServiceMethods.ByName("WatchSessionCommands")),
+			connect.WithClientOptions(opts...),
+		),
+		replySessionCommand: connect.NewClient[v1.ReplySessionCommandRequest, v1.ReplySessionCommandResponse](
+			httpClient,
+			baseURL+SessionProviderServiceReplySessionCommandProcedure,
+			connect.WithSchema(sessionProviderServiceMethods.ByName("ReplySessionCommand")),
+			connect.WithClientOptions(opts...),
+		),
+		prepareSession: connect.NewClient[v1.PrepareSessionRequest, v1.PrepareSessionResponse](
+			httpClient,
+			baseURL+SessionProviderServicePrepareSessionProcedure,
+			connect.WithSchema(sessionProviderServiceMethods.ByName("PrepareSession")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// sessionProviderServiceClient implements SessionProviderServiceClient.
+type sessionProviderServiceClient struct {
+	publishSessions      *connect.Client[v1.PublishSessionsRequest, v1.PublishSessionsResponse]
+	watchSessionCommands *connect.Client[v1.WatchSessionCommandsRequest, v1.WatchSessionCommandsResponse]
+	replySessionCommand  *connect.Client[v1.ReplySessionCommandRequest, v1.ReplySessionCommandResponse]
+	prepareSession       *connect.Client[v1.PrepareSessionRequest, v1.PrepareSessionResponse]
+}
+
+// PublishSessions calls agx.v1.SessionProviderService.PublishSessions.
+func (c *sessionProviderServiceClient) PublishSessions(ctx context.Context, req *connect.Request[v1.PublishSessionsRequest]) (*connect.Response[v1.PublishSessionsResponse], error) {
+	return c.publishSessions.CallUnary(ctx, req)
+}
+
+// WatchSessionCommands calls agx.v1.SessionProviderService.WatchSessionCommands.
+func (c *sessionProviderServiceClient) WatchSessionCommands(ctx context.Context, req *connect.Request[v1.WatchSessionCommandsRequest]) (*connect.ServerStreamForClient[v1.WatchSessionCommandsResponse], error) {
+	return c.watchSessionCommands.CallServerStream(ctx, req)
+}
+
+// ReplySessionCommand calls agx.v1.SessionProviderService.ReplySessionCommand.
+func (c *sessionProviderServiceClient) ReplySessionCommand(ctx context.Context, req *connect.Request[v1.ReplySessionCommandRequest]) (*connect.Response[v1.ReplySessionCommandResponse], error) {
+	return c.replySessionCommand.CallUnary(ctx, req)
+}
+
+// PrepareSession calls agx.v1.SessionProviderService.PrepareSession.
+func (c *sessionProviderServiceClient) PrepareSession(ctx context.Context, req *connect.Request[v1.PrepareSessionRequest]) (*connect.Response[v1.PrepareSessionResponse], error) {
+	return c.prepareSession.CallUnary(ctx, req)
+}
+
+// SessionProviderServiceHandler is an implementation of the agx.v1.SessionProviderService service.
+type SessionProviderServiceHandler interface {
+	PublishSessions(context.Context, *connect.Request[v1.PublishSessionsRequest]) (*connect.Response[v1.PublishSessionsResponse], error)
+	WatchSessionCommands(context.Context, *connect.Request[v1.WatchSessionCommandsRequest], *connect.ServerStream[v1.WatchSessionCommandsResponse]) error
+	ReplySessionCommand(context.Context, *connect.Request[v1.ReplySessionCommandRequest]) (*connect.Response[v1.ReplySessionCommandResponse], error)
+	PrepareSession(context.Context, *connect.Request[v1.PrepareSessionRequest]) (*connect.Response[v1.PrepareSessionResponse], error)
+}
+
+// NewSessionProviderServiceHandler builds an HTTP handler from the service implementation. It
+// returns the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewSessionProviderServiceHandler(svc SessionProviderServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	sessionProviderServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("SessionProviderService").Methods()
+	sessionProviderServicePublishSessionsHandler := connect.NewUnaryHandler(
+		SessionProviderServicePublishSessionsProcedure,
+		svc.PublishSessions,
+		connect.WithSchema(sessionProviderServiceMethods.ByName("PublishSessions")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionProviderServiceWatchSessionCommandsHandler := connect.NewServerStreamHandler(
+		SessionProviderServiceWatchSessionCommandsProcedure,
+		svc.WatchSessionCommands,
+		connect.WithSchema(sessionProviderServiceMethods.ByName("WatchSessionCommands")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionProviderServiceReplySessionCommandHandler := connect.NewUnaryHandler(
+		SessionProviderServiceReplySessionCommandProcedure,
+		svc.ReplySessionCommand,
+		connect.WithSchema(sessionProviderServiceMethods.ByName("ReplySessionCommand")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionProviderServicePrepareSessionHandler := connect.NewUnaryHandler(
+		SessionProviderServicePrepareSessionProcedure,
+		svc.PrepareSession,
+		connect.WithSchema(sessionProviderServiceMethods.ByName("PrepareSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/agx.v1.SessionProviderService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case SessionProviderServicePublishSessionsProcedure:
+			sessionProviderServicePublishSessionsHandler.ServeHTTP(w, r)
+		case SessionProviderServiceWatchSessionCommandsProcedure:
+			sessionProviderServiceWatchSessionCommandsHandler.ServeHTTP(w, r)
+		case SessionProviderServiceReplySessionCommandProcedure:
+			sessionProviderServiceReplySessionCommandHandler.ServeHTTP(w, r)
+		case SessionProviderServicePrepareSessionProcedure:
+			sessionProviderServicePrepareSessionHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedSessionProviderServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedSessionProviderServiceHandler struct{}
+
+func (UnimplementedSessionProviderServiceHandler) PublishSessions(context.Context, *connect.Request[v1.PublishSessionsRequest]) (*connect.Response[v1.PublishSessionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.SessionProviderService.PublishSessions is not implemented"))
+}
+
+func (UnimplementedSessionProviderServiceHandler) WatchSessionCommands(context.Context, *connect.Request[v1.WatchSessionCommandsRequest], *connect.ServerStream[v1.WatchSessionCommandsResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.SessionProviderService.WatchSessionCommands is not implemented"))
+}
+
+func (UnimplementedSessionProviderServiceHandler) ReplySessionCommand(context.Context, *connect.Request[v1.ReplySessionCommandRequest]) (*connect.Response[v1.ReplySessionCommandResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.SessionProviderService.ReplySessionCommand is not implemented"))
+}
+
+func (UnimplementedSessionProviderServiceHandler) PrepareSession(context.Context, *connect.Request[v1.PrepareSessionRequest]) (*connect.Response[v1.PrepareSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.SessionProviderService.PrepareSession is not implemented"))
 }
 
 // RuntimeServiceClient is a client for the agx.v1.RuntimeService service.

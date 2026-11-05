@@ -70,6 +70,15 @@ service ResourceService {
   rpc PrepareResources(PrepareResourcesRequest) returns (PrepareResourcesResponse);
 }
 
+// Integrations publish native session summaries and handle session operations themselves.
+// The daemon indexes sessions and brokers commands without knowing the native server protocol.
+service SessionProviderService {
+  rpc PublishSessions(PublishSessionsRequest) returns (PublishSessionsResponse);
+  rpc WatchSessionCommands(WatchSessionCommandsRequest) returns (stream WatchSessionCommandsResponse);
+  rpc ReplySessionCommand(ReplySessionCommandRequest) returns (ReplySessionCommandResponse);
+  rpc PrepareSession(PrepareSessionRequest) returns (PrepareSessionResponse);
+}
+
 service RuntimeService {
   rpc GetRuntime(GetRuntimeRequest) returns (GetRuntimeResponse);
   rpc WatchRuntime(WatchRuntimeRequest) returns (stream WatchRuntimeResponse);
@@ -518,6 +527,86 @@ message StoredSession {
   string builtin = 7;
   string harness = 8;
   bool recorded = 9;
+  // Empty for native file stores; otherwise identifies the integration-owned catalog.
+  string source_id = 10;
+  string scope_id = 11;
+  bool online = 12;
+}
+
+message SessionSource {
+  // Stable identity of a native server/profile, independent of its port or current process.
+  string source_id = 1;
+  // Stable publication scope, such as one native location within that source.
+  string scope_id = 2;
+  // Publisher instance; stale publishers cannot overwrite a newer active scope.
+  string epoch = 3;
+  string builtin = 4;
+  string harness = 5;
+}
+message ProviderSession {
+  string id = 1;
+  // Scope namespace, not a filesystem root on the daemon's machine.
+  string directory = 2;
+  string title = 3;
+  string message = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+message PublishSessionsRequest {
+  SessionSource source = 1;
+  repeated ProviderSession sessions = 2;
+  repeated string deleted_ids = 3;
+  // Replace only this source/scope's catalog; other locations remain intact.
+  bool replace = 4;
+}
+message PublishSessionsResponse {}
+message WatchSessionCommandsRequest {
+  SessionSource source = 1;
+}
+message SessionProviderReady {}
+message SessionCommand {
+  string id = 1;
+  string native_session_id = 2;
+}
+message WatchSessionCommandsResponse {
+  oneof event {
+    SessionProviderReady ready = 1;
+    SessionCommand command = 2;
+  }
+}
+message PreparedSession {
+  ProviderSession session = 1;
+  // Sensitive: private, adapter-owned launch routing. Never part of cached/public listings.
+  string launch_data_json = 2;
+}
+message SessionCommandFailure {
+  enum Code {
+    CODE_UNSPECIFIED = 0;
+    CODE_NOT_FOUND = 1;
+    CODE_UNAVAILABLE = 2;
+    CODE_REJECTED = 3;
+  }
+  Code code = 1;
+  string message = 2;
+}
+message ReplySessionCommandRequest {
+  SessionSource source = 1;
+  string command_id = 2;
+  oneof result {
+    PreparedSession prepared = 3;
+    SessionCommandFailure failure = 4;
+  }
+}
+message ReplySessionCommandResponse {}
+message PrepareSessionRequest {
+  string source_id = 1;
+  string scope_id = 2;
+  string native_session_id = 3;
+}
+message PrepareSessionResponse {
+  ProviderSession session = 1;
+  // Sensitive: transient routing passed only to the local native client launcher.
+  string launch_data_json = 2;
 }
 
 message ListSessionsResponse {

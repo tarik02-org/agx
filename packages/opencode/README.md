@@ -37,6 +37,30 @@ After changing your AGX configuration, run this command inside OpenCode:
 /agx-reload
 ```
 
+## Launch and resume
+
+With the plugin installed, launch OpenCode through AGX:
+
+```sh
+agx opencode
+```
+
+Open `agx` to pick a session, or list sessions with `agx sessions --all`.
+The plugin publishes session summaries from locations opened in OpenCode. AGX
+keeps these summaries when a location goes offline; resuming asks the plugin to
+validate the session and provide its server connection.
+
+The normal local OpenCode service is detected automatically. For a manually
+started or remote server, set the plugin's `sessionServer` option to its URL
+reachable from the client. Authentication comes from the server's
+`OPENCODE_USERNAME` and `OPENCODE_PASSWORD` environment variables. An offline
+location can be activated automatically when resuming with the same local
+OpenCode profile; otherwise start its server first.
+
+AGX starts the native client; the plugin supplies resources for its location.
+Custom AGX launcher profiles with per-launch resources, arguments or environment
+settings are unsupported for this integration.
+
 To see what AGX selects for the current directory:
 
 ```sh

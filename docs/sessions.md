@@ -13,7 +13,7 @@ A full-screen picker opens with one search field and two lists:
 - **New session**: the built-in harnesses and your harness definitions, except
   [hidden](harnesses.md#hiding-harnesses-from-the-launcher) ones. Enter starts
   one in the current directory.
-- **Sessions**: earlier Codex, Claude Code, and Pi conversations, with their
+- **Sessions**: earlier Codex, Claude Code, Pi, and OpenCode conversations, with their
   harness, age, title or first message, and directory. Enter resumes one.
 
 The picker opens before session history finishes loading, so you can start a
@@ -65,3 +65,16 @@ keeps its last known sessions with a warning.
 `agx sessions` waits for a fresh scan. Browsing history uses the daemon and starts
 it when autostart permits. The picker loads configuration and history after its
 first frame; the CLI never opens the session cache or launch-history database.
+
+## OpenCode sessions
+
+Install the [native plugin](../packages/opencode/README.md) to publish sessions
+from locations opened in OpenCode. Session summaries remain available when their
+provider disconnects and are marked `(offline)`. Listing history does not start
+OpenCode or read its database.
+
+Resuming asks the plugin to validate the session and provide its server route.
+For the normal local service, AGX can activate an offline location through the
+native CLI using the same OpenCode profile. Custom or remote servers must be
+running and configured with the plugin's `sessionServer` option. The client can
+use a server directory without requiring that directory to exist locally.

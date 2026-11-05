@@ -370,6 +370,8 @@ func (r Registry) Launchable(c *config.Config) []string {
 		}
 		if _, ok := r.Launcher(h.Builtin); ok {
 			names = append(names, name)
+		} else if _, ok := r.ClientLauncher(h.Builtin); ok {
+			names = append(names, name)
 		}
 	}
 	return names

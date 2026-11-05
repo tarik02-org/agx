@@ -29,6 +29,7 @@
     "@opencode/cli": "catalog:",
     "@opencode/client": "catalog:",
     "@opencode/plugin": "catalog:",
+    "@opencode/protocol": "catalog:",
     "@opencode/schema": "catalog:",
     "@types/node": "catalog:",
     "effect": "catalog:",
@@ -37,7 +38,9 @@
     "vite-plus": "catalog:"
   },
   "peerDependencies": {
+    "@opencode/client": "catalog:",
     "@opencode/plugin": "catalog:",
+    "@opencode/protocol": "catalog:",
     "@opencode/schema": "catalog:",
     "effect": "catalog:"
   }

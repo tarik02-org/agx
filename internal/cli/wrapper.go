@@ -105,6 +105,9 @@ func runHarness(
 	if err != nil {
 		return err
 	}
+	if adapter, ok := registry.ClientLauncher(h.Builtin); ok {
+		return runClientHarness(ctx, adapter, h, args)
+	}
 	adapter, ok := registry.Launcher(h.Builtin)
 	if !ok {
 		return fmt.Errorf("harness %s has no native process launcher", h.Builtin)

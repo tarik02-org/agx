@@ -20,3 +20,16 @@ DELETE FROM icons WHERE id = ?;
 -- name: PutIcon :exec
 INSERT INTO icons(id, source, icon) VALUES (?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET source = excluded.source, icon = excluded.icon;
+-- name: ListProviderSessions :many
+SELECT * FROM provider_sessions ORDER BY updated DESC, source_id, scope_id, session_id;
+-- name: DeleteProviderScope :exec
+DELETE FROM provider_sessions WHERE source_id = ? AND scope_id = ?;
+-- name: DeleteProviderSession :exec
+DELETE FROM provider_sessions WHERE source_id = ? AND scope_id = ? AND session_id = ?;
+-- name: PutProviderSession :exec
+INSERT INTO provider_sessions(source_id, scope_id, builtin, harness, session_id, directory, title, message, started, updated)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(source_id, session_id) DO UPDATE SET
+    scope_id = excluded.scope_id, builtin = excluded.builtin, harness = excluded.harness, directory = excluded.directory,
+    title = excluded.title, message = excluded.message, started = excluded.started, updated = excluded.updated
+WHERE excluded.updated >= provider_sessions.updated;

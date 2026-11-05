@@ -19,6 +19,35 @@ func (q *Queries) DeleteIcon(ctx context.Context, id string) error {
 	return err
 }
 
+const deleteProviderScope = `-- name: DeleteProviderScope :exec
+DELETE FROM provider_sessions WHERE source_id = ? AND scope_id = ?
+`
+
+type DeleteProviderScopeParams struct {
+	SourceID string
+	ScopeID  string
+}
+
+func (q *Queries) DeleteProviderScope(ctx context.Context, arg DeleteProviderScopeParams) error {
+	_, err := q.db.ExecContext(ctx, deleteProviderScope, arg.SourceID, arg.ScopeID)
+	return err
+}
+
+const deleteProviderSession = `-- name: DeleteProviderSession :exec
+DELETE FROM provider_sessions WHERE source_id = ? AND scope_id = ? AND session_id = ?
+`
+
+type DeleteProviderSessionParams struct {
+	SourceID  string
+	ScopeID   string
+	SessionID string
+}
+
+func (q *Queries) DeleteProviderSession(ctx context.Context, arg DeleteProviderSessionParams) error {
+	_, err := q.db.ExecContext(ctx, deleteProviderSession, arg.SourceID, arg.ScopeID, arg.SessionID)
+	return err
+}
+
 const deleteSessionFile = `-- name: DeleteSessionFile :exec
 DELETE FROM session_files WHERE store = ? AND path = ? AND modified = ? AND size = ? AND version = ?
 `
@@ -113,6 +142,44 @@ func (q *Queries) ListIcons(ctx context.Context) ([]Icon, error) {
 	return items, nil
 }
 
+const listProviderSessions = `-- name: ListProviderSessions :many
+SELECT source_id, scope_id, builtin, harness, session_id, directory, title, message, started, updated FROM provider_sessions ORDER BY updated DESC, source_id, scope_id, session_id
+`
+
+func (q *Queries) ListProviderSessions(ctx context.Context) ([]ProviderSession, error) {
+	rows, err := q.db.QueryContext(ctx, listProviderSessions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProviderSession{}
+	for rows.Next() {
+		var i ProviderSession
+		if err := rows.Scan(
+			&i.SourceID,
+			&i.ScopeID,
+			&i.Builtin,
+			&i.Harness,
+			&i.SessionID,
+			&i.Directory,
+			&i.Title,
+			&i.Message,
+			&i.Started,
+			&i.Updated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSessionFiles = `-- name: ListSessionFiles :many
 SELECT store, path, size, modified, version, malformed, listed, session_id, directory, title, message, started, updated FROM session_files WHERE store = ?
 `
@@ -167,6 +234,44 @@ type PutIconParams struct {
 
 func (q *Queries) PutIcon(ctx context.Context, arg PutIconParams) error {
 	_, err := q.db.ExecContext(ctx, putIcon, arg.ID, arg.Source, arg.Icon)
+	return err
+}
+
+const putProviderSession = `-- name: PutProviderSession :exec
+INSERT INTO provider_sessions(source_id, scope_id, builtin, harness, session_id, directory, title, message, started, updated)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(source_id, session_id) DO UPDATE SET
+    scope_id = excluded.scope_id, builtin = excluded.builtin, harness = excluded.harness, directory = excluded.directory,
+    title = excluded.title, message = excluded.message, started = excluded.started, updated = excluded.updated
+WHERE excluded.updated >= provider_sessions.updated
+`
+
+type PutProviderSessionParams struct {
+	SourceID  string
+	ScopeID   string
+	Builtin   string
+	Harness   string
+	SessionID string
+	Directory string
+	Title     string
+	Message   string
+	Started   int64
+	Updated   int64
+}
+
+func (q *Queries) PutProviderSession(ctx context.Context, arg PutProviderSessionParams) error {
+	_, err := q.db.ExecContext(ctx, putProviderSession,
+		arg.SourceID,
+		arg.ScopeID,
+		arg.Builtin,
+		arg.Harness,
+		arg.SessionID,
+		arg.Directory,
+		arg.Title,
+		arg.Message,
+		arg.Started,
+		arg.Updated,
+	)
 	return err
 }
 

@@ -36,6 +36,10 @@
     "./protocol": {
       "types": "./dist/protocol.d.mts",
       "import": "./dist/protocol.mjs"
+    },
+    "./SessionProviderClient": {
+      "types": "./dist/SessionProviderClient.d.mts",
+      "import": "./dist/SessionProviderClient.mjs"
     }
   },
   "dependencies": {

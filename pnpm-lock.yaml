@@ -188,6 +188,9 @@ catalogs:
     '@opencode/plugin':
       specifier: ^2.2.5
       version: 2.2.5
+    '@opencode/protocol':
+      specifier: ^2.2.5
+      version: 2.2.5
     '@opencode/schema':
       specifier: ^2.2.5
       version: 2.2.5
@@ -282,6 +285,9 @@ importers:
       '@opencode/plugin':
         specifier: 'catalog:'
         version: 2.2.5(@opentelemetry/semantic-conventions@1.44.0)
+      '@opencode/protocol':
+        specifier: 'catalog:'
+        version: 2.2.5
       '@opencode/schema':
         specifier: 'catalog:'
         version: 2.2.5

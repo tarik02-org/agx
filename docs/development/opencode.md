@@ -2,7 +2,9 @@
 
 The [user guide](../../packages/opencode/README.md) covers installation and everyday use.
 The reusable `agx-client` workspace owns the daemon connection and RPCs; the native
-OpenCode plugin owns resource leases, hooks and local skill deployment.
+OpenCode plugin owns resource leases, hooks, skill deployment and session discovery.
+The Go adapter starts the native client and consumes generic provider summaries
+and transient launch data. It does not call OpenCode's API or read its database.
 
 ## Build and verify
 
@@ -61,15 +63,17 @@ npm packages live under `packages/opencode/licenses`.
 
 ## Options
 
-| Option           | Default                     | Meaning                                                                                                        |
-| ---------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `executable`     | `agx`                       | AGX client executable on the OpenCode server.                                                                  |
-| `config`         | AGX's normal root           | Explicit AGX root configuration file.                                                                          |
-| `discovery`      | CLI discovery               | Explicit private discovery file; disables automatic daemon startup.                                            |
-| `harness`        | `opencode`                  | AGX consumer or a definition based on it.                                                                      |
-| `scopeDirectory` | OpenCode location directory | Directory in AGX's scope namespace. Override when mapping a workspace.                                         |
-| `mcpDirectory`   | OpenCode location directory | Explicit MCP execution directory on the daemon host. Set `""` when unnecessary, for example for HTTP-only MCP. |
-| `codemode`       | OpenCode's default          | Explicitly enable/disable Code Mode for AGX's native MCP servers.                                              |
+| Option            | Default                     | Meaning                                                                                                                      |
+| ----------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `executable`      | `agx`                       | AGX client executable on the OpenCode server.                                                                                |
+| `config`          | AGX's normal root           | Explicit AGX root configuration file.                                                                                        |
+| `discovery`       | CLI discovery               | Explicit private discovery file; disables automatic daemon startup.                                                          |
+| `harness`         | `opencode`                  | AGX consumer or a definition based on it.                                                                                    |
+| `scopeDirectory`  | OpenCode location directory | Directory in AGX's scope namespace. Override when mapping a workspace.                                                       |
+| `mcpDirectory`    | OpenCode location directory | Explicit MCP execution directory on the daemon host. Set `""` when unnecessary, for example for HTTP-only MCP.               |
+| `codemode`        | OpenCode's default          | Explicitly enable/disable Code Mode for AGX's native MCP servers.                                                            |
+| `sessionSourceId` | Persisted native profile ID | Stable source identity; set distinct values for independent servers.                                                         |
+| `sessionServer`   | Registered native service   | Server URL reachable by the client; required for custom/manual servers. Credentials come from the native server environment. |
 
 ## Runtime behavior
 
@@ -102,6 +106,26 @@ AGX transport remains authenticated loopback HTTP. For a remote OpenCode server,
 run AGX alongside that server; neither resource content nor this package's
 interface requires the user's UI to share its filesystem. Remote AGX transport
 and a persistent content-addressed store are separate features.
+
+## Session providers and launching
+
+Each activated native location publishes paginated session summaries and follows
+native session events. Children and archived sessions are excluded. Source
+identity belongs to the native profile; scope identity belongs to the location.
+The generic daemon catalog persists summaries and marks disconnected scopes
+offline. Listing does not activate OpenCode or create conversations.
+
+Resume sends a command to the live provider, which validates the native session
+and returns private connection data. Server credentials are transient: they are
+absent from cached summaries and public listings and reach the client through
+its environment. Custom servers require `sessionServer`; normal shared services
+are discovered inside the plugin and checked against its process identity.
+
+`agx opencode` starts the native client without a process resource lease. Resuming
+an offline local location first runs a native read-only listing to activate its
+provider; this requires the matching native profile and an existing local directory.
+Only activated locations are discoverable. Custom AGX launcher definitions are
+rejected because a shared service cannot honor their per-launch resource settings.
 
 ## Tooling
 
