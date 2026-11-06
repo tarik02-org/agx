@@ -14,6 +14,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/tarik02-org/agx/internal/adapters"
+	"github.com/tarik02-org/agx/internal/config"
 )
 
 // ValidateSettings rejects settings agx's own overrides would replace: its MCP servers and skill
@@ -21,8 +22,8 @@ import (
 func (Adapter) ValidateSettings(settings map[string]any, _ []string) error {
 	if servers, ok := settings["mcp_servers"].(map[string]any); ok {
 		for name := range servers {
-			if strings.HasPrefix(name, "agx-") {
-				return fmt.Errorf("settings mcp_servers.%s: agx-* servers are agx's own and replace it", name)
+			if name == string(config.AgxMCP) || strings.HasPrefix(name, "agx-") {
+				return fmt.Errorf("settings mcp_servers.%s: agx and agx-* servers are reserved for agx", name)
 			}
 		}
 	}

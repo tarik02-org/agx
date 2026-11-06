@@ -11,6 +11,7 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
+	"github.com/tarik02-org/agx/internal/config"
 )
 
 // staleSnapshot is why the MCP servers of an attached launch are not served when its directory
@@ -127,7 +128,7 @@ func (s *Server) attachable(id, grant, lifecycle string) (*launch, error) {
 func (s *Server) attachProcess(ctx context.Context, msg *v1.AttachLaunchRequest) (*launch, error) {
 	view := msg.Launch
 	if view.Kind == v1.Launch_KIND_RESOURCES {
-		return s.attachResources(msg)
+		return s.attachResources(ctx, msg)
 	}
 	b, err := s.launchBasis(view.Directory, view.Harness, "", msg.NativeArguments)
 	if err != nil {
@@ -158,6 +159,11 @@ func (s *Server) attachProcess(ctx context.Context, msg *v1.AttachLaunchRequest)
 		l.unavailable = staleSnapshot
 	default:
 		l.endpoints, _ = s.endpoints(l.ctx, view.Id, b.snapshot, inputs, b.snapshot.Directory)
+	}
+	if err := s.restoreSession(ctx, l, inputs); err != nil {
+		l.cancel()
+		closeEndpoints(l.endpoints)
+		return nil, err
 	}
 	return l, nil
 }
@@ -205,6 +211,11 @@ func (s *Server) attachThread(parent *launch, thread *v1.AttachedThread) bool {
 	} else {
 		l.endpoints, _ = s.endpoints(l.ctx, view.Id, snapshot, inputs, snapshot.Directory)
 	}
+	if err := s.restoreSession(parent.ctx, l, thread.EnvironmentInputs); err != nil {
+		l.cancel()
+		closeEndpoints(l.endpoints)
+		return fail(err)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !active(parent.view.State) || s.stopped {
@@ -243,6 +254,8 @@ func (s *Server) newLaunch(view *v1.Launch, b launchBasis, grant, lifecycle stri
 		snapshot:     b.snapshot,
 		created:      time.Now(),
 		threadServer: b.threadServer,
+		local:        config.EmptyLocal(),
+		temporary:    map[config.ID]config.MCPServer{},
 	}
 	if parent != nil {
 		l.lifecycle, l.lease, l.target = parent.lifecycle, parent.lease, parent.target

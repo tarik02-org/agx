@@ -144,3 +144,24 @@ DELETE FROM local_scopes WHERE root = ? AND position = ?;
 DELETE FROM local_package_locks WHERE root = ? AND id = ?;
 -- name: ResetSecrets :exec
 DELETE FROM secrets;
+-- name: PutSessionConfiguration :exec
+INSERT INTO session_configurations(configuration, launch, owner) VALUES (?, ?, ?)
+ON CONFLICT(configuration, launch) DO NOTHING;
+
+-- name: DeleteConfigOwner :exec
+DELETE FROM configurations WHERE root = ?;
+
+-- name: ListSessionEnvironment :many
+SELECT mcp, name, ciphertext FROM session_environment WHERE owner = ? ORDER BY mcp, name;
+
+-- name: DeleteSessionEnvironment :exec
+DELETE FROM session_environment WHERE owner = ?;
+
+-- name: PutSessionEnvironment :exec
+INSERT INTO session_environment(owner, mcp, name, ciphertext) VALUES (?, ?, ?, ?);
+
+-- name: DeleteFinishedSessionConfiguration :exec
+DELETE FROM configurations WHERE root IN (
+    SELECT owner FROM session_configurations JOIN launches ON launch = launches.id
+    WHERE launches.id = ? AND launches.finished IS NOT NULL
+);

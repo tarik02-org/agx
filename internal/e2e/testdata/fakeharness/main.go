@@ -358,6 +358,9 @@ func callEcho(url, authorization string) (string, error) {
 func echoAll(clients map[string]*mcpClient, arguments map[string]any) (map[string]string, int) {
 	tools, reinitialized := map[string]string{}, 0
 	for name, c := range clients {
+		if name == "agx" {
+			continue
+		}
 		before := c.reinitialized
 		text, err := c.echo(arguments)
 		if err != nil {
