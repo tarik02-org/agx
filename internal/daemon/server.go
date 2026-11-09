@@ -380,6 +380,13 @@ loop:
 	stopShutdown()
 	<-shutdownDone
 	_ = server.Close()
+	// Handlers cut off above may still be refreshing an OAuth token. The server invalidated the
+	// stored refresh token once it answered, so exiting before storing the new one loses the login.
+	refreshCtx, stopRefreshes := context.WithTimeout(context.Background(), auth.RefreshTimeout+5*time.Second)
+	if err := s.manager.Close(refreshCtx); err != nil {
+		slog.Error("OAuth credentials were not stored at shutdown", "error", err)
+	}
+	stopRefreshes()
 	s.cancel()
 	// Cancelled installations still remove what they started; they must not be cut off by exit.
 	installCtx, stopInstalls := context.WithTimeout(context.Background(), forcedGrace)
