@@ -11,6 +11,7 @@ import { IntegrationError, type IntegrationFailure } from "./error.ts";
 import { acquireLease } from "./lease.ts";
 import { runtime } from "./runtime.ts";
 import { Options } from "./schema.ts";
+import { registerSessions } from "./sessions.ts";
 
 const register = Effect.fn("register")(function* (ctx: Context) {
   const configuration = yield* Configuration;
@@ -20,6 +21,26 @@ const register = Effect.fn("register")(function* (ctx: Context) {
       changes.skills ? ctx.skill.reload() : Effect.void,
       changes.mcp ? ctx.mcp.reload() : Effect.void,
     ]).pipe(Effect.asVoid),
+  );
+  yield* registerSessions(ctx).pipe(
+    Effect.catchTags({
+      SchemaError: (cause) =>
+        Effect.die(
+          new IntegrationError({
+            operation: "session provider configuration",
+            reason: "options",
+            cause,
+          }),
+        ),
+      PlatformError: (cause) =>
+        Effect.die(
+          new IntegrationError({
+            operation: "session provider identity",
+            reason: "filesystem",
+            cause,
+          }),
+        ),
+    }),
   );
   yield* ctx.skill.transform((editor) => {
     for (const skill of lease.current().skills) {

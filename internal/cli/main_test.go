@@ -21,7 +21,22 @@ func TestMain(m *testing.M) {
 		os.Exit(daemoncmd.Run(context.Background(), os.Args[1:], os.Stdout, os.Stderr))
 	}
 	if output := os.Getenv("AGX_TEST_HARNESS_OUTPUT"); output != "" {
-		if err := os.WriteFile(output, []byte(os.Getenv("DEFINED")), 0o600); err != nil {
+		content := []byte(os.Getenv("DEFINED"))
+		if os.Getenv("AGX_TEST_HARNESS_DETAILS") == "1" {
+			directory, err := os.Getwd()
+			if err != nil {
+				os.Exit(1)
+			}
+			content, err = json.Marshal(nativeClientInvocation{
+				Arguments: os.Args[1:], Directory: directory,
+				Username: os.Getenv("OPENCODE_USERNAME"), Password: os.Getenv("OPENCODE_PASSWORD"),
+				Defined: os.Getenv("DEFINED"),
+			})
+			if err != nil {
+				os.Exit(1)
+			}
+		}
+		if err := os.WriteFile(output, content, 0o600); err != nil {
 			os.Exit(1)
 		}
 		os.Exit(0)

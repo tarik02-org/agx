@@ -52,6 +52,8 @@ func TestCommandsRespectConfiguredAutostart(t *testing.T) {
 }
 
 func TestHarnessConfigurationSurvivesDaemonRestart(t *testing.T) {
+	// The native fixture has an explicit executable; listing must not activate installed clients.
+	t.Setenv("PATH", t.TempDir())
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)

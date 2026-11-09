@@ -575,10 +575,25 @@ func daemonCommand(a *app) *cobra.Command {
 		Short: "Start the daemon in the background",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			managed, err := externallyManaged(a.paths)
+			if err != nil {
+				return err
+			}
+			if managed {
+				_, current, state := probeDaemon(cmd.Context(), a.paths)
+				if !state.reachable {
+					return errManagedDaemon
+				}
+				return printDaemonStarted(
+					false,
+					filepath.Join(a.paths.Runtime, "daemon.log"),
+					current.discovery.Version,
+				)
+			}
 			_, c, state := probeDaemon(cmd.Context(), a.paths)
 			switch state.action() {
 			case useDaemon:
-				return printDaemonStarted(false, filepath.Join(a.paths.Runtime, "daemon.log"))
+				return printDaemonStarted(false, filepath.Join(a.paths.Runtime, "daemon.log"), c.discovery.Version)
 			case replaceDaemon:
 				if err := replaceRunning(cmd.Context(), a.paths, c); err != nil {
 					return err
@@ -589,7 +604,7 @@ func daemonCommand(a *app) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printDaemonStarted(true, logPath)
+			return printDaemonStarted(true, logPath, control.Version)
 		},
 	}
 	command.AddCommand(start)
@@ -605,7 +620,16 @@ func daemonCommand(a *app) *cobra.Command {
 				}
 			} else {
 				if crashed(a.paths, recoverInstance) {
-					if _, err := startDaemon(cmd.Context(), a.paths); err != nil {
+					managed, err := externallyManaged(a.paths)
+					if err != nil {
+						return err
+					}
+					if managed {
+						_, err = awaitManaged(cmd.Context(), a.paths, recoverInstance, restartWait)
+					} else {
+						_, err = startDaemon(cmd.Context(), a.paths)
+					}
+					if err != nil {
 						return err
 					}
 				}
@@ -683,7 +707,7 @@ func daemonCommand(a *app) *cobra.Command {
 	}
 	restart := &cobra.Command{
 		Use:   "restart",
-		Short: "Stop the daemon and start one of this build",
+		Short: "Restart the daemon, through its service manager when externally managed",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			result, err := restartDaemon(cmd.Context(), a.paths, force, grace)

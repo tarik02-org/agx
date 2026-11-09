@@ -27,7 +27,7 @@ func (s *Server) GetLocalConfiguration(
 	}
 	document, err := structpb.NewStruct(local.Document)
 	if err != nil {
-		return nil, rpcError(connect.CodeInternal, err.Error())
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := &v1.GetLocalConfigurationResponse{
 		Document: document,
@@ -63,33 +63,76 @@ func (s *Server) ResolvePassthrough(
 	}
 	h, err := c.Harness(req.Msg.Harness)
 	if err != nil {
-		return nil, rpcError(connect.CodeInvalidArgument, err.Error())
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	adapter, ok := s.adapters.Launcher(h.Builtin)
 	if !ok || adapter.Classify(req.Msg.NativeArguments) != config.ModePassthrough {
 		return nil, rpcError(connect.CodeInvalidArgument, "native arguments must select passthrough mode")
 	}
+	args, environment, err := s.resolveCommandValues(ctx, c, h, config.ModePassthrough, req.Msg.EnvironmentInputs)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1.ResolvePassthroughResponse{Arguments: args, Environment: environment}), nil
+}
+
+func (s *Server) ResolveClientCommand(
+	ctx context.Context,
+	req *connect.Request[v1.ResolveClientCommandRequest],
+) (*connect.Response[v1.ResolveClientCommandResponse], error) {
+	c, err := s.reload()
+	if err != nil {
+		return nil, configError(err)
+	}
+	h, err := c.Harness(req.Msg.Harness)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	adapter, ok := s.adapters.ClientLauncher(h.Builtin)
+	if !ok {
+		return nil, rpcError(connect.CodeInvalidArgument, "harness has no native client launcher")
+	}
+	args, environment, err := s.resolveCommandValues(
+		ctx,
+		c,
+		h,
+		adapter.Classify(req.Msg.NativeArguments),
+		req.Msg.EnvironmentInputs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1.ResolveClientCommandResponse{Arguments: args, Environment: environment}), nil
+}
+
+func (s *Server) resolveCommandValues(
+	ctx context.Context,
+	c *config.Config,
+	h config.ResolvedHarness,
+	mode string,
+	inputs map[string]string,
+) ([]string, map[string]string, error) {
 	allowed := map[string]bool{}
 	for _, injection := range h.Injections() {
 		if name := c.Variable(injection.Value); name != "" {
 			allowed[name] = true
 		}
 	}
-	for name := range req.Msg.EnvironmentInputs {
+	for name := range inputs {
 		if !allowed[name] {
-			return nil, rpcError(connect.CodeInvalidArgument, "undeclared environment input "+name)
+			return nil, nil, rpcError(connect.CodeInvalidArgument, "undeclared environment input "+name)
 		}
 	}
-	env := func(name string) (string, bool) { value, ok := req.Msg.EnvironmentInputs[name]; return value, ok }
-	args, environment, err := h.Resolve(config.ModePassthrough, env, func(id config.ID) (string, error) {
+	env := func(name string) (string, bool) { value, ok := inputs[name]; return value, ok }
+	args, environment, err := h.Resolve(mode, env, func(id config.ID) (string, error) {
 		secret := c.Secrets[id]
 		if secret.Kind == "oauth" {
 			return "", rpcError(connect.CodeInvalidArgument, "OAuth secrets authenticate only HTTP MCP servers")
 		}
-		return s.manager.Value(ctx, id, secret, c.Secrets, req.Msg.EnvironmentInputs, "")
+		return s.manager.Value(ctx, id, secret, c.Secrets, inputs, "")
 	})
 	if err != nil {
-		return nil, rpcError(connect.CodeFailedPrecondition, err.Error())
+		return nil, nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}
-	return connect.NewResponse(&v1.ResolvePassthroughResponse{Arguments: args, Environment: environment}), nil
+	return args, environment, nil
 }

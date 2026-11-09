@@ -315,6 +315,7 @@ These go in the root file:
 
 ```yaml
 daemon:
+  managed: false # true when an external manager exclusively owns daemon startup/recovery
   autostart: true # start the daemon when a command needs it
   lease_seconds: 60 # how long a launch survives without its wrapper
   renew_seconds: 20 # how often wrappers renew (less than the lease)

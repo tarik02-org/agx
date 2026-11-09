@@ -12,6 +12,7 @@ export default defineConfig({
     entry: {
       index: "src/index.ts",
       AgxClient: "src/AgxClient.ts",
+      SessionProviderClient: "src/SessionProviderClient.ts",
       AgxConnection: "src/AgxConnection.ts",
       schema: "src/schema.ts",
       error: "src/error.ts",

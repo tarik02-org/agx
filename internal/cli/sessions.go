@@ -102,6 +102,9 @@ func listSessions(
 		maps.Copy(listing.Errors, problems)
 		for i := range listing.Entries {
 			entry := &listing.Entries[i]
+			if entry.SourceID != "" {
+				continue
+			}
 			if h, err := harnesses.config.Harness(entry.Harness); err != nil || h.Builtin != entry.Builtin {
 				entry.Harness = entry.Builtin
 			}
@@ -154,6 +157,7 @@ func listSessions(
 					Builtin:  entry.Builtin,
 					Harness:  entry.Harness,
 					Recorded: entry.Recorded,
+					SourceID: entry.SourceId, ScopeID: entry.ScopeId, Online: entry.Online,
 				},
 			)
 		}
@@ -218,7 +222,11 @@ func printSessions(entries []sessions.Entry, directory string, all, searched boo
 		for i, cell := range row {
 			fixed[i] = max(fixed[i], ansi.StringWidth(cell))
 		}
-		rows = append(rows, append(row, cmp.Or(e.Title, e.Message)))
+		title := cmp.Or(e.Title, e.Message)
+		if e.SourceID != "" && !e.Online {
+			title = "(offline) " + title
+		}
+		rows = append(rows, append(row, title))
 	}
 	// On a terminal the title takes what the other columns leave; identifiers are never cut.
 	if width := out.Width(); width > 0 {
@@ -331,6 +339,15 @@ func resumeSession(
 	session sessions.Entry,
 	name string,
 ) error {
+	if session.SourceID != "" {
+		h, err := harnesses.config.Harness(name)
+		if err != nil {
+			return fmt.Errorf("cannot resume session with harness %s: %w", name, err)
+		}
+		if h.Builtin != session.Builtin {
+			return fmt.Errorf("session harness %s now uses %s instead of %s", name, h.Builtin, session.Builtin)
+		}
+	}
 	adapter, ok := registry.Adapter(session.Builtin)
 	if !ok {
 		return fmt.Errorf("no adapter for harness %s", session.Builtin)
@@ -340,7 +357,10 @@ func resumeSession(
 		return fmt.Errorf("harness %s cannot resume native sessions", session.Builtin)
 	}
 	info, err := os.Stat(session.Directory)
-	if errors.Is(err, fs.ErrNotExist) || err == nil && !info.IsDir() {
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("session directory %s no longer exists: %w", session.Directory, err)
+	}
+	if err == nil && !info.IsDir() {
 		return fmt.Errorf("session directory %s no longer exists", session.Directory)
 	}
 	if err != nil {

@@ -45,6 +45,23 @@ const ShellEnvironment = Schema.Struct({
   launch: Schema.String,
   grant: Schema.String,
 });
+const SessionCatalog = Schema.Struct({
+  data: Schema.Struct({
+    sessions: Schema.NullOr(
+      Schema.Array(
+        Schema.Struct({
+          id: Schema.String,
+          directory: Schema.String,
+          harness: Schema.String,
+          title: Schema.optionalKey(Schema.String),
+          sourceId: Schema.optionalKey(Schema.String),
+          scopeId: Schema.optionalKey(Schema.String),
+          online: Schema.optionalKey(Schema.Boolean),
+        }),
+      ),
+    ),
+  }),
+});
 const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
 const ServerStarting = Schema.Struct({
   reason: Schema.Literal("UnexpectedStatus"),
@@ -105,6 +122,10 @@ await test(
       AGX_CACHE: path.join(root, "cache"),
       AGX_STATE: path.join(root, "state"),
       AGX_DAEMON: daemon,
+      CODEX_HOME: path.join(root, "other-native-stores/codex"),
+      CLAUDE_CONFIG_DIR: path.join(root, "other-native-stores/claude"),
+      PI_CODING_AGENT_DIR: path.join(root, "other-native-stores/pi"),
+      PI_CODING_AGENT_SESSION_DIR: path.join(root, "other-native-stores/pi-sessions"),
       AGX_MANAGEMENT_TOKEN: "must-not-reach-shell",
       AGX_LIFECYCLE_TOKEN: "must-not-reach-shell",
       MCP_INPUT_SECRET: "fixture-input",
@@ -145,6 +166,7 @@ await test(
       "fragments: [main.yaml]\ndaemon: {lease_seconds: 6, renew_seconds: 1}\n",
     );
     const fragment = {
+      harnesses: { "opencode-fixture": { base: "opencode" } },
       skills: {
         invalid: { path: invalidSkill },
         local: { path: localSkill },
@@ -343,7 +365,11 @@ export default define({
         { package: catalogPlugin },
         {
           package: pluginTarget,
-          options: { executable: binary, codemode: false },
+          options: {
+            executable: binary,
+            codemode: false,
+            harness: "opencode-fixture",
+          },
         },
       ],
       providers: {
@@ -501,6 +527,72 @@ export default define({
       model: { providerID: "fixture", id: "fixture" },
       permissions: [{ action: "*", resource: "*", effect: "allow" }],
     });
+    const betaSession = await api.session.create({
+      location: { directory: beta },
+      title: "Beta indexed session",
+    });
+    const readSessions = async () => {
+      const output = (await exec(binary, ["--json", "sessions", "--all"], { env, cwd: alpha }))
+        .stdout;
+      assert.ok(
+        !output.includes(env.OPENCODE_PASSWORD),
+        "native credentials entered the public session catalog",
+      );
+      return (
+        Schema.decodeUnknownSync(Schema.fromJsonString(SessionCatalog))(output).data.sessions ?? []
+      );
+    };
+    let indexed = await readSessions();
+    for (
+      let attempt = 0;
+      attempt < 100 && !indexed.some((entry) => entry.id === session.id && entry.online === true);
+      attempt++
+    ) {
+      await setTimeout(100);
+      indexed = await readSessions();
+    }
+    const alphaSource = indexed.find((entry) => entry.id === session.id);
+    assert.ok(
+      alphaSource?.sourceId !== undefined &&
+        alphaSource.scopeId !== undefined &&
+        alphaSource.online === true,
+      "native session was not published to AGX",
+    );
+    for (
+      let attempt = 0;
+      attempt < 100 && !indexed.some((entry) => entry.id === betaSession.id);
+      attempt++
+    ) {
+      await setTimeout(100);
+      indexed = await readSessions();
+    }
+    const betaSource = indexed.find((entry) => entry.id === betaSession.id);
+    assert.ok(betaSource?.scopeId !== undefined && betaSource.online === true);
+    assert.equal(
+      betaSource.sourceId,
+      alphaSource.sourceId,
+      "one native profile published inconsistent source identities",
+    );
+    assert.notEqual(betaSource.scopeId, alphaSource.scopeId);
+    assert.equal(alphaSource.harness, "opencode-fixture");
+    assert.equal(betaSource.harness, "opencode-fixture");
+    await api.session.update({ sessionID: betaSession.id, title: "Beta renamed session" });
+    for (
+      let attempt = 0;
+      attempt < 100 &&
+      !indexed.some(
+        (entry) => entry.id === betaSession.id && entry.title === "Beta renamed session",
+      );
+      attempt++
+    ) {
+      await setTimeout(100);
+      indexed = await readSessions();
+    }
+    assert.ok(
+      indexed.some(
+        (entry) => entry.id === betaSession.id && entry.title === "Beta renamed session",
+      ),
+    );
     // MCP connection status precedes OpenCode's debounced native tool registration.
     let catalog: ReadonlyArray<string> = [];
     for (let attempt = 0; attempt < 100; attempt++) {
@@ -562,6 +654,21 @@ export default define({
       const view = Schema.decodeUnknownSync(Schema.fromJsonString(Runtime))(result).runtime;
       return { ...view, launches: view.launches ?? [] };
     };
+    const childSession = await api.session.create({
+      location: { directory: alpha },
+      parentID: session.id,
+    });
+    const archivedSession = await api.session.create({
+      location: { directory: alpha },
+      title: "Archived session",
+    });
+    await api.session.update({ sessionID: archivedSession.id, archived: true });
+    await setTimeout(500);
+    indexed = await readSessions();
+    assert.ok(
+      !indexed.some((entry) => entry.id === childSession.id || entry.id === archivedSession.id),
+      "non-listable native sessions entered the launcher catalog",
+    );
     assert.equal(
       (await readRuntime()).launches.filter(
         (entry) => entry.kind === "KIND_RESOURCES" && entry.state === "STATE_RUNNING",
@@ -811,6 +918,20 @@ export default define({
     assert.equal(
       (await readRuntime()).launches.find((entry) => entry.id === betaLease.id)?.state,
       "STATE_FINISHED",
+    );
+    indexed = await readSessions();
+    for (
+      let attempt = 0;
+      attempt < 100 &&
+      !indexed.some((entry) => entry.id === betaSession.id && entry.online !== true);
+      attempt++
+    ) {
+      await setTimeout(100);
+      indexed = await readSessions();
+    }
+    assert.ok(
+      indexed.some((entry) => entry.id === betaSession.id && entry.online !== true),
+      "location disposal discarded offline native history",
     );
     await writeFile(path.join(pluginRepository, "README.md"), "Updated fixture Git release.\n");
     await commitPlugin("fixture plugin update");
