@@ -90,7 +90,20 @@ await test(
     const beta = path.join(root, "beta");
     const invalid = path.join(root, "invalid");
     const invalidSkill = path.join(root, "invalid-skill");
-    await Promise.all([mkdir(alpha), mkdir(beta), mkdir(invalid), mkdir(invalidSkill)]);
+    const localSkill = path.join(root, "local-skill");
+    const localInstructions = path.join(root, "local-instructions.md");
+    await Promise.all([
+      mkdir(alpha),
+      mkdir(beta),
+      mkdir(invalid),
+      mkdir(invalidSkill),
+      mkdir(localSkill),
+    ]);
+    await writeFile(
+      path.join(localSkill, "SKILL.md"),
+      "---\nname: local\ndescription: Local skill.\n---\nLOCAL_SKILL_INITIAL",
+    );
+    await writeFile(localInstructions, "LOCAL_INSTRUCTIONS_INITIAL");
     await writeFile(
       path.join(invalidSkill, "SKILL.md"),
       "---\nname: invalid\ndescription: Invalid skill.\n---\nInvalid.",
@@ -156,6 +169,7 @@ await test(
       harnesses: { "opencode-fixture": { base: "opencode" } },
       skills: {
         invalid: { path: invalidSkill },
+        local: { path: localSkill },
         memory: { description: "Memory-only instructions", content: "Memory skill body." },
         assets: {
           description: "Asset-bearing instructions",
@@ -167,7 +181,11 @@ await test(
         },
         hidden: { description: "Beta only", content: "Beta skill body." },
       },
-      instructions: { alpha: { text: "AGX_ALPHA_SENTINEL" }, beta: { text: "AGX_BETA_SENTINEL" } },
+      instructions: {
+        alpha: { text: "AGX_ALPHA_SENTINEL" },
+        beta: { text: "AGX_BETA_SENTINEL" },
+        local: { path: localInstructions },
+      },
       mcp: {
         "team/echo": { command: [mcp], environment: { ECHO_TOKEN: "!env MCP_INPUT_SECRET" } },
         deferred: { command: [mcp], load: "on_demand" },
@@ -177,8 +195,8 @@ await test(
         {
           directory: alpha,
           add: {
-            skills: ["memory", "assets"],
-            instructions: ["alpha"],
+            skills: ["memory", "assets", "local"],
+            instructions: ["alpha", "local"],
             mcp: ["team/echo", "deferred"],
           },
         },
@@ -449,7 +467,7 @@ export default define({
     const skills = (await api.skill.list({ location: { directory: alpha } })).data.filter((entry) =>
       entry.id.startsWith("agx-"),
     );
-    assert.deepEqual(skills.map((entry) => entry.name).toSorted(), ["assets", "memory"]);
+    assert.deepEqual(skills.map((entry) => entry.name).toSorted(), ["assets", "local", "memory"]);
     const memory = skills.find((entry) => entry.name === "memory");
     const asset = skills.find((entry) => entry.name === "assets");
     assert.ok(memory?.path.startsWith("skill://"));
@@ -785,6 +803,100 @@ export default define({
     });
     await api.experimental.session.wait({ sessionID: session.id });
     assert.ok(requests.filter(echoCompleted).length > priorCalls);
+    fragment.instructions.alpha.text = "AGX_AUTORELOADED_SENTINEL";
+    fragment.skills.memory.content = "AUTORELOADED_MEMORY_BODY";
+    await writeFragment();
+    let automaticSkills = (await api.skill.list({ location: { directory: alpha } })).data;
+    for (
+      let attempt = 0;
+      attempt < 100 &&
+      !automaticSkills.some(
+        (skill) => skill.name === "memory" && skill.content.includes("AUTORELOADED_MEMORY_BODY"),
+      );
+      attempt++
+    ) {
+      await setTimeout(100);
+      automaticSkills = (await api.skill.list({ location: { directory: alpha } })).data;
+    }
+    assert.ok(
+      automaticSkills.some(
+        (skill) => skill.name === "memory" && skill.content.includes("AUTORELOADED_MEMORY_BODY"),
+      ),
+      "configuration edits did not update native skills automatically",
+    );
+    await api.session.generate({
+      sessionID: session.id,
+      prompt: "Confirm automatic configuration reload.",
+    });
+    assert.ok(
+      requests.some((request) =>
+        request.messages.some(
+          (message) =>
+            message.role === "system" &&
+            JSON.stringify(message.content).includes("AGX_AUTORELOADED_SENTINEL"),
+        ),
+      ),
+    );
+    await writeFile(
+      path.join(localSkill, "SKILL.md"),
+      "---\nname: local\ndescription: Local skill.\n---\nLOCAL_SKILL_UPDATED",
+    );
+    await writeFile(localInstructions, "LOCAL_INSTRUCTIONS_UPDATED");
+    for (let attempt = 0; attempt < 100; attempt++) {
+      automaticSkills = (await api.skill.list({ location: { directory: alpha } })).data;
+      if (
+        automaticSkills.some(
+          (skill) => skill.name === "local" && skill.content.includes("LOCAL_SKILL_UPDATED"),
+        )
+      ) {
+        break;
+      }
+      await setTimeout(100);
+    }
+    assert.ok(
+      automaticSkills.some(
+        (skill) => skill.name === "local" && skill.content.includes("LOCAL_SKILL_UPDATED"),
+      ),
+      "local file edits did not update native skills automatically",
+    );
+    await api.session.generate({
+      sessionID: session.id,
+      prompt: "Confirm automatic local file reload.",
+    });
+    assert.ok(
+      requests.some((request) =>
+        request.messages.some(
+          (message) =>
+            message.role === "system" &&
+            JSON.stringify(message.content).includes("LOCAL_INSTRUCTIONS_UPDATED"),
+        ),
+      ),
+    );
+    const leaseBeforeInvalid = (await readRuntime()).launches.find(
+      (entry) => entry.directory === alpha && entry.state === "STATE_RUNNING",
+    );
+    assert.ok(leaseBeforeInvalid);
+    await writeFile(path.join(root, "main.yaml"), "scopes: [\n");
+    await setTimeout(1250);
+    await api.session.generate({
+      sessionID: session.id,
+      prompt: "Keep the last valid configuration during an invalid edit.",
+    });
+    assert.equal(
+      (await readRuntime()).launches.find(
+        (entry) => entry.directory === alpha && entry.state === "STATE_RUNNING",
+      )?.id,
+      leaseBeforeInvalid.id,
+    );
+    await writeFragment();
+    await setTimeout(1250);
+    assert.equal(
+      (await readRuntime()).launches.find(
+        (entry) => entry.directory === alpha && entry.state === "STATE_RUNNING",
+      )?.id,
+      leaseBeforeInvalid.id,
+      "recovery to the same manifest unnecessarily replaced its lease",
+    );
     fragment.instructions.alpha.text = "AGX_RELOADED_SENTINEL";
     await writeFragment();
     await api.session.command({ sessionID: session.id, name: "agx-reload", text: "" });
@@ -861,6 +973,9 @@ export default define({
     );
     await exec(binary, ["daemon", "start"], { env });
     await setTimeout(1200);
+    fragment.instructions.alpha.text = "MUST_NOT_REAUTHORIZE_REVOKED_LEASE";
+    await writeFragment();
+    await setTimeout(1250);
     const requestsBeforeRevoked = requests.length;
     await assert.rejects(
       api.session.generate({ sessionID: session.id, prompt: "Do not bypass revocation." }),

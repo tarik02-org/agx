@@ -82,6 +82,20 @@ text is included in primary, compaction, generation and title requests. `/agx-re
 acquires current configuration for the location and replaces only AGX's resources.
 Native process settings such as executable, argv and environment are not applied.
 
+The daemon streams manifests containing selected resource identities, digests,
+settings and diagnostics. Content is fetched only when preparing resources;
+the watch does not send blobs. A one-second observation loop detects configuration
+and selected local file changes. Unrelated configuration edits do not rotate the
+lease. Invalid configuration emits an explicit state and preserves last-good
+resources; recovery is reported even when the revision is unchanged.
+
+A refresh acquires a successor through the current lifecycle authority, applies
+its catalogs, then retires its predecessor. Both remain renewed during the
+handover; failure retains the predecessor and cleans up the successor. Revocation
+terminates the whole family. Native MCP catalogs reload when endpoint grants
+rotate, including instruction-only edits when the location has native MCP servers.
+Skill catalogs reload only when selected skill identities or content change.
+
 Text-only skills use OpenCode's virtual `skill://` paths and create no files.
 Supporting files are deployed into a private temporary directory on the OpenCode
 server, grouped by content digest, with executable permissions preserved. The

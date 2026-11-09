@@ -16,8 +16,12 @@ import { registerSessions } from "./sessions.ts";
 const register = Effect.fn("register")(function* (ctx: Context) {
   const configuration = yield* Configuration;
   const path = yield* Path.Path;
-  const reload = Effect.all([ctx.skill.reload(), ctx.mcp.reload()]).pipe(Effect.asVoid);
-  const lease = yield* acquireLease(reload);
+  const lease = yield* acquireLease((changes) =>
+    Effect.all([
+      changes.skills ? ctx.skill.reload() : Effect.void,
+      changes.mcp ? ctx.mcp.reload() : Effect.void,
+    ]).pipe(Effect.asVoid),
+  );
   yield* registerSessions(ctx).pipe(
     Effect.catchTags({
       SchemaError: (cause) =>

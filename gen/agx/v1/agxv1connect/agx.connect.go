@@ -125,6 +125,15 @@ const (
 	// ResourceServicePrepareResourcesProcedure is the fully-qualified name of the ResourceService's
 	// PrepareResources RPC.
 	ResourceServicePrepareResourcesProcedure = "/agx.v1.ResourceService/PrepareResources"
+	// ResourceServiceWatchResourcesProcedure is the fully-qualified name of the ResourceService's
+	// WatchResources RPC.
+	ResourceServiceWatchResourcesProcedure = "/agx.v1.ResourceService/WatchResources"
+	// ResourceServiceRefreshResourcesProcedure is the fully-qualified name of the ResourceService's
+	// RefreshResources RPC.
+	ResourceServiceRefreshResourcesProcedure = "/agx.v1.ResourceService/RefreshResources"
+	// ResourceServiceRetireResourcesProcedure is the fully-qualified name of the ResourceService's
+	// RetireResources RPC.
+	ResourceServiceRetireResourcesProcedure = "/agx.v1.ResourceService/RetireResources"
 	// SessionProviderServicePublishSessionsProcedure is the fully-qualified name of the
 	// SessionProviderService's PublishSessions RPC.
 	SessionProviderServicePublishSessionsProcedure = "/agx.v1.SessionProviderService/PublishSessions"
@@ -999,6 +1008,12 @@ func (UnimplementedLaunchServiceHandler) AttachLaunch(context.Context, *connect.
 type ResourceServiceClient interface {
 	ResolveResources(context.Context, *connect.Request[v1.ResolveResourcesRequest]) (*connect.Response[v1.ResolveResourcesResponse], error)
 	PrepareResources(context.Context, *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error)
+	// Current resource manifests and subsequent changes, scoped to one consumer context.
+	WatchResources(context.Context, *connect.Request[v1.WatchResourcesRequest]) (*connect.ServerStreamForClient[v1.WatchResourcesResponse], error)
+	// Lifecycle-authorized handover from an active resource lease to its successor.
+	RefreshResources(context.Context, *connect.Request[v1.RefreshResourcesRequest]) (*connect.Response[v1.RefreshResourcesResponse], error)
+	// Releases a superseded member without ending its authorization family.
+	RetireResources(context.Context, *connect.Request[v1.RetireResourcesRequest]) (*connect.Response[v1.RetireResourcesResponse], error)
 }
 
 // NewResourceServiceClient constructs a client for the agx.v1.ResourceService service. By default,
@@ -1024,6 +1039,24 @@ func NewResourceServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(resourceServiceMethods.ByName("PrepareResources")),
 			connect.WithClientOptions(opts...),
 		),
+		watchResources: connect.NewClient[v1.WatchResourcesRequest, v1.WatchResourcesResponse](
+			httpClient,
+			baseURL+ResourceServiceWatchResourcesProcedure,
+			connect.WithSchema(resourceServiceMethods.ByName("WatchResources")),
+			connect.WithClientOptions(opts...),
+		),
+		refreshResources: connect.NewClient[v1.RefreshResourcesRequest, v1.RefreshResourcesResponse](
+			httpClient,
+			baseURL+ResourceServiceRefreshResourcesProcedure,
+			connect.WithSchema(resourceServiceMethods.ByName("RefreshResources")),
+			connect.WithClientOptions(opts...),
+		),
+		retireResources: connect.NewClient[v1.RetireResourcesRequest, v1.RetireResourcesResponse](
+			httpClient,
+			baseURL+ResourceServiceRetireResourcesProcedure,
+			connect.WithSchema(resourceServiceMethods.ByName("RetireResources")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1031,6 +1064,9 @@ func NewResourceServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 type resourceServiceClient struct {
 	resolveResources *connect.Client[v1.ResolveResourcesRequest, v1.ResolveResourcesResponse]
 	prepareResources *connect.Client[v1.PrepareResourcesRequest, v1.PrepareResourcesResponse]
+	watchResources   *connect.Client[v1.WatchResourcesRequest, v1.WatchResourcesResponse]
+	refreshResources *connect.Client[v1.RefreshResourcesRequest, v1.RefreshResourcesResponse]
+	retireResources  *connect.Client[v1.RetireResourcesRequest, v1.RetireResourcesResponse]
 }
 
 // ResolveResources calls agx.v1.ResourceService.ResolveResources.
@@ -1043,10 +1079,31 @@ func (c *resourceServiceClient) PrepareResources(ctx context.Context, req *conne
 	return c.prepareResources.CallUnary(ctx, req)
 }
 
+// WatchResources calls agx.v1.ResourceService.WatchResources.
+func (c *resourceServiceClient) WatchResources(ctx context.Context, req *connect.Request[v1.WatchResourcesRequest]) (*connect.ServerStreamForClient[v1.WatchResourcesResponse], error) {
+	return c.watchResources.CallServerStream(ctx, req)
+}
+
+// RefreshResources calls agx.v1.ResourceService.RefreshResources.
+func (c *resourceServiceClient) RefreshResources(ctx context.Context, req *connect.Request[v1.RefreshResourcesRequest]) (*connect.Response[v1.RefreshResourcesResponse], error) {
+	return c.refreshResources.CallUnary(ctx, req)
+}
+
+// RetireResources calls agx.v1.ResourceService.RetireResources.
+func (c *resourceServiceClient) RetireResources(ctx context.Context, req *connect.Request[v1.RetireResourcesRequest]) (*connect.Response[v1.RetireResourcesResponse], error) {
+	return c.retireResources.CallUnary(ctx, req)
+}
+
 // ResourceServiceHandler is an implementation of the agx.v1.ResourceService service.
 type ResourceServiceHandler interface {
 	ResolveResources(context.Context, *connect.Request[v1.ResolveResourcesRequest]) (*connect.Response[v1.ResolveResourcesResponse], error)
 	PrepareResources(context.Context, *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error)
+	// Current resource manifests and subsequent changes, scoped to one consumer context.
+	WatchResources(context.Context, *connect.Request[v1.WatchResourcesRequest], *connect.ServerStream[v1.WatchResourcesResponse]) error
+	// Lifecycle-authorized handover from an active resource lease to its successor.
+	RefreshResources(context.Context, *connect.Request[v1.RefreshResourcesRequest]) (*connect.Response[v1.RefreshResourcesResponse], error)
+	// Releases a superseded member without ending its authorization family.
+	RetireResources(context.Context, *connect.Request[v1.RetireResourcesRequest]) (*connect.Response[v1.RetireResourcesResponse], error)
 }
 
 // NewResourceServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1068,12 +1125,36 @@ func NewResourceServiceHandler(svc ResourceServiceHandler, opts ...connect.Handl
 		connect.WithSchema(resourceServiceMethods.ByName("PrepareResources")),
 		connect.WithHandlerOptions(opts...),
 	)
+	resourceServiceWatchResourcesHandler := connect.NewServerStreamHandler(
+		ResourceServiceWatchResourcesProcedure,
+		svc.WatchResources,
+		connect.WithSchema(resourceServiceMethods.ByName("WatchResources")),
+		connect.WithHandlerOptions(opts...),
+	)
+	resourceServiceRefreshResourcesHandler := connect.NewUnaryHandler(
+		ResourceServiceRefreshResourcesProcedure,
+		svc.RefreshResources,
+		connect.WithSchema(resourceServiceMethods.ByName("RefreshResources")),
+		connect.WithHandlerOptions(opts...),
+	)
+	resourceServiceRetireResourcesHandler := connect.NewUnaryHandler(
+		ResourceServiceRetireResourcesProcedure,
+		svc.RetireResources,
+		connect.WithSchema(resourceServiceMethods.ByName("RetireResources")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.ResourceService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ResourceServiceResolveResourcesProcedure:
 			resourceServiceResolveResourcesHandler.ServeHTTP(w, r)
 		case ResourceServicePrepareResourcesProcedure:
 			resourceServicePrepareResourcesHandler.ServeHTTP(w, r)
+		case ResourceServiceWatchResourcesProcedure:
+			resourceServiceWatchResourcesHandler.ServeHTTP(w, r)
+		case ResourceServiceRefreshResourcesProcedure:
+			resourceServiceRefreshResourcesHandler.ServeHTTP(w, r)
+		case ResourceServiceRetireResourcesProcedure:
+			resourceServiceRetireResourcesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1089,6 +1170,18 @@ func (UnimplementedResourceServiceHandler) ResolveResources(context.Context, *co
 
 func (UnimplementedResourceServiceHandler) PrepareResources(context.Context, *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ResourceService.PrepareResources is not implemented"))
+}
+
+func (UnimplementedResourceServiceHandler) WatchResources(context.Context, *connect.Request[v1.WatchResourcesRequest], *connect.ServerStream[v1.WatchResourcesResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ResourceService.WatchResources is not implemented"))
+}
+
+func (UnimplementedResourceServiceHandler) RefreshResources(context.Context, *connect.Request[v1.RefreshResourcesRequest]) (*connect.Response[v1.RefreshResourcesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ResourceService.RefreshResources is not implemented"))
+}
+
+func (UnimplementedResourceServiceHandler) RetireResources(context.Context, *connect.Request[v1.RetireResourcesRequest]) (*connect.Response[v1.RetireResourcesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ResourceService.RetireResources is not implemented"))
 }
 
 // SessionProviderServiceClient is a client for the agx.v1.SessionProviderService service.
