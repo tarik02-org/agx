@@ -262,7 +262,12 @@ func (s *Server) UpdateConfiguration(
 	defer s.editMu.Unlock()
 	c, err := s.reload()
 	if err != nil {
-		return nil, configError(err)
+		// Only an edit repairs local definitions, which no file holds. The fragments and local
+		// configuration alone carry it; committing decides whether what results is saved.
+		invalid := err
+		if c, err = configstore.Load(s.paths.Config, s.paths.State, config.Options{Builtins: s.builtins}); err != nil {
+			return nil, configError(invalid)
+		}
 	}
 	if c.Local.Revision != req.Msg.ExpectedRevision {
 		return nil, rpcError(connect.CodeAborted, config.ErrConflict.Error())

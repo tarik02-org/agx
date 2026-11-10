@@ -132,7 +132,18 @@ type definitionID struct {
 func (a *app) newSession(ctx context.Context, yes bool) (*session, error) {
 	c, err := a.config()
 	if err != nil {
-		return nil, fmt.Errorf("configuration is invalid; fix it before editing: %w", err)
+		// Local definitions exist only in the daemon's database, so only an edit can repair them;
+		// the daemon saves one that changes what is wrong.
+		invalid := err
+		local, err := a.localConfig()
+		if err != nil {
+			return nil, err
+		}
+		c, err = config.Load(a.paths.Config, config.Options{Builtins: a.builtins, Local: local})
+		if err != nil {
+			return nil, fmt.Errorf("configuration is invalid; fix it before editing: %w", invalid)
+		}
+		ui.Diagnose(ui.Warn, "configuration is invalid; only an edit that repairs this is saved: %v", invalid)
 	}
 	client, err := a.client(ctx)
 	if err != nil {
@@ -145,6 +156,7 @@ func (a *app) newSession(ctx context.Context, yes bool) (*session, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	// JSON mode implies --yes and never prompts.
 	tty := interactive() && !scripting.enabled
 	s := &session{
