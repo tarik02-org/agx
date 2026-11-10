@@ -24,7 +24,7 @@ type Session struct {
 }
 
 func New(paths platform.Paths, builtins config.Builtins, c *config.Config) (*Session, error) {
-	root, err := platform.Canonical(paths.Config)
+	root, err := platform.CanonicalFile(paths.Config)
 	if err != nil {
 		return nil, err
 	}

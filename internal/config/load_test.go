@@ -57,6 +57,61 @@ func TestInputsUnchangedAfterLoad(t *testing.T) {
 	}
 }
 
+// A root linked from elsewhere, as Home Manager links one from the Nix store, loads the fragments
+// beside the link, and a fragment link pointed at another file is a change.
+func TestLinkedRootAndFragments(t *testing.T) {
+	dir, store := t.TempDir(), t.TempDir()
+	root := filepath.Join(dir, "agx.yaml")
+	if err := os.Symlink(
+		write(t, filepath.Join(store, "agx.yaml"), "fragments: ['agx.d/*.yaml']\n"),
+		root,
+	); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	first := write(t, filepath.Join(store, "first.yaml"), "instructions:\n  first: {text: a}\n")
+	second := write(t, filepath.Join(store, "second.yaml"), "instructions:\n  other: {text: b}\n")
+	// As in the Nix store, neither size nor modification time tells the two files apart.
+	for _, file := range []string{first, second} {
+		if err := os.Chtimes(file, time.Unix(1, 0), time.Unix(1, 0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(dir, "agx.d", "10-linked.yaml")
+	mkdir(t, filepath.Dir(link))
+	if err := os.Symlink(first, link); err != nil {
+		t.Fatal(err)
+	}
+	inputs := &config.Inputs{}
+	c, err := config.Load(root, config.Options{Builtins: builtins, Inputs: inputs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.Instructions["first"]; !ok || c.Root != filepath.Join(canonical(t, dir), "agx.yaml") {
+		t.Fatalf("root %s loaded %v", c.Root, c.Files)
+	}
+	if inputs.Changed() {
+		t.Fatal("inputs changed right after the load")
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(second, link); err != nil {
+		t.Fatal(err)
+	}
+	if !inputs.Changed() {
+		t.Fatal("a fragment link pointed elsewhere did not change the inputs")
+	}
+}
+
+func TestExamplesLoad(t *testing.T) {
+	if _, err := config.Load(
+		filepath.Join("..", "..", "examples", "agx.yaml"),
+		config.Options{Builtins: builtins},
+	); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMissingRootListsDropIns(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "agx.d", "10.yaml"), "instructions:\n  dropin: {text: hi}\n")
