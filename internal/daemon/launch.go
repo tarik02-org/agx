@@ -107,7 +107,7 @@ func (s *Server) PrepareLaunch(
 		harness,
 		append(slices.Clone(plan.Settings), harnessArgs...),
 		harnessEnv,
-		msg.NativeArguments,
+		plan.Native,
 		lookup,
 	)
 	target.Resolved = msg.Executable

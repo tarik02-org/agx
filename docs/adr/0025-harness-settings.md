@@ -259,9 +259,11 @@ About two and a half days:
 
 ## Open questions
 
-- Whether Claude Code accepts several `--settings` (merging them or keeping the
-  last); if it merges, agx could let a typed `--settings` layer over the
-  definition's instead of rejecting it in `args`. Needs a spike against 2.1.300.
+- Claude Code keeps the last of several `--settings`. A `--settings` typed at
+  launch is therefore taken out of the arguments and merged over the
+  definition's settings into the one file: objects key by key, lists
+  concatenated without duplicates, as Claude Code merges its sources. A
+  definition's `args` could get the same treatment instead of being rejected.
 - How to check Claude settings in `agx doctor`: Claude Code ignores invalid
   settings files in some modes rather than failing.
 - Whether derived definitions should be able to append to inherited lists
