@@ -60,7 +60,7 @@ func decodeNode[T any](
 ) (T, positions, error) {
 	var d T
 	at := positions{"": {Path: path, Line: 1, Column: 1}}
-	value, err := toJSON(path, root, nil, at)
+	value, err := toJSON(path, root, nil, at, &expansion{active: map[*yaml.Node]bool{}})
 	if err != nil {
 		return d, nil, err
 	}
@@ -81,9 +81,24 @@ func decodeNode[T any](
 	return d, at, nil
 }
 
+// maxAliasValues bounds what aliases repeat; configurations hold a few thousand values.
+const maxAliasValues = 100_000
+
+// expansion follows the aliases being expanded: one that contains itself never ends, and nested
+// ones multiply, in files a package's author wrote.
+type expansion struct {
+	active map[*yaml.Node]bool
+	values int
+}
+
 // toJSON converts a YAML tree to the values JSON decoding produces, recording where each is.
 // Tagged scalars become their argument, which is what the schema describes.
-func toJSON(file string, n *yaml.Node, keys []string, at positions) (any, error) {
+func toJSON(file string, n *yaml.Node, keys []string, at positions, aliases *expansion) (any, error) {
+	if len(aliases.active) > 0 {
+		if aliases.values++; aliases.values > maxAliasValues {
+			return nil, errorAt(Source{Path: file, Line: n.Line}, "aliases expand to too many values")
+		}
+	}
 	if custom(n.Tag) {
 		switch {
 		case n.Tag != "!env" && n.Tag != "!file" && n.Tag != "!secret":
@@ -95,16 +110,21 @@ func toJSON(file string, n *yaml.Node, keys []string, at positions) (any, error)
 	}
 	switch n.Kind {
 	case yaml.DocumentNode:
-		return toJSON(file, n.Content[0], keys, at)
+		return toJSON(file, n.Content[0], keys, at, aliases)
 	case yaml.AliasNode:
-		return toJSON(file, n.Alias, keys, at)
+		if aliases.active[n.Alias] {
+			return nil, errorAt(Source{Path: file, Line: n.Line}, "alias *%s contains itself", n.Value)
+		}
+		aliases.active[n.Alias] = true
+		defer delete(aliases.active, n.Alias)
+		return toJSON(file, n.Alias, keys, at, aliases)
 	case yaml.MappingNode:
 		out := map[string]any{}
 		for i := 0; i+1 < len(n.Content); i += 2 {
 			key := n.Content[i]
 			child := append(slices.Clone(keys), key.Value)
 			at[positionKey(child)] = Source{Path: file, Line: key.Line, Column: key.Column}
-			value, err := toJSON(file, n.Content[i+1], child, at)
+			value, err := toJSON(file, n.Content[i+1], child, at, aliases)
 			if err != nil {
 				return nil, err
 			}
@@ -116,7 +136,7 @@ func toJSON(file string, n *yaml.Node, keys []string, at positions) (any, error)
 		for i, item := range n.Content {
 			child := append(slices.Clone(keys), strconv.Itoa(i))
 			at[positionKey(child)] = Source{Path: file, Line: item.Line, Column: item.Column}
-			value, err := toJSON(file, item, child, at)
+			value, err := toJSON(file, item, child, at, aliases)
 			if err != nil {
 				return nil, err
 			}

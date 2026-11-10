@@ -92,9 +92,6 @@ func (s *Server) ConnectSessionSource(
 	req *connect.Request[v1.ConnectSessionSourceRequest],
 	stream *connect.ServerStream[v1.ConnectSessionSourceResponse],
 ) error {
-	if !equalBearer(req.Header().Get("Authorization"), s.discovery.Token) {
-		return rpcError(connect.CodeUnauthenticated, "management credential required")
-	}
 	if err := s.validateSessionSource(req.Msg.Source); err != nil {
 		return err
 	}
@@ -115,6 +112,8 @@ func (s *Server) ConnectSessionSource(
 		return providerError(sessionprovider.ErrStale)
 	case <-ctx.Done():
 		return ctx.Err()
+	case <-s.drain.stopping.Done():
+		return refusal()
 	case <-s.ctx.Done():
 		return nil
 	}

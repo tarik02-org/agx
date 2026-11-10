@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -32,7 +33,7 @@ func (s *Server) AttachLaunch(
 		view.Kind = v1.Launch_KIND_PROCESS
 	}
 	switch {
-	case view.GetId() == "" || !filepath.IsAbs(view.Directory) || view.SnapshotId == "":
+	case !validLaunchID(view.GetId()) || !filepath.IsAbs(view.Directory) || view.SnapshotId == "":
 		return nil, rpcError(connect.CodeInvalidArgument, "launch is incomplete")
 	case view.ParentLaunchId != "":
 		return nil, rpcError(connect.CodeInvalidArgument, "thread launches attach with their process's launch")
@@ -97,6 +98,12 @@ func (s *Server) AttachLaunch(
 	expires := timestamppb.New(l.expires)
 	s.mu.Unlock()
 	return connect.NewResponse(&v1.AttachLaunchResponse{ExpiresAt: expires}), nil
+}
+
+// validLaunchID reports whether an ID a wrapper sent names one entry of the launch cache, whose
+// files end with the launch.
+func validLaunchID(id string) bool {
+	return id != "" && id != "." && id != ".." && !strings.ContainsAny(id, `/\`)
 }
 
 // attachable checks a launch's credentials and returns it when the daemon holds it active; nil
@@ -176,8 +183,10 @@ func (s *Server) attachThread(parent *launch, thread *v1.AttachedThread) bool {
 	s.mu.Lock()
 	_, revoked := s.revoked[view.GetId()]
 	held := s.launches[view.GetId()]
-	skip := view.GetId() == "" || view.ParentLaunchId != parent.view.Id || revoked ||
-		held != nil && held.view.ParentLaunchId == parent.view.Id && active(held.view.State)
+	// Another launch's ID stays that launch's, and an empty grant would match a bare bearer.
+	skip := !validLaunchID(view.GetId()) || !filepath.IsAbs(view.Directory) || thread.Grant == "" ||
+		view.ParentLaunchId != parent.view.Id || revoked ||
+		held != nil && (held.view.ParentLaunchId != parent.view.Id || active(held.view.State))
 	s.mu.Unlock()
 	if skip {
 		return false

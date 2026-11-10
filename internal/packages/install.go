@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -358,12 +359,29 @@ func checkoutGit(ctx context.Context, dir, url, protocols, ref string) (string, 
 	return revision, nil
 }
 
+var repositoryEnvironment = map[string]bool{
+	"GIT_DIR":                          true,
+	"GIT_WORK_TREE":                    true,
+	"GIT_INDEX_FILE":                   true,
+	"GIT_COMMON_DIR":                   true,
+	"GIT_NAMESPACE":                    true,
+	"GIT_OBJECT_DIRECTORY":             true,
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
+}
+
 // git runs with allowed transports restricted. Isolated invocations shape checked-out
 // content, so they ignore user/system configuration and attributes that would make package
 // hashes depend on the machine; cloning keeps user configuration for credentials and URL rewrites.
 func git(ctx context.Context, protocols string, isolated bool, args ...string) ([]byte, error) {
-	env := append(
-		os.Environ(),
+	// The daemon keeps the environment of whatever started it, such as a Git hook, whose
+	// repository these variables would make every package command act on.
+	env := slices.DeleteFunc(os.Environ(), func(variable string) bool {
+		name, _, _ := strings.Cut(strings.ToUpper(variable), "=")
+		return repositoryEnvironment[name] ||
+			isolated && (name == "GIT_CONFIG_PARAMETERS" || strings.HasPrefix(name, "GIT_CONFIG_"))
+	})
+	env = append(
+		env,
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_ALLOW_PROTOCOL="+protocols,

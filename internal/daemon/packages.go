@@ -99,7 +99,8 @@ func (s *Server) install(request *v1.InstallRequest) *v1.InstallResponse {
 // git's errors may repeat.
 var urlCredentials = regexp.MustCompile(`(://)[^/@\s]+@`)
 
-// installFailure says why an installation failed, without credentials a URL in it carries.
-func installFailure(err error) string {
-	return "Package installation failed: " + urlCredentials.ReplaceAllString(err.Error(), "${1}***@")
-}
+// redacted is err's message without the credentials a URL in it carries.
+func redacted(err error) string { return urlCredentials.ReplaceAllString(err.Error(), "${1}***@") }
+
+// installFailure says why an installation failed.
+func installFailure(err error) string { return "Package installation failed: " + redacted(err) }
