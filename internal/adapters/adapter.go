@@ -116,6 +116,14 @@ type SettingsAdapter interface {
 	SettingsArguments(settings map[string]any, dir string) ([]string, error)
 }
 
+// NativeSettingsMerger is a SettingsAdapter whose harness keeps only one of the settings its
+// arguments give, so settings typed at launch would replace the definition's.
+type NativeSettingsMerger interface {
+	// MergeNativeSettings returns settings with the ones native gives layered over them, and
+	// native without those arguments. Relative paths in native resolve against directory.
+	MergeNativeSettings(settings map[string]any, native []string, directory string) (map[string]any, []string, error)
+}
+
 // LaunchDirectory holds a launch's own files, removed when the launch ends.
 func (l Launch) LaunchDirectory() string { return filepath.Join(l.Cache, "launches", l.ID) }
 
@@ -302,7 +310,10 @@ type Plan struct {
 	// Arguments follow the native executable, which the wrapper resolves on its own PATH.
 	Arguments []string
 	// Settings are the arguments that deliver the definition's settings, first in Arguments.
-	Settings    []string
+	Settings []string
+	// Native are the arguments typed at launch, last in Arguments, without the settings that
+	// Settings took in.
+	Native      []string
 	Directory   string
 	Environment map[string]string
 	Unset       []string
@@ -488,15 +499,21 @@ func Build(
 	if err != nil {
 		return Plan{}, err
 	}
-	l.Native = args
 	settings := []string{}
 	if s, ok := a.(SettingsAdapter); ok && len(h.Settings) > 0 {
-		var err error
-		if settings, err = s.SettingsArguments(h.Settings, l.LaunchDirectory()); err != nil {
+		merged := h.Settings
+		if m, ok := a.(NativeSettingsMerger); ok {
+			if merged, args, err = m.MergeNativeSettings(h.Settings, args, plan.Directory); err != nil {
+				return Plan{}, err
+			}
+		}
+		if settings, err = s.SettingsArguments(merged, l.LaunchDirectory()); err != nil {
 			return Plan{}, fmt.Errorf("harness %s settings: %w", h.Name, err)
 		}
 	}
+	l.Native = args
 	plan.Settings = settings
+	plan.Native = args
 	resolved := l.Target.Resolved
 	l.Target = NewTarget(h, append(slices.Clone(settings), harnessArgs...), harnessEnv, args, l.Target.Lookup)
 	l.Target.Resolved = resolved

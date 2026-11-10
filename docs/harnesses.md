@@ -176,7 +176,10 @@ harnesses:
 - **Claude Code** gets the settings as a file passed with `--settings`, which
   applies above your user and project settings for that session only. Lists
   such as `permissions.allow` add to the ones in your files. Use `settings`
-  or `--settings` in `args`, not both.
+  or `--settings` in `args`, not both. A `--settings` typed at launch, such
+  as an Agent SDK host's, merges over the definition's settings the same way
+  Claude Code merges its own files, since Claude Code keeps only the last
+  `--settings` it is given.
 - **Pi** has no way to take settings per launch; use flags such as
   `--provider`, `--model`, and `--thinking` in `args`.
 
