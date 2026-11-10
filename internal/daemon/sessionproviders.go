@@ -112,8 +112,6 @@ func (s *Server) ConnectSessionSource(
 		return providerError(sessionprovider.ErrStale)
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-s.drain.stopping.Done():
-		return refusal()
 	case <-s.ctx.Done():
 		return nil
 	}
