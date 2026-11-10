@@ -93,6 +93,37 @@ func TestAttachable(t *testing.T) {
 	}
 }
 
+func TestRevokingExpiredLaunchRefusesAttaching(t *testing.T) {
+	s := stateServer(t)
+	expired := func(id, parent string) {
+		s.launches[id] = &launch{
+			view:      &v1.Launch{Id: id, ParentLaunchId: parent, State: v1.Launch_STATE_EXPIRED},
+			grant:     verifier("grant"),
+			lifecycle: verifier("lifecycle"),
+		}
+	}
+	expired("process", "")
+	expired("thread", "process")
+	if _, err := s.RevokeLaunch(
+		t.Context(),
+		connect.NewRequest(&v1.RevokeLaunchRequest{LaunchId: "process"}),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var e *connect.Error
+	if _, err := s.attachable("process", "grant", "lifecycle"); !errors.As(err, &e) ||
+		e.Meta().Get(control.EndedHeader) != "revoked" {
+		t.Errorf("attaching the revoked launch: %v", err)
+	}
+	if _, ok := s.revoked["thread"]; !ok || s.launches["thread"].view.State != v1.Launch_STATE_REVOKED {
+		t.Errorf("thread launch = %v, revoked %v", s.launches["thread"].view.State, ok)
+	}
+	state, err := loadState(s.paths, time.Now())
+	if _, ok := state.Revoked["process"]; err != nil || !ok {
+		t.Errorf("saved state = %+v, %v", state, err)
+	}
+}
+
 func TestSweepKeepsHeldAndNewLaunchFiles(t *testing.T) {
 	s := stateServer(t)
 	s.launches["held"] = &launch{view: &v1.Launch{Id: "held"}}

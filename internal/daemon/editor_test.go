@@ -2,7 +2,7 @@ package daemon
 
 import (
 	"encoding/base64"
-	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +16,7 @@ import (
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/packages"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
@@ -407,9 +408,11 @@ func TestSkillInterface(t *testing.T) {
 	}
 }
 
-func TestInstallFailureRedactsCredentials(t *testing.T) {
-	got := installFailure(errors.New("clone https://user:ghp_secret@github.com/acme/skills: denied"))
-	if strings.Contains(got, "ghp_secret") || !strings.Contains(got, "https://***@github.com/acme/skills") {
-		t.Fatalf("installFailure = %q", got)
+func TestFailuresRedactCredentials(t *testing.T) {
+	err := fmt.Errorf("%w: clone https://user:ghp_secret@github.com/acme/skills: denied", packages.ErrFetch)
+	for _, got := range []string{installFailure(err), editError(err).Error()} {
+		if strings.Contains(got, "ghp_secret") || !strings.Contains(got, "https://***@github.com/acme/skills") {
+			t.Errorf("failure = %q", got)
+		}
 	}
 }

@@ -272,36 +272,7 @@ func Serve(
 	slog.Info("daemon started", "version", control.Version, "pid", os.Getpid(), "url", discovery.URL)
 	s.manager = auth.New(discovery.URL+"/oauth/callback", secretstore.Open(paths.State))
 	mux := http.NewServeMux()
-	interceptor := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			// Lifecycle procedures check the lifecycle token, and tool procedures accept a launch
-			// grant instead of the management token; they authorize themselves.
-			if !selfAuthorized[req.Spec().Procedure] {
-				if !equalBearer(req.Header().Get("Authorization"), discovery.Token) {
-					return nil, rpcError(connect.CodeUnauthenticated, "management credential required")
-				}
-			}
-			if s.drain.draining() && startsWork[req.Spec().Procedure] {
-				return nil, refusal()
-			}
-			return next(ctx, req)
-		}
-	})
-	opts := []connect.HandlerOption{connect.WithInterceptors(interceptor), connect.WithReadMaxBytes(16 * 1024 * 1024)}
-	path, handler := agxv1connect.NewConfigurationServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewPackageServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewLaunchServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewResourceServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewSessionProviderServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewRuntimeServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewSecretServiceHandler(s, opts...)
-	mux.Handle(path, handler)
+	s.handle(mux, discovery.Token)
 	mux.HandleFunc("/launch/", s.serveMCP)
 	mux.HandleFunc("/oauth/callback", s.manager.Callback)
 	tracked := s.drain.track(mux)
@@ -404,6 +375,69 @@ loop:
 		return ErrRestart
 	}
 	return nil
+}
+
+// handle serves the daemon's Connect services on mux to callers holding token.
+func (s *Server) handle(mux *http.ServeMux, token string) {
+	opts := []connect.HandlerOption{
+		connect.WithInterceptors(gate{token: token, draining: s.drain.draining}),
+		connect.WithReadMaxBytes(16 * 1024 * 1024),
+	}
+	path, handler := agxv1connect.NewConfigurationServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewPackageServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewLaunchServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewResourceServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewSessionProviderServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewRuntimeServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewSecretServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+}
+
+// gate admits a call to a procedure. A unary interceptor alone would leave streaming procedures
+// open to callers without the management token.
+type gate struct {
+	token    string
+	draining func() bool
+}
+
+func (g gate) admit(spec connect.Spec, header http.Header) error {
+	// Lifecycle procedures check the lifecycle token, and tool procedures accept a launch
+	// grant instead of the management token; they authorize themselves.
+	if !selfAuthorized[spec.Procedure] && !equalBearer(header.Get("Authorization"), g.token) {
+		return rpcError(connect.CodeUnauthenticated, "management credential required")
+	}
+	if g.draining() && startsWork[spec.Procedure] {
+		return refusal()
+	}
+	return nil
+}
+
+func (g gate) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
+	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		if err := g.admit(req.Spec(), req.Header()); err != nil {
+			return nil, err
+		}
+		return next(ctx, req)
+	}
+}
+
+func (gate) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
+	return next
+}
+
+func (g gate) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
+	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
+		if err := g.admit(conn.Spec(), conn.RequestHeader()); err != nil {
+			return err
+		}
+		return next(ctx, conn)
+	}
 }
 
 // selfAuthorized are the procedures that check their own credentials.
@@ -516,6 +550,15 @@ func (l *launch) extend(expires time.Time) {
 // thread launches end with it. A revocation is saved by the caller.
 func (s *Server) end(l *launch, state v1.Launch_State) {
 	if !active(l.view.State) {
+		// Its wrapper attaches an expired launch again unless a revocation refuses that.
+		if state == v1.Launch_STATE_REVOKED && l.view.State == v1.Launch_STATE_EXPIRED {
+			l.view.State = state
+			s.revoke(l.view.Id, time.Now())
+			s.changed.notify()
+			for _, child := range s.children(l) {
+				s.end(child, state)
+			}
+		}
 		return
 	}
 	l.view.State = state
@@ -523,10 +566,7 @@ func (s *Server) end(l *launch, state v1.Launch_State) {
 	l.cancel()
 	s.changed.notify()
 	if state == v1.Launch_STATE_REVOKED {
-		if s.revoked == nil {
-			s.revoked = map[string]time.Time{}
-		}
-		s.revoked[l.view.Id] = l.ended
+		s.revoke(l.view.Id, l.ended)
 	}
 	// A finished launch is the normal outcome; the others cut a running harness off.
 	if state != v1.Launch_STATE_FINISHED && l.view.ParentLaunchId == "" {
@@ -541,6 +581,14 @@ func (s *Server) end(l *launch, state v1.Launch_State) {
 	for _, child := range s.children(l) {
 		s.end(child, state)
 	}
+}
+
+// revoke refuses attaching a launch from now on; s.mu must be held.
+func (s *Server) revoke(id string, at time.Time) {
+	if s.revoked == nil {
+		s.revoked = map[string]time.Time{}
+	}
+	s.revoked[id] = at
 }
 
 // children lists a launch's thread launches; s.mu must be held.
@@ -924,9 +972,6 @@ func (s *Server) WatchRuntime(
 	req *connect.Request[v1.WatchRuntimeRequest],
 	stream *connect.ServerStream[v1.WatchRuntimeResponse],
 ) error {
-	if !equalBearer(req.Header().Get("Authorization"), s.discovery.Token) {
-		return rpcError(connect.CodeUnauthenticated, "management credential required")
-	}
 	previous := ""
 	for {
 		changed := s.changed.next()

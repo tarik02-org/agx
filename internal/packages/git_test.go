@@ -37,11 +37,18 @@ func TestCheckoutGitFetchesOneRevision(t *testing.T) {
 	run("branch", "old")
 	run("commit", "-q", "--allow-empty", "-m", "second")
 	second := run("rev-parse", "HEAD")
+	// A daemon started from a Git hook keeps the hook's repository in its environment.
+	t.Setenv("GIT_DIR", filepath.Join(t.TempDir(), "elsewhere"))
+	t.Setenv("GIT_WORK_TREE", t.TempDir())
 	url := "file://" + filepath.ToSlash(repo)
 	for ref, want := range map[string]string{"HEAD": second, "main": second, "old": first, "v1": first, first: first} {
-		got, err := checkoutGit(t.Context(), filepath.Join(t.TempDir(), "git"), url, "file", ref)
+		dir := filepath.Join(t.TempDir(), "git")
+		got, err := checkoutGit(t.Context(), dir, url, "file", ref)
 		if err != nil || got != want {
 			t.Errorf("checkoutGit(%s) = %s, %v; want %s", ref, got, err, want)
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+			t.Errorf("checkoutGit(%s) used another repository: %v", ref, err)
 		}
 	}
 	if _, err := checkoutGit(t.Context(), filepath.Join(t.TempDir(), "git"), url, "file", "missing"); !errors.Is(

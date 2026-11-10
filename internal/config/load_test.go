@@ -119,6 +119,25 @@ func TestLoadErrors(t *testing.T) {
 			want:  []string{"a.yaml:1: daemon belongs in the root configuration"},
 		},
 		{
+			name: "alias containing itself",
+			files: map[string]string{
+				"agx.yaml": "fragments: [a.yaml]\n",
+				"a.yaml":   "bundles:\n  b: &a\n    skills: [*a]\n",
+			},
+			want: []string{"a.yaml:3: alias *a contains itself"},
+		},
+		{
+			name: "aliases multiplying",
+			files: map[string]string{"agx.yaml": "fragments: [a.yaml]\n", "a.yaml": "bundles:\n" +
+				"  a: &a {skills: [x, x, x, x, x, x, x, x, x, x]}\n" +
+				"  b: &b {skills: [*a, *a, *a, *a, *a, *a, *a, *a, *a, *a]}\n" +
+				"  c: &c {skills: [*b, *b, *b, *b, *b, *b, *b, *b, *b, *b]}\n" +
+				"  d: &d {skills: [*c, *c, *c, *c, *c, *c, *c, *c, *c, *c]}\n" +
+				"  e: &e {skills: [*d, *d, *d, *d, *d, *d, *d, *d, *d, *d]}\n" +
+				"  f: {skills: [*e, *e, *e, *e, *e, *e, *e, *e, *e, *e]}\n"},
+			want: []string{"aliases expand to too many values"},
+		},
+		{
 			name:  "duplicate key",
 			files: map[string]string{"agx.yaml": "fragments: [a.yaml]\n", "a.yaml": "skills: {}\nskills: {}\n"},
 			want:  []string{"skills"},
