@@ -28,11 +28,30 @@ type client struct {
 }
 
 func newClient(paths platform.Paths) (*client, error) {
-	d, err := control.ReadDiscovery(paths)
+	d, err := liveDiscovery(paths)
 	if err != nil {
 		return nil, err
 	}
 	return dial(d), nil
+}
+
+// liveDiscovery reads the endpoint of the daemon that holds the startup lock. Discovery outlives
+// a daemon that stopped without shutting down, and its port may since belong to another user's
+// process, which would be sent secrets and decide what a launch runs. Only the lock, in a
+// directory no other user opens, tells the daemon from that process.
+func liveDiscovery(paths platform.Paths) (control.Discovery, error) {
+	d, err := control.ReadDiscovery(paths)
+	if err != nil {
+		return d, err
+	}
+	held, err := lockHeld(paths)
+	if err != nil {
+		return d, err
+	}
+	if !held {
+		return d, control.ErrStale
+	}
+	return d, nil
 }
 
 func dial(d control.Discovery) *client {

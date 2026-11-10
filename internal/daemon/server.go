@@ -555,6 +555,7 @@ func (s *Server) end(l *launch, state v1.Launch_State) {
 			l.view.State = state
 			s.revoke(l.view.Id, time.Now())
 			s.changed.notify()
+			go s.release(l.view.Id, nil)
 			for _, child := range s.children(l) {
 				s.end(child, state)
 			}
@@ -577,7 +578,12 @@ func (s *Server) end(l *launch, state v1.Launch_State) {
 		slog.Info("launch ended", attrs...)
 	}
 	s.clients.closeLaunch(l.view.Id)
-	go s.release(l.view.Id, l.endpoints)
+	if state == v1.Launch_STATE_EXPIRED {
+		// Its wrapper may attach the launch again, and its harness still reads the launch files.
+		go closeEndpoints(l.endpoints)
+	} else {
+		go s.release(l.view.Id, l.endpoints)
+	}
 	for _, child := range s.children(l) {
 		s.end(child, state)
 	}
@@ -779,6 +785,9 @@ func (s *Server) prune(now time.Time) {
 	for id, l := range s.launches {
 		if !active(l.view.State) && l.ended.Before(cutoff) {
 			delete(s.launches, id)
+			if l.view.State == v1.Launch_STATE_EXPIRED {
+				go s.release(id, nil)
+			}
 		}
 	}
 }

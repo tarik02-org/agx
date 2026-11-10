@@ -77,7 +77,7 @@ func (s daemonState) action() daemonAction {
 
 // probeDaemon reads discovery and asks the daemon it names how it is.
 func probeDaemon(ctx context.Context, paths platform.Paths) (control.Discovery, *client, daemonState) {
-	d, err := control.ReadDiscovery(paths)
+	d, err := liveDiscovery(paths)
 	state := daemonState{
 		discovery: err,
 		newer:     newerVersion(control.Version, d.Version),
@@ -309,7 +309,8 @@ func awaitExit(ctx context.Context, paths platform.Paths, timeout time.Duration)
 // lockHeld reports whether a daemon holds the startup lock, running or still starting.
 func lockHeld(paths platform.Paths) (bool, error) {
 	lock := flock.New(filepath.Join(paths.Runtime, "daemon.lock"))
-	ok, err := lock.TryLock()
+	// Shared, so that commands asking at once do not take each other for the daemon.
+	ok, err := lock.TryRLock()
 	if err != nil {
 		return false, err
 	}

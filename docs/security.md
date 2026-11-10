@@ -27,6 +27,11 @@ token and the daemon's log, and the state directory, with the secret store, the
 daemon's state, and launch records, are readable only by your account (private
 ACLs on Windows). Other local users cannot use your MCP servers or credentials.
 
+Commands and wrappers talk only to the daemon that holds the lock in the runtime
+directory. A daemon that crashed leaves its address behind, and its port may
+since belong to another user's program; without the lock, that address is
+ignored.
+
 Nothing else is hidden from them. Caches (installed packages, launch artifacts,
 per-launch files) hold only what your configuration already says, and agx
 creates them with default permissions; your configuration directory and its
@@ -68,3 +73,8 @@ visible to that process and to anything it runs.
   which is why `!secret` and `!env` are not allowed in harness `args`.
 - **Your configuration can be shared.** Keep credentials in secrets, not in
   YAML literals, so the configuration directory can live in Git.
+- **A stopped daemon leaves running harnesses pointed at its port.** A harness
+  keeps sending its grant to the port its launch started with. While no daemon
+  runs, another local user's program can take that port and receive the grant,
+  which works again once a daemon is back. Keep the daemon running while
+  harnesses run, or revoke their launches before stopping it.
