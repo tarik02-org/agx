@@ -510,10 +510,10 @@ func (s *Server) reload() (*config.Config, error) {
 	s.mu.Lock()
 	current, currentErr, inputs := s.config, s.configErr, s.inputs
 	s.mu.Unlock()
-	if inputs != nil && !inputs.Changed() {
-		if currentErr != nil {
-			return nil, currentErr
-		}
+	changed := inputs == nil || inputs.Changed()
+	// A failed load is tried again: validation names files that are no inputs, such as a skill's
+	// missing directory, whose return would otherwise go unnoticed.
+	if !changed && currentErr == nil {
 		return current, nil
 	}
 	inputs = &config.Inputs{}
@@ -532,7 +532,9 @@ func (s *Server) reload() (*config.Config, error) {
 		s.config = c
 	}
 	// Changed configuration may mean a command secret's command now prints another value.
-	s.manager.ForgetHelpers()
+	if changed || err == nil {
+		s.manager.ForgetHelpers()
+	}
 	return c, err
 }
 

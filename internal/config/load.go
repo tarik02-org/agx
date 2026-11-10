@@ -73,7 +73,7 @@ func read(root string, builtins Builtins, inputs *Inputs, local *Local) (*Config
 	if err != nil {
 		return nil, err
 	}
-	root, err = platform.Canonical(root)
+	root, err = platform.CanonicalFile(root)
 	if err != nil {
 		return nil, err
 	}
@@ -133,17 +133,20 @@ func read(root string, builtins Builtins, inputs *Inputs, local *Local) (*Config
 			}
 			inputs.glob(p, files)
 		} else if _, err := os.Stat(p); errors.Is(err, fs.ErrNotExist) {
+			inputs.file(p)
 			return nil, errorAt(at, "fragment %s: %s does not exist", entry, p)
 		}
-		for _, path := range files {
-			if path, err = platform.Canonical(path); err != nil {
+		for _, listed := range files {
+			path, err := platform.Canonical(listed)
+			if err != nil {
 				return nil, err
 			}
 			if seen[path] {
 				continue
 			}
 			seen[path] = true
-			inputs.file(path)
+			// As listed: a link pointed elsewhere is a change, whatever the files it named hold.
+			inputs.file(listed)
 			b, err := os.ReadFile(path)
 			if err != nil {
 				return nil, err

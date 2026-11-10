@@ -226,8 +226,9 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 	merged := func(id config.ID, _ config.Package, deps []config.ID) error {
 		f := fetched[id]
 		if !f.pinned {
-			if frozen && config.Digest(deps) != config.Digest(f.previous.Dependencies) {
-				return fmt.Errorf("stale dependencies for %s", id)
+			// Not by digest: a lock read from the database has no list where a lockfile has an empty one.
+			if frozen && !slices.Equal(deps, f.previous.Dependencies) {
+				return mark(ErrStaleLock, fmt.Errorf("stale dependencies for %s", id))
 			}
 			f.lock.Packages[id] = config.LockedPackage{
 				Source: f.source, Revision: f.revision, Hash: f.hash, Dependencies: deps,
