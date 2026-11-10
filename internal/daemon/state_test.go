@@ -124,6 +124,31 @@ func TestRevokingExpiredLaunchRefusesAttaching(t *testing.T) {
 	}
 }
 
+func TestExpiredLaunchKeepsItsFilesUntilRevoked(t *testing.T) {
+	s := stateServer(t)
+	s.clients = newClientPool()
+	dir := filepath.Join(s.paths.Cache, "launches", "held")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	l := &launch{view: &v1.Launch{Id: "held", State: v1.Launch_STATE_RUNNING}, cancel: func() {}}
+	s.launches["held"] = l
+	s.mu.Lock()
+	s.end(l, v1.Launch_STATE_EXPIRED)
+	s.mu.Unlock()
+	// The wrapper may attach the launch again, whose harness still reads these files.
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("expiry removed the launch files: %v", err)
+	}
+	s.mu.Lock()
+	s.end(l, v1.Launch_STATE_REVOKED)
+	s.mu.Unlock()
+	eventually(t, "launch files removed", func() bool {
+		_, err := os.Stat(dir)
+		return errors.Is(err, fs.ErrNotExist)
+	})
+}
+
 func TestSweepKeepsHeldAndNewLaunchFiles(t *testing.T) {
 	s := stateServer(t)
 	s.launches["held"] = &launch{view: &v1.Launch{Id: "held"}}

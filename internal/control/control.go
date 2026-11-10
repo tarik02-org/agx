@@ -38,6 +38,10 @@ func (u unavailable) Error() string { return string(u) }
 
 func (u unavailable) Is(target error) bool { return target == ErrUnavailable }
 
+// ErrStale is discovery whose daemon no longer holds the startup lock: it stopped without
+// shutting down.
+var ErrStale error = unavailable("daemon stopped without shutting down; run agx daemon start")
+
 type Discovery struct {
 	Version    string `json:"version"`
 	InstanceID string `json:"instance_id"`
