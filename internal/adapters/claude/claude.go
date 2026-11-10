@@ -1,10 +1,13 @@
 // Package claude adapts Claude Code: skills load from a session plugin directory, instructions
-// from an appended system prompt file, and MCP servers from inline --mcp-config.
+// from an appended system prompt file, and subagents and MCP servers from inline --agents and
+// --mcp-config.
 package claude
 
 import (
 	"encoding/json"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/tarik02-org/agx/internal/adapters"
@@ -112,6 +115,27 @@ func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
 		if streamInput(l.Native) {
 			l.PrependInitializePrompt(strings.TrimRight(string(l.Instructions), "\n"))
 		}
+	}
+	if len(l.Agents) > 0 {
+		// The plugin directory would name them agx-managed:<name>, and --agents reads a file
+		// only with --print.
+		agents := map[string]any{}
+		for _, agent := range l.Agents {
+			fields := map[string]any{}
+			maps.Copy(fields, agent.Native)
+			fields["description"], fields["prompt"] = agent.Description, agent.Prompt
+			agents[agent.Name] = fields
+		}
+		b, err := json.Marshal(agents)
+		if err != nil {
+			return nil, err
+		}
+		if slices.ContainsFunc(l.Native, func(arg string) bool {
+			return arg == "--agents" || strings.HasPrefix(arg, "--agents=")
+		}) {
+			l.Warn("--agents replaces the subagents agx selected; launching without them")
+		}
+		prefix = append(prefix, "--agents", string(b))
 	}
 	if servers := l.HTTPServers(); len(servers) > 0 {
 		b, err := json.Marshal(map[string]any{"mcpServers": servers})

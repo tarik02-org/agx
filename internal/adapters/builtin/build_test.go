@@ -575,3 +575,111 @@ func TestRemoveUnusedArtifacts(t *testing.T) {
 		t.Errorf("used artifacts = %v, %v", info, err)
 	}
 }
+
+// agentFixture selects two subagents, one with native fields for Claude Code and Codex.
+func agentFixture(t *testing.T) fixture {
+	t.Helper()
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "bin", "fake")
+	if runtime.GOOS == "windows" {
+		fake += ".exe"
+	}
+	write(t, fake, "fake")
+	if err := os.MkdirAll(filepath.Join(dir, "work"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	executable := "'" + filepath.ToSlash(fake) + "'"
+	write(t, filepath.Join(dir, "agx.yaml"), "fragments: [main.yaml]\n")
+	write(t, filepath.Join(dir, "main.yaml"), `agents:
+  reviewer:
+    description: Reviews a diff.
+    content: You review.
+    harnesses:
+      claude: {model: opus}
+      codex: {model_reasoning_effort: high}
+  scout:
+    description: Finds files.
+    content: You scout.
+scopes:
+  - directory: work
+    add: {agents: [reviewer, scout]}
+harnesses:
+  codex: {executable: `+executable+`}
+  claude: {executable: `+executable+`}
+  pi: {executable: `+executable+`}
+`)
+	c, err := config.Load(
+		filepath.Join(dir, "agx.yaml"),
+		config.Options{Builtins: builtin.Registry().Builtins(nil), Cache: filepath.Join(dir, "cache")},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fixture{config: c, work: filepath.Join(dir, "work"), cache: filepath.Join(dir, "cache")}
+}
+
+func TestBuildAgents(t *testing.T) {
+	f := agentFixture(t)
+	t.Setenv("CODEX_HOME", t.TempDir())
+
+	plan, _, err := f.build(t, "claude", "-p", "hi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	agents := `{"reviewer":{"description":"Reviews a diff.","model":"opus","prompt":"You review."},` +
+		`"scout":{"description":"Finds files.","prompt":"You scout."}}`
+	if i := slices.Index(plan.Arguments, "--agents"); i < 0 || plan.Arguments[i+1] != agents {
+		t.Errorf("claude arguments = %q", plan.Arguments)
+	}
+	if len(plan.Warnings) != 0 {
+		t.Errorf("claude warnings = %q", plan.Warnings)
+	}
+	// Claude Code keeps only the last --agents, which is the caller's.
+	plan, _, err = f.build(t, "claude", "--agents", "{}")
+	if err != nil || len(plan.Warnings) != 1 || !strings.Contains(plan.Warnings[0], "--agents replaces") {
+		t.Errorf("claude with native --agents: warnings = %q, %v", plan.Warnings, err)
+	}
+
+	roles := filepath.Join(f.cache, "launches", "L", "agents")
+	plan, _, err = f.build(t, "codex", "exec", "hi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"reviewer", "scout"} {
+		key := "agents." + name + ".config_file="
+		if !slices.ContainsFunc(plan.Arguments, func(arg string) bool { return strings.HasPrefix(arg, key) }) {
+			t.Errorf("codex arguments lack %s: %q", key, plan.Arguments)
+		}
+	}
+	role, err := os.ReadFile(filepath.Join(roles, "reviewer.toml"))
+	want := "description = 'Reviews a diff.'\ndeveloper_instructions = 'You review.'\n" +
+		"model_reasoning_effort = 'high'\nname = 'reviewer'\n"
+	if err != nil || string(role) != want {
+		t.Errorf("reviewer.toml = %q, %v", role, err)
+	}
+
+	a, _ := builtin.Registry().Launcher("codex")
+	s, err := f.config.Resolve(f.work, "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	thread, err := adapters.BuildThread(
+		t.Context(), a, a.(adapters.Threads), adapters.Launch{Snapshot: s, Cache: f.cache, ID: "T"}, "thread-grant",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(f.cache, "launches", "T", "agents", "scout.toml")
+	if thread.Config["agents.scout.config_file"] != file {
+		t.Errorf("thread config = %v", thread.Config)
+	}
+	if _, err := os.Stat(file); err != nil {
+		t.Errorf("thread role file: %v", err)
+	}
+
+	plan, _, err = f.build(t, "pi", "-p", "hi")
+	if err != nil || len(plan.Warnings) != 1 ||
+		plan.Warnings[0] != "Pi has no subagents; launching without reviewer, scout" {
+		t.Errorf("pi warnings = %q, %v", plan.Warnings, err)
+	}
+}

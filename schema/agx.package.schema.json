@@ -2,6 +2,209 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/tarik02-org/agx/master/schema/agx.package.schema.json",
   "$defs": {
+    "Agent": {
+      "if": {
+        "required": [
+          "content"
+        ]
+      },
+      "then": {
+        "properties": {
+          "path": false,
+          "git": false,
+          "ref": false,
+          "hash": false
+        },
+        "required": [
+          "description"
+        ]
+      },
+      "else": {
+        "if": {
+          "required": [
+            "git"
+          ]
+        },
+        "else": {
+          "properties": {
+            "ref": false,
+            "hash": false
+          },
+          "required": [
+            "path"
+          ]
+        },
+        "properties": {
+          "description": false
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Markdown file: front matter with a description, then the prompt; relative to this file, or with git, to the checkout."
+        },
+        "git": {
+          "type": "string",
+          "description": "Git repository holding the resource, fetched like a package; path is then relative to the checkout."
+        },
+        "ref": {
+          "type": "string",
+          "description": "git: branch, tag, or commit, locked at install; a full 40-character commit pins the source without a lock entry."
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "git: content hash of the checkout, verified at install; pins the source without a lock entry."
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "description": "Native subagent name, lowercase letters, digits, and hyphens; defaults to the ID's last segment."
+        },
+        "description": {
+          "type": "string",
+          "description": "content: when a session should delegate to the subagent."
+        },
+        "content": {
+          "type": "string",
+          "description": "Prompt of a subagent written in configuration."
+        },
+        "harnesses": {
+          "additionalProperties": {
+            "type": "object"
+          },
+          "type": "object",
+          "description": "Native subagent fields by built-in harness, such as a model or a tool list, passed through as written."
+        },
+        "override": {
+          "type": "boolean",
+          "description": "Replace an existing definition."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "AgentItem": {
+      "if": {
+        "type": "string"
+      },
+      "then": {
+        "anyOf": [
+          {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+          },
+          {
+            "pattern": "^([./~]|[A-Za-z]:[\\\\/]|\\\\\\\\)"
+          }
+        ],
+        "type": "string"
+      },
+      "else": {
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "content"
+              ]
+            },
+            "then": {
+              "required": [
+                "id"
+              ]
+            }
+          }
+        ],
+        "if": {
+          "required": [
+            "content"
+          ]
+        },
+        "then": {
+          "properties": {
+            "path": false,
+            "git": false,
+            "ref": false,
+            "hash": false
+          },
+          "required": [
+            "description"
+          ]
+        },
+        "else": {
+          "if": {
+            "required": [
+              "git"
+            ]
+          },
+          "else": {
+            "properties": {
+              "ref": false,
+              "hash": false
+            },
+            "required": [
+              "path"
+            ]
+          },
+          "properties": {
+            "description": false
+          },
+          "required": [
+            "path"
+          ]
+        },
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/ID",
+            "description": "Subagent ID; defaults to the file stem of path."
+          },
+          "path": {
+            "type": "string",
+            "description": "Markdown file: front matter with a description, then the prompt; relative to this file, or with git, to the checkout."
+          },
+          "git": {
+            "type": "string",
+            "description": "Git repository holding the resource, fetched like a package; path is then relative to the checkout."
+          },
+          "ref": {
+            "type": "string",
+            "description": "git: branch, tag, or commit, locked at install; a full 40-character commit pins the source without a lock entry."
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "git: content hash of the checkout, verified at install; pins the source without a lock entry."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "description": "Native subagent name, lowercase letters, digits, and hyphens; defaults to the ID's last segment."
+          },
+          "description": {
+            "type": "string",
+            "description": "content: when a session should delegate to the subagent."
+          },
+          "content": {
+            "type": "string",
+            "description": "Prompt of a subagent written in configuration."
+          },
+          "harnesses": {
+            "additionalProperties": {
+              "type": "object"
+            },
+            "type": "object",
+            "description": "Native subagent fields by built-in harness, such as a model or a tool list, passed through as written."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "description": "A subagent ID, a Markdown file path, or an inline subagent definition."
+    },
     "BundleSpec": {
       "properties": {
         "skills": {
@@ -24,6 +227,13 @@
           },
           "type": "array",
           "description": "MCP server IDs or inline MCP server definitions with an id."
+        },
+        "agents": {
+          "items": {
+            "$ref": "#/$defs/AgentItem"
+          },
+          "type": "array",
+          "description": "Subagent IDs, Markdown file paths, or inline subagent definitions."
         },
         "bundles": {
           "items": {
@@ -941,6 +1151,16 @@
       },
       "type": "object",
       "description": "MCP servers with the account and settings used to reach them."
+    },
+    "agents": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Agent"
+      },
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$"
+      },
+      "type": "object",
+      "description": "Subagents sessions delegate work to: Markdown files, Git sources, or prompts written here."
     },
     "secrets": {
       "additionalProperties": {

@@ -72,8 +72,8 @@ scopes:
       instructions: [pnpm]
 ```
 
-- Top-level sections (`instructions`, `skills`, `mcp`, `secrets`, `bundles`,
-  `packages`, `harnesses`) define things by ID.
+- Top-level sections (`instructions`, `skills`, `mcp`, `agents`, `secrets`,
+  `bundles`, `packages`, `harnesses`) define things by ID.
 - `scopes` decide where they are used. Each rule adds or removes resources for
   a directory and everything below it; a rule without `directory` applies
   everywhere.
@@ -331,7 +331,7 @@ theirs, and new launches fail until it is fixed.
 
 - [Harnesses](harnesses.md): the `harnesses` section.
 - [MCP servers](mcp.md): the `mcp` section.
-- [Skills, instructions, and packages](skills-and-packages.md): `skills`,
-  `instructions`, `packages`, and lockfiles.
+- [Skills, instructions, subagents, and packages](skills-and-packages.md):
+  `skills`, `instructions`, `agents`, `packages`, and lockfiles.
 - [Secrets](secrets.md): the `secrets` section and the `!secret`, `!env`, and
   `!file` tags.

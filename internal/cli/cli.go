@@ -246,6 +246,7 @@ func run(osArgs []string, stdout io.Writer) int {
 		mcpCommand(a),
 		skillCommand(a),
 		instructionsCommand(a),
+		agentCommand(a),
 		harnessCommand(a),
 	)
 	root.AddCommand(useCommands(a)...)

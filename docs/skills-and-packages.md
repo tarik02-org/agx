@@ -1,12 +1,15 @@
-# Skills, instructions, and packages
+# Skills, instructions, subagents, and packages
 
 - **Instructions** are text added to every session's system prompt, such as
   "Use pnpm, not npm." The agent follows them without being asked.
 - **Skills** are folders with a `SKILL.md` describing a workflow, plus any
   scripts or references it needs. The agent loads one when it is relevant or
   when you invoke it.
+- **Subagents** are named agents a session can hand work to, each with its own
+  prompt, such as a reviewer.
 - **Packages** are folders or Git repositories that provide skills,
-  instructions, MCP servers, and bundles, installed and locked to a version.
+  instructions, subagents, MCP servers, and bundles, installed and locked to a
+  version.
 
 ## Instructions
 
@@ -110,6 +113,63 @@ For an inline skill, `description` is required and `content` is the body of
 Folder and Git skills take their name and description from their own
 `SKILL.md`.
 
+## Subagents
+
+A subagent is defined once and reaches Claude Code, Codex, and OpenCode in each
+one's own format. Define it in a configuration file, then select it under
+`agents` like any other resource:
+
+```yaml
+agents:
+  reviewer:
+    description: Reviews a diff for correctness bugs.
+    content: |
+      You review changes for bugs. Report each one with its file and line.
+  planner:
+    path: ./agents/planner.md
+  scout:
+    git: https://github.com/example/agents.git
+    path: agents/scout.md
+
+scopes:
+  - directory: ~/work/acme
+    add:
+      agents: [reviewer, planner]
+```
+
+- `description` tells the session when to use the subagent, and `content` is
+  the prompt it runs with.
+- A `path` or `git` source is a Markdown file: front matter with a
+  `description`, then the prompt. agx reads only `description` from the front
+  matter, so a file written for one harness keeps working, but its other fields,
+  such as `tools`, do nothing elsewhere.
+- `name` is the name harnesses show; it defaults to the last part of the ID.
+  Lowercase letters, digits, and hyphens, up to 64 characters. Two selected
+  subagents with the same name each get a suffix.
+
+Scopes, bundles, harness definitions, and package manifests select subagents
+under `agents`, by ID, by file path, or as an inline definition.
+
+Models, tool lists, and permissions mean something different in every harness,
+so they go under `harnesses`, by built-in harness, in that harness's own words.
+agx passes them through without checking or translating them:
+
+```yaml
+agents:
+  reviewer:
+    description: Reviews a diff for correctness bugs.
+    content: You review changes for bugs.
+    harnesses:
+      claude: { model: opus, tools: [Read, Grep] } # subagent front matter fields
+      codex: { model_reasoning_effort: high } # agent file keys
+      opencode: { model: anthropic/claude-opus-5-5, steps: 20 } # agent config fields
+```
+
+How each harness gets them is in [Harnesses](harnesses.md#subagents). `agx agent
+list` shows every configured subagent. The commands that edit configuration
+(`agx use`, `agx unuse`) do not manage subagents yet: define and select them in a
+configuration file.
+
 ## Packages
 
 A package is a folder or Git repository of resources:
@@ -144,6 +204,9 @@ skills:
 instructions:
   standards:
     path: standards.md
+agents:
+  reviewer:
+    path: agents/reviewer.md
 mcp:
   tracker:
     url: https://tracker.example.com/mcp
@@ -151,13 +214,14 @@ bundles:
   defaults:
     skills: [review]
     instructions: [standards]
+    agents: [reviewer]
 packages:
   shared: # a dependency, named team/shared
     git: https://github.com/example/shared.git
 ```
 
-A manifest can define skills, instructions, MCP servers, secrets, bundles, and
-dependencies. It cannot add directory rules, fragments, or harnesses: the user
+A manifest can define skills, instructions, subagents, MCP servers, secrets,
+bundles, and dependencies. It cannot add directory rules, fragments, or harnesses: the user
 decides where a package's resources apply. Inside a manifest, references are
 relative to the package (`shared/review` there is `team/shared/review` from
 outside).
@@ -171,7 +235,8 @@ agx update             # move every Git package to the newest commit of its ref
 agx update team        # just one
 ```
 
-- `install` fetches packages and Git skills and instructions, then records the
+- `install` fetches packages and Git skills, instructions, and subagents, then
+  records the
   exact commit or content hash in the local configuration database for
   CLI/UI-managed sources, or in `agx.lock.json` next to the YAML overlay that
   declares them. Commit portable lockfiles along with YAML configuration.
@@ -187,8 +252,8 @@ agx update team        # just one
   warning with a hint to run `agx install`; the launch continues without that
   package's resources.
 - `update` is the only command that moves a package to a newer commit. A Git
-  skill or instructions file updates by kind and ID: `agx update
-  skill:strict-review`.
+  skill, instructions file, or subagent updates by kind and ID: `agx update
+  skill:strict-review`, `agx update agent:scout`.
 - `--frozen` is for new machines and CI: it fails instead of changing a
   lockfile.
 
@@ -215,4 +280,5 @@ by Nix. `update` leaves pinned sources alone.
 agx explain           # what this directory gets, and why
 agx skill list        # every configured skill
 agx instructions list
+agx agent list
 ```

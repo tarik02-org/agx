@@ -120,18 +120,26 @@ func (s Skill) nativeName(document []byte) string {
 	return result
 }
 
-// frontmatterName reads name from a leading YAML front matter block, or returns "".
-func frontmatterName(document string) string {
+// frontmatter splits a document into its leading YAML front matter block and the text after
+// it; without a block, the whole document is the text.
+func frontmatter(document string) (head, body string) {
 	document = strings.TrimPrefix(document, "\ufeff")
 	document = strings.ReplaceAll(document, "\r\n", "\n")
 	rest, ok := strings.CutPrefix(document, "---\n")
 	if !ok {
-		return ""
+		return "", document
 	}
-	head, _, ok := strings.Cut(rest, "\n---")
+	head, after, ok := strings.Cut(rest, "\n---")
 	if !ok {
-		return ""
+		return "", document
 	}
+	_, body, _ = strings.Cut(after, "\n")
+	return head, body
+}
+
+// frontmatterName reads name from a leading YAML front matter block, or returns "".
+func frontmatterName(document string) string {
+	head, _ := frontmatter(document)
 	var fields struct {
 		Name string `yaml:"name"`
 	}
@@ -250,6 +258,27 @@ func (i Instructions) Read() ([]byte, error) {
 		return []byte(i.Text), nil
 	}
 	return os.ReadFile(i.Path)
+}
+
+// Read returns the subagent's description and prompt. A file's front matter gives the
+// description, and the text after it is the prompt; other front matter fields are native to the
+// harness the file was written for and are not read.
+func (a Agent) Read() (description, prompt string, err error) {
+	if a.Content != "" {
+		return a.Description, a.Content, nil
+	}
+	b, err := os.ReadFile(a.Path)
+	if err != nil {
+		return "", "", err
+	}
+	head, body := frontmatter(string(b))
+	var fields struct {
+		Description string `yaml:"description"`
+	}
+	if err := yaml.Unmarshal([]byte(head), &fields); err != nil {
+		return "", "", fmt.Errorf("%s: front matter: %w", a.Path, err)
+	}
+	return strings.TrimSpace(fields.Description), strings.TrimLeft(body, "\n"), nil
 }
 
 // IsPath reports whether a selection entry names a path rather than an ID.

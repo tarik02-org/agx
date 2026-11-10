@@ -95,6 +95,36 @@ func instructionsCommand(a *app) *cobra.Command {
 	return command
 }
 
+// agentCommand lists subagents, which configuration files define.
+func agentCommand(a *app) *cobra.Command {
+	command := &cobra.Command{Use: "agent", Short: "List subagents", GroupID: "config"}
+	command.AddCommand(listCommand(a, config.KindAgents))
+	return command
+}
+
+func agentRows(c *config.Config) ([]string, [][]string, any) {
+	out := ui.Stdout
+	rows := [][]string{}
+	for _, id := range slices.Sorted(maps.Keys(c.Agents)) {
+		agent := c.Agents[id]
+		kind, from := "file", ui.ShortPath(agent.Path, "")
+		switch {
+		case agent.Content != "":
+			kind, from = "content", excerpt(agent.Description, 40)
+		case agent.Package != "":
+			kind, from = "git", c.Packages[agent.Package].Git
+		case !slices.Contains(c.Files, agent.Source.Path):
+			kind = "package"
+		}
+		rows = append(rows, []string{
+			out.ID(string(id)), agent.Name, kind,
+			strings.Join(slices.Sorted(maps.Keys(agent.Harnesses)), " "), from,
+			out.Path(location(c, agent.Source)),
+		})
+	}
+	return []string{"ID", "NAME", "KIND", "NATIVE", "FROM", "SOURCE"}, rows, c.Agents
+}
+
 func instructionsRows(c *config.Config) ([]string, [][]string, any) {
 	out := ui.Stdout
 	rows := [][]string{}

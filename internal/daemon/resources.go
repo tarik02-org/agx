@@ -2,11 +2,13 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/config"
@@ -73,6 +75,10 @@ func (s *Server) PrepareResources(
 	if err != nil {
 		return nil, rpcError(connect.CodeAborted, err.Error())
 	}
+	message, err := resourceContent(content)
+	if err != nil {
+		return nil, rpcError(connect.CodeFailedPrecondition, err.Error())
+	}
 	warnMissing(snapshot)
 	id, grant, lifecycle := securefs.Token(), securefs.Token(), securefs.Token()
 	l := s.newLaunch(&v1.Launch{
@@ -82,7 +88,7 @@ func (s *Server) PrepareResources(
 	endpoints, native := s.endpoints(l.ctx, id, snapshot, inputs, directory)
 	l.endpoints = endpoints
 	response := &v1.PrepareResourcesResponse{
-		Launch: proto.Clone(l.view).(*v1.Launch), Content: resourceContent(content),
+		Launch: proto.Clone(l.view).(*v1.Launch), Content: message,
 		Grant: grant, LifecycleToken: lifecycle,
 		RenewAfterSeconds: uint32(snapshot.Config.Daemon.RenewSeconds),
 		McpDirectory:      directory,
@@ -98,7 +104,7 @@ func (s *Server) PrepareResources(
 	return connect.NewResponse(response), nil
 }
 
-func resourceContent(content resources.Set) *v1.ResourceContent {
+func resourceContent(content resources.Set) (*v1.ResourceContent, error) {
 	result := &v1.ResourceContent{Instructions: content.Instructions}
 	for _, skill := range content.Skills {
 		item := &v1.SkillContent{
@@ -111,7 +117,16 @@ func resourceContent(content resources.Set) *v1.ResourceContent {
 		}
 		result.Skills = append(result.Skills, item)
 	}
-	return result
+	for _, agent := range content.Agents {
+		native, err := structpb.NewStruct(agent.Native)
+		if err != nil {
+			return nil, fmt.Errorf("subagent %s: native fields: %w", agent.ID, err)
+		}
+		result.Agents = append(result.Agents, &v1.AgentContent{
+			Id: agent.ID, Name: agent.Name, Description: agent.Description, Prompt: agent.Prompt, Native: native,
+		})
+	}
+	return result, nil
 }
 
 func (s *Server) addLaunch(l *launch) error {

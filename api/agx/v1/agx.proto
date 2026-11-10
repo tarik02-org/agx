@@ -121,6 +121,7 @@ message ResourceRef {
     string skill_id = 1;
     string instructions_id = 2;
     string mcp_id = 3;
+    string agent_id = 4;
   }
 }
 
@@ -312,6 +313,17 @@ message PrepareResourcesResponse {
 message ResourceContent {
   repeated SkillContent skills = 1;
   string instructions = 2;
+  repeated AgentContent agents = 3;
+}
+// A subagent a session can delegate work to.
+message AgentContent {
+  string id = 1;
+  // Native name, unique among the agents of one response.
+  string name = 2;
+  string description = 3;
+  string prompt = 4;
+  // The consuming harness's own subagent fields, as configured.
+  google.protobuf.Struct native = 5;
 }
 message SkillContent {
   string id = 1;

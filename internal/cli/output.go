@@ -42,6 +42,7 @@ func printValid(c *config.Config) error {
 		{len(c.Skills), "skill"},
 		{len(c.Instructions), "instruction"},
 		{len(c.MCP), "MCP server"},
+		{len(c.Agents), "subagent"},
 		{secrets, "secret"},
 		{len(c.Harnesses), "harness definition"},
 		{len(c.Scopes), "scope"},

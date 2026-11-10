@@ -63,6 +63,8 @@ func definitionIDs(c *config.Config, kind config.Kind) []string {
 		ids = names(c.Instructions)
 	case config.KindMCPServers:
 		ids = names(c.MCP)
+	case config.KindAgents:
+		ids = names(c.Agents)
 	case config.KindSecrets:
 		ids = names(c.Secrets)
 	case config.KindBundles:

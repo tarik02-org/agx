@@ -109,6 +109,9 @@ func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
 	if len(l.Instructions) > 0 {
 		prefix = append(prefix, "--append-system-prompt", l.InstructionsFile())
 	}
+	if len(l.Agents) > 0 {
+		l.Warn("Pi has no subagents; launching without " + adapters.AgentNames(l.Agents))
+	}
 	if servers := l.HTTPServers(); len(servers) > 0 {
 		b, err := json.Marshal(servers)
 		if err != nil {

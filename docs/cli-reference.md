@@ -81,6 +81,7 @@ go before it.
 | `agx instructions add --id <id> --text <text>`         | add instructions from text                                                                                 |
 | `agx instructions list`                                | list instructions                                                                                          |
 | `agx instructions remove <id>`                         | remove instructions                                                                                        |
+| `agx agent list`                                       | list subagents, which configuration files define                                                           |
 | `agx harness add <name> --base <harness> [-- args...]` | define a harness                                                                                           |
 | `agx harness list`                                     | list harnesses, built-ins included                                                                         |
 | `agx harness remove <name>`                            | remove a harness definition                                                                                |
@@ -220,7 +221,7 @@ What `data` holds:
   `daemon status` prints
   `null` when no daemon runs; `secret login` prints each event of its stream
   as a document.
-- `mcp list`, `skill list`, and `instructions list` print the loaded
+- `mcp list`, `skill list`, `instructions list`, and `agent list` print the loaded
   definitions by ID; `harness list` the resolved harnesses; `explain` the
   resolved snapshot.
 - Field names are `snake_case`, except inside MCP content, which `mcp call`

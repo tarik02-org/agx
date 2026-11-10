@@ -385,7 +385,8 @@ func (c *Config) validateHarnesses() error {
 }
 
 func (s Selection) empty() bool {
-	return len(s.Skills) == 0 && len(s.Instructions) == 0 && len(s.MCP) == 0 && len(s.Bundles) == 0
+	return len(s.Skills) == 0 && len(s.Instructions) == 0 && len(s.MCP) == 0 && len(s.Agents) == 0 &&
+		len(s.Bundles) == 0
 }
 
 // validateSettings checks a definition's resolved settings against its built-in harness.

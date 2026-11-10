@@ -24,19 +24,24 @@ supporting scripts, references, and assets.
 
 **Instructions**: Guidance applied to a launch without requiring skill invocation.
 
+**Subagent**: A named agent, with its own prompt, that a session in a harness
+delegates work to; the configuration section and selection key are `agents`.
+_Avoid_: Agent, which also names the harness itself
+
 **Package**: A versioned distribution unit containing skills, instructions,
-MCP definitions, or bundle definitions.
+subagents, MCP definitions, or bundle definitions.
 
-**Bundle**: A named selection of skills, MCP servers, and instructions.
+**Bundle**: A named selection of skills, MCP servers, instructions, and
+subagents.
 
-**Inline definition**: A skill, instructions, or MCP server defined inside a
-selection list rather than its top-level section; its ID shares the top-level
-ID space and cannot be redefined.
+**Inline definition**: A skill, instructions, subagent, or MCP server defined
+inside a selection list rather than its top-level section; its ID shares the
+top-level ID space and cannot be redefined.
 
 **Generated skill**: A skill written in configuration with `content` and
 optional supporting files.
 
-**Anonymous package**: The Git source of a skill or instructions definition,
+**Anonymous package**: The Git source of a skill, instructions, or subagent definition,
 fetched and locked like a package under the resource's kind and ID.
 
 **Pinned source**: A package or Git source whose content is fixed by a full

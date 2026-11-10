@@ -37,7 +37,19 @@ type Skill struct {
 	Content Tree
 }
 
+// Agent is a subagent as a harness receives it.
+type Agent struct {
+	ID string
+	// Name is the native name, unique among the agents selected with it.
+	Name        string
+	Description string
+	Prompt      string
+	// Native holds the consuming harness's own fields for the subagent.
+	Native map[string]any
+}
+
 type Set struct {
 	Skills       []Skill
 	Instructions string
+	Agents       []Agent
 }

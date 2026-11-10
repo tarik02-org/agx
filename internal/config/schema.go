@@ -41,7 +41,9 @@ var SchemaFiles = map[SchemaKind]string{
 }
 
 // sections lists the top-level fields of fragments.
-var sections = []string{"packages", "skills", "instructions", "mcp", "secrets", "bundles", "scopes", "harnesses"}
+var sections = []string{
+	"packages", "skills", "instructions", "mcp", "agents", "secrets", "bundles", "scopes", "harnesses",
+}
 
 // manifestExcluded lists the fragment fields package manifests cannot declare.
 var manifestExcluded = []string{"scopes", "harnesses"}
@@ -126,7 +128,7 @@ func pruneDefinitions(root *jsonschema.Schema) {
 }
 
 func (Document) JSONSchemaExtend(s *jsonschema.Schema) {
-	for _, name := range []string{"packages", "skills", "instructions", "mcp", "secrets", "bundles"} {
+	for _, name := range []string{"packages", "skills", "instructions", "mcp", "agents", "secrets", "bundles"} {
 		property, _ := s.Properties.Get(name)
 		property.PropertyNames = &jsonschema.Schema{Pattern: idPattern}
 	}
@@ -254,6 +256,21 @@ func instructionsSchema(s *jsonschema.Schema) {
 	s.If, s.Then, s.Else = requires("text"), forbid(append([]string{"path"}, gitFields...)...), file
 }
 
+func (Agent) JSONSchemaExtend(s *jsonschema.Schema) { agentSchema(s) }
+
+func agentSchema(s *jsonschema.Schema) {
+	pinning(s)
+	name, _ := s.Properties.Get("name")
+	name.Pattern = skillNamePattern.String()
+	name.MaxLength = ptr(uint64(maxSkillName))
+	written := forbid(append([]string{"path"}, gitFields...)...)
+	written.Required = []string{"description"}
+	file := forbid("description")
+	file.Required = []string{"path"}
+	file.If, file.Else = requires("git"), local()
+	s.If, s.Then, s.Else = requires("content"), written, file
+}
+
 // JSONSchema accepts {content, executable} or {path}.
 func (SkillFile) JSONSchema() *jsonschema.Schema {
 	properties := jsonschema.NewProperties()
@@ -294,6 +311,12 @@ func (InstructionsItem) JSONSchemaExtend(s *jsonschema.Schema) {
 	instructionsSchema(s)
 	s.AllOf = append(s.AllOf, &jsonschema.Schema{If: requires("text"), Then: requires("id")})
 	selectionEntry(s, "An instructions ID, a file path, or an inline instructions definition.", pathOrID())
+}
+
+func (AgentItem) JSONSchemaExtend(s *jsonschema.Schema) {
+	agentSchema(s)
+	s.AllOf = append(s.AllOf, &jsonschema.Schema{If: requires("content"), Then: requires("id")})
+	selectionEntry(s, "A subagent ID, a Markdown file path, or an inline subagent definition.", pathOrID())
 }
 
 func (MCPItem) JSONSchemaExtend(s *jsonschema.Schema) {

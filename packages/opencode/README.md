@@ -25,6 +25,9 @@ Start OpenCode normally in a project directory:
 
 - AGX skills appear in OpenCode's skill catalog, including their supporting files.
 - AGX instructions are included in conversations and compaction.
+- AGX subagents appear among OpenCode's agents. A subagent's `harnesses.opencode`
+  fields are those of an OpenCode agent: `model`, `mode`, `steps`, `hidden`,
+  `color`, and `permissions`.
 - Eager MCP servers appear as native OpenCode tools. On-demand servers remain
   available through `agx mcp call`.
 
