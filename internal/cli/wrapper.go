@@ -12,7 +12,6 @@ import (
 	"os/signal"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,6 +45,38 @@ func guardEnviron(environ []string) []string {
 	return append(out, wrapperPID+"="+strconv.Itoa(os.Getpid()))
 }
 
+// environ is the caller's environment without the unset names and with the overrides. A name
+// left in twice would leave the choice to the program, and one started in place of agx reads
+// the caller's value first.
+func environ(overrides map[string]string, unset []string) []string {
+	key := func(name string) string {
+		if runtime.GOOS == "windows" {
+			return strings.ToUpper(name)
+		}
+		return name
+	}
+	removed := map[string]bool{}
+	for _, name := range unset {
+		removed[key(name)] = true
+	}
+	for name := range overrides {
+		removed[key(name)] = true
+	}
+	out := []string{}
+	for _, pair := range os.Environ() {
+		// Windows keeps per-drive working directories in entries such as "=C:=C:\dir".
+		name, _, _ := strings.Cut(pair, "=")
+		if name != "" && removed[key(name)] {
+			continue
+		}
+		out = append(out, pair)
+	}
+	for _, name := range slices.Sorted(maps.Keys(overrides)) {
+		out = append(out, name+"="+overrides[name])
+	}
+	return guardEnviron(out)
+}
+
 type ExitError struct{ Code int }
 
 func (e *ExitError) Error() string { return fmt.Sprintf("native process exited with %d", e.Code) }
@@ -57,6 +88,8 @@ type harnessConfig struct {
 	path   string
 	config *config.Config
 	err    error
+	// bare says no configuration was read: config holds the built-ins only.
+	bare bool
 }
 
 type localConfigError struct{ error }
@@ -159,11 +192,7 @@ func runHarness(
 			return fmt.Errorf("%w (%s applies its environment to every native command, --help included)", err, name)
 		}
 		cmd := exec.CommandContext(ctx, executable, append(harnessArgs, args...)...)
-		cmd.Env = os.Environ()
-		for _, key := range slices.Sorted(maps.Keys(harnessEnv)) {
-			cmd.Env = append(cmd.Env, key+"="+harnessEnv[key])
-		}
-		cmd.Env = guardEnviron(cmd.Env)
+		cmd.Env = environ(harnessEnv, nil)
 		return passthrough(cmd)
 	}
 	directory, nativeArgs, err := adapter.Directory(args, cwd)
@@ -241,35 +270,7 @@ func runHarness(
 	}
 	cmd := exec.CommandContext(ctx, executable, p.Spawn.Arguments...)
 	cmd.Dir = p.Spawn.Directory
-	envKey := func(name string) string {
-		if runtime.GOOS == "windows" {
-			return strings.ToUpper(name)
-		}
-		return name
-	}
-	removed := map[string]bool{}
-	for _, name := range p.Spawn.UnsetEnvironment {
-		removed[envKey(name)] = true
-	}
-	overrides := make([]string, 0, len(p.Spawn.EnvironmentOverrides))
-	for name := range p.Spawn.EnvironmentOverrides {
-		overrides = append(overrides, name)
-		removed[envKey(name)] = true
-	}
-	sort.Strings(overrides)
-	cmd.Env = []string{}
-	for _, pair := range os.Environ() {
-		// Windows keeps per-drive working directories in entries such as "=C:=C:\dir".
-		name, _, _ := strings.Cut(pair, "=")
-		if name != "" && removed[envKey(name)] {
-			continue
-		}
-		cmd.Env = append(cmd.Env, pair)
-	}
-	for _, name := range overrides {
-		cmd.Env = append(cmd.Env, name+"="+p.Spawn.EnvironmentOverrides[name])
-	}
-	cmd.Env = guardEnviron(cmd.Env)
+	cmd.Env = environ(p.Spawn.EnvironmentOverrides, p.Spawn.UnsetEnvironment)
 	environment := map[string]string{}
 	for _, pair := range cmd.Env {
 		key, value, _ := strings.Cut(pair, "=")
@@ -296,7 +297,7 @@ func runHarness(
 		EnvironmentInputs: inputs,
 		NativeArguments:   nativeArgs,
 		Executable:        executable,
-	})
+	}, autostart(harnesses.config))
 	record := &v1.RecordLaunchRequest{
 		Id:        p.Launch.Id,
 		Harness:   name,

@@ -78,6 +78,8 @@ func pause(ctx context.Context, d time.Duration) error {
 type lease struct {
 	paths     platform.Paths
 	lifecycle string
+	// autostart is whether the wrapper may start a daemon, as for its other commands.
+	autostart bool
 	mu        sync.Mutex
 	client    *client
 	// launch is the wrapper's launch as AttachLaunch sends it, without threads; threads holds its
@@ -113,7 +115,7 @@ const crashRestartInterval = 10 * time.Second
 // Nothing else would start a daemon for the harness, whose MCP requests go straight to the port.
 // It reports whether a daemon answers afterwards.
 func (l *lease) replaceCrashed(ctx context.Context) bool {
-	if l.current().discovery.Managed {
+	if !l.autostart || l.current().discovery.Managed {
 		return false
 	}
 	if time.Since(l.started) < crashRestartInterval || !crashed(l.paths, l.current().discovery.InstanceID) {
@@ -144,9 +146,10 @@ func crashed(paths platform.Paths, instance string) bool {
 	return d.InstanceID == instance
 }
 
-func newLease(paths platform.Paths, c *client, launch *v1.AttachLaunchRequest) *lease {
+func newLease(paths platform.Paths, c *client, launch *v1.AttachLaunchRequest, autostart bool) *lease {
 	return &lease{
 		paths:     paths,
+		autostart: autostart,
 		lifecycle: launch.LifecycleToken,
 		client:    c,
 		launch:    launch,
@@ -328,6 +331,10 @@ func (l *lease) record(ctx context.Context, record *v1.RecordLaunchRequest) erro
 				return err
 			}
 			continue
+		}
+		// A daemon started only for this record would outlive the harness against the user's wish.
+		if !l.autostart {
+			return err
 		}
 		if _, err := startDaemon(ctx, l.paths); err != nil {
 			return err

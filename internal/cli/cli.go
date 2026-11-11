@@ -352,7 +352,7 @@ func run(osArgs []string, stdout io.Writer) int {
 	}
 	versionOnly := len(args) == 1 && (args[0] == "--version" || args[0] == "-v")
 	if !completing && (versionOnly || len(args) == 0 || len(args) > 0 && args[0] == "daemon") {
-		a.harnesses = harnessConfig{path: a.paths.Config, config: config.Bare(a.builtins)}
+		a.harnesses = harnessConfig{path: a.paths.Config, config: config.Bare(a.builtins), bare: true}
 	} else {
 		a.harnesses = a.fragments()
 	}
