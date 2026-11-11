@@ -20,6 +20,7 @@ const issues = `{"type":"object","properties":{
 	"note":{"type":["string","null"]},
 	"tags":{"type":"array","items":{"type":"string"}},
 	"ids":{"type":"array","items":{"type":"integer"}},
+	"labels":{"type":["string","array"],"items":{"type":"string"}},
 	"filter":{"type":"object","properties":{"owner":{"type":"string"},"deep":{"type":"object","properties":{"x":{"type":"string"}}}},"required":["owner"]},
 	"kind":{"$ref":"#/$defs/kind"},
 	"mode":{"anyOf":[{"const":"fast"},{"const":"slow"}]},
@@ -39,7 +40,7 @@ func TestSignature(t *testing.T) {
 	output := schema(t, `{"type":"object","properties":{"total":{"type":"integer"}},"required":["total"]}`)
 	got := mcptools.Signature("search_issues", schema(t, issues), output)
 	want := `search_issues(query: string, exact?: boolean, filter?: { owner: string; deep?: {…} }, ` +
-		`ids?: number[], kind?: "bug" | "task", limit?: number, mode?: "fast" | "slow", ` +
+		`ids?: number[], kind?: "bug" | "task", labels?: string | string[], limit?: number, mode?: "fast" | "slow", ` +
 		`note?: string | null, ratio?: number, status?: "open" | "closed", tags?: string[], ` +
 		`"weird-name"?: string): { total: number }`
 	if got != want {
@@ -140,6 +141,12 @@ func TestArguments(t *testing.T) {
 		{"raw strings", "", true, []string{"query=q", "limit=5"}, `{"query":"q","limit":"5"}`},
 		{"args then pairs", `{"query":"base","limit":1}`, false, []string{"limit=2"}, `{"query":"base","limit":2}`},
 		{"equals in value", "", false, []string{"query=a=b"}, `{"query":"a=b"}`},
+		{"numbers as JSON spells them", "", false, []string{"query=q", "limit=007", "ratio=.5"}, `{"query":"q","limit":7,"ratio":0.5}`},
+		{"signed numbers", "", false, []string{"query=q", "limit=+5", "ratio=5."}, `{"query":"q","limit":5,"ratio":5}`},
+		{"string or list, once", "", false, []string{"query=q", "labels=a"}, `{"query":"q","labels":"a"}`},
+		{"string or list, repeated", "", false, []string{"query=q", "labels=a", "labels=b"}, `{"query":"q","labels":["a","b"]}`},
+		{"string or list, as JSON", "", false, []string{"query=q", `labels=["a","b"]`}, `{"query":"q","labels":["a","b"]}`},
+		{"bracketed text in a list", "", false, []string{"query=q", "tags=[WIP] fix"}, `{"query":"q","tags":["[WIP] fix"]}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := arguments(t, s, test.base, test.raw, test.pairs...)
@@ -166,6 +173,7 @@ func TestArgumentErrors(t *testing.T) {
 		{[]string{"query=q", "status=bogus"}, false, `argument status must be one of "open", "closed", not "bogus"`},
 		{[]string{"query=q", "limit=1.5"}, false, `argument limit must be number, not "1.5"`},
 		{[]string{"query=q", "exact=yes"}, false, `argument exact must be boolean`},
+		{[]string{"query=q", "ratio=Infinity"}, false, `argument ratio must be number`},
 		{[]string{"query=q", "statsu=open"}, false, "unknown argument statsu; did you mean status?"},
 		{[]string{"limit=1"}, false, "missing required arguments: query (string)"},
 		{[]string{"query=a", "query=b"}, false, "argument query is given twice"},
