@@ -237,33 +237,65 @@ export const registerSessions = Effect.fn("registerSessions")(function* (ctx: Co
           ),
           Effect.forkScoped,
         );
-        yield* client
-          .connect(target, { source })
-          .pipe(
-            Stream.runForEach(() =>
-              Deferred.succeed(ready, undefined).pipe(
-                Effect.andThen(publish(target, source)),
-                Effect.andThen(Deferred.succeed(initialized, undefined)),
+        yield* client.connect(target, { source }).pipe(
+          Stream.runForEach(() =>
+            Deferred.succeed(ready, undefined).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  reported = "";
+                }),
               ),
+              Effect.andThen(publish(target, source)),
+              Effect.andThen(Deferred.succeed(initialized, undefined)),
             ),
-          );
+          ),
+        );
       }),
     ).pipe(
       Effect.catchTag("DaemonError", (error) =>
         error.code === Code.FailedPrecondition &&
         error.cause.metadata.get("Agx-Session-Source-Replaced") === "1"
           ? Effect.never
-          : connection.reconnect(target.instance_id).pipe(Effect.andThen(Effect.fail(error))),
+          : // Only a daemon that is gone is recovered: one that refuses the source, for its
+            // configuration or its version, would refuse it again.
+            error.code === Code.Unavailable ||
+              error.code === Code.Unknown ||
+              error.code === Code.DeadlineExceeded
+            ? connection.reconnect(target.instance_id).pipe(Effect.andThen(Effect.fail(error)))
+            : Effect.fail(error),
       ),
     );
   });
+  // A failure that lasts, such as a stopped daemon, is reported once, not at every attempt, and
+  // ends the wait for the first catalog: resources do not depend on it.
+  let reported = "";
+  const failed = (message: string, cause: unknown) =>
+    Deferred.succeed(initialized, undefined).pipe(
+      Effect.andThen(
+        Effect.suspend(() => {
+          if (message === reported) {
+            return Effect.void;
+          }
+          reported = message;
+          return Effect.logWarning(message, cause);
+        }),
+      ),
+    );
   yield* serve().pipe(
     Effect.catchTags({
-      ConnectionError: (error) => Effect.logWarning(error),
-      DaemonError: (error) => Effect.logWarning(error),
-      NativeSessionError: (error) => Effect.logWarning(error),
-      SchemaError: (cause) =>
-        Effect.logWarning("OpenCode session catalog returned invalid data", cause),
+      ConnectionError: (error) => failed(error.message, error),
+      DaemonError: (error) =>
+        failed(error.message, error).pipe(
+          Effect.andThen(
+            error.code === Code.Unavailable ||
+              error.code === Code.Unknown ||
+              error.code === Code.DeadlineExceeded
+              ? Effect.void
+              : Effect.sleep("30 seconds"),
+          ),
+        ),
+      NativeSessionError: (error) => failed(error.message, error),
+      SchemaError: (cause) => failed("OpenCode session catalog returned invalid data", cause),
     }),
     Effect.repeat(Schedule.spaced("1 second")),
     Effect.forkScoped,
