@@ -53,6 +53,10 @@ func TestNewerVersion(t *testing.T) {
 		{"dev", "1.2.3", false},
 		{"1.2.3", "dev", false},
 		{"0.0.0-dev+abc1234", "0.0.0+nightly.1.abc1234", false},
+		// Nix builds carry their commit's time.
+		{"0.0.0-dev.20261111205409+abc1234", "0.0.0-dev.20261110101010+def5678", true},
+		{"0.0.0-dev.20261110101010+def5678", "0.0.0-dev.20261111205409+abc1234", false},
+		{"0.0.0-dev.20261111205409+abc1234", "0.0.0-dev+def5678", true},
 		{"1.2.3", "", false},
 	} {
 		if got := newerVersion(test.a, test.b); got != test.want {
