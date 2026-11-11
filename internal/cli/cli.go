@@ -84,6 +84,10 @@ func run(osArgs []string, stdout io.Writer) int {
 				if len(args) == 0 {
 					return fmt.Errorf("harness required: %s", strings.Join(a.harnesses.config.HarnessNames(), ", "))
 				}
+				// Flags are the harness's, but before its name there is none to pass them to.
+				if args[0] == "-h" || args[0] == "--help" {
+					return cmd.Help()
+				}
 				name := args[0]
 				args = args[1:]
 				if len(args) > 0 && args[0] == "--" {

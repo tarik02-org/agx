@@ -343,3 +343,30 @@ func TestPackageChecksWarnAboutMissingPackages(t *testing.T) {
 		t.Errorf("missing package = %v %+v", ok, rows)
 	}
 }
+
+func TestCleartextChecks(t *testing.T) {
+	key := config.Value{Secret: "key"}
+	rows := cleartextChecks(&config.Config{MCP: map[config.ID]config.MCPServer{
+		"lan":   {URL: "http://nas.lan:8080/mcp", Headers: map[string]config.Value{"X-Api-Key": key}},
+		"login": {URL: "http://nas.lan/mcp", Auth: config.MCPAuth{Inline: &config.Secret{Kind: "oauth"}}},
+		"open":  {URL: "http://nas.lan/mcp", Auth: config.MCPAuth{None: true}},
+		"ondemand": {
+			URL:  "http://nas.lan/mcp",
+			Auth: config.MCPAuth{Inline: &config.Secret{Kind: "oauth", Implicit: true}},
+		},
+		"literal": {URL: "http://nas.lan/mcp", Headers: map[string]config.Value{"X-Team": {Literal: "a"}}},
+		"local":   {URL: "http://127.0.0.1:8080/mcp", Auth: config.MCPAuth{Value: key}},
+		"secure":  {URL: "https://example.com/mcp", Auth: config.MCPAuth{Value: key}},
+		"stdio":   {Command: []string{"server"}},
+	}})
+	names := []string{}
+	for _, row := range rows {
+		names = append(names, row.Name)
+		if row.Status != checkWarn || !strings.Contains(row.Detail, "nas.lan") {
+			t.Errorf("row = %+v", row)
+		}
+	}
+	if !slices.Equal(names, []string{"lan", "login"}) {
+		t.Fatalf("warned about %q", names)
+	}
+}

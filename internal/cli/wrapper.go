@@ -509,7 +509,7 @@ func supervise(cmd *exec.Cmd, started func(), connect streams) error {
 	cmd.Stderr = os.Stderr
 	// The harness shares the terminal foreground process group for native job control.
 	signals := make(chan os.Signal, 8)
-	signal.Notify(signals, platform.Interrupts()...)
+	signal.Notify(signals, platform.Forwarded()...)
 	defer signal.Stop(signals)
 	untie, err := platform.StartTied(cmd)
 	if untie == nil {
