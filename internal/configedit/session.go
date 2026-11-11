@@ -20,6 +20,8 @@ type Session struct {
 	Config   *config.Config
 	Root     string
 	Local    *config.Local
+	// before is the local configuration the edits started from.
+	before   *config.Local
 	original string
 }
 
@@ -38,6 +40,7 @@ func New(paths platform.Paths, builtins config.Builtins, c *config.Config) (*Ses
 		Config:   c,
 		Root:     root,
 		Local:    local.Clone(),
+		before:   local,
 		original: config.Digest(local),
 	}, nil
 }
@@ -54,7 +57,20 @@ func (s *Session) Commit(
 	}
 	c, err := s.Load()
 	if err != nil {
-		return false, errorf(ConfigInvalid, "the change would make the configuration invalid: %w", err)
+		// Local definitions exist only in the database, so only edits repair one that stopped
+		// loading, such as a skill whose directory is gone. Such a configuration is repaired a
+		// problem at a time: an edit that changes what is wrong is saved.
+		edited := s.Local
+		s.Local = s.before
+		_, before := s.Load()
+		s.Local = edited
+		switch {
+		case before == nil:
+			return false, errorf(ConfigInvalid, "the change would make the configuration invalid: %w", err)
+		case before.Error() == err.Error():
+			return false, errorf(ConfigInvalid, "the change leaves the configuration invalid: %w", err)
+		}
+		c = s.Config
 	}
 	revision, err := write(ctx, s.Root, s.Local)
 	if errors.Is(err, config.ErrConflict) {
@@ -65,7 +81,7 @@ func (s *Session) Commit(
 	}
 	s.Local.Revision = revision
 	c.Local = s.Local.Clone()
-	s.Config, s.original = c, config.Digest(s.Local)
+	s.Config, s.before, s.original = c, s.Local.Clone(), config.Digest(s.Local)
 	return true, nil
 }
 

@@ -123,15 +123,16 @@ func run(osArgs []string, stdout io.Writer) int {
 			Short: "Print local configuration as a YAML overlay",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
-				c, err := a.config()
+				// Not the loaded configuration: one that does not load is the one to export and fix.
+				local, err := a.localConfig()
 				if err != nil {
 					return err
 				}
-				data, err := c.Local.Export()
+				data, err := local.Export()
 				if err != nil {
 					return err
 				}
-				return emit(c.Local.Document, func() error { _, err := cmd.OutOrStdout().Write(data); return err })
+				return emit(local.Document, func() error { _, err := cmd.OutOrStdout().Write(data); return err })
 			},
 		},
 	)

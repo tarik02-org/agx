@@ -257,6 +257,51 @@ func TestUpdateConfiguration(t *testing.T) {
 	}
 }
 
+// Local definitions exist only in the database, so a configuration that stopped loading is
+// repaired by edits, a problem at a time.
+func TestUpdateConfigurationRepairs(t *testing.T) {
+	s, dir := editorServer(t, editorConfig)
+	s.changed = &notifier{}
+	update := func(revision int64, change *v1.ConfigChange) error {
+		_, err := s.UpdateConfiguration(t.Context(), connect.NewRequest(
+			&v1.UpdateConfigurationRequest{Changes: []*v1.ConfigChange{change}, ExpectedRevision: revision},
+		))
+		return err
+	}
+	undefine := func(id string) *v1.ConfigChange {
+		return &v1.ConfigChange{Change: &v1.ConfigChange_Undefine{Undefine: &v1.UndefineChange{Kind: "skills", Id: id}}}
+	}
+	for i, id := range []string{"one", "two"} {
+		path := filepath.Join(dir, "gone", id)
+		writeFile(t, filepath.Join(path, "SKILL.md"), "---\nname: "+id+"\ndescription: Skill.\n---\nBody.\n")
+		if err := update(int64(i), define("skills", id, map[string]any{"path": path})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.RemoveAll(filepath.Join(dir, "gone")); err != nil {
+		t.Fatal(err)
+	}
+	// The directories are no load inputs; without this, the daemon would not have noticed yet.
+	s.inputs = nil
+	if _, err := s.reload(); err == nil {
+		t.Fatal("configuration loads without its skills' directories")
+	}
+	wantCode(
+		t,
+		update(2, define("instructions", "unrelated", map[string]any{"text": "unrelated"})),
+		connect.CodeFailedPrecondition,
+	)
+	if err := update(2, undefine("one")); err != nil {
+		t.Fatalf("removing one of two broken skills: %v", err)
+	}
+	if err := update(3, undefine("two")); err != nil {
+		t.Fatalf("removing the other broken skill: %v", err)
+	}
+	if c, err := s.reload(); err != nil || c.Local.Revision != 4 {
+		t.Fatalf("repaired configuration: %v", err)
+	}
+}
+
 func TestWriteResourceFile(t *testing.T) {
 	s, dir := editorServer(t, editorConfig)
 	path := filepath.Join(dir, "AGENTS.md")
