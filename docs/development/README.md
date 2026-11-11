@@ -41,8 +41,9 @@ Release builds set the same version on both binaries, reported by `agx --version
 and `agxd --version`. Commands compare it to decide whether they replace an older
 daemon:
 `-ldflags "-X github.com/tarik02-org/agx/internal/control.Version=1.2.3"`. Until
-the first tag, the Nix package reports `0.0.0-dev+<commit>`, which is not
-ordered against the unknown `dev` version. Version comparison uses semver, with
+the first tag, the Nix package reports `0.0.0-dev.<commit time>+<commit>`, so a
+later build replaces the daemon of an earlier one; neither is ordered against
+the unknown `dev` version of a plain build. Version comparison uses semver, with
 nightly commit counts in build metadata compared separately. Each canonical root
 configuration path gets a daemon in its own hashed runtime directory; protocol
 numbers and executable-content fingerprints are unnecessary before the first release.
