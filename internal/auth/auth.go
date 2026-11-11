@@ -43,6 +43,8 @@ type Manager struct {
 	// invalidated the stored refresh token, so they are used and written again on every use and
 	// at Close until the store takes them.
 	unsaved map[string]credential
+	// unsavedRetry is when a use next writes an unsaved credential again, by key.
+	unsavedRetry map[string]time.Time
 	// renewals counts refreshes in flight, so Close can wait until they are stored; closed
 	// refuses new ones.
 	renewals sync.WaitGroup
@@ -107,15 +109,16 @@ type Status struct {
 // store.
 func New(callback string, store Store) *Manager {
 	return &Manager{
-		store:    store,
-		pending:  map[string]*Attempt{},
-		locks:    map[string]*sync.Mutex{},
-		required: map[string]bool{},
-		hints:    map[string]string{},
-		refused:  map[string]refusal{},
-		unsaved:  map[string]credential{},
-		helpers:  map[string]helperValue{},
-		callback: callback,
+		store:        store,
+		pending:      map[string]*Attempt{},
+		locks:        map[string]*sync.Mutex{},
+		required:     map[string]bool{},
+		hints:        map[string]string{},
+		refused:      map[string]refusal{},
+		unsaved:      map[string]credential{},
+		unsavedRetry: map[string]time.Time{},
+		helpers:      map[string]helperValue{},
+		callback:     callback,
 	}
 }
 
@@ -402,9 +405,17 @@ func (m *Manager) Rotate(ctx context.Context, id config.ID, a config.Secret) (ti
 func (m *Manager) stored(k string, id config.ID) (credential, error) {
 	m.mu.Lock()
 	pending, ok := m.unsaved[k]
+	retry := ok && !time.Now().Before(m.unsavedRetry[k])
+	if retry {
+		m.unsavedRetry[k] = time.Now().Add(unsavedRetryInterval)
+	}
 	m.mu.Unlock()
 	if ok {
-		_ = m.persist(k, pending)
+		// Every request through the credential reads it, so a store that keeps failing is
+		// asked once in a while, not each time.
+		if retry {
+			_ = m.persist(k, pending, 1)
+		}
 		return pending, nil
 	}
 	var saved credential
@@ -420,6 +431,9 @@ func (m *Manager) stored(k string, id config.ID) (credential, error) {
 	}
 	return saved, nil
 }
+
+// unsavedRetryInterval spaces the writes, on use, of a credential the store failed to take.
+const unsavedRetryInterval = 30 * time.Second
 
 // RefreshTimeout bounds an OAuth refresh, which no caller can cancel.
 const RefreshTimeout = 30 * time.Second
@@ -440,6 +454,23 @@ func (m *Manager) renew(ctx context.Context, k string, id config.ID, saved crede
 	// would lose the only valid refresh token. It finishes and is stored whatever the caller does.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), RefreshTimeout)
 	defer cancel()
+	// Daemons of other configurations share the store. Two sending one refresh token would
+	// leave the slower without a login, and a server that detects reuse revokes both.
+	if shared, ok := m.store.(Locker); ok {
+		if unlock, err := shared.Lock(k); err != nil {
+			slog.Warn("cannot lock an OAuth credential for its refresh", "secret", id, "error", err)
+		} else {
+			defer unlock()
+			if fresh, err := m.stored(k, id); err == nil && fresh.Token.RefreshToken != saved.Token.RefreshToken {
+				if fresh.Token.Valid() {
+					return fresh.Token, nil
+				}
+				if fresh.Token.RefreshToken != "" {
+					saved = fresh
+				}
+			}
+		}
+	}
 	token, refused, err := m.refresh(ctx, id, saved)
 	if refused {
 		// Another path may have renewed the credential meanwhile; only a refusal of the stored
@@ -473,18 +504,18 @@ func (m *Manager) renew(ctx context.Context, k string, id config.ID, saved crede
 	delete(m.refused, k)
 	m.mu.Unlock()
 	// A failed write keeps the credential in unsaved; the token is usable meanwhile.
-	_ = m.persist(k, saved)
+	_ = m.persist(k, saved, 3)
 	return token, nil
 }
 
-// persist stores c under key k, trying a few times; when the store does not take it, c stays in
-// unsaved, so it is written again later.
-func (m *Manager) persist(k string, c credential) error {
+// persist stores c under key k, trying up to attempts times; when the store does not take it, c
+// stays in unsaved, so it is written again later.
+func (m *Manager) persist(k string, c credential, attempts int) error {
 	data, err := json.Marshal(c)
 	if err != nil {
 		return err
 	}
-	for attempt := range 3 {
+	for attempt := range attempts {
 		if attempt > 0 {
 			time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
 		}
@@ -500,6 +531,7 @@ func (m *Manager) persist(k string, c credential) error {
 		return err
 	}
 	delete(m.unsaved, k)
+	delete(m.unsavedRetry, k)
 	return nil
 }
 
@@ -530,7 +562,7 @@ func (m *Manager) Close(ctx context.Context) error {
 		c, ok := m.unsaved[k]
 		m.mu.Unlock()
 		if ok {
-			if err := m.persist(k, c); err != nil {
+			if err := m.persist(k, c, 3); err != nil {
 				errs = append(errs, fmt.Errorf("a refreshed OAuth credential was not stored: %w", err))
 			}
 		}
@@ -694,11 +726,6 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 			s.State = "ready"
 		}
 	case "keychain", "oauth":
-		if wasRefused {
-			s.State = "needs_login"
-			s.Problem = "secret " + string(id) + " cannot be refreshed: " + refused.reason
-			break
-		}
 		data, err := m.store.Get(k)
 		switch {
 		case errors.Is(err, ErrNotStored) && a.Implicit && !required:
@@ -719,6 +746,12 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 					s.Refreshable = c.Token.RefreshToken != ""
 					if !c.Token.Valid() && c.Token.RefreshToken == "" {
 						s.State = "needs_login"
+					}
+					// A refresh token stored since the refusal, by a login or another daemon, is not
+					// the refused one.
+					if wasRefused && c.Token.RefreshToken == refused.token {
+						s.State = "needs_login"
+						s.Problem = "secret " + string(id) + " cannot be refreshed: " + refused.reason
 					}
 				}
 			}

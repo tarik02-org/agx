@@ -730,6 +730,23 @@ func (s *memStore) failNext(n int) {
 	s.failSets = n
 }
 
+func (s *memStore) failuresLeft() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.failSets
+}
+
+// sharedStore is a store other daemons use too; locked runs while this one waits for the lock.
+type sharedStore struct {
+	*memStore
+	locked func()
+}
+
+func (s *sharedStore) Lock(string) (func(), error) {
+	s.locked()
+	return func() {}, nil
+}
+
 // refreshToken returns the refresh token of the one stored credential.
 func (s *memStore) refreshToken(t *testing.T) string {
 	t.Helper()
@@ -894,6 +911,32 @@ func TestRefusedRefreshRereadsStore(t *testing.T) {
 	p.check(t)
 }
 
+// A refresh waits for the daemons of other configurations, which share the store, and sends the
+// refresh token one of them stored meanwhile, not the one it rotated away.
+func TestRefreshUsesCredentialAnotherDaemonStored(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	store := &memStore{values: map[string]string{}}
+	manager, callback := newManagerWith(t, &sharedStore{
+		memStore: store,
+		locked:   func() { store.replaceRefreshToken(t, "rotated") },
+	})
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	login(t, manager, callback, p, secret)
+
+	var sent atomic.Pointer[string]
+	answer := func(_ http.ResponseWriter, token string) bool {
+		sent.Store(&token)
+		return false
+	}
+	p.answer.Store(&answer)
+	value, err := manager.Value(t.Context(), "fixture", secret, nil, nil, p.URL)
+	if token := sent.Load(); err != nil || value != "refreshed" || p.refreshes.Load() != 1 || token == nil ||
+		*token != "rotated" {
+		t.Fatalf("value = %q, %v after %d refreshes sending %v", value, err, p.refreshes.Load(), token)
+	}
+}
+
 // A refreshed credential the store does not take stays in use and is written again.
 func TestRefreshedCredentialStoredLater(t *testing.T) {
 	keyring.MockInit()
@@ -915,6 +958,19 @@ func TestRefreshedCredentialStoredLater(t *testing.T) {
 	value, err = manager.Value(t.Context(), "fixture", secret, nil, nil, p.URL)
 	if err != nil || value != "refreshed" || p.refreshes.Load() != 1 {
 		t.Fatalf("value = %q, %v after %d refreshes", value, err, p.refreshes.Load())
+	}
+	// Further uses leave a store that keeps failing alone for a while: every request reads it.
+	left := store.failuresLeft()
+	if _, err = manager.Value(
+		t.Context(),
+		"fixture",
+		secret,
+		nil,
+		nil,
+		p.URL,
+	); err != nil ||
+		store.failuresLeft() != left {
+		t.Fatalf("another use wrote again: %v, %d of %d failures left", err, store.failuresLeft(), left)
 	}
 	store.failNext(0)
 	if err := manager.Close(t.Context()); err != nil {
