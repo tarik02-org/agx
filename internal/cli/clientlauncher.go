@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"maps"
 	"os"
 	"os/exec"
 	"slices"
@@ -52,10 +51,6 @@ func runClientHarness(
 		environment = resolved.Msg.Environment
 	}
 	cmd := exec.CommandContext(ctx, executable, arguments...)
-	cmd.Env = os.Environ()
-	for _, name := range slices.Sorted(maps.Keys(environment)) {
-		cmd.Env = append(cmd.Env, name+"="+environment[name])
-	}
-	cmd.Env = guardEnviron(cmd.Env)
+	cmd.Env = environ(environment, nil)
 	return supervise(cmd, nil, nil)
 }

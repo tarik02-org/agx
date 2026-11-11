@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/gofrs/flock"
@@ -137,5 +139,20 @@ func TestConfiguredAutostart(t *testing.T) {
 	loaded.path = filepath.Join(dir, "other.yaml")
 	if (&app{paths: platform.Paths{Config: root}, harnesses: loaded}).autostart() {
 		t.Error("fragments of another root configuration decided")
+	}
+}
+
+func TestEnvironOverridesOnce(t *testing.T) {
+	t.Setenv("AGX_TEST_DEFINED", "caller")
+	t.Setenv("AGX_TEST_UNSET", "caller")
+	got := []string{}
+	for _, pair := range environ(map[string]string{"AGX_TEST_DEFINED": "definition"}, []string{"AGX_TEST_UNSET"}) {
+		if strings.HasPrefix(pair, "AGX_TEST_") {
+			got = append(got, pair)
+		}
+	}
+	// A program started in place of agx reads the first of two values, which was the caller's.
+	if !slices.Equal(got, []string{"AGX_TEST_DEFINED=definition"}) {
+		t.Fatalf("environment = %q", got)
 	}
 }

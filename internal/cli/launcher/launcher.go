@@ -305,16 +305,18 @@ func (m model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(m.rows) > 0 && m.rows[m.cursor].entry != nil {
 			e := m.rows[m.cursor].entry
 			m.pickerSession = *e
-			m.picker = []string{}
 			m.picked = 0
+			// Without a harness to pick, as for the session of a hidden one, no picker opens.
+			var picker []string
 			for _, h := range m.opts.Harnesses {
 				if h.Builtin == e.Builtin {
 					if h.Name == e.Harness {
-						m.picked = len(m.picker)
+						m.picked = len(picker)
 					}
-					m.picker = append(m.picker, h.Name)
+					picker = append(picker, h.Name)
 				}
 			}
+			m.picker = picker
 		}
 	case "enter":
 		if len(m.rows) == 0 {

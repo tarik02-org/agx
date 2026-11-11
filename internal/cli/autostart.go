@@ -102,7 +102,8 @@ func probeDaemon(ctx context.Context, paths platform.Paths) (control.Discovery, 
 // exited.
 func replaceRunning(ctx context.Context, paths platform.Paths, c *client) error {
 	ui.Diagnose(ui.Info, "restarting daemon %s, which runs an older agx", c.discovery.Version)
-	if _, err := stopDaemon(ctx, c, false, 0); err != nil {
+	// Another command replacing it at once may have stopped it already.
+	if _, err := stopDaemon(ctx, c, false, 0); err != nil && !daemonGone(err) {
 		return fmt.Errorf("cannot replace daemon %s: %w", c.discovery.Version, err)
 	}
 	return awaitExit(ctx, paths, exitTimeout(0))
