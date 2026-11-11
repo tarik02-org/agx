@@ -73,6 +73,9 @@ visible to that process and to anything it runs.
   which is why `!secret` and `!env` are not allowed in harness `args`.
 - **Your configuration can be shared.** Keep credentials in secrets, not in
   YAML literals, so the configuration directory can live in Git.
+- **An `http://` MCP server gets its credentials unencrypted.** agx allows it,
+  for servers on a home network or a tailnet; `agx doctor` warns about each one
+  that is not on this machine.
 - **A stopped daemon leaves running harnesses pointed at its port.** A harness
   keeps sending its grant to the port its launch started with. While no daemon
   runs, another local user's program can take that port and receive the grant,
