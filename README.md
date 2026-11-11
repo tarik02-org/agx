@@ -140,7 +140,8 @@ to the drop-in `agx.d/10-home-manager.yaml`, validated at build time; `settings.
 goes to the root `agx.yaml` instead:
 
 ```nix
-{ config, pkgs, ... }: {
+# inputs.agx.url = "github:tarik02-org/agx"; pass inputs to the module with extraSpecialArgs.
+{ config, pkgs, inputs, ... }: {
   imports = [ inputs.agx.homeManagerModules.default ];
   programs.agx = {
     enable = true;
