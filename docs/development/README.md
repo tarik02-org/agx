@@ -66,7 +66,11 @@ Connect clients with `@connectrpc/connect`. Generator versions are pinned in
 
 Tag a commit that passed CI on `master`. Pushing a `v*` tag runs
 `.github/workflows/release.yml`, which publishes a GitHub release with GoReleaser
-(`.goreleaser.yaml`); archives include shell completions and the man page. Every
+(`.goreleaser.yaml`); archives include shell completions and the man page. The
+workflow refuses a tag that is not on `master` or whose commit has no successful
+CI run, and attests the provenance of the archives listed in `checksums.txt`
+(`gh attestation verify <archive> --repo tarik02-org/agx`). Workflow actions are
+pinned to commits, which Dependabot proposes to move monthly. Every
 `master` commit that passes CI publishes its own
 `nightly-<version>.<commits>-<commit>` prerelease. Run
 `goreleaser build --snapshot --clean` to build every target locally. With the tag,

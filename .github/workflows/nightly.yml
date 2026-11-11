@@ -21,14 +21,14 @@ jobs:
       group: nightly
       cancel-in-progress: false
     env:
-      GH_TOKEN: ${{ github.token }}
       SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
-      - uses: actions/setup-go@v7
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
       - name: Compute the version
@@ -47,11 +47,14 @@ jobs:
       - name: Forget nightly tags
         # GoReleaser would take one as the current or previous tag.
         run: git tag --list 'nightly*' | xargs --no-run-if-empty git tag --delete
-      - uses: goreleaser/goreleaser-action@v7
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
           version: "~> v2"
           args: release --snapshot --clean
       - name: Publish
+        # Only this step publishes; the build before it runs without the token.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           notes="Built from $SHA on master. Version $NIGHTLY_VERSION; not a stable release."
           # With assets, gh creates a draft, uploads them, then publishes it.
@@ -67,12 +70,12 @@ jobs:
       group: opencode-plugin
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
           cache: pnpm
