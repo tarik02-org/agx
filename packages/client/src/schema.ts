@@ -17,6 +17,8 @@ export const Bootstrap = Schema.Struct({
   data: Schema.Struct({ discovery: Schema.String }),
 });
 
+export const BootstrapFailure = Schema.Struct({ message: Schema.String });
+
 export const Discovery = Schema.Struct({
   url: Schema.URLFromString.check(
     Schema.makeFilter(
