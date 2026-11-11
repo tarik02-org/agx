@@ -35,6 +35,12 @@ skill disabled in `skills/list`; resuming and forking a thread by ID alone kept
 its directory's resources. Claude Code 2.1.300 driven by the Agent SDK that T3
 Code ships, with its own system prompt append, received agx instructions and
 the SDK's append once each, also on resume.
+Subagents were checked on 2026-11-10 through a built agx: Claude Code 2.1.322 in
+print mode listed two selected subagents by name, and Codex 0.167.0 listed them
+as roles in its spawn tool with a native `model_reasoning_effort` applied. With
+the same `config_file` override given by hand, a spawned Codex thread followed
+the agent file's instructions. Subagents in `codex app-server` threads are
+covered only by the plan the adapter builds, not by a real app server.
 These depend on installed harnesses, terminals, or keychains, so they are not
 part of the automated suite.
 

@@ -84,6 +84,7 @@ func read(root string, builtins Builtins, inputs *Inputs, local *Local) (*Config
 		Skills:        map[ID]Skill{},
 		Instructions:  map[ID]Instructions{},
 		MCP:           map[ID]MCPServer{},
+		Agents:        map[ID]Agent{},
 		Secrets:       map[ID]Secret{},
 		Bundles:       map[ID]Bundle{},
 		Harnesses:     map[string]HarnessDefinition{},
@@ -284,6 +285,11 @@ func Load(root string, opts Options) (*Config, error) {
 			delete(c.Instructions, name)
 		}
 	}
+	for name, a := range c.Agents {
+		if _, ok := c.Missing[a.Package]; ok && a.Package != "" {
+			delete(c.Agents, name)
+		}
+	}
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
@@ -449,6 +455,17 @@ func (c *Config) addContent(id ID, dir string) error {
 		i.Path = path
 		c.Instructions[name] = i
 	}
+	for name, a := range c.Agents {
+		if a.Package != id {
+			continue
+		}
+		path, err := securefs.Contained(dir, filepath.FromSlash(a.Path))
+		if err != nil {
+			return errorAt(a.Source, "subagent %s: %w", name, err)
+		}
+		a.Path = path
+		c.Agents[name] = a
+	}
 	return nil
 }
 
@@ -571,6 +588,11 @@ func (c *Config) merge(d Document, at positions, path, ns string, manifest bool)
 			m.at.at(string(KindInstructions), string(id)),
 			false,
 		); err != nil {
+			return err
+		}
+	}
+	for _, id := range sortedKeys(d.Agents) {
+		if err := m.addAgent(id, d.Agents[id], m.at.at(string(KindAgents), string(id)), false); err != nil {
 			return err
 		}
 	}
@@ -811,7 +833,7 @@ func (m *merger) placePackage(name ID, p *Package, at Source) error {
 	return nil
 }
 
-// anonymous declares the Git source of a skill or instructions definition as a package. Its ID
+// anonymous declares the Git source of a skill, instructions, or subagent definition as a package. Its ID
 // contains a colon, which declared package IDs cannot, and names the resource it holds.
 func (m *merger) anonymous(kind string, resource ID, g GitSource, at Source) (ID, error) {
 	id := ID(kind + ":" + string(resource))
@@ -938,6 +960,66 @@ func (m *merger) addInstructions(id ID, i Instructions, at Source, inline bool) 
 	return nil
 }
 
+func (m *merger) addAgent(id ID, a Agent, at Source, inline bool) error {
+	name := qualify(m.ns, id)
+	existing, exists := m.c.Agents[name]
+	if apply, err := m.conflict(
+		KindAgents,
+		name,
+		prior{exists, existing.Inline, existing.Source},
+		a.Override,
+		inline,
+		at,
+	); err != nil ||
+		!apply {
+		return err
+	}
+	if a.Name == "" {
+		a.Name = string(name)[strings.LastIndex(string(name), "/")+1:]
+	}
+	if !skillNamePattern.MatchString(a.Name) || len(a.Name) > maxSkillName {
+		return errorAt(
+			at,
+			"subagent %s: name %q must be lowercase letters, digits, and single hyphens, at most %d characters; set name",
+			name,
+			a.Name,
+			maxSkillName,
+		)
+	}
+	for _, harness := range sortedKeys(a.Harnesses) {
+		if _, ok := m.c.builtins.Harnesses[harness]; !ok {
+			return errorAt(
+				at, "subagent %s: harnesses %s is not a built-in harness (%s)",
+				name,
+				harness,
+				strings.Join(sortedKeys(m.c.builtins.Harnesses), ", "),
+			)
+		}
+	}
+	if existing.Package != "" {
+		delete(m.c.Packages, existing.Package)
+	}
+	a.Package = ""
+	var err error
+	switch {
+	case a.Git != "":
+		if err := checkoutPath(at, "subagent", name, a.Path); err != nil {
+			return err
+		}
+		a.Package, err = m.anonymous("agent", name, a.GitSource, at)
+	case a.Path != "":
+		if a.Path, err = m.file(a.Path); err != nil {
+			err = errorAt(at, "subagent %s: %w", name, err)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	a.Inline, a.Override, a.Source = inline, false, at
+	m.c.Agents[name] = a
+	return nil
+}
+
 func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
 	c := m.c
 	name := qualify(m.ns, id)
@@ -1055,6 +1137,16 @@ func (c *Config) Validate() error {
 		r := c.Instructions[id]
 		if _, err := r.Read(); err != nil {
 			return errorAt(r.Source, "instructions %s: %w", id, err)
+		}
+	}
+	for _, id := range sortedKeys(c.Agents) {
+		r := c.Agents[id]
+		description, _, err := r.Read()
+		if err != nil {
+			return errorAt(r.Source, "subagent %s: %w", id, err)
+		}
+		if description == "" {
+			return errorAt(r.Source, "subagent %s: %s has no description in its front matter", id, r.Path)
 		}
 	}
 	for id, secret := range c.Secrets {

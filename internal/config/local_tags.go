@@ -90,7 +90,7 @@ func localDefinitionTags(kind Kind, n *yaml.Node) error {
 		return localValueTag(localField(n, "age_key"), "$env", "$file", "$secret")
 	case KindBundles:
 		return localSelectionTags(n)
-	case KindSkills, KindInstructions, KindPackages:
+	case KindSkills, KindInstructions, KindAgents, KindPackages:
 	}
 	return nil
 }

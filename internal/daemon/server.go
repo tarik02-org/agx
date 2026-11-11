@@ -1047,6 +1047,8 @@ func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 			out.Resource = &v1.ResourceRef_InstructionsId{InstructionsId: string(r.ID)}
 		case "mcp":
 			out.Resource = &v1.ResourceRef_McpId{McpId: string(r.ID)}
+		case "agent":
+			out.Resource = &v1.ResourceRef_AgentId{AgentId: string(r.ID)}
 		}
 		return out
 	}

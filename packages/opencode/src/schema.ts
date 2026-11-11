@@ -37,6 +37,14 @@ export const SkillTree = Schema.Struct({
 });
 export type SkillTree = typeof SkillTree.Type;
 
+export const AgentContent = Schema.Struct({
+  id: Schema.NonEmptyString,
+  name: Schema.NonEmptyString,
+  description: Schema.String,
+  prompt: Schema.String,
+  native: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+});
+
 export const Frontmatter = Schema.Struct({
   description: Schema.optionalKey(Schema.String),
   "disable-model-invocation": Schema.optionalKey(Schema.Boolean),
@@ -62,7 +70,11 @@ export const LeaseEnvelope = Schema.Struct({
 
 export const Prepared = Schema.Struct({
   ...LeaseEnvelope.fields,
-  content: Schema.Struct({ skills: Schema.Array(SkillTree), instructions: Schema.String }),
+  content: Schema.Struct({
+    skills: Schema.Array(SkillTree),
+    instructions: Schema.String,
+    agents: Schema.Array(AgentContent),
+  }),
   mcp: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, url: Schema.URLFromString })),
   grant: McpGrant,
   renewAfterSeconds: Schema.Int.check(Schema.isGreaterThan(0)),

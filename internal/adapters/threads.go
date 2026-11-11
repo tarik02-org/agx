@@ -71,6 +71,9 @@ func BuildThread(ctx context.Context, a Launcher, t Threads, l Launch, grant str
 	if err != nil {
 		return ThreadPlan{}, err
 	}
+	if l.Agents, err = l.Snapshot.AgentsContent(); err != nil {
+		return ThreadPlan{}, err
+	}
 	var collected Plan
 	l.plan = &collected
 	var plan ThreadPlan

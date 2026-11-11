@@ -16,7 +16,9 @@ import { registerSessions } from "./sessions.ts";
 const register = Effect.fn("register")(function* (ctx: Context) {
   const configuration = yield* Configuration;
   const path = yield* Path.Path;
-  const reload = Effect.all([ctx.skill.reload(), ctx.mcp.reload()]).pipe(Effect.asVoid);
+  const reload = Effect.all([ctx.skill.reload(), ctx.agent.reload(), ctx.mcp.reload()]).pipe(
+    Effect.asVoid,
+  );
   const lease = yield* acquireLease(reload);
   yield* registerSessions(ctx).pipe(
     Effect.catchTags({
@@ -41,6 +43,34 @@ const register = Effect.fn("register")(function* (ctx: Context) {
   yield* ctx.skill.transform((editor) => {
     for (const skill of lease.current().skills) {
       editor.add(skill);
+    }
+  });
+  yield* ctx.agent.transform((editor) => {
+    for (const agent of lease.current().agents) {
+      const native = agent.native;
+      // update creates an agent that does not exist yet, as OpenCode's own configuration does.
+      editor.update(agent.name, (item) => {
+        item.description = agent.description;
+        item.system = agent.prompt;
+        item.mode = native.mode ?? "subagent";
+        if (native.model !== undefined) {
+          item.model = {
+            id: native.model.model,
+            providerID: native.model.providerID,
+            ...(native.model.variant === undefined ? {} : { variant: native.model.variant }),
+          };
+        }
+        if (native.hidden !== undefined) {
+          item.hidden = native.hidden;
+        }
+        if (native.color !== undefined) {
+          item.color = native.color;
+        }
+        if (native.steps !== undefined) {
+          item.steps = native.steps;
+        }
+        item.permissions.push(...(native.permissions ?? []));
+      });
     }
   });
   yield* ctx.mcp.transform((editor) => {
@@ -141,6 +171,7 @@ const register = Effect.fn("register")(function* (ctx: Context) {
   );
   yield* Effect.logInfo("AGX resources ready", {
     skills: lease.current().skills.length,
+    agents: lease.current().agents.length,
     mcp: lease.current().prepared.mcp.length,
   });
 });

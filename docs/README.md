@@ -11,7 +11,7 @@ New to agx? Read [Getting started](getting-started.md) first.
 - [Harnesses](harnesses.md): launching Codex, Claude Code, and Pi; your own
   harness definitions; shims.
 - [MCP servers](mcp.md): adding servers, logging in with OAuth, and testing them.
-- [Skills, instructions, and packages](skills-and-packages.md): where they come
+- [Skills, instructions, subagents, and packages](skills-and-packages.md): where they come
   from, installing, locking, and updating.
 - [Secrets](secrets.md): API keys, tokens, `!secret`/`!env`/`!file`, and
   sops-encrypted files.

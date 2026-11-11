@@ -317,6 +317,7 @@ func listCommand(a *app, kind config.Kind) *cobra.Command {
 			config.KindMCPServers:   "List MCP servers",
 			config.KindSkills:       "List skills",
 			config.KindInstructions: "List instructions",
+			config.KindAgents:       "List subagents",
 			config.KindHarnesses:    "List harnesses",
 		}[kind],
 		Args: cobra.NoArgs,
@@ -341,6 +342,8 @@ func listCommand(a *app, kind config.Kind) *cobra.Command {
 				headers, rows, document = skillRows(c)
 			case config.KindInstructions:
 				headers, rows, document = instructionsRows(c)
+			case config.KindAgents:
+				headers, rows, document = agentRows(c)
 			default:
 				headers, rows, document = harnessRows(c)
 			}

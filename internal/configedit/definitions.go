@@ -30,6 +30,9 @@ func Lookup(c *config.Config, kind config.Kind, id string) (Located, bool) {
 	case config.KindMCPServers:
 		d, ok := c.MCP[key]
 		return Located{d.Source, d.Inline}, ok
+	case config.KindAgents:
+		d, ok := c.Agents[key]
+		return Located{d.Source, d.Inline}, ok
 	case config.KindBundles:
 		d, ok := c.Bundles[key]
 		return Located{Source: d.Source}, ok

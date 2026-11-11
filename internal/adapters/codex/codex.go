@@ -1,13 +1,19 @@
-// Package codex adapts Codex: instructions and MCP servers travel as -c overrides, and skills
-// are plugins of a local marketplace that installation registers and each launch toggles.
+// Package codex adapts Codex: instructions, subagents, and MCP servers travel as -c overrides,
+// and skills are plugins of a local marketplace that installation registers and each launch
+// toggles.
 package codex
 
 import (
 	"context"
 	"fmt"
+	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/pelletier/go-toml/v2"
 
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/adapters/codex/appserver"
@@ -152,6 +158,13 @@ func (a Adapter) Arguments(l adapters.Launch) ([]string, error) {
 	for _, p := range o.plugins {
 		prefix = append(prefix, "-c", "plugins."+p.id+".enabled="+strconv.FormatBool(p.enabled))
 	}
+	for _, a := range o.agents {
+		value, err := tomlValue(a.file)
+		if err != nil {
+			return nil, err
+		}
+		prefix = append(prefix, "-c", agentKey(a.name)+"="+value)
+	}
 	for _, s := range o.servers {
 		value, err := tomlValue(map[string]any{"url": s.url, "bearer_token_env_var": adapters.GrantEnvironment})
 		if err != nil {
@@ -184,6 +197,9 @@ func (Adapter) ThreadPlan(l adapters.Launch, grant string) (adapters.ThreadPlan,
 		}
 		plan.Config["plugins"] = plugins
 	}
+	for _, a := range o.agents {
+		plan.Config[agentKey(a.name)] = a.file
+	}
 	if len(o.servers) > 0 {
 		servers := map[string]any{}
 		for _, s := range o.servers {
@@ -205,12 +221,21 @@ type plugin struct {
 
 type server struct{ name, url string }
 
+// agent is a subagent as a role file of the launch.
+type agent struct{ name, file string }
+
+// agentKey names the override that registers a role file. Codex documents role files only in
+// its own agents directories, which would not follow the launch directory; this key reaches
+// one anywhere, and a dotted key leaves the user's other agents settings alone.
+func agentKey(name string) string { return "agents." + name + ".config_file" }
+
 // overrides brings a launch's resources to Codex.
 type overrides struct {
 	instructions string
 	// plugins lists every agx skill plugin installed in CODEX_HOME, enabled when the snapshot
 	// selects it.
 	plugins []plugin
+	agents  []agent
 	servers []server
 }
 
@@ -258,6 +283,24 @@ func resources(l adapters.Launch) (overrides, error) {
 	names := adapters.ServerNames(l.Endpoints)
 	for _, endpoint := range l.Endpoints {
 		o.servers = append(o.servers, server{name: names[endpoint.ID], url: endpoint.URL})
+	}
+	for _, a := range l.Agents {
+		// Codex names the role after the file's name field, whatever the key or file is called.
+		role := map[string]any{}
+		maps.Copy(role, a.Native)
+		role["name"], role["description"], role["developer_instructions"] = a.Name, a.Description, a.Prompt
+		b, err := toml.Marshal(role)
+		if err != nil {
+			return o, fmt.Errorf("subagent %s: %w", a.ID, err)
+		}
+		file := filepath.Join(l.LaunchDirectory(), "agents", a.Name+".toml")
+		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+			return o, err
+		}
+		if err := os.WriteFile(file, b, 0o600); err != nil {
+			return o, err
+		}
+		o.agents = append(o.agents, agent{name: a.Name, file: file})
 	}
 	return o, nil
 }

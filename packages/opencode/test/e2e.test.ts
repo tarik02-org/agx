@@ -168,6 +168,13 @@ await test(
         hidden: { description: "Beta only", content: "Beta skill body." },
       },
       instructions: { alpha: { text: "AGX_ALPHA_SENTINEL" }, beta: { text: "AGX_BETA_SENTINEL" } },
+      agents: {
+        helper: {
+          description: "Alpha only helper",
+          content: "Helper prompt.",
+          harnesses: { opencode: { steps: 7 }, claude: { model: "ignored" } },
+        },
+      },
       mcp: {
         "team/echo": { command: [mcp], environment: { ECHO_TOKEN: "!env MCP_INPUT_SECRET" } },
         deferred: { command: [mcp], load: "on_demand" },
@@ -179,6 +186,7 @@ await test(
           add: {
             skills: ["memory", "assets"],
             instructions: ["alpha"],
+            agents: ["helper"],
             mcp: ["team/echo", "deferred"],
           },
         },
@@ -464,6 +472,13 @@ export default define({
         0,
       );
     }
+    const helper = (await api.agent.list({ location: { directory: alpha } })).data.find(
+      (entry) => entry.id === "helper",
+    );
+    assert.equal(helper?.description, "Alpha only helper");
+    assert.equal(helper?.system, "Helper prompt.");
+    assert.equal(helper?.mode, "subagent");
+    assert.equal(helper?.steps, 7);
     for (let attempt = 0; attempt < 100; attempt++) {
       const otherPlugin = (await api.plugin.list({ location: { directory: beta } })).data.find(
         (entry) => entry.id === "agx",
@@ -479,6 +494,11 @@ export default define({
     assert.deepEqual(
       otherSkills.map((entry) => entry.name),
       ["hidden"],
+    );
+    assert.ok(
+      !(await api.agent.list({ location: { directory: beta } })).data.some(
+        (entry) => entry.id === "helper",
+      ),
     );
     assert.equal(
       (await api.mcp.list({ location: { directory: alpha } })).data.filter((entry) =>

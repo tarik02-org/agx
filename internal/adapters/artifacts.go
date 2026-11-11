@@ -11,7 +11,17 @@ import (
 	"github.com/gofrs/flock"
 
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/resources"
 )
+
+// AgentNames lists subagents by native name for messages.
+func AgentNames(agents []resources.Agent) string {
+	names := []string{}
+	for _, agent := range agents {
+		names = append(names, agent.Name)
+	}
+	return strings.Join(names, ", ")
+}
 
 // SkillNames names the snapshot's skills inside the shared artifacts by their native names, which
 // harnesses show; skills sharing a native name each get a suffix from their ID.

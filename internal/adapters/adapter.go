@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/resources"
 )
 
 const (
@@ -42,8 +43,8 @@ type Launcher interface {
 	// Directory resolves the launch directory from native working-directory flags and returns
 	// args with those flags rewritten to it.
 	Directory(args []string, cwd string) (string, []string, error)
-	// Arguments returns the native arguments that bring a launch's skills, instructions, and
-	// MCP servers to the harness. They precede the definition's groups and the caller's arguments.
+	// Arguments returns the native arguments that bring a launch's skills, instructions,
+	// subagents, and MCP servers to the harness. They precede the definition's groups and the caller's arguments.
 	Arguments(launch Launch) ([]string, error)
 }
 
@@ -138,6 +139,8 @@ type Launch struct {
 	Artifacts string
 	// Instructions is the selected content, whether or not the adapter creates a file.
 	Instructions []byte
+	// Agents are the selected subagents, with the native fields of the launch's harness.
+	Agents []resources.Agent
 	// Uninstalled marks a launch whose native installation was skipped; Arguments must leave out
 	// what needs it.
 	Uninstalled bool
@@ -497,6 +500,9 @@ func Build(
 	var err error
 	l.Instructions, err = l.Snapshot.InstructionsContent()
 	if err != nil {
+		return Plan{}, err
+	}
+	if l.Agents, err = l.Snapshot.AgentsContent(); err != nil {
 		return Plan{}, err
 	}
 	settings := []string{}

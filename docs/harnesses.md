@@ -37,6 +37,7 @@ Each launch gets the resources selected for the current directory:
   still load as usual.
 - **Skills** appear under their names: `agx-managed:<name>` in Claude Code,
   `<name>` in Pi, and as a plugin per skill in Codex.
+- **Subagents** appear under their names, see [Subagents](#subagents).
 - **MCP servers** appear as `agx-<id>`, for example `agx-github`. The harness
   talks to them through the agx daemon, which holds their credentials.
 
@@ -259,6 +260,27 @@ On Unix shims are symlinks; on Windows they are copies of agx named
 `<name>.exe` that run the agx recorded beside them, so they keep working after
 agx updates.
 
+## Subagents
+
+A launch gets the [subagents](skills-and-packages.md#subagents) selected for
+its directory, without anything written to the harness's own agent directories:
+
+| Harness     | How it gets them                                                    | `harnesses` fields                                         |
+| ----------- | ------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Claude Code | `--agents`, as JSON                                                 | subagent fields: `model`, `tools`, …                       |
+| Codex       | an agent file per subagent, named by `-c agents.<name>.config_file` | agent file keys: `model`, `model_reasoning_effort`, …      |
+| OpenCode    | registered by the plugin, as mode `subagent` unless set             | `model`, `mode`, `steps`, `hidden`, `color`, `permissions` |
+| Pi          | not at all: Pi has no subagents, and the launch says so             |                                                            |
+
+- A subagent named like one the harness already has, built in or from its own
+  directories, replaces it or loses to it by that harness's rules.
+- Claude Code keeps only the last `--agents`. One typed at launch, or passed by
+  a host, replaces the subagents agx selected, and the launch warns.
+- Codex documents agent files only in `~/.codex/agents` and `.codex/agents`.
+  The `config_file` key agx uses is not in its documentation; it works with
+  the versions below.
+- `codex app-server` threads get the subagents of their own directory.
+
 ## Harness-specific notes
 
 ### Codex
@@ -290,7 +312,8 @@ agx's instructions, combined with the host's own system prompt additions.
 | Claude Code | 2.1.29x | 2.1.300     |
 | Pi          | 0.99.0  | 1.2.0       |
 
-Older versions may start but lose skills, instructions, or MCP servers.
+Older versions may start but lose skills, instructions, subagents, or MCP
+servers.
 `agx doctor` checks the installed versions.
 
 On Windows, harness executables must be `.exe` files.

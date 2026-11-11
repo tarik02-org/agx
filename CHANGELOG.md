@@ -21,6 +21,8 @@ agx has not been released yet. What it does today:
 - On-demand MCP servers reached with `agx mcp call`, `agx mcp tools`, and generated
   TypeScript clients (`agx mcp types`).
 - `codex app-server` hosts get resources per thread.
+- Subagents defined once under `agents` and selected per directory or harness, delivered to
+  Claude Code, Codex, and OpenCode in each one's own format, with native fields per harness.
 - Injected values (`!env`, `!file`, `!secret`) that never reach snapshots, output, or logs;
   secrets from commands, sops, an encrypted store keyed by the OS keychain, or OAuth with `agx secret login` and automatic refresh.
 - Editing commands (`agx mcp|skill|instructions|harness add|list|remove`, `agx use`,

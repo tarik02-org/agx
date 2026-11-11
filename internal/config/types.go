@@ -31,6 +31,8 @@ const (
 	KindSecrets      Kind = "secrets"
 	KindPackages     Kind = "packages"
 	KindHarnesses    Kind = "harnesses"
+	// KindAgents is declarative only: local configuration stores and selects none.
+	KindAgents Kind = "agents"
 )
 
 var (
@@ -49,6 +51,7 @@ var kindNames = map[Kind]struct{ label, command string }{
 	KindSecrets:      {"secret", "secret"},
 	KindPackages:     {"package", "package"},
 	KindHarnesses:    {"harness", "harness"},
+	KindAgents:       {"subagent", "agent"},
 }
 
 // Label names the kind in messages.
@@ -154,6 +157,22 @@ type Instructions struct {
 	Source    Source `yaml:"-"        json:"source"`
 }
 
+// Agent is a subagent a session delegates work to: a Markdown file whose front matter holds its
+// description, such a file from a Git source, or a prompt written in configuration.
+type Agent struct {
+	Path        string `yaml:"path"        json:"path,omitempty"        jsonschema_description:"Markdown file: front matter with a description, then the prompt; relative to this file, or with git, to the checkout."`
+	GitSource   `       yaml:",inline"`
+	Name        string `yaml:"name"        json:"name,omitempty"        jsonschema_description:"Native subagent name, lowercase letters, digits, and hyphens; defaults to the ID's last segment."`
+	Description string `yaml:"description" json:"description,omitempty" jsonschema_description:"content: when a session should delegate to the subagent."`
+	Content     string `yaml:"content"     json:"content,omitempty"     jsonschema_description:"Prompt of a subagent written in configuration."`
+	// Harnesses holds each built-in harness's own subagent fields, passed through unchecked.
+	Harnesses map[string]map[string]any `yaml:"harnesses" json:"harnesses,omitempty" jsonschema_description:"Native subagent fields by built-in harness, such as a model or a tool list, passed through as written."`
+	Override  bool                      `yaml:"override"  json:"-"                   jsonschema_description:"Replace an existing definition."`
+	Package   ID                        `yaml:"-"         json:"package,omitempty"`
+	Inline    bool                      `yaml:"-"         json:"-"`
+	Source    Source                    `yaml:"-"         json:"source"`
+}
+
 // MCPServer is an MCP server together with the account and settings used to reach it. Load is
 // LoadNative or LoadOnDemand once merged.
 type MCPServer struct {
@@ -243,6 +262,7 @@ type Selection struct {
 	Skills       []ID `json:"skills,omitempty"`
 	Instructions []ID `json:"instructions,omitempty"`
 	MCP          []ID `json:"mcp,omitempty"`
+	Agents       []ID `json:"agents,omitempty"`
 	Bundles      []ID `json:"bundles,omitempty"`
 }
 
@@ -251,6 +271,7 @@ type SelectionSpec struct {
 	Skills       []SkillItem        `yaml:"skills"       jsonschema_description:"Skill IDs, skill directory paths, or inline skill definitions."`
 	Instructions []InstructionsItem `yaml:"instructions" jsonschema_description:"Instructions IDs, file paths, or inline instructions definitions."`
 	MCP          []MCPItem          `yaml:"mcp"          jsonschema_description:"MCP server IDs or inline MCP server definitions with an id."`
+	Agents       []AgentItem        `yaml:"agents"       jsonschema_description:"Subagent IDs, Markdown file paths, or inline subagent definitions."`
 	Bundles      []ID               `yaml:"bundles"      jsonschema_description:"Bundle IDs."`
 }
 
@@ -300,6 +321,7 @@ type Document struct {
 	Skills       map[ID]Skill        `yaml:"skills"       jsonschema_description:"Skills: directories containing SKILL.md, Git sources, or generated from content."`
 	Instructions map[ID]Instructions `yaml:"instructions" jsonschema_description:"Instructions applied to launches: files, Git sources, or text."`
 	MCP          map[ID]MCPServer    `yaml:"mcp"          jsonschema_description:"MCP servers with the account and settings used to reach them."`
+	Agents       map[ID]Agent        `yaml:"agents"       jsonschema_description:"Subagents sessions delegate work to: Markdown files, Git sources, or prompts written here."`
 	Secrets      map[ID]Secret       `yaml:"secrets"      jsonschema_description:"How credentials are obtained."`
 	Bundles      map[ID]BundleSpec   `yaml:"bundles"      jsonschema_description:"Named selections of resources."`
 	Scopes       []ScopeSpec         `yaml:"scopes"       jsonschema_description:"Directory rules that add or remove resources."`
@@ -313,6 +335,7 @@ type Config struct {
 	Skills        map[ID]Skill                 `json:"skills"`
 	Instructions  map[ID]Instructions          `json:"instructions"`
 	MCP           map[ID]MCPServer             `json:"mcp"`
+	Agents        map[ID]Agent                 `json:"agents"`
 	Secrets       map[ID]Secret                `json:"secrets"`
 	Bundles       map[ID]Bundle                `json:"bundles"`
 	Scopes        []Scope                      `json:"scopes"`
@@ -338,7 +361,7 @@ type MissingPackage struct {
 }
 
 // missingOwner reports the missing package a reference of kind into id would have come from:
-// the package whose namespace holds it, or the Git source of a skill or instructions
+// the package whose namespace holds it, or the Git source of a skill, instructions, or subagent
 // definition left out because it is not installed.
 func (c *Config) missingOwner(kind string, id ID) (ID, bool) {
 	if m, ok := c.Missing[ID(kind+":"+string(id))]; ok {
@@ -415,6 +438,7 @@ type Snapshot struct {
 	// SkillHashes holds the content hash of each selected skill as resolution found it.
 	SkillHashes       map[ID]string `json:"-"`
 	InstructionHashes map[ID]string `json:"-"`
+	AgentHashes       map[ID]string `json:"-"`
 	Config            *Config       `json:"-"`
 }
 
@@ -586,6 +610,7 @@ func (c *Config) ResolveContext(dir, harness string) (*Snapshot, error) {
 	content := []string{s.ID}
 	s.SkillHashes = map[ID]string{}
 	s.InstructionHashes = map[ID]string{}
+	s.AgentHashes = map[ID]string{}
 	for _, r := range s.Resources {
 		switch r.Kind {
 		case "skill":
@@ -602,6 +627,14 @@ func (c *Config) ResolveContext(dir, harness string) (*Snapshot, error) {
 			}
 			hash := Digest(string(b))
 			s.InstructionHashes[r.ID] = hash
+			content = append(content, hash)
+		case "agent":
+			description, prompt, err := c.Agents[r.ID].Read()
+			if err != nil {
+				return nil, fmt.Errorf("subagent %s: %w", r.ID, err)
+			}
+			hash := Digest([]string{description, prompt})
+			s.AgentHashes[r.ID] = hash
 			content = append(content, hash)
 		}
 	}
@@ -678,7 +711,12 @@ func (c *Config) expandSkipping(
 	for _, group := range []struct {
 		kind, label string
 		ids         []ID
-	}{{"skill", "skill", s.Skills}, {"instructions", "instructions", s.Instructions}, {"mcp", "MCP server", s.MCP}} {
+	}{
+		{"skill", "skill", s.Skills},
+		{"instructions", "instructions", s.Instructions},
+		{"mcp", "MCP server", s.MCP},
+		{"agent", "subagent", s.Agents},
+	} {
 		for _, id := range group.ids {
 			exists := false
 			switch group.kind {
@@ -688,6 +726,8 @@ func (c *Config) expandSkipping(
 				_, exists = c.Instructions[id]
 			case "mcp":
 				_, exists = c.MCP[id]
+			case "agent":
+				_, exists = c.Agents[id]
 			}
 			if !exists {
 				if pkg, ok := c.missingOwner(group.kind, id); ok {
@@ -761,6 +801,7 @@ func (c *Config) withoutPositions() *Config {
 		c.MCP,
 		func(r MCPServer) MCPServer { r.Source = Source{Path: r.Source.Path}; return r },
 	)
+	out.Agents = stripPositions(c.Agents, func(r Agent) Agent { r.Source = Source{Path: r.Source.Path}; return r })
 	out.Secrets = stripPositions(
 		c.Secrets,
 		func(r Secret) Secret { r.Source = Source{Path: r.Source.Path}; return r },

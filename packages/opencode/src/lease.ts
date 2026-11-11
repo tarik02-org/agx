@@ -1,4 +1,5 @@
 import { Code } from "@connectrpc/connect";
+import { ConfigAgent } from "@opencode/schema/config/agent";
 import type { Skill } from "@opencode/schema/skill";
 import { AgxClient } from "agx-client/AgxClient";
 import { AgxConnection } from "agx-client/AgxConnection";
@@ -23,6 +24,12 @@ import { SkillDeployer } from "./SkillDeployer.ts";
 export interface ActiveLease {
   readonly prepared: Prepared;
   readonly skills: ReadonlyArray<Skill.Info>;
+  readonly agents: ReadonlyArray<{
+    readonly name: string;
+    readonly description: string;
+    readonly prompt: string;
+    readonly native: ConfigAgent.Info;
+  }>;
   readonly environmentInputs: Record<string, string>;
   readonly configuration: string;
   readonly origin: string;
@@ -119,6 +126,20 @@ export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effec
       return yield* new IntegrationError({ operation: "MCP endpoint origin", reason: "content" });
     }
     const skills = yield* Effect.forEach(prepared.content.skills, (tree) => deployer.prepare(tree));
+    const agents = yield* Effect.forEach(prepared.content.agents, (agent) =>
+      Schema.decodeUnknownEffect(ConfigAgent.Info)(agent.native ?? {}).pipe(
+        Effect.map((native) => ({ ...agent, native })),
+        Effect.catchTag("SchemaError", (cause) =>
+          Effect.fail(
+            new IntegrationError({
+              operation: `subagent ${agent.id} native fields`,
+              reason: "content",
+              cause,
+            }),
+          ),
+        ),
+      ),
+    );
     const endpoints = yield* Effect.forEach(prepared.mcp, (endpoint) =>
       Effect.gen(function* () {
         const digest = yield* crypto
@@ -138,6 +159,7 @@ export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effec
     return {
       prepared,
       skills,
+      agents,
       environmentInputs,
       configuration: target.config,
       origin: target.url.origin,

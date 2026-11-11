@@ -77,6 +77,23 @@ func (s *MCPItem) UnmarshalYAML(node *yaml.Node) error {
 	return err
 }
 
+// AgentItem is an agents selection entry: an ID, a Markdown file path, or an inline definition.
+type AgentItem struct {
+	ID    ID `yaml:"id"      jsonschema_description:"Subagent ID; defaults to the file stem of path."`
+	Agent `     yaml:",inline"`
+	item  item
+}
+
+type agentItemFields AgentItem
+
+func (s *AgentItem) UnmarshalYAML(node *yaml.Node) error {
+	var fields agentItemFields
+	i, err := decodeItem(node, &fields)
+	fields.item = i
+	*s = AgentItem(fields)
+	return err
+}
+
 // selection merges a selection as written: references are qualified, and paths and inline
 // definitions are defined under their IDs.
 func (m *merger) selection(spec SelectionSpec) (Selection, error) {
@@ -101,6 +118,13 @@ func (m *merger) selection(spec SelectionSpec) (Selection, error) {
 			return out, err
 		}
 		out.MCP = append(out.MCP, id)
+	}
+	for _, entry := range spec.Agents {
+		id, err := m.agentItem(entry)
+		if err != nil {
+			return out, err
+		}
+		out.Agents = append(out.Agents, id)
 	}
 	for _, id := range spec.Bundles {
 		out.Bundles = append(out.Bundles, qualify(m.ns, id))
@@ -150,6 +174,23 @@ func (m *merger) instructionsItem(entry InstructionsItem) (ID, error) {
 	return qualify(m.ns, id), m.addInstructions(id, i, at, true)
 }
 
+func (m *merger) agentItem(entry AgentItem) (ID, error) {
+	if !entry.item.inline && !IsPath(entry.item.scalar) {
+		return qualify(m.ns, ID(entry.item.scalar)), nil
+	}
+	at, id, a := m.itemAt(entry.item), entry.ID, entry.Agent
+	if !entry.item.inline {
+		a = Agent{Path: entry.item.scalar}
+	}
+	if id == "" {
+		var err error
+		if id, err = deriveID(at, DerivedID(KindAgents, a.Path, "")); err != nil {
+			return "", err
+		}
+	}
+	return qualify(m.ns, id), m.addAgent(id, a, at, true)
+}
+
 func (m *merger) mcpItem(entry MCPItem) (ID, error) {
 	if !entry.item.inline {
 		return qualify(m.ns, ID(entry.item.scalar)), nil
@@ -166,13 +207,13 @@ func deriveID(at Source, name string) (ID, error) {
 
 // DerivedID is the ID a path or inline selection entry of kind defines when it names none: the
 // folder name of a skill, or its repository's name when it is a whole repository, and the file
-// stem of instructions.
+// stem of instructions or a subagent.
 func DerivedID(kind Kind, file, git string) string {
 	if kind == KindSkills && git != "" && file == "" {
 		return RepositoryName(git)
 	}
 	base := path.Base(filepath.ToSlash(filepath.Clean(file)))
-	if kind == KindInstructions {
+	if kind == KindInstructions || kind == KindAgents {
 		return strings.TrimSuffix(base, path.Ext(base))
 	}
 	return base
