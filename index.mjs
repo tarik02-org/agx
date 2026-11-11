@@ -9229,7 +9229,7 @@ const ResourceService = /*@__PURE__*/ serviceDesc(file_agx_v1_agx, 3);
 * @generated from service agx.v1.SessionProviderService
 */
 const SessionProviderService = /*@__PURE__*/ serviceDesc(file_agx_v1_agx, 4);
-// ../client/dist/error-Dg-0N9zM.mjs
+// ../client/dist/error-CgJbvlzR.mjs
 var ConnectionError = class extends Schema$1.TaggedError()("ConnectionError", {
 	operation: Schema$1.String,
 	reason: Schema$1.Literals([
@@ -9237,10 +9237,11 @@ var ConnectionError = class extends Schema$1.TaggedError()("ConnectionError", {
 		"bootstrap",
 		"discovery"
 	]),
+	detail: Schema$1.optionalKey(Schema$1.String),
 	cause: Schema$1.optionalKey(Schema$1.Union([Schema$1.instanceOf(PlatformError.PlatformError), Schema$1.instanceOf(Schema$1.SchemaError)]))
 }) {
 	get message() {
-		return `AGX ${this.operation} failed (${this.reason})`;
+		return `AGX ${this.operation} failed (${this.reason})${this.detail === void 0 ? "" : `: ${this.detail}`}`;
 	}
 };
 const EndState = Schema$1.NullOr(Schema$1.Literals([
@@ -9444,7 +9445,7 @@ function createConnectTransport(options) {
 		}
 	};
 }
-// ../client/dist/AgxClient-DlhIXfT8.mjs
+// ../client/dist/AgxClient-D3cIsR5o.mjs
 var AgxClient = class extends Context.Service()("agx-client/AgxClient") {};
 const call$1 = (target, operation, token, request) => Effect$2.tryPromise((signal) => request(createConnectTransport({ baseUrl: target.url.origin }), {
 	signal,
@@ -9482,7 +9483,7 @@ const makeAgxClient = Effect$2.fn("makeAgxClient")(() => Effect$2.sync(() => {
 	});
 }));
 const AgxClientLive = Layer.effect(AgxClient, makeAgxClient());
-// ../client/dist/schema-DSb-TiTz.mjs
+// ../client/dist/schema-RKaMTZTp.mjs
 const ConnectionOptions = Schema$1.Struct({
 	executable: Schema$1.optionalKey(Schema$1.NonEmptyString),
 	config: Schema$1.optionalKey(Schema$1.String),
@@ -9495,13 +9496,14 @@ const Bootstrap = Schema$1.Struct({
 	version: Schema$1.Literal(1),
 	data: Schema$1.Struct({ discovery: Schema$1.String })
 });
+const BootstrapFailure = Schema$1.Struct({ message: Schema$1.String });
 const Discovery = Schema$1.Struct({
 	url: Schema$1.URLFromString.check(Schema$1.makeFilter((url) => url.protocol === "http:" && url.hostname === "127.0.0.1" && url.port !== "" && url.username === "" && url.password === "" && url.pathname === "/" && url.search === "" && url.hash === "")),
 	token: ManagementToken,
 	instance_id: Schema$1.NonEmptyString,
 	config: Schema$1.NonEmptyString
 });
-// ../client/dist/AgxConnection-B3GTJPl2.mjs
+// ../client/dist/AgxConnection-BTBG03or.mjs
 var AgxConnection = class extends Context.Service()("agx-client/AgxConnection") {};
 const makeAgxConnection = Effect$2.fn("makeAgxConnection")(function* (input = {}) {
 	const options = yield* Schema$1.decodeUnknownEffect(ConnectionOptions)(input).pipe(Effect$2.catchTag("SchemaError", (cause) => Effect$2.fail(new ConnectionError({
@@ -9524,10 +9526,17 @@ const makeAgxConnection = Effect$2.fn("makeAgxConnection")(function* (input = {}
 			reason: "bootstrap",
 			cause
 		}))));
-		const result = yield* Schema$1.decodeUnknownEffect(Schema$1.fromJsonString(Bootstrap))(output).pipe(Effect$2.catchTag("SchemaError", (cause) => Effect$2.fail(new ConnectionError({
-			operation: "daemon bootstrap response",
-			reason: "bootstrap",
-			cause
+		const result = yield* Schema$1.decodeUnknownEffect(Schema$1.fromJsonString(Bootstrap))(output).pipe(Effect$2.catchTag("SchemaError", (cause) => Schema$1.decodeUnknownEffect(Schema$1.fromJsonString(BootstrapFailure))(output).pipe(Effect$2.matchEffect({
+			onFailure: () => Effect$2.fail(new ConnectionError({
+				operation: "daemon bootstrap response",
+				reason: "bootstrap",
+				cause
+			})),
+			onSuccess: (failure) => Effect$2.fail(new ConnectionError({
+				operation: "daemon bootstrap",
+				reason: "bootstrap",
+				detail: failure.message
+			}))
 		}))));
 		discoveryFile = result.data.discovery;
 		return result.data.discovery;
@@ -16413,12 +16422,14 @@ const makeSkillDeployer = Effect$2.fn("makeSkillDeployer")(function* () {
 		let content = text;
 		let frontmatter = {};
 		if (text.startsWith("---\n")) {
-			const end = text.indexOf("\n---", 4);
-			if (end === -1) return yield* new IntegrationError({
+			const closing = /\n---[ \t]*(?=\n|$)/g;
+			closing.lastIndex = 3;
+			const end = closing.exec(text);
+			if (end === null) return yield* new IntegrationError({
 				operation: "skill frontmatter",
 				reason: "content"
 			});
-			frontmatter = yield* Effect$2.try(() => (0, import_dist.parse)(text.slice(4, end)) ?? {}).pipe(Effect$2.catchTag("UnknownError", (error) => {
+			frontmatter = yield* Effect$2.try(() => (0, import_dist.parse)(text.slice(4, end.index)) ?? {}).pipe(Effect$2.catchTag("UnknownError", (error) => {
 				const cause = error.cause;
 				const code = Schema$1.is(Schema$1.instanceOf(import_dist.YAMLParseError))(cause) ? cause.code : Schema$1.is(Schema$1.instanceOf(ReferenceError))(cause) && cause.message === "Excessive alias count indicates a resource exhaustion attack" ? "EXCESSIVE_ALIASES" : null;
 				return code === null ? Effect$2.die(cause) : Effect$2.fail(new IntegrationError({
@@ -16430,7 +16441,7 @@ const makeSkillDeployer = Effect$2.fn("makeSkillDeployer")(function* () {
 					}
 				}));
 			}));
-			content = text.slice(end + 4).replace(/^\n/, "");
+			content = text.slice(end.index + end[0].length).replace(/^\n/, "");
 		}
 		const metadata = yield* Schema$1.decodeUnknownEffect(Frontmatter)(frontmatter).pipe(Effect$2.catchTag("SchemaError", (cause) => Effect$2.fail(new IntegrationError({
 			operation: "skill metadata",
@@ -18093,7 +18104,7 @@ const layer$1 = layer$2;
 * @since 4.0.0
 */
 const layer = /*#__PURE__*/ Layer.provideMerge(layer$11, /*#__PURE__*/ Layer.mergeAll(layer$7, layer$9, layer$5, layer$3, layer$1));
-// ../client/dist/SessionProviderClient-DMHMrLQa.mjs
+// ../client/dist/SessionProviderClient-BAPIQK8e.mjs
 var SessionProviderClient = class extends Context.Service()("agx-client/SessionProviderClient") {};
 const failure = (operation, cause) => {
 	return new DaemonError({
@@ -20422,7 +20433,7 @@ const registerSessions = Effect$2.fn("registerSessions")(function* (ctx) {
 		SchemaError: (cause) => Effect$2.logWarning("OpenCode session catalog returned invalid data", cause),
 		DaemonError: (error) => Effect$2.logWarning(error)
 	}));
-	yield* Effect$2.fn("sessions.serve")(function* () {
+	const serve = Effect$2.fn("sessions.serve")(function* () {
 		const target = yield* connection.poll();
 		const source = {
 			sourceId,
@@ -20443,13 +20454,22 @@ const registerSessions = Effect$2.fn("registerSessions")(function* (ctx) {
 				"session.usage.updated"
 			] }).pipe(Stream.result, Stream.debounce("300 millis"), Stream.runForEach((result) => Result$1.isFailure(result) ? failNative("session events", result.failure) : reconcile(target, source)))), Effect$2.catchTags({ NativeSessionError: (error) => Effect$2.logWarning(error) }), Effect$2.forkScoped);
 			yield* Deferred.await(ready).pipe(Effect$2.andThen(Effect$2.sleep("10 seconds").pipe(Effect$2.andThen(reconcile(target, source)), Effect$2.forever)), Effect$2.forkScoped);
-			yield* client.connect(target, { source }).pipe(Stream.runForEach(() => Deferred.succeed(ready, void 0).pipe(Effect$2.andThen(publish(target, source)), Effect$2.andThen(Deferred.succeed(initialized, void 0)))));
-		})).pipe(Effect$2.catchTag("DaemonError", (error) => error.code === Code.FailedPrecondition && error.cause.metadata.get("Agx-Session-Source-Replaced") === "1" ? Effect$2.never : connection.reconnect(target.instance_id).pipe(Effect$2.andThen(Effect$2.fail(error)))));
-	})().pipe(Effect$2.catchTags({
-		ConnectionError: (error) => Effect$2.logWarning(error),
-		DaemonError: (error) => Effect$2.logWarning(error),
-		NativeSessionError: (error) => Effect$2.logWarning(error),
-		SchemaError: (cause) => Effect$2.logWarning("OpenCode session catalog returned invalid data", cause)
+			yield* client.connect(target, { source }).pipe(Stream.runForEach(() => Deferred.succeed(ready, void 0).pipe(Effect$2.tap(() => Effect$2.sync(() => {
+				reported = "";
+			})), Effect$2.andThen(publish(target, source)), Effect$2.andThen(Deferred.succeed(initialized, void 0)))));
+		})).pipe(Effect$2.catchTag("DaemonError", (error) => error.code === Code.FailedPrecondition && error.cause.metadata.get("Agx-Session-Source-Replaced") === "1" ? Effect$2.never : error.code === Code.Unavailable || error.code === Code.Unknown || error.code === Code.DeadlineExceeded ? connection.reconnect(target.instance_id).pipe(Effect$2.andThen(Effect$2.fail(error))) : Effect$2.fail(error)));
+	});
+	let reported = "";
+	const failed = (message, cause) => Deferred.succeed(initialized, void 0).pipe(Effect$2.andThen(Effect$2.suspend(() => {
+		if (message === reported) return Effect$2.void;
+		reported = message;
+		return Effect$2.logWarning(message, cause);
+	})));
+	yield* serve().pipe(Effect$2.catchTags({
+		ConnectionError: (error) => failed(error.message, error),
+		DaemonError: (error) => failed(error.message, error).pipe(Effect$2.andThen(error.code === Code.Unavailable || error.code === Code.Unknown || error.code === Code.DeadlineExceeded ? Effect$2.void : Effect$2.sleep("30 seconds"))),
+		NativeSessionError: (error) => failed(error.message, error),
+		SchemaError: (cause) => failed("OpenCode session catalog returned invalid data", cause)
 	}), Effect$2.repeat(Schedule.spaced("1 second")), Effect$2.forkScoped);
 	yield* Deferred.await(initialized).pipe(Effect$2.timeoutOption("5 seconds"));
 });
