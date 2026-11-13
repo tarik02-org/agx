@@ -258,13 +258,12 @@ Options shared by the commands that write:
 | `--scope <dir>`    | that directory and below; it must exist, except for `unuse` |
 | `--harness <name>` | only for launches of that harness; repeatable               |
 | `--define-only`    | define without enabling (`add` commands)                    |
-| `-y`, `--yes`      | write without asking                                        |
 
-On a terminal, missing arguments become prompts and commands ask before saving.
-Without a terminal, commands save without asking and a missing argument is an
-error. Every change is validated against the combined configuration before its
-local definitions, rules, and package locks are committed in one transaction.
-Concurrent edits fail with a conflict and can be retried.
+On a terminal, missing arguments become prompts; without one, a missing argument
+is an error. Commands save without asking. Every change is validated against the
+combined configuration before its local definitions, rules, and package locks
+are committed in one transaction. Concurrent edits fail with a conflict and can
+be retried.
 
 - A same-directory YAML rule that opposes `use` or `unuse` is reported as
   read-only, so a command cannot silently save a change that YAML defeats.

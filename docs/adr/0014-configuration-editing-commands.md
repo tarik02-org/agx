@@ -41,10 +41,11 @@ another rule added it, appends it to `remove`.
 
 ## Interaction
 
-On a terminal, missing arguments become prompts, and each command shows the
-change as a diff before writing. Without a terminal, missing arguments are errors
-and `--yes` is implied. After `mcp add` of an HTTP server, agx probes it; when it
-asks for OAuth, agx offers to log in now with the blocking `secret login` flow.
+On a terminal, missing arguments become prompts; without one, they are errors.
+Commands save without asking: an edit only changes the daemon's database, and
+`agx unuse` or `remove` undoes it. After `mcp add` of an HTTP server, agx probes
+it; when it asks for OAuth, agx offers to log in now with the blocking
+`secret login` flow.
 `skill add` accepts a path, a Git URL, or GitHub's `owner/repo[@ref][/path]`. It
 fetches the source, finds every `SKILL.md`, and offers a multi-select picker
 unless `--skill` or `--all` decides; the selection becomes a locked package whose

@@ -55,7 +55,7 @@ func run(osArgs []string, stdout io.Writer) int {
 	color := ui.ColorAuto
 	root.PersistentFlags().Var(&color, "color", "style output: auto (terminals without NO_COLOR), always, never")
 	root.PersistentFlags().
-		BoolVar(&scripting.enabled, "json", false, "versioned JSON output; never prompts (implies --yes)")
+		BoolVar(&scripting.enabled, "json", false, "versioned JSON output; never prompts")
 	root.AddGroup(
 		&cobra.Group{ID: "harness", Title: "Harnesses"},
 		&cobra.Group{ID: "config", Title: "Configuration"},

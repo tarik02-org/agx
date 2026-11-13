@@ -103,7 +103,6 @@ Commands that write take:
 | `--scope user\|here\|<dir>`                 | where to enable: everywhere (default), here and below, or a directory                                            |
 | `--harness <name>`                          | only for these harnesses; repeatable                                                                             |
 | `--define-only`                             | define without enabling (`add` only)                                                                             |
-| `-y`, `--yes`                               | write without confirming; implied without a terminal                                                             |
 | `--force`                                   | `remove`: also remove the entries that refer to the definition (a package's enabling rule entries go without it) |
 | `--kind skills\|instructions\|mcp\|bundles` | `use`/`unuse`: which kind, when an ID names several                                                              |
 
@@ -198,8 +197,7 @@ result; harness launches and the launcher reject it. With `--json`:
 
 - stdout carries only JSON, one document per line; messages and warnings stay
   on stderr;
-- nothing is asked: `--json` implies `--yes`, and a missing argument is an
-  error.
+- nothing is asked: a missing argument is an error.
 
 A successful command prints a `data` document:
 
