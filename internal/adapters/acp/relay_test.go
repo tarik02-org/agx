@@ -173,3 +173,51 @@ func TestRelayUnknownVersion(t *testing.T) {
 		t.Errorf("warnings = %q", warnings)
 	}
 }
+
+func TestRelayRefusedSystemPrompt(t *testing.T) {
+	s := start(t)
+	initialize(s, `{"protocolVersion":1,"agentCapabilities":{"mcpCapabilities":{"http":true},`+
+		`"sessionCapabilities":{"systemPrompt":{}}}}`)
+
+	// An agent that implements an earlier draft refuses the system prompt it advertises; the
+	// request goes again without it, and the client sees only the second response.
+	s.Expect(
+		s.Client(`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/a","mcpServers":[]}}`),
+		`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/a","mcpServers":[`+server("/a", "L1")+`],`+
+			`"systemPrompt":{"mode":"append","content":[{"type":"text","text":"AGX /a"}]}}}`,
+	)
+	s.Answer(
+		`{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"systemPrompt must be an array of content blocks"}}`,
+	)
+	s.Expect(
+		s.Received(),
+		`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/a","mcpServers":[`+server("/a", "L1")+`]}}`,
+	)
+	s.Expect(
+		s.Server(`{"jsonrpc":"2.0","id":1,"result":{"sessionId":"A"}}`),
+		`{"jsonrpc":"2.0","id":1,"result":{"sessionId":"A"}}`,
+	)
+	s.Expect(
+		s.Client(`{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"A","prompt":[]}}`),
+		`{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"A","prompt":[{"type":"text","text":"AGX /a"}]}}`,
+	)
+
+	// Later sessions take instructions in their first prompt at once.
+	created := `{"jsonrpc":"2.0","id":3,"method":"session/new","params":{"cwd":"/b","mcpServers":[` + server(
+		"/b",
+		"L2",
+	) + `]}}`
+	s.Expect(s.Client(`{"jsonrpc":"2.0","id":3,"method":"session/new","params":{"cwd":"/b","mcpServers":[]}}`), created)
+	s.Server(`{"jsonrpc":"2.0","id":3,"result":{"sessionId":"B"}}`)
+	s.Eventually(func(bound map[string]string, _ []string) bool { return bound["A"] == "L1" && bound["B"] == "L2" })
+
+	// Other errors pass to the client without a retry.
+	s.Client(`{"jsonrpc":"2.0","id":4,"method":"session/load","params":{"sessionId":"A","cwd":"/a","mcpServers":[]}}`)
+	failed := `{"jsonrpc":"2.0","id":4,"error":{"code":-32603,"message":"no"}}`
+	s.Expect(s.Server(failed), failed)
+
+	if warnings := s.Host.Warnings(); len(warnings) != 1 ||
+		!strings.Contains(warnings[0], "refused the system prompt") {
+		t.Errorf("warnings = %q", warnings)
+	}
+}

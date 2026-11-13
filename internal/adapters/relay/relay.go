@@ -39,10 +39,26 @@ type Protocol interface {
 	Notification(r *Relay, method string, params Object)
 }
 
-// Reply handles the response to a rewritten request: result is the response's result, empty
-// unless an object, and ok false for an error response. It returns a result to send instead, or
-// nil to forward the response unchanged.
-type Reply func(result Object, ok bool) Object
+// Reply handles the response to a rewritten request.
+type Reply func(Response) Answer
+
+// Response is the server's response to a rewritten request.
+type Response struct {
+	// Result is the response's result, empty unless an object.
+	Result Object
+	// Error is the error of an error response, empty unless an object, and nil for a success.
+	Error Object
+}
+
+// Answer is what a Reply makes of a response. The zero Answer forwards the response unchanged.
+type Answer struct {
+	// Result replaces the response's result.
+	Result Object
+	// Retry, for an error response, sends the request again with these params instead of passing
+	// the error on; Next handles the new response.
+	Retry Object
+	Next  Reply
+}
 
 // Options names what the relay serves, for its messages, and where its threads run.
 type Options struct {
@@ -66,6 +82,13 @@ type Thread struct {
 }
 
 // Relay is one relayed process. Protocols reach it from Request and Notification.
+// pendingReply is a rewritten request awaiting its response.
+type pendingReply struct {
+	reply Reply
+	// request is the request as sent, which a retry sends again.
+	request Object
+}
+
 type Relay struct {
 	Options
 	protocol Protocol
@@ -82,7 +105,7 @@ type Relay struct {
 	// prepared holds launches no thread has bound yet.
 	prepared map[*adapters.ThreadLaunch]bool
 	// replies maps client request IDs to the handlers of their responses.
-	replies map[string]Reply
+	replies map[string]pendingReply
 	// calls maps the relay's own request IDs to their waiters.
 	calls map[string]chan Object
 	// dropped holds the relay's own request IDs that timed out; their late responses are dropped
@@ -100,7 +123,7 @@ func Run(ctx context.Context, o Options, p Protocol, client, server adapters.Str
 		server:   server.Out,
 		threads:  map[string]*Thread{},
 		prepared: map[*adapters.ThreadLaunch]bool{},
-		replies:  map[string]Reply{},
+		replies:  map[string]pendingReply{},
 		calls:    map[string]chan Object{},
 		dropped:  map[string]bool{},
 		work:     make(chan func(), 64),
@@ -264,15 +287,17 @@ func (r *Relay) request(ctx context.Context, line []byte) []byte {
 		params = Object{}
 	}
 	changed, reply := r.protocol.Request(ctx, r, method, &params)
+	if changed {
+		msg.Set("params", params.Marshal())
+	}
 	if reply != nil {
 		r.mu.Lock()
-		r.replies[key(id)] = reply
+		r.replies[key(id)] = pendingReply{reply: reply, request: msg}
 		r.mu.Unlock()
 	}
 	if !changed {
 		return line
 	}
-	msg.Set("params", params.Marshal())
 	return append(msg.Marshal(), '\n')
 }
 
@@ -295,7 +320,7 @@ func (r *Relay) response(line []byte) []byte {
 	delete(r.calls, key(id))
 	late := r.dropped[key(id)]
 	delete(r.dropped, key(id))
-	reply := r.replies[key(id)]
+	pending, rewritten := r.replies[key(id)]
 	delete(r.replies, key(id))
 	r.mu.Unlock()
 	if own {
@@ -305,16 +330,48 @@ func (r *Relay) response(line []byte) []byte {
 	if late {
 		return nil
 	}
-	if reply == nil {
+	if !rewritten {
 		return line
 	}
-	_, succeeded := msg.Get("result")
-	result, _ := msg.Object("result")
-	if replaced := reply(result, succeeded); replaced != nil {
-		msg.Set("result", replaced.Marshal())
+	response := Response{}
+	response.Result, _ = msg.Object("result")
+	if _, succeeded := msg.Get("result"); !succeeded {
+		response.Error, _ = msg.Object("error")
+		if response.Error == nil {
+			response.Error = Object{}
+		}
+	}
+	answer := pending.reply(response)
+	if answer.Retry != nil && response.Error != nil {
+		request := slices.Clone(pending.request)
+		request.Set("params", answer.Retry.Marshal())
+		r.send(id, request, answer.Next)
+		return nil
+	}
+	if answer.Result != nil {
+		msg.Set("result", answer.Result.Marshal())
 		return append(msg.Marshal(), '\n')
 	}
 	return line
+}
+
+// send sends a request again off the server loop, unless the relay is closing, and has next
+// handle its response.
+func (r *Relay) send(id json.RawMessage, request Object, next Reply) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Run waits for sends once closed, so none may start after.
+	if r.closed {
+		return
+	}
+	if next != nil {
+		r.replies[key(id)] = pendingReply{reply: next, request: request}
+	}
+	line := append(request.Marshal(), '\n')
+	r.preparing.Go(func() {
+		// The server not reading means it exited, which ends the relay.
+		_ = r.write(line)
+	})
 }
 
 // Directory resolves a thread's directory against the base directory, defaulting to fallback

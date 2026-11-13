@@ -48,6 +48,12 @@ the agent did not:
 
 A client server of the same name wins. Forked, loaded, and resumed sessions
 carry instructions in their history, so without a system prompt they get none.
+An agent that refuses the system prompt it advertises with invalid params, as
+agents implementing an earlier draft of the RFD do (a bare content array with
+`systemPromptMode`), gets the setup request again without it, and the client
+sees only that response; the process's later sessions take instructions as if
+the agent had no system prompt. The capability cannot tell the drafts apart, so
+the refusal is the only signal.
 
 ## Versions
 

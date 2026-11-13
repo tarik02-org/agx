@@ -133,17 +133,17 @@ func start(
 		}
 		params.Set("developerInstructions", relay.Encode(instructions))
 	}
-	return true, func(result relay.Object, ok bool) relay.Object {
+	return true, func(response relay.Response) relay.Answer {
 		id := resumed
-		if th, found := result.Object("thread"); found && id == "" {
+		if th, found := response.Result.Object("thread"); found && id == "" {
 			id, _ = th.String("id")
 		}
-		if !ok || id == "" {
+		if response.Error != nil || id == "" {
 			r.Finish(l)
-			return nil
+			return relay.Answer{}
 		}
 		r.Bind(id, l, directory)
-		return nil
+		return relay.Answer{}
 	}
 }
 
@@ -203,11 +203,12 @@ func skills(ctx context.Context, r *relay.Relay, params relay.Object) relay.Repl
 		disabled[cwd] = off
 		disabled[dir] = off
 	}
-	return func(result relay.Object, ok bool) relay.Object {
-		if ok && rewriteSkills(&result, disabled) {
-			return result
+	return func(response relay.Response) relay.Answer {
+		result := response.Result
+		if response.Error == nil && rewriteSkills(&result, disabled) {
+			return relay.Answer{Result: result}
 		}
-		return nil
+		return relay.Answer{}
 	}
 }
 

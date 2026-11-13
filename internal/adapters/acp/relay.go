@@ -34,6 +34,9 @@ type protocol struct {
 	first map[string]string
 	// unserved records that a warning said the agent takes no HTTP MCP servers.
 	unserved bool
+	// rejected records that the agent refused the system prompt it advertises, as agents that
+	// implement an earlier draft of it do; sessions then take instructions as if it had none.
+	rejected bool
 }
 
 func (p *protocol) Intercepts(method string) bool {
@@ -75,12 +78,12 @@ func (p *protocol) Request(
 	}
 	if slices.Contains(v.closes, method) {
 		id, _ := params.String("sessionId")
-		return false, func(_ relay.Object, ok bool) relay.Object {
-			if ok {
+		return false, func(response relay.Response) relay.Answer {
+			if response.Error == nil {
 				p.forget(id)
 				r.Close(id)
 			}
-			return nil
+			return relay.Answer{}
 		}
 	}
 	opening, ok := v.opens[method]
@@ -96,10 +99,11 @@ func (*protocol) Notification(*relay.Relay, string, relay.Object) {}
 
 // initialized handles the initialize response, which settles the protocol version.
 func (p *protocol) initialized(r *relay.Relay) relay.Reply {
-	return func(result relay.Object, ok bool) relay.Object {
-		if !ok {
-			return nil
+	return func(response relay.Response) relay.Answer {
+		if response.Error != nil {
+			return relay.Answer{}
 		}
+		result := response.Result
 		raw, _ := result.Get("protocolVersion")
 		number, err := strconv.Atoi(string(raw))
 		v, known := versions[number]
@@ -110,10 +114,10 @@ func (p *protocol) initialized(r *relay.Relay) relay.Reply {
 			r.Host.Warn(
 				fmt.Sprintf("ACP protocol version %s is not supported; sessions start without agx resources", raw),
 			)
-			return nil
+			return relay.Answer{}
 		}
 		p.version, p.caps = &v, v.capabilities(result)
-		return nil
+		return relay.Answer{}
 	}
 }
 
@@ -138,26 +142,20 @@ func (p *protocol) open(
 		return false, nil
 	}
 	changed := p.addServers(r, params, l, caps)
+	// Without a system prompt, a new session reads the instructions in its first prompt; a forked
+	// or continued one has them in its history.
 	pending := ""
-	if l.Instructions != "" {
-		switch {
-		case caps.systemPrompt:
-			addSystemPrompt(params, l.Instructions)
-			changed = true
-		case opening == created:
-			// Without a system prompt, a new session reads the instructions in its first prompt; a
-			// forked or continued one has them in its history.
-			pending = l.Instructions
-		}
+	if opening == created {
+		pending = l.Instructions
 	}
-	return changed, func(result relay.Object, ok bool) relay.Object {
+	settle := func(response relay.Response, pending string) relay.Answer {
 		id := named
 		if opening != continued {
-			id, _ = result.String("sessionId")
+			id, _ = response.Result.String("sessionId")
 		}
-		if !ok || id == "" {
+		if response.Error != nil || id == "" {
 			r.Finish(l)
-			return nil
+			return relay.Answer{}
 		}
 		r.Bind(id, l, directory)
 		if pending != "" {
@@ -165,8 +163,42 @@ func (p *protocol) open(
 			p.first[id] = pending
 			p.mu.Unlock()
 		}
-		return nil
+		return relay.Answer{}
 	}
+	p.mu.Lock()
+	systemPrompt := caps.systemPrompt && !p.rejected
+	p.mu.Unlock()
+	if l.Instructions == "" || !systemPrompt {
+		return changed, func(response relay.Response) relay.Answer { return settle(response, pending) }
+	}
+	without := slices.Clone(*params)
+	addSystemPrompt(params, l.Instructions)
+	return true, func(response relay.Response) relay.Answer {
+		if !invalidParams(response) {
+			return settle(response, "")
+		}
+		// An agent that refuses the system prompt it advertises may implement an earlier draft of
+		// it; the session starts again without one.
+		return relay.Answer{Retry: without, Next: func(response relay.Response) relay.Answer {
+			if response.Error == nil {
+				p.mu.Lock()
+				warn := !p.rejected
+				p.rejected = true
+				p.mu.Unlock()
+				if warn {
+					r.Host.Warn("the ACP agent refused the system prompt it advertises; " +
+						"instructions reach its new sessions in their first prompt")
+				}
+			}
+			return settle(response, pending)
+		}}
+	}
+}
+
+// invalidParams reports whether response is a JSON-RPC invalid params error.
+func invalidParams(response relay.Response) bool {
+	code, _ := response.Error.Get("code")
+	return string(code) == "-32602"
 }
 
 // addServers appends the launch's MCP servers to the request's, skipping names the client uses.

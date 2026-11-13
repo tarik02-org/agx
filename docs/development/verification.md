@@ -40,6 +40,9 @@ sandbox (ACP version 1). From a scoped directory, claude-agent-acp 0.106.0 and
 codex-acp 2.6.0 (HTTP MCP servers and a client system prompt) called a managed
 MCP tool and followed the directory's instructions, which reached them only
 through the system prompt; from an unscoped directory they did not follow them.
+fx 0.0.16 (`fx acp`) refuses that system prompt, since it implements an earlier
+draft; agx sent the session again without it, and fx called the tool and
+followed the instructions from the first prompt.
 opencode 2.2.6 (`opencode acp`, HTTP MCP servers, no system prompt) called the
 tool, and pi-acp 0.0.34 (neither) followed the instructions, both from the
 first prompt. kilo 7.8.27 accepted sessions with agx resources; Gemini CLI
