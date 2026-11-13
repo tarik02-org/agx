@@ -328,7 +328,9 @@ func (m *Manager) begin(
 			},
 			client,
 		)
-		if err != nil || registration.ClientSecret != "" {
+		// Atlassian issues a client_secret even for clients registered with
+		// token_endpoint_auth_method "none"; the confirmed method decides.
+		if err != nil || registration.ClientSecret != "" && registration.TokenEndpointAuthMethod != "none" {
 			return nil, fmt.Errorf("OAuth public-client registration failed")
 		}
 		clientID = registration.ClientID
