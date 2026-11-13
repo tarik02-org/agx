@@ -81,6 +81,7 @@ func (s *Server) PrepareResources(
 	}, launchBasis{config: snapshot.Config, snapshot: snapshot}, grant, lifecycle, nil)
 	endpoints, native := s.endpoints(l.ctx, id, snapshot, inputs, directory)
 	l.endpoints = endpoints
+	l.inputs, l.mcpDirectory = inputs, directory
 	response := &v1.PrepareResourcesResponse{
 		Launch: proto.Clone(l.view).(*v1.Launch), Content: resourceContent(content),
 		Grant: grant, LifecycleToken: lifecycle,
@@ -128,7 +129,7 @@ func (s *Server) addLaunch(l *launch) error {
 	return nil
 }
 
-func (s *Server) attachResources(msg *v1.AttachLaunchRequest) (*launch, error) {
+func (s *Server) attachResources(ctx context.Context, msg *v1.AttachLaunchRequest) (*launch, error) {
 	view := msg.Launch
 	if len(msg.NativeArguments) != 0 || msg.Executable != "" || len(msg.Threads) != 0 || view.Mode != "" {
 		return nil, rpcError(connect.CodeInvalidArgument, "resource leases have no process arguments or threads")
@@ -145,6 +146,12 @@ func (s *Server) attachResources(msg *v1.AttachLaunchRequest) (*launch, error) {
 		return nil, err
 	}
 	l.endpoints, _ = s.endpoints(l.ctx, view.Id, snapshot, inputs, directory)
+	l.mcpDirectory = msg.McpDirectory
+	if err := s.restoreSession(ctx, l, msg.EnvironmentInputs); err != nil {
+		l.cancel()
+		closeEndpoints(l.endpoints)
+		return nil, err
+	}
 	return l, nil
 }
 

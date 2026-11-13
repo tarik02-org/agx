@@ -23,6 +23,11 @@ func Read(ctx context.Context, state, root string) (*config.Local, error) {
 	if err != nil {
 		return nil, err
 	}
+	return readOwner(ctx, state, root)
+}
+
+func readOwner(ctx context.Context, state, root string) (*config.Local, error) {
+	local := config.EmptyLocal()
 	db, err := storage.OpenExisting(ctx, storage.State(state))
 	if errors.Is(err, fs.ErrNotExist) {
 		return local, nil
@@ -48,6 +53,15 @@ func Write(ctx context.Context, state, root string, local *config.Local) (int64,
 	if err != nil {
 		return 0, err
 	}
+	return writeOwner(ctx, state, root, local, nil)
+}
+
+func writeOwner(
+	ctx context.Context,
+	state, root string,
+	local *config.Local,
+	record func(*statedb.Queries) error,
+) (int64, error) {
 	db, err := storage.Open(ctx, storage.State(state))
 	if err != nil {
 		return 0, err
@@ -130,6 +144,11 @@ func Write(ctx context.Context, state, root string, local *config.Local) (int64,
 	)
 	if err != nil {
 		return 0, err
+	}
+	if record != nil {
+		if err := record(q); err != nil {
+			return 0, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
