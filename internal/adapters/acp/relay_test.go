@@ -19,6 +19,22 @@ func server(directory, id string) string {
 	)
 }
 
+// bridged is the stdio server that bridges a launch's server to an agent without HTTP ones.
+func bridged(t *testing.T, directory, id, typed string) string {
+	t.Helper()
+	agx, err := executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf(
+		`{%s"name":"agx-m","command":"%s","args":["mcp","bridge","%s"],"env":[{"name":"AGX_MCP_GRANT","value":"%s"}]}`,
+		typed,
+		agx,
+		directory,
+		id,
+	)
+}
+
 func start(t *testing.T) *relaytest.Session {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -117,9 +133,12 @@ func TestRelaySessionsWithoutCapabilities(t *testing.T) {
 	s := start(t)
 	initialize(s, `{"protocolVersion":1,"agentCapabilities":{"mcpCapabilities":{"http":false}}}`)
 
-	// Neither servers nor a system prompt reach an agent that advertises neither.
-	created := `{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/a","mcpServers":[]}}`
-	s.Expect(s.Client(created), created)
+	// An agent without HTTP MCP servers gets them bridged over stdio, and no system prompt.
+	s.Expect(
+		s.Client(`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/a","mcpServers":[]}}`),
+		`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/a","mcpServers":[`+
+			bridged(t, "/a", "L1", "")+`]}}`,
+	)
 	s.Server(`{"jsonrpc":"2.0","id":1,"result":{"sessionId":"A"}}`)
 
 	// The new session's first prompt carries the instructions instead; later ones do not.
@@ -133,14 +152,38 @@ func TestRelaySessionsWithoutCapabilities(t *testing.T) {
 	s.Expect(s.Client(again), again)
 
 	// A forked session has the instructions in the history it copies.
-	forked := `{"jsonrpc":"2.0","id":4,"method":"session/fork","params":{"sessionId":"A","cwd":"/a","mcpServers":[]}}`
-	s.Expect(s.Client(forked), forked)
+	s.Expect(
+		s.Client(
+			`{"jsonrpc":"2.0","id":4,"method":"session/fork","params":{"sessionId":"A","cwd":"/a","mcpServers":[]}}`,
+		),
+		`{"jsonrpc":"2.0","id":4,"method":"session/fork","params":{"sessionId":"A","cwd":"/a","mcpServers":[`+
+			bridged(t, "/a", "L2", "")+`]}}`,
+	)
 	s.Server(`{"jsonrpc":"2.0","id":4,"result":{"sessionId":"F"}}`)
 	s.Eventually(func(bound map[string]string, _ []string) bool { return bound["F"] == "L2" })
 	first := `{"jsonrpc":"2.0","id":5,"method":"session/prompt","params":{"sessionId":"F","prompt":[]}}`
 	s.Expect(s.Client(first), first)
 
-	if warnings := s.Host.Warnings(); len(warnings) != 1 || !strings.Contains(warnings[0], "no HTTP MCP servers") {
+	if warnings := s.Host.Warnings(); len(warnings) != 0 {
+		t.Errorf("warnings = %q", warnings)
+	}
+}
+
+func TestRelayVersion2Stdio(t *testing.T) {
+	// Version 2 stdio servers are typed, and only an agent that advertises them gets them.
+	s := start(t)
+	initialize(s, `{"protocolVersion":2,"capabilities":{"session":{"mcp":{"stdio":{}}}}}`)
+	s.Expect(
+		s.Client(`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/a"}}`),
+		`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/a","mcpServers":[`+
+			bridged(t, "/a", "L1", `"type":"stdio",`)+`]}}`,
+	)
+
+	s = start(t)
+	initialize(s, `{"protocolVersion":2,"capabilities":{"session":{}}}`)
+	created := `{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/a"}}`
+	s.Expect(s.Client(created), created)
+	if warnings := s.Host.Warnings(); len(warnings) != 1 || !strings.Contains(warnings[0], "neither HTTP nor stdio") {
 		t.Errorf("warnings = %q", warnings)
 	}
 }

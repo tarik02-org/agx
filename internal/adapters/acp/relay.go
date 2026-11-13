@@ -4,19 +4,25 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/adapters/relay"
+	"github.com/tarik02-org/agx/internal/shims"
 )
 
 func run(ctx context.Context, host adapters.ThreadHost, base string, client, server adapters.Stream) error {
+	p := &protocol{first: map[string]string{}}
+	p.bridge, p.unbridged = executable()
 	return relay.Run(
 		ctx,
 		relay.Options{ServerLabel: "ACP agent", ThreadLabel: "ACP session", Host: host, Base: base},
-		&protocol{first: map[string]string{}},
+		p,
 		client,
 		server,
 	)
@@ -32,7 +38,11 @@ type protocol struct {
 	// first holds instructions for the first prompt of new sessions whose agent takes no system
 	// prompt, by session ID.
 	first map[string]string
-	// unserved records that a warning said the agent takes no HTTP MCP servers.
+	// bridge is the agx that serves MCP servers over stdio to agents that take no HTTP ones,
+	// unless unbridged says why there is none.
+	bridge    string
+	unbridged error
+	// unserved records that a warning said the agent takes no agx MCP servers.
 	unserved bool
 	// rejected records that the agent refused the system prompt it advertises, as agents that
 	// implement an earlier draft of it do; sessions then take instructions as if it had none.
@@ -90,7 +100,7 @@ func (p *protocol) Request(
 	if !ok {
 		return false, nil
 	}
-	return p.open(ctx, r, params, opening, caps)
+	return p.open(ctx, r, params, opening, v, caps)
 }
 
 // Notification ignores the agent's messages: sessions end by the client's requests or with the
@@ -128,6 +138,7 @@ func (p *protocol) open(
 	r *relay.Relay,
 	params *relay.Object,
 	opening opening,
+	v *version,
 	caps capabilities,
 ) (bool, relay.Reply) {
 	named, _ := params.String("sessionId")
@@ -141,7 +152,7 @@ func (p *protocol) open(
 	if l == nil {
 		return false, nil
 	}
-	changed := p.addServers(r, params, l, caps)
+	changed := p.addServers(r, params, l, v, caps)
 	// Without a system prompt, a new session reads the instructions in its first prompt; a forked
 	// or continued one has them in its history.
 	pending := ""
@@ -202,21 +213,41 @@ func invalidParams(response relay.Response) bool {
 }
 
 // addServers appends the launch's MCP servers to the request's, skipping names the client uses.
-func (p *protocol) addServers(r *relay.Relay, params *relay.Object, l *adapters.ThreadLaunch, caps capabilities) bool {
+// An agent that takes no HTTP servers gets each as a stdio server that agx bridges to it.
+func (p *protocol) addServers(
+	r *relay.Relay,
+	params *relay.Object,
+	l *adapters.ThreadLaunch,
+	v *version,
+	caps capabilities,
+) bool {
 	config, _ := relay.Parse(l.Config)
 	ours, _ := config.Array("mcpServers")
 	if len(ours) == 0 {
 		return false
 	}
 	if !caps.http {
-		p.mu.Lock()
-		warn := !p.unserved
-		p.unserved = true
-		p.mu.Unlock()
-		if warn {
-			r.Host.Warn("the ACP agent accepts no HTTP MCP servers; its sessions start without agx MCP servers")
+		unserved := ""
+		switch {
+		case !caps.stdio:
+			unserved = "the ACP agent accepts neither HTTP nor stdio MCP servers"
+		case p.unbridged != nil:
+			unserved = fmt.Sprintf(
+				"the ACP agent accepts no HTTP MCP servers and agx cannot bridge them: %v",
+				p.unbridged,
+			)
 		}
-		return false
+		if unserved != "" {
+			p.mu.Lock()
+			warn := !p.unserved
+			p.unserved = true
+			p.mu.Unlock()
+			if warn {
+				r.Host.Warn(unserved + "; its sessions start without agx MCP servers")
+			}
+			return false
+		}
+		ours = p.bridged(ours, v.typedStdio)
 	}
 	theirs, _ := params.Array("mcpServers")
 	names := []string{}
@@ -238,6 +269,49 @@ func (p *protocol) addServers(r *relay.Relay, params *relay.Object, l *adapters.
 	}
 	params.Set("mcpServers", relay.EncodeArray(servers))
 	return true
+}
+
+// bridged describes HTTP servers as stdio servers that run agx's bridge to them. The grant goes
+// in the bridge's environment, since its command line is visible to other processes.
+func (p *protocol) bridged(servers []json.RawMessage, typed bool) []json.RawMessage {
+	out := []json.RawMessage{}
+	for _, raw := range servers {
+		server, _ := relay.Parse(raw)
+		name, _ := server.String("name")
+		url, _ := server.String("url")
+		grant := ""
+		headers, _ := server.Array("headers")
+		for _, raw := range headers {
+			header, _ := relay.Parse(raw)
+			if key, _ := header.String("name"); key == "Authorization" {
+				value, _ := header.String("value")
+				grant = strings.TrimPrefix(value, "Bearer ")
+			}
+		}
+		bridge := relay.Object{}
+		if typed {
+			bridge.Set("type", relay.Encode("stdio"))
+		}
+		bridge.Set("name", relay.Encode(name))
+		bridge.Set("command", relay.Encode(p.bridge))
+		bridge.Set("args", relay.Encode([]string{"mcp", "bridge", url}))
+		bridge.Set("env", relay.Encode([]map[string]string{{"name": adapters.GrantEnvironment, "value": grant}}))
+		out = append(out, bridge.Marshal())
+	}
+	return out
+}
+
+// executable is the agx that bridges MCP servers. A Windows shim would run its harness instead,
+// so it names the agx the shim hands off to.
+func executable() (string, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if origin, ok := shims.Origin(self); ok {
+		self = origin
+	}
+	return filepath.EvalSymlinks(self)
 }
 
 // addSystemPrompt appends instructions to the request's system prompt, keeping the client's
