@@ -9,6 +9,7 @@ These notes are for people working on agx itself. For using agx, start at the
 - [Verification](verification.md): how behavior is tested, what was checked by
   hand, and known limits.
 - [Library choices](libraries.md).
+- [OpenCode plugin](opencode.md): development, distribution and advanced options.
 - [Architecture decision records](../adr/) and the [glossary](../../GLOSSARY.md).
 
 ## Building and testing
@@ -40,8 +41,9 @@ Release builds set the same version on both binaries, reported by `agx --version
 and `agxd --version`. Commands compare it to decide whether they replace an older
 daemon:
 `-ldflags "-X github.com/tarik02-org/agx/internal/control.Version=1.2.3"`. Until
-the first tag, the Nix package reports `0.0.0-dev+<commit>`, which is not
-ordered against the unknown `dev` version. Version comparison uses semver, with
+the first tag, the Nix package reports `0.0.0-dev.<commit time>+<commit>`, so a
+later build replaces the daemon of an earlier one; neither is ordered against
+the unknown `dev` version of a plain build. Version comparison uses semver, with
 nightly commit counts in build metadata compared separately. Each canonical root
 configuration path gets a daemon in its own hashed runtime directory; protocol
 numbers and executable-content fingerprints are unnecessary before the first release.
@@ -55,7 +57,7 @@ explicitly and return changes for the daemon to persist. This prepares reuse by 
 future daemonless runtime; no daemonless launch mode is implemented yet.
 
 Go messages and Connect handlers live in `gen/agx/v1`; TypeScript Protobuf
-messages and service descriptors live in `gen/typescript`. Regenerate them with
+messages and service descriptors live in `packages/client/gen`. Regenerate them with
 `buf generate`; TypeScript consumers need `@bufbuild/protobuf` and can build
 Connect clients with `@connectrpc/connect`. Generator versions are pinned in
 [buf.gen.yaml](../../buf.gen.yaml).
@@ -64,7 +66,11 @@ Connect clients with `@connectrpc/connect`. Generator versions are pinned in
 
 Tag a commit that passed CI on `master`. Pushing a `v*` tag runs
 `.github/workflows/release.yml`, which publishes a GitHub release with GoReleaser
-(`.goreleaser.yaml`); archives include shell completions and the man page. Every
+(`.goreleaser.yaml`); archives include shell completions and the man page. The
+workflow refuses a tag that is not on `master` or whose commit has no successful
+CI run, and attests the provenance of the archives listed in `checksums.txt`
+(`gh attestation verify <archive> --repo tarik02-org/agx`). Workflow actions are
+pinned to commits, which Dependabot proposes to move monthly. Every
 `master` commit that passes CI publishes its own
 `nightly-<version>.<commits>-<commit>` prerelease. Run
 `goreleaser build --snapshot --clean` to build every target locally. With the tag,

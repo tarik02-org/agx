@@ -78,6 +78,8 @@ func pause(ctx context.Context, d time.Duration) error {
 type lease struct {
 	paths     platform.Paths
 	lifecycle string
+	// autostart is whether the wrapper may start a daemon, as for its other commands.
+	autostart bool
 	mu        sync.Mutex
 	client    *client
 	// launch is the wrapper's launch as AttachLaunch sends it, without threads; threads holds its
@@ -113,6 +115,9 @@ const crashRestartInterval = 10 * time.Second
 // Nothing else would start a daemon for the harness, whose MCP requests go straight to the port.
 // It reports whether a daemon answers afterwards.
 func (l *lease) replaceCrashed(ctx context.Context) bool {
+	if !l.autostart || l.current().discovery.Managed {
+		return false
+	}
 	if time.Since(l.started) < crashRestartInterval || !crashed(l.paths, l.current().discovery.InstanceID) {
 		return false
 	}
@@ -141,9 +146,10 @@ func crashed(paths platform.Paths, instance string) bool {
 	return d.InstanceID == instance
 }
 
-func newLease(paths platform.Paths, c *client, launch *v1.AttachLaunchRequest) *lease {
+func newLease(paths platform.Paths, c *client, launch *v1.AttachLaunchRequest, autostart bool) *lease {
 	return &lease{
 		paths:     paths,
+		autostart: autostart,
 		lifecycle: launch.LifecycleToken,
 		client:    c,
 		launch:    launch,
@@ -187,14 +193,35 @@ func (l *lease) attach(ctx context.Context) error {
 		msg.Threads = append(msg.Threads, proto.Clone(t).(*v1.AttachedThread))
 	}
 	l.mu.Unlock()
-	_, err := l.current().launches.AttachLaunch(ctx, connect.NewRequest(msg))
+	c, err := l.daemon()
+	if err != nil {
+		return err
+	}
+	_, err = c.launches.AttachLaunch(ctx, connect.NewRequest(msg))
 	return err
+}
+
+// daemon is the client of the daemon discovery names, which holds the startup lock. A launch's
+// tokens, grant, and environment inputs go to no other process: after its daemon stopped,
+// another user's may listen on the port the lease last used.
+func (l *lease) daemon() (*client, error) {
+	d, err := liveDiscovery(l.paths)
+	if err != nil {
+		// As a daemon that does not answer, which callers wait out or replace.
+		return nil, connect.NewError(connect.CodeUnavailable, err)
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if d.InstanceID != l.client.discovery.InstanceID {
+		l.client = dial(d)
+	}
+	return l.client, nil
 }
 
 // reconnect switches to the daemon the discovery file names when it is another instance than
 // used's, and reports whether it did. A daemon of another version serves launches all the same.
 func (l *lease) reconnect(used *client) bool {
-	d, err := control.ReadDiscovery(l.paths)
+	d, err := liveDiscovery(l.paths)
 	if err != nil {
 		return false
 	}
@@ -234,8 +261,11 @@ func (l *lease) await(done <-chan struct{}, d time.Duration) bool {
 // call runs fn against the current daemon and, when it fails, once more against a daemon that
 // replaced it.
 func (l *lease) call(fn func(*client) error) error {
-	used := l.current()
-	err := fn(used)
+	used, err := l.daemon()
+	if err != nil {
+		return err
+	}
+	err = fn(used)
 	if err != nil && l.reconnect(used) {
 		err = fn(l.current())
 	}
@@ -255,7 +285,7 @@ func (l *lease) renew(ctx context.Context, msg *v1.RenewLaunchRequest) (*v1.Rene
 	err := l.call(renew)
 	if connect.CodeOf(err) == connect.CodeNotFound || ended(err) == "expired" {
 		if err = l.attach(ctx); err == nil {
-			err = renew(l.current())
+			err = l.call(renew)
 		}
 	}
 	return response, err
@@ -295,11 +325,16 @@ func (l *lease) record(ctx context.Context, record *v1.RecordLaunchRequest) erro
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if (stopping(err) || connect.CodeOf(err) == connect.CodeUnauthenticated) && time.Now().Before(deadline) {
+		if (stopping(err) || connect.CodeOf(err) == connect.CodeUnauthenticated || l.current().discovery.Managed) &&
+			time.Now().Before(deadline) {
 			if err := pause(ctx, backoff(attempt)); err != nil {
 				return err
 			}
 			continue
+		}
+		// A daemon started only for this record would outlive the harness against the user's wish.
+		if !l.autostart {
+			return err
 		}
 		if _, err := startDaemon(ctx, l.paths); err != nil {
 			return err

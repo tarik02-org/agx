@@ -25,7 +25,11 @@ function target(server) {
   for (const name of environment[server] ?? []) {
     if (process.env[name] !== undefined) environmentInputs[name] = process.env[name];
   }
-  return { url: daemon.url, token: daemon.token, scope: { directory: process.cwd(), all, environmentInputs } };
+  return {
+    url: daemon.url,
+    token: daemon.token,
+    scope: { directory: process.cwd(), all, environmentInputs },
+  };
 }
 
 export async function call(server, tool, args = {}, options = {}) {
@@ -36,7 +40,12 @@ export async function call(server, tool, args = {}, options = {}) {
     authorization: `Bearer ${token}`,
   };
   if (options.timeoutMs) headers["connect-timeout-ms"] = String(Math.ceil(options.timeoutMs));
-  const body = JSON.stringify({ scope, mcpId: server, tool, argumentsJson: JSON.stringify(args ?? {}) });
+  const body = JSON.stringify({
+    scope,
+    mcpId: server,
+    tool,
+    argumentsJson: JSON.stringify(args ?? {}),
+  });
   let response;
   try {
     response = await fetch(`${url}/agx.v1.RuntimeService/CallTool`, {
@@ -63,7 +72,9 @@ export async function call(server, tool, args = {}, options = {}) {
   return {
     isError: message.isError ?? false,
     content,
-    structuredContent: message.structuredContentJson ? JSON.parse(message.structuredContentJson) : undefined,
+    structuredContent: message.structuredContentJson
+      ? JSON.parse(message.structuredContentJson)
+      : undefined,
     text: content
       .filter((item) => item.type === "text")
       .map((item) => item.text)

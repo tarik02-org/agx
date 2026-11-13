@@ -190,9 +190,10 @@ func TestBuildClaude(t *testing.T) {
 		`"agx-team-remote":{"headers":{"Authorization":"Bearer ${AGX_MCP_GRANT}"},"type":"http","url":"http://127.0.0.1:9/launch/L/mcp/team%2Fremote"},` +
 		`"agx-up":{"headers":{"Authorization":"Bearer ${AGX_MCP_GRANT}"},"type":"http","url":"http://127.0.0.1:9/launch/L/mcp/up"}}}`
 	checkPlan(t, f, plan, s, []string{
+		// A value of --mcp-config never comes last: the flag takes every value up to the next flag.
+		"--mcp-config", mcp,
 		"--plugin-dir", filepath.Join(dir, "plugin"),
 		"--append-system-prompt-file", filepath.Join(dir, "instructions.md"),
-		"--mcp-config", mcp,
 		"--definition", "-p", "hi",
 	})
 	if _, err := os.Stat(filepath.Join(dir, "plugin", ".claude-plugin", "plugin.json")); err != nil {

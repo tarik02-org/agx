@@ -5,9 +5,10 @@ import (
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/adapters/claude"
 	"github.com/tarik02-org/agx/internal/adapters/codex"
+	"github.com/tarik02-org/agx/internal/adapters/opencode"
 	"github.com/tarik02-org/agx/internal/adapters/pi"
 )
 
 func Registry() adapters.Registry {
-	return adapters.NewRegistry(codex.Adapter{}, claude.Adapter{}, pi.Adapter{})
+	return adapters.NewRegistry(codex.Adapter{}, claude.Adapter{}, pi.Adapter{}, opencode.Adapter{})
 }

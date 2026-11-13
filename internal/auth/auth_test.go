@@ -32,7 +32,9 @@ type provider struct {
 	challenge string
 	refreshes atomic.Int32
 	// refuse makes refreshes fail like a revoked refresh token.
-	refuse   atomic.Bool
+	refuse atomic.Bool
+	// answer, when set, handles a refresh of the given refresh token instead, if it returns true.
+	answer   atomic.Pointer[func(w http.ResponseWriter, token string) bool]
 	failures chan string
 }
 
@@ -74,6 +76,9 @@ func newProvider(t *testing.T) *provider {
 				fail("wrong refresh token")
 			}
 			p.refreshes.Add(1)
+			if answer := p.answer.Load(); answer != nil && (*answer)(w, r.Form.Get("refresh_token")) {
+				return
+			}
 			if p.refuse.Load() {
 				w.WriteHeader(http.StatusBadRequest)
 				_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_grant", "error_description": "revoked"})
@@ -106,12 +111,17 @@ func (p *provider) check(t *testing.T) {
 // newManager serves the manager's OAuth callback.
 func newManager(t *testing.T) (*auth.Manager, string) {
 	t.Helper()
+	return newManagerWith(t, secretstore.Open(t.TempDir()))
+}
+
+func newManagerWith(t *testing.T, store auth.Store) (*auth.Manager, string) {
+	t.Helper()
 	var manager *auth.Manager
 	callback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		manager.Callback(w, r)
 	}))
 	t.Cleanup(callback.Close)
-	manager = auth.New(callback.URL+"/oauth/callback", secretstore.Open(t.TempDir()))
+	manager = auth.New(callback.URL+"/oauth/callback", store)
 	return manager, callback.URL + "/oauth/callback"
 }
 
@@ -566,8 +576,8 @@ func TestRefusedRefresh(t *testing.T) {
 	if status.State != "needs_login" || !strings.Contains(status.Problem, "invalid_grant") {
 		t.Fatalf("status after a refused refresh = %+v", status)
 	}
-	// A refused refresh token is not sent again.
-	if _, err := manager.Value(t.Context(), "fixture", secret, nil, nil, p.URL); err == nil || p.refreshes.Load() != 1 {
+	// The refusal was retried once with the stored credential, and backs off before another.
+	if _, err := manager.Value(t.Context(), "fixture", secret, nil, nil, p.URL); err == nil || p.refreshes.Load() != 2 {
 		t.Fatalf("after %d refreshes: %v", p.refreshes.Load(), err)
 	}
 
@@ -642,8 +652,9 @@ func TestRotate(t *testing.T) {
 	if state := manager.Status("fixture", secret, nil).State; state != "ready" {
 		t.Fatalf("status after a successful rotation = %s", state)
 	}
-	if n := p.refreshes.Load(); n != 3 {
-		t.Fatalf("%d refreshes, want 3", n)
+	// The refused rotation retried with the stored credential once.
+	if n := p.refreshes.Load(); n != 4 {
+		t.Fatalf("%d refreshes, want 4", n)
 	}
 	p.check(t)
 }
@@ -667,6 +678,306 @@ func TestCancelledRefreshKeepsRotatedToken(t *testing.T) {
 	}
 	if n := p.refreshes.Load(); n != 1 {
 		t.Fatalf("%d refreshes, want the cancelled one to have finished and been kept", n)
+	}
+	p.check(t)
+}
+
+// memStore keeps credentials in memory; failSets makes that many writes fail.
+type memStore struct {
+	mu       sync.Mutex
+	values   map[string]string
+	failSets int
+}
+
+func (s *memStore) Get(k string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	value, ok := s.values[k]
+	if !ok {
+		return "", auth.ErrNotStored
+	}
+	return value, nil
+}
+
+func (s *memStore) Set(k, value string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.failSets > 0 {
+		s.failSets--
+		return errors.New("database is locked")
+	}
+	s.values[k] = value
+	return nil
+}
+
+func (s *memStore) Delete(k string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.values, k)
+	return nil
+}
+
+func (s *memStore) Reset() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	clear(s.values)
+	return nil
+}
+
+func (s *memStore) failNext(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failSets = n
+}
+
+func (s *memStore) failuresLeft() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.failSets
+}
+
+// sharedStore is a store other daemons use too; locked runs while this one waits for the lock.
+type sharedStore struct {
+	*memStore
+	locked func()
+}
+
+func (s *sharedStore) Lock(string) (func(), error) {
+	s.locked()
+	return func() {}, nil
+}
+
+// refreshToken returns the refresh token of the one stored credential.
+func (s *memStore) refreshToken(t *testing.T) string {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, value := range s.values {
+		var c struct {
+			Token struct {
+				RefreshToken string `json:"refresh_token"`
+			} `json:"token"`
+		}
+		if err := json.Unmarshal([]byte(value), &c); err != nil {
+			t.Fatal(err)
+		}
+		return c.Token.RefreshToken
+	}
+	t.Fatal("no credential stored")
+	return ""
+}
+
+// replaceRefreshToken stands for another path storing a renewed credential.
+func (s *memStore) replaceRefreshToken(t *testing.T, token string) {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k, value := range s.values {
+		var c map[string]any
+		if err := json.Unmarshal([]byte(value), &c); err != nil {
+			t.Error(err)
+			return
+		}
+		c["token"].(map[string]any)["refresh_token"] = token
+		data, err := json.Marshal(c)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		s.values[k] = string(data)
+	}
+}
+
+// A daemon stopping while a refresh is in flight waits until the rotated token is stored.
+func TestCloseWaitsForRefresh(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	dir := t.TempDir()
+	manager, callback := newManagerWith(t, secretstore.Open(dir))
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	login(t, manager, callback, p, secret)
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	answer := func(http.ResponseWriter, string) bool {
+		close(entered)
+		<-release
+		return false
+	}
+	p.answer.Store(&answer)
+	// The refresh goes on in a handler that shutdown no longer waits for.
+	go func() { _, _ = manager.Value(context.Background(), "fixture", secret, nil, nil, p.URL) }()
+	<-entered
+
+	closed := make(chan error, 1)
+	go func() {
+		closeCtx, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stop()
+		closed <- manager.Close(closeCtx)
+	}()
+	select {
+	case err := <-closed:
+		t.Fatalf("Close returned during a refresh: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	if err := <-closed; err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	_, err := manager.Refresh(t.Context(), "fixture", secret, p.URL, "refreshed")
+	if !errors.Is(err, auth.ErrRefreshFailed) {
+		t.Fatalf("refresh after Close: %v", err)
+	}
+
+	// The next daemon finds the rotated credential.
+	p.answer.Store(nil)
+	next, _ := newManagerWith(t, secretstore.Open(dir))
+	value, err := next.Value(t.Context(), "fixture", secret, nil, nil, p.URL)
+	if err != nil || value != "refreshed" || p.refreshes.Load() != 1 {
+		t.Fatalf("value after restart = %q, %v after %d refreshes", value, err, p.refreshes.Load())
+	}
+	p.check(t)
+}
+
+// A refresh whose answer was lost is retried on the next use, not taken for a lost login.
+func TestLostRefreshAnswerRetried(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	manager, callback := newManagerWith(t, &memStore{values: map[string]string{}})
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	login(t, manager, callback, p, secret)
+
+	answer := func(w http.ResponseWriter, _ string) bool {
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return false
+		}
+		_ = conn.Close()
+		return true
+	}
+	p.answer.Store(&answer)
+	if _, err := manager.Value(
+		t.Context(),
+		"fixture",
+		secret,
+		nil,
+		nil,
+		p.URL,
+	); !errors.Is(
+		err,
+		auth.ErrRefreshFailed,
+	) {
+		t.Fatalf("lost answer: %v", err)
+	}
+	if status := manager.Status("fixture", secret, nil); status.State != "ready" {
+		t.Fatalf("status after a lost answer = %+v", status)
+	}
+	p.answer.Store(nil)
+	value, err := manager.Value(t.Context(), "fixture", secret, nil, nil, p.URL)
+	if err != nil || value != "refreshed" || p.refreshes.Load() != 2 {
+		t.Fatalf("retry = %q, %v after %d refreshes", value, err, p.refreshes.Load())
+	}
+	p.check(t)
+}
+
+// A refused refresh token is retried with the credential read again from the store, which
+// another path may have renewed meanwhile.
+func TestRefusedRefreshRereadsStore(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	store := &memStore{values: map[string]string{}}
+	manager, callback := newManagerWith(t, store)
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	login(t, manager, callback, p, secret)
+
+	answer := func(w http.ResponseWriter, token string) bool {
+		if token != "refresh-fixture" {
+			return false
+		}
+		store.replaceRefreshToken(t, "rotated")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_grant"})
+		return true
+	}
+	p.answer.Store(&answer)
+	value, err := manager.Value(t.Context(), "fixture", secret, nil, nil, p.URL)
+	if err != nil || value != "refreshed" || p.refreshes.Load() != 2 {
+		t.Fatalf("value = %q, %v after %d refreshes", value, err, p.refreshes.Load())
+	}
+	if status := manager.Status("fixture", secret, nil); status.State != "ready" {
+		t.Fatalf("status = %+v", status)
+	}
+	p.check(t)
+}
+
+// A refresh waits for the daemons of other configurations, which share the store, and sends the
+// refresh token one of them stored meanwhile, not the one it rotated away.
+func TestRefreshUsesCredentialAnotherDaemonStored(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	store := &memStore{values: map[string]string{}}
+	manager, callback := newManagerWith(t, &sharedStore{
+		memStore: store,
+		locked:   func() { store.replaceRefreshToken(t, "rotated") },
+	})
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	login(t, manager, callback, p, secret)
+
+	var sent atomic.Pointer[string]
+	answer := func(_ http.ResponseWriter, token string) bool {
+		sent.Store(&token)
+		return false
+	}
+	p.answer.Store(&answer)
+	value, err := manager.Value(t.Context(), "fixture", secret, nil, nil, p.URL)
+	if token := sent.Load(); err != nil || value != "refreshed" || p.refreshes.Load() != 1 || token == nil ||
+		*token != "rotated" {
+		t.Fatalf("value = %q, %v after %d refreshes sending %v", value, err, p.refreshes.Load(), token)
+	}
+}
+
+// A refreshed credential the store does not take stays in use and is written again.
+func TestRefreshedCredentialStoredLater(t *testing.T) {
+	keyring.MockInit()
+	p := newProvider(t)
+	store := &memStore{values: map[string]string{}}
+	manager, callback := newManagerWith(t, store)
+	secret := config.Secret{Kind: "oauth", Issuer: p.URL, ClientID: "public-fixture"}
+	login(t, manager, callback, p, secret)
+
+	store.failNext(100)
+	value, err := manager.Value(t.Context(), "fixture", secret, nil, nil, p.URL)
+	if err != nil || value != "refreshed" {
+		t.Fatalf("value with a failing store = %q, %v", value, err)
+	}
+	if token := store.refreshToken(t); token != "refresh-fixture" {
+		t.Fatalf("stored refresh token changed to %q", token)
+	}
+	// The next use writes it again and keeps using it without refreshing.
+	value, err = manager.Value(t.Context(), "fixture", secret, nil, nil, p.URL)
+	if err != nil || value != "refreshed" || p.refreshes.Load() != 1 {
+		t.Fatalf("value = %q, %v after %d refreshes", value, err, p.refreshes.Load())
+	}
+	// Further uses leave a store that keeps failing alone for a while: every request reads it.
+	left := store.failuresLeft()
+	if _, err = manager.Value(
+		t.Context(),
+		"fixture",
+		secret,
+		nil,
+		nil,
+		p.URL,
+	); err != nil ||
+		store.failuresLeft() != left {
+		t.Fatalf("another use wrote again: %v, %d of %d failures left", err, store.failuresLeft(), left)
+	}
+	store.failNext(0)
+	if err := manager.Close(t.Context()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if token := store.refreshToken(t); token != "rotated" {
+		t.Fatalf("stored refresh token after Close = %q", token)
 	}
 	p.check(t)
 }

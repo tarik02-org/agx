@@ -1,7 +1,9 @@
 package daemon
 
 import (
+	"errors"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -63,6 +65,79 @@ func TestResolvePassthroughUsesDaemonCredentialsAndCallerEnvironment(t *testing.
 		err,
 	) != connect.CodeInvalidArgument {
 		t.Fatalf("managed invocation = %v", err)
+	}
+}
+
+func TestResolveClientCommandUsesNamedHarnessConfiguration(t *testing.T) {
+	keyring.MockInit()
+	s, _ := editorServer(t, `secrets:
+  token: {kind: keychain}
+harnesses:
+  opencode-work:
+    base: opencode
+    args:
+      - {values: [new-option], modes: [interactive]}
+      - {values: [resume-option], modes: [resume]}
+      - {values: [probe-option], modes: [passthrough]}
+    environment:
+      TOKEN: !secret token
+      CALLER: !env CALLER
+      LITERAL: configured
+`)
+	s.adapters = builtin.Registry()
+	s.builtins = s.adapters.Builtins(nil)
+	s.manager = auth.New("", secretstore.Open(s.paths.State))
+	if err := s.manager.Set("token", config.Secret{Kind: "keychain"}, []byte("stored-token")); err != nil {
+		t.Fatal(err)
+	}
+	request := &v1.ResolveClientCommandRequest{
+		Harness:           "opencode-work",
+		EnvironmentInputs: map[string]string{"CALLER": "caller-value"},
+	}
+	for _, tc := range []struct {
+		native []string
+		want   string
+	}{
+		{nil, "new-option"},
+		{[]string{"--session", "existing"}, "resume-option"},
+		{[]string{"--help"}, "probe-option"},
+	} {
+		request.NativeArguments = tc.native
+		result, err := s.ResolveClientCommand(t.Context(), connect.NewRequest(request))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(result.Msg.Arguments, []string{tc.want}) ||
+			result.Msg.Environment["TOKEN"] != "stored-token" ||
+			result.Msg.Environment["CALLER"] != "caller-value" ||
+			result.Msg.Environment["LITERAL"] != "configured" {
+			t.Fatalf("client harness configuration not applied: %v", result.Msg)
+		}
+	}
+	request.EnvironmentInputs["UNDECLARED"] = "not-allowed"
+	if _, err := s.ResolveClientCommand(
+		t.Context(),
+		connect.NewRequest(request),
+	); connect.CodeOf(
+		err,
+	) != connect.CodeInvalidArgument {
+		t.Fatalf("undeclared input accepted: %v", err)
+	}
+	delete(request.EnvironmentInputs, "UNDECLARED")
+	delete(request.EnvironmentInputs, "CALLER")
+	_, err := s.ResolveClientCommand(t.Context(), connect.NewRequest(request))
+	var sourceError *config.SourceError
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !errors.As(err, &sourceError) {
+		t.Fatalf("resolution failure lost its code or cause: %v", err)
+	}
+	request.Harness = "claude"
+	if _, err := s.ResolveClientCommand(
+		t.Context(),
+		connect.NewRequest(request),
+	); connect.CodeOf(
+		err,
+	) != connect.CodeInvalidArgument {
+		t.Fatalf("managed process accepted as a native client: %v", err)
 	}
 }
 

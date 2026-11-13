@@ -187,7 +187,6 @@ func (s *Server) sessionContext(l *launch) (any, error) {
 		"directory": l.view.Directory, "harness": l.view.Harness, "mode": l.view.Mode,
 		"configuration": c.Root, "revision": c.Local.Revision, "overlays": c.Files,
 		"selected": l.snapshot.Resources, "temporary_mcp": names(l.temporary),
-		"unavailable": l.unavailable,
 	}, nil
 }
 

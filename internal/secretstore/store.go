@@ -5,12 +5,16 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 
+	"github.com/gofrs/flock"
 	"github.com/zalando/go-keyring"
 
 	"github.com/tarik02-org/agx/internal/auth"
@@ -70,6 +74,17 @@ func (s *Store) Delete(k string) error {
 	return s.locked(func(tx *sql.Tx) error {
 		return statedb.New(tx).DeleteSecret(context.Background(), k)
 	})
+}
+
+// Lock keeps other processes sharing the store off the credential under k, such as the daemons
+// of other configurations, until the returned function runs.
+func (s *Store) Lock(k string) (func(), error) {
+	name := sha256.Sum256([]byte(k))
+	lock := flock.New(filepath.Join(filepath.Dir(s.path), "credential-"+hex.EncodeToString(name[:8])+".lock"))
+	if err := lock.Lock(); err != nil {
+		return nil, err
+	}
+	return func() { _ = lock.Unlock() }, nil
 }
 
 // Reset removes credentials without touching configuration or other durable state.

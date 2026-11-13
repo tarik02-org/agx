@@ -21,14 +21,14 @@ jobs:
       group: nightly
       cancel-in-progress: false
     env:
-      GH_TOKEN: ${{ github.token }}
       SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
-      - uses: actions/setup-go@v7
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
       - name: Compute the version
@@ -47,13 +47,69 @@ jobs:
       - name: Forget nightly tags
         # GoReleaser would take one as the current or previous tag.
         run: git tag --list 'nightly*' | xargs --no-run-if-empty git tag --delete
-      - uses: goreleaser/goreleaser-action@v7
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
           version: "~> v2"
           args: release --snapshot --clean
       - name: Publish
+        # Only this step publishes; the build before it runs without the token.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           notes="Built from $SHA on master. Version $NIGHTLY_VERSION; not a stable release."
           # With assets, gh creates a draft, uploads them, then publishes it.
           gh release create "$NIGHTLY_TAG" dist/*.tar.gz dist/*.zip dist/checksums.txt \
             --prerelease --target "$SHA" --title "Nightly $NIGHTLY_VERSION" --notes "$notes"
+
+  opencode-plugin:
+    needs: nightly
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: opencode-plugin
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vp run agx-opencode#bundle
+      - name: Publish the prebuilt Git package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          current_head=$(gh api "repos/$GITHUB_REPOSITORY/commits/master" --jq .sha)
+          if [ "$SOURCE_SHA" != "$current_head" ]; then
+            exit 0
+          fi
+
+          package_dir=$(mktemp -d "$RUNNER_TEMP/agx-opencode.XXXXXX")
+          git -C "$package_dir" init --initial-branch=opencode-plugin
+          git -C "$package_dir" remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          git -C "$package_dir" config credential.helper '!gh auth git-credential'
+          remote_head=$(git -C "$package_dir" ls-remote origin refs/heads/opencode-plugin)
+          if [ -n "$remote_head" ]; then
+            git -C "$package_dir" fetch --depth=1 origin opencode-plugin
+            git -C "$package_dir" reset --hard FETCH_HEAD
+          fi
+
+          git -C "$package_dir" rm -r --ignore-unmatch .
+          cp -R "$GITHUB_WORKSPACE/packages/opencode/dist/git/." "$package_dir/"
+          git -C "$package_dir" add .
+          if git -C "$package_dir" diff --cached --quiet; then
+            exit 0
+          fi
+          git -C "$package_dir" \
+            -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            -c commit.gpgSign=false \
+            commit -m "build: opencode plugin from $SOURCE_SHA"
+          git -C "$package_dir" push origin HEAD:refs/heads/opencode-plugin

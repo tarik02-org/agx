@@ -93,6 +93,62 @@ func TestAttachable(t *testing.T) {
 	}
 }
 
+func TestRevokingExpiredLaunchRefusesAttaching(t *testing.T) {
+	s := stateServer(t)
+	expired := func(id, parent string) {
+		s.launches[id] = &launch{
+			view:      &v1.Launch{Id: id, ParentLaunchId: parent, State: v1.Launch_STATE_EXPIRED},
+			grant:     verifier("grant"),
+			lifecycle: verifier("lifecycle"),
+		}
+	}
+	expired("process", "")
+	expired("thread", "process")
+	if _, err := s.RevokeLaunch(
+		t.Context(),
+		connect.NewRequest(&v1.RevokeLaunchRequest{LaunchId: "process"}),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var e *connect.Error
+	if _, err := s.attachable("process", "grant", "lifecycle"); !errors.As(err, &e) ||
+		e.Meta().Get(control.EndedHeader) != "revoked" {
+		t.Errorf("attaching the revoked launch: %v", err)
+	}
+	if _, ok := s.revoked["thread"]; !ok || s.launches["thread"].view.State != v1.Launch_STATE_REVOKED {
+		t.Errorf("thread launch = %v, revoked %v", s.launches["thread"].view.State, ok)
+	}
+	state, err := loadState(s.paths, time.Now())
+	if _, ok := state.Revoked["process"]; err != nil || !ok {
+		t.Errorf("saved state = %+v, %v", state, err)
+	}
+}
+
+func TestExpiredLaunchKeepsItsFilesUntilRevoked(t *testing.T) {
+	s := stateServer(t)
+	s.clients = newClientPool()
+	dir := filepath.Join(s.paths.Cache, "launches", "held")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	l := &launch{view: &v1.Launch{Id: "held", State: v1.Launch_STATE_RUNNING}, cancel: func() {}}
+	s.launches["held"] = l
+	s.mu.Lock()
+	s.end(l, v1.Launch_STATE_EXPIRED)
+	s.mu.Unlock()
+	// The wrapper may attach the launch again, whose harness still reads these files.
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("expiry removed the launch files: %v", err)
+	}
+	s.mu.Lock()
+	s.end(l, v1.Launch_STATE_REVOKED)
+	s.mu.Unlock()
+	eventually(t, "launch files removed", func() bool {
+		_, err := os.Stat(dir)
+		return errors.Is(err, fs.ErrNotExist)
+	})
+}
+
 func TestSweepKeepsHeldAndNewLaunchFiles(t *testing.T) {
 	s := stateServer(t)
 	s.launches["held"] = &launch{view: &v1.Launch{Id: "held"}}

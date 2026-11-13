@@ -194,6 +194,10 @@ func readValueFile(path string) (string, error) {
 
 // readLimited reads a regular file of at most maxValueSize bytes.
 func readLimited(path string) ([]byte, error) {
+	// Before opening: a named pipe would block until something wrote to it.
+	if info, err := os.Stat(path); err == nil && !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file", path)
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err

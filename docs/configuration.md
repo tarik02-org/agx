@@ -1,6 +1,6 @@
 # Configuration
 
-agx combines local configuration managed by its CLI and web UI with declarative
+agx combines local configuration managed by its commands with declarative
 YAML overlays. Local definitions and scope rules live in `state.db`, keyed by
 the canonical root configuration path. The root YAML file lists overlays and
 holds daemon settings; it may be absent.
@@ -12,20 +12,20 @@ to edit YAML-owned or package-owned definitions, naming their source.
 
 ## Where files live
 
-| What | Default location | Override |
-| --- | --- | --- |
-| Configuration: the root file, with fragments beside it in `agx.d/` | `agx/agx.yaml` in your config directory | `AGX_CONFIG` or `--config` |
-| Cache: installed packages, generated files, daemon log | `agx` in your cache directory | `AGX_CACHE` or `--cache` |
-| State: local configuration, launch records, encrypted secrets (`state.db`) | `agx` in your state directory | `AGX_STATE` |
+| What                                                                       | Default location                        | Override                   |
+| -------------------------------------------------------------------------- | --------------------------------------- | -------------------------- |
+| Configuration: the root file, with fragments beside it in `agx.d/`         | `agx/agx.yaml` in your config directory | `AGX_CONFIG` or `--config` |
+| Cache: installed packages, generated files, daemon log                     | `agx` in your cache directory           | `AGX_CACHE` or `--cache`   |
+| State: local configuration, launch records, encrypted secrets (`state.db`) | `agx` in your state directory           | `AGX_STATE`                |
 
 The base directories follow the XDG variables (`XDG_CONFIG_HOME`,
 `XDG_CACHE_HOME`, `XDG_STATE_HOME`) and otherwise default to:
 
-| | Linux | macOS | Windows |
-| --- | --- | --- | --- |
-| Config | `~/.config` | `~/Library/Application Support` | `%LOCALAPPDATA%` |
-| Cache | `~/.cache` | `~/Library/Caches` | `%LOCALAPPDATA%\cache` |
-| State | `~/.local/state` | `~/Library/Application Support` | `%LOCALAPPDATA%` |
+|        | Linux            | macOS                           | Windows                |
+| ------ | ---------------- | ------------------------------- | ---------------------- |
+| Config | `~/.config`      | `~/Library/Application Support` | `%LOCALAPPDATA%`       |
+| Cache  | `~/.cache`       | `~/Library/Caches`              | `%LOCALAPPDATA%\cache` |
+| State  | `~/.local/state` | `~/Library/Application Support` | `%LOCALAPPDATA%`       |
 
 `AGX_CONFIG`, `AGX_CACHE`, and `AGX_STATE` must be absolute paths. When you set
 only `AGX_CACHE` (or `--cache`), state moves to `<cache>/state`, so one variable
@@ -60,13 +60,13 @@ mcp:
     url: https://docs.example.com/mcp
 
 scopes:
-  - add:                        # no directory: everywhere
+  - add: # no directory: everywhere
       instructions: [pnpm]
   - directory: ~/work
     add:
       mcp: [docs]
       skills:
-        - ~/skills/review       # a skill folder, defined right here
+        - ~/skills/review # a skill folder, defined right here
   - directory: ~/work/legacy
     remove:
       instructions: [pnpm]
@@ -134,14 +134,14 @@ three forms:
 ```yaml
 add:
   skills:
-    - review                          # an ID defined elsewhere
-    - ./skills/deploy                 # a path: ID is the folder name
-    - id: release-notes               # an inline definition
+    - review # an ID defined elsewhere
+    - ./skills/deploy # a path: ID is the folder name
+    - id: release-notes # an inline definition
       description: Write release notes for the current tag.
       content: |
         Summarize the commits since the previous tag.
   instructions:
-    - ./AGENTS.md                     # a path: ID is the file stem, "AGENTS"
+    - ./AGENTS.md # a path: ID is the file stem, "AGENTS"
     - id: tone
       text: Be brief.
   mcp:
@@ -186,8 +186,8 @@ symlink:
 
 ```yaml
 fragments:
-  - personal.yaml           # must exist
-  - agx.d/*.yaml            # every match, in name order; may match nothing
+  - personal.yaml # must exist
+  - agx.d/*.yaml # every match, in name order; may match nothing
 ```
 
 An entry containing `*`, `?`, or `[` is a glob; any other entry is a path.
@@ -251,20 +251,19 @@ a definition.
 
 Options shared by the commands that write:
 
-| Option | Meaning |
-| --- | --- |
-| `--scope user` | everywhere (the default) |
-| `--scope here` | the current directory and below |
-| `--scope <dir>` | that directory and below; it must exist, except for `unuse` |
-| `--harness <name>` | only for launches of that harness; repeatable |
-| `--define-only` | define without enabling (`add` commands) |
-| `-y`, `--yes` | write without asking |
+| Option             | Meaning                                                     |
+| ------------------ | ----------------------------------------------------------- |
+| `--scope user`     | everywhere (the default)                                    |
+| `--scope here`     | the current directory and below                             |
+| `--scope <dir>`    | that directory and below; it must exist, except for `unuse` |
+| `--harness <name>` | only for launches of that harness; repeatable               |
+| `--define-only`    | define without enabling (`add` commands)                    |
 
-On a terminal, missing arguments become prompts and commands ask before saving.
-Without a terminal, commands save without asking and a missing argument is an
-error. Every change is validated against the combined configuration before its
-local definitions, rules, and package locks are committed in one transaction.
-Concurrent edits fail with a conflict and can be retried.
+On a terminal, missing arguments become prompts; without one, a missing argument
+is an error. Commands save without asking. Every change is validated against the
+combined configuration before its local definitions, rules, and package locks
+are committed in one transaction. Concurrent edits fail with a conflict and can
+be retried.
 
 - A same-directory YAML rule that opposes `use` or `unuse` is reported as
   read-only, so a command cannot silently save a change that YAML defeats.
@@ -274,9 +273,9 @@ Concurrent edits fail with a conflict and can be retried.
   stay read-only; a reference in an overlay may require changing that overlay.
 - `agx skill remove <package-id>` removes a local package, its locks, and the
   local rules enabling its skills. Other references need `--force`.
-- Local resource files remain ordinary files. The web UI can edit configured
-  skill/instructions contents, including files named by YAML; package/cache
-  contents and configuration files cannot be edited this way.
+- Local resource files remain ordinary files. The management API can write
+  configured skill/instructions contents, including files named by YAML;
+  package/cache contents and configuration files cannot be written this way.
 
 `agx config export` prints local definitions and rules as YAML, including
 injection tags. Save it outside the root's overlay globs until you intend to
@@ -284,7 +283,7 @@ make it authoritative. Local relative paths are based at the canonical root's
 directory; exported relative paths need that same base. Package locks of local
 sources live in the database; run `agx install` after promoting them to YAML to
 create portable lockfiles. Bundles and other declarations not covered by CLI
-add commands can be supplied by the web UI or a YAML overlay.
+add commands can be supplied by a YAML overlay.
 
 ## Editor support
 
@@ -315,9 +314,10 @@ These go in the root file:
 
 ```yaml
 daemon:
-  autostart: true               # start the daemon when a command needs it
-  lease_seconds: 60             # how long a launch survives without its wrapper
-  renew_seconds: 20             # how often wrappers renew (less than the lease)
+  managed: false # true when an external manager exclusively owns daemon startup/recovery
+  autostart: true # start the daemon when a command needs it
+  lease_seconds: 60 # how long a launch survives without its wrapper
+  renew_seconds: 20 # how often wrappers renew (less than the lease)
 ```
 
 All of these are optional. See [The daemon](daemon.md).

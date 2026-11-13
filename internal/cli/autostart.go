@@ -33,6 +33,9 @@ const (
 // autostart reports whether commands may start the daemon: AGX_NO_AUTOSTART overrides
 // daemon.autostart, which defaults to true.
 func autostart(c *config.Config) bool {
+	if c != nil && c.Daemon.Managed {
+		return false
+	}
 	if value := os.Getenv("AGX_NO_AUTOSTART"); value != "" && value != "0" {
 		return false
 	}
@@ -74,7 +77,7 @@ func (s daemonState) action() daemonAction {
 
 // probeDaemon reads discovery and asks the daemon it names how it is.
 func probeDaemon(ctx context.Context, paths platform.Paths) (control.Discovery, *client, daemonState) {
-	d, err := control.ReadDiscovery(paths)
+	d, err := liveDiscovery(paths)
 	state := daemonState{
 		discovery: err,
 		newer:     newerVersion(control.Version, d.Version),
@@ -99,7 +102,8 @@ func probeDaemon(ctx context.Context, paths platform.Paths) (control.Discovery, 
 // exited.
 func replaceRunning(ctx context.Context, paths platform.Paths, c *client) error {
 	ui.Diagnose(ui.Info, "restarting daemon %s, which runs an older agx", c.discovery.Version)
-	if _, err := stopDaemon(ctx, c, false, 0); err != nil {
+	// Another command replacing it at once may have stopped it already.
+	if _, err := stopDaemon(ctx, c, false, 0); err != nil && !daemonGone(err) {
 		return fmt.Errorf("cannot replace daemon %s: %w", c.discovery.Version, err)
 	}
 	return awaitExit(ctx, paths, exitTimeout(0))
@@ -112,6 +116,9 @@ func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*cli
 		return newClient(paths)
 	}
 	_, current, state := probeDaemon(ctx, paths)
+	if current != nil && current.discovery.Managed {
+		return current, nil
+	}
 	switch state.action() {
 	case useDaemon:
 		return current, nil
@@ -156,6 +163,13 @@ const maxDaemonLog = 1 << 20
 // Concurrent starters each spawn one; the startup lock lets one serve, and the others connect to
 // it.
 func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
+	managed, err := externallyManaged(paths)
+	if err != nil {
+		return "", err
+	}
+	if managed {
+		return "", errManagedDaemon
+	}
 	executable, err := daemonExecutable()
 	if err != nil {
 		return "", err
@@ -296,7 +310,8 @@ func awaitExit(ctx context.Context, paths platform.Paths, timeout time.Duration)
 // lockHeld reports whether a daemon holds the startup lock, running or still starting.
 func lockHeld(paths platform.Paths) (bool, error) {
 	lock := flock.New(filepath.Join(paths.Runtime, "daemon.lock"))
-	ok, err := lock.TryLock()
+	// Shared, so that commands asking at once do not take each other for the daemon.
+	ok, err := lock.TryRLock()
 	if err != nil {
 		return false, err
 	}

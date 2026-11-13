@@ -12,7 +12,7 @@ Package manifests cannot define harnesses.
 harnesses:
   codex:
     executable: /opt/codex
-    add: {skills: [workflow]}
+    add: { skills: [workflow] }
   codex-cpa:
     base: codex
     args:
@@ -21,18 +21,18 @@ harnesses:
         modes: [interactive, exec, resume]
     environment:
       CPA_KEY: !secret cpa-key
-    add: {mcp: [github]}
-    exclude: {skills: [workflow]}
+    add: { mcp: [github] }
+    exclude: { skills: [workflow] }
 ```
 
 Native CLIs accept different flags per invocation, so arguments are grouped and
 scoped to modes. Each adapter classifies an invocation into one fixed mode:
 
-| Harness | Modes |
-| --- | --- |
-| codex | `interactive`, `exec`, `resume`, `app-server`, `passthrough` |
-| claude | `interactive`, `print`, `resume`, `passthrough` |
-| pi | `interactive`, `print`, `rpc`, `passthrough` |
+| Harness | Modes                                                        |
+| ------- | ------------------------------------------------------------ |
+| codex   | `interactive`, `exec`, `resume`, `app-server`, `passthrough` |
+| claude  | `interactive`, `print`, `resume`, `passthrough`              |
+| pi      | `interactive`, `print`, `rpc`, `passthrough`                 |
 
 A group without `modes` applies to every mode except `passthrough`. Groups are
 inserted before the user's native arguments in order. `environment` applies in

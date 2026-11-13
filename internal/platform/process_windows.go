@@ -197,6 +197,9 @@ func SurviveBrokenPipes() {}
 
 func Interrupts() []os.Signal { return []os.Signal{os.Interrupt} }
 
+// Forwarded are the signals a wrapper passes on to its harness.
+func Forwarded() []os.Signal { return Interrupts() }
+
 // StopSignals are the signals that stop the daemon gracefully: Ctrl-C and Ctrl-Break, and the
 // console close, logoff, and shutdown events, which Go delivers as SIGTERM.
 func StopSignals(attached bool) []os.Signal { return []os.Signal{os.Interrupt, syscall.SIGTERM} }

@@ -33,11 +33,11 @@ type Session struct {
 }
 ```
 
-| Harness | Store | Title | Resume |
-| --- | --- | --- | --- |
-| codex | `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` | `thread_name` in `session_index.jsonl` | `resume <id>` |
-| claude | `$CLAUDE_CONFIG_DIR/projects/<escaped>/<id>.jsonl` | `custom-title`, else `ai-title`, else `summary` | `--resume <id>` |
-| pi | `$PI_CODING_AGENT_SESSION_DIR`, the settings' `sessionDir`, else `$PI_CODING_AGENT_DIR/sessions` | `session_info` name | `--session <id>` |
+| Harness | Store                                                                                            | Title                                           | Resume           |
+| ------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------- | ---------------- |
+| codex   | `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl`                                                | `thread_name` in `session_index.jsonl`          | `resume <id>`    |
+| claude  | `$CLAUDE_CONFIG_DIR/projects/<escaped>/<id>.jsonl`                                               | `custom-title`, else `ai-title`, else `summary` | `--resume <id>`  |
+| pi      | `$PI_CODING_AGENT_SESSION_DIR`, the settings' `sessionDir`, else `$PI_CODING_AGENT_DIR/sessions` | `session_info` name                             | `--session <id>` |
 
 Each falls back to its default home (`~/.codex`, `~/.claude`, `~/.pi/agent`).
 The directory comes from the session's own metadata (Codex `session_meta`,

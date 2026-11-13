@@ -45,6 +45,7 @@ func defaultCache() string { return filepath.Join(xdg.CacheHome, "agx") }
 // default keeps its state beside it, so a run isolated by AGX_CACHE or --cache stays isolated.
 // It also spells Config as the filesystem does, so that a daemon and its callers, comparing
 // configuration roots, do not tell apart spellings of one file (case, or a Windows short name).
+// A root that is a link keeps its own path: see CanonicalFile.
 func (p *Paths) Derive() error {
 	cache, err := filepath.Abs(p.Cache)
 	if err != nil {
@@ -53,7 +54,7 @@ func (p *Paths) Derive() error {
 	p.Cache = cache
 	// Canonicalization walks the filesystem; repeated derivation of one root need not.
 	if p.Config != p.canonicalConfig {
-		p.Config, err = Canonical(p.Config)
+		p.Config, err = CanonicalFile(p.Config)
 		if err != nil {
 			return err
 		}
@@ -102,6 +103,21 @@ func Canonical(path string) (string, error) {
 		suffix = append(suffix, filepath.Base(abs))
 		abs = parent
 	}
+}
+
+// CanonicalFile spells a file's directory canonically and keeps the file's own name, without
+// following a link the file is. A configuration root linked from elsewhere, such as the Nix
+// store, stays one root whatever it points at, with its fragments beside the link.
+func CanonicalFile(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	dir, err := Canonical(filepath.Dir(abs))
+	if err != nil {
+		return "", err
+	}
+	return ActualCase(filepath.Join(dir, filepath.Base(abs))), nil
 }
 
 // PathCandidates yields PATH positions and executable candidates in search order.

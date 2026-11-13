@@ -25,7 +25,7 @@ scopes:
 # says otherwise. Other credentials are secrets injected at launch with !secret;
 # !env and !file also work.
 # secrets:
-#   docs-key: {kind: keychain} # agx secret set docs-key --stdin
+#   docs-key: {kind: keychain} # agx secret set docs-key
 # mcp:
 #   tracker:
 #     url: https://tracker.example.com/mcp
@@ -34,7 +34,3 @@ scopes:
 #     auth: none
 #     headers:
 #       X-Api-Key: !secret docs-key
-
-daemon:
-  lease_seconds: 60
-  renew_seconds: 20

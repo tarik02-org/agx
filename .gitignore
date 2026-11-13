@@ -5,3 +5,4 @@ result
 dist/
 completions/
 manpages/
+node_modules/

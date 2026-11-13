@@ -55,7 +55,7 @@ func run(osArgs []string, stdout io.Writer) int {
 	color := ui.ColorAuto
 	root.PersistentFlags().Var(&color, "color", "style output: auto (terminals without NO_COLOR), always, never")
 	root.PersistentFlags().
-		BoolVar(&scripting.enabled, "json", false, "versioned JSON output; never prompts (implies --yes)")
+		BoolVar(&scripting.enabled, "json", false, "versioned JSON output; never prompts")
 	root.AddGroup(
 		&cobra.Group{ID: "harness", Title: "Harnesses"},
 		&cobra.Group{ID: "config", Title: "Configuration"},
@@ -83,6 +83,10 @@ func run(osArgs []string, stdout io.Writer) int {
 			RunE: func(cmd *cobra.Command, args []string) error {
 				if len(args) == 0 {
 					return fmt.Errorf("harness required: %s", strings.Join(a.harnesses.config.HarnessNames(), ", "))
+				}
+				// Flags are the harness's, but before its name there is none to pass them to.
+				if args[0] == "-h" || args[0] == "--help" {
+					return cmd.Help()
 				}
 				name := args[0]
 				args = args[1:]
@@ -123,15 +127,16 @@ func run(osArgs []string, stdout io.Writer) int {
 			Short: "Print local configuration as a YAML overlay",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
-				c, err := a.config()
+				// Not the loaded configuration: one that does not load is the one to export and fix.
+				local, err := a.localConfig()
 				if err != nil {
 					return err
 				}
-				data, err := c.Local.Export()
+				data, err := local.Export()
 				if err != nil {
 					return err
 				}
-				return emit(c.Local.Document, func() error { _, err := cmd.OutOrStdout().Write(data); return err })
+				return emit(local.Document, func() error { _, err := cmd.OutOrStdout().Write(data); return err })
 			},
 		},
 	)
@@ -351,7 +356,7 @@ func run(osArgs []string, stdout io.Writer) int {
 	}
 	versionOnly := len(args) == 1 && (args[0] == "--version" || args[0] == "-v")
 	if !completing && (versionOnly || len(args) == 0 || len(args) > 0 && args[0] == "daemon") {
-		a.harnesses = harnessConfig{path: a.paths.Config, config: config.Bare(a.builtins)}
+		a.harnesses = harnessConfig{path: a.paths.Config, config: config.Bare(a.builtins), bare: true}
 	} else {
 		a.harnesses = a.fragments()
 	}
@@ -575,10 +580,25 @@ func daemonCommand(a *app) *cobra.Command {
 		Short: "Start the daemon in the background",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			managed, err := externallyManaged(a.paths)
+			if err != nil {
+				return err
+			}
+			if managed {
+				_, current, state := probeDaemon(cmd.Context(), a.paths)
+				if !state.reachable {
+					return errManagedDaemon
+				}
+				return printDaemonStarted(
+					false,
+					filepath.Join(a.paths.Runtime, "daemon.log"),
+					current.discovery.Version,
+				)
+			}
 			_, c, state := probeDaemon(cmd.Context(), a.paths)
 			switch state.action() {
 			case useDaemon:
-				return printDaemonStarted(false, filepath.Join(a.paths.Runtime, "daemon.log"))
+				return printDaemonStarted(false, filepath.Join(a.paths.Runtime, "daemon.log"), c.discovery.Version)
 			case replaceDaemon:
 				if err := replaceRunning(cmd.Context(), a.paths, c); err != nil {
 					return err
@@ -589,17 +609,38 @@ func daemonCommand(a *app) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printDaemonStarted(true, logPath)
+			return printDaemonStarted(true, logPath, control.Version)
 		},
 	}
 	command.AddCommand(start)
-	command.AddCommand(&cobra.Command{
+	recoverInstance := ""
+	connectCommand := &cobra.Command{
 		Use:   "connect",
 		Short: "Locate the authenticated daemon for a configuration consumer",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if _, err := a.client(cmd.Context()); err != nil {
-				return err
+			if recoverInstance == "" {
+				if _, err := a.client(cmd.Context()); err != nil {
+					return err
+				}
+			} else {
+				if crashed(a.paths, recoverInstance) {
+					managed, err := externallyManaged(a.paths)
+					if err != nil {
+						return err
+					}
+					if managed {
+						_, err = awaitManaged(cmd.Context(), a.paths, recoverInstance, restartWait)
+					} else {
+						_, err = startDaemon(cmd.Context(), a.paths)
+					}
+					if err != nil {
+						return err
+					}
+				}
+				if _, err := control.ReadDiscovery(a.paths); err != nil {
+					return err
+				}
 			}
 			path, err := filepath.Abs(filepath.Join(a.paths.Runtime, "daemon.json"))
 			if err != nil {
@@ -610,7 +651,10 @@ func daemonCommand(a *app) *cobra.Command {
 			}{path}
 			return emit(document, func() error { _, err := fmt.Fprintln(ui.Stdout, path); return err })
 		},
-	})
+	}
+	connectCommand.Flags().
+		StringVar(&recoverInstance, "recover-instance", "", "Replace this daemon instance only if it crashed")
+	command.AddCommand(connectCommand)
 	status := &cobra.Command{
 		Use:   "status",
 		Short: "Show daemon version and launch count",
@@ -668,7 +712,7 @@ func daemonCommand(a *app) *cobra.Command {
 	}
 	restart := &cobra.Command{
 		Use:   "restart",
-		Short: "Stop the daemon and start one of this build",
+		Short: "Restart the daemon, through its service manager when externally managed",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			result, err := restartDaemon(cmd.Context(), a.paths, force, grace)

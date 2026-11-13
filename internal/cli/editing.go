@@ -35,7 +35,6 @@ type editFlags struct {
 	scope      string
 	harnesses  []string
 	defineOnly bool
-	yes        bool
 }
 
 func (f *editFlags) register(cmd *cobra.Command, defines bool) {
@@ -45,11 +44,6 @@ func (f *editFlags) register(cmd *cobra.Command, defines bool) {
 	if defines {
 		cmd.Flags().BoolVar(&f.defineOnly, "define-only", false, "define without enabling")
 	}
-	f.registerYes(cmd)
-}
-
-func (f *editFlags) registerYes(cmd *cobra.Command) {
-	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "write without confirming (implied without a terminal)")
 }
 
 // scope is where an edit enables or disables a resource: a directory, or everywhere.
@@ -97,14 +91,12 @@ func (f *editFlags) enableTarget() (scope, error) {
 	return target, nil
 }
 
-// session gathers one command's edits across fragments and lockfiles, then validates the result,
-// previews it as a diff, and writes it.
+// session gathers one command's edits and sends them to the daemon, which validates and saves them.
 type session struct {
 	*configedit.Session
 	ctx         context.Context
 	client      *client
 	changes     []*v1.ConfigChange
-	yes         bool
 	interactive bool
 	// result records what the command did, for its JSON document.
 	result edits
@@ -129,10 +121,21 @@ type definitionID struct {
 	ID   string      `json:"id"`
 }
 
-func (a *app) newSession(ctx context.Context, yes bool) (*session, error) {
+func (a *app) newSession(ctx context.Context) (*session, error) {
 	c, err := a.config()
 	if err != nil {
-		return nil, fmt.Errorf("configuration is invalid; fix it before editing: %w", err)
+		// Local definitions exist only in the daemon's database, so only an edit can repair them;
+		// the daemon saves one that changes what is wrong.
+		invalid := err
+		local, err := a.localConfig()
+		if err != nil {
+			return nil, err
+		}
+		c, err = config.Load(a.paths.Config, config.Options{Builtins: a.builtins, Local: local})
+		if err != nil {
+			return nil, fmt.Errorf("configuration is invalid; fix it before editing: %w", invalid)
+		}
+		ui.Diagnose(ui.Warn, "configuration is invalid; only an edit that repairs this is saved: %v", invalid)
 	}
 	client, err := a.client(ctx)
 	if err != nil {
@@ -145,14 +148,13 @@ func (a *app) newSession(ctx context.Context, yes bool) (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	// JSON mode implies --yes and never prompts.
-	tty := interactive() && !scripting.enabled
+
+	// JSON mode never prompts.
 	s := &session{
 		Session:     edits,
 		client:      client,
 		ctx:         ctx,
-		yes:         yes || !tty,
-		interactive: tty,
+		interactive: interactive() && !scripting.enabled,
 	}
 	return s, nil
 }
@@ -191,22 +193,11 @@ func (s *session) disable(kind config.Kind, id string, target scope) (bool, erro
 	return changed, err
 }
 
-var errDeclined = errors.New("nothing was written")
-
-// commit validates and saves the local configuration after confirmation.
+// commit has the daemon validate and save the session's changes.
 func (s *session) commit() (bool, error) {
 	if !s.Changed() {
 		hint("Nothing to change.")
 		return false, nil
-	}
-	if !s.yes {
-		ok, err := prompt.Confirm(s.ctx, "Save the configuration change?", true)
-		if err != nil {
-			return false, promptError(err)
-		}
-		if !ok {
-			return false, errDeclined
-		}
 	}
 	response, err := s.client.config.UpdateConfiguration(
 		s.ctx,

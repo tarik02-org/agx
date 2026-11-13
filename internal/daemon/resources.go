@@ -139,21 +139,13 @@ func (s *Server) attachResources(ctx context.Context, msg *v1.AttachLaunchReques
 		return nil, err
 	}
 	l := s.newLaunch(view, launchBasis{config: snapshot.Config, snapshot: snapshot}, msg.Grant, msg.LifecycleToken, nil)
-	if snapshot.ID != view.SnapshotId {
-		l.unavailable = staleSnapshot
-	} else {
-		inputs, err := launchInputs(snapshot, msg.EnvironmentInputs, nil)
-		if err != nil {
-			l.cancel()
-			return nil, err
-		}
-		directory, err := resourceMCPDirectory(snapshot, msg.McpDirectory)
-		if err != nil {
-			l.cancel()
-			return nil, err
-		}
-		l.endpoints, _ = s.endpoints(l.ctx, view.Id, snapshot, inputs, directory)
+	inputs := attachedInputs(snapshot, msg.EnvironmentInputs, nil)
+	directory, err := resourceMCPDirectory(snapshot, msg.McpDirectory)
+	if err != nil {
+		l.cancel()
+		return nil, err
 	}
+	l.endpoints, _ = s.endpoints(l.ctx, view.Id, snapshot, inputs, directory)
 	l.mcpDirectory = msg.McpDirectory
 	if err := s.restoreSession(ctx, l, msg.EnvironmentInputs); err != nil {
 		l.cancel()

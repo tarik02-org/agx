@@ -91,10 +91,11 @@ func (s *Server) callScope(ctx context.Context, authorization string, msg *v1.Mc
 	}
 	scope.inputs = map[string]string{}
 	for name, value := range msg.EnvironmentInputs {
-		if !allowed[name] {
-			return nil, rpcError(connect.CodeInvalidArgument, "undeclared environment input "+name)
+		// A caller also sends what a server outside this scope reads, before it learns from the
+		// refusal of that server that it is outside.
+		if allowed[name] {
+			scope.inputs[name] = value
 		}
-		scope.inputs[name] = value
 	}
 	return scope, nil
 }
@@ -116,12 +117,9 @@ func (s *Server) launchScope(authorization string, management bool, id string) (
 		s.mu.Unlock()
 		return nil, rpcError(connect.CodeUnauthenticated, "invalid or expired launch grant")
 	}
-	endpoints, snapshot, unavailable := maps.Clone(l.endpoints), l.snapshot, l.unavailable
+	endpoints, snapshot := maps.Clone(l.endpoints), l.snapshot
 	temporary := maps.Clone(l.temporary)
 	s.mu.Unlock()
-	if unavailable != "" {
-		return nil, rpcError(connect.CodeFailedPrecondition, unavailable)
-	}
 	scope := &callScope{
 		launch:    l,
 		endpoints: endpoints,
@@ -233,11 +231,18 @@ func (s *Server) withSession(
 			return mcpFailure(ctx, id, definition, c.endpoint, err)
 		}
 		s.clients.discard(c)
-		if ctx.Err() != nil || attempt > 0 {
+		var sent requestSent
+		if ctx.Err() != nil || attempt > 0 || errors.As(err, &sent) {
 			return mcpFailure(ctx, id, definition, c.endpoint, err)
 		}
 	}
 }
+
+// requestSent marks the failure of a request the server may have acted on, which must not be
+// sent again: a tool that creates something would create it twice.
+type requestSent struct{ error }
+
+func (e requestSent) Unwrap() error { return e.error }
 
 // mcpFailure classifies a failed exchange with server id, preferring the endpoint's own
 // diagnosis, which names the cause without values.
@@ -465,6 +470,9 @@ func (s *Server) callTool(
 		}
 		var err error
 		result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: arguments})
+		if err != nil && !serverAnswered(err) {
+			return requestSent{err}
+		}
 		return err
 	})
 	var unknown unknownTool

@@ -81,7 +81,10 @@ func TestHarnessMerge(t *testing.T) {
 		t.Errorf("flat args apply to passthrough: %v", got)
 	}
 
-	if got := c.HarnessNames(); !slices.Equal(got, []string{"claude", "codex", "codex-cpa", "pi", "pi-flat"}) {
+	if got := c.HarnessNames(); !slices.Equal(
+		got,
+		[]string{"claude", "codex", "codex-cpa", "opencode", "pi", "pi-flat"},
+	) {
 		t.Errorf("harness names = %v", got)
 	}
 }

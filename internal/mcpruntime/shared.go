@@ -151,6 +151,10 @@ func (sh *Shared) Processes() []Process {
 // StopProcess stops the shared process with this process ID; its client sessions end. It
 // reports whether one ran.
 func (sh *Shared) StopProcess(pid int) bool {
+	// A server still starting has no process ID yet.
+	if pid <= 0 {
+		return false
+	}
 	taken := sh.take(func(s *sharedServer) bool { return s.pid() == pid })
 	for _, s := range taken {
 		s.stop()

@@ -10,16 +10,16 @@ one of three forms, and the transport follows from the entry: `url` means HTTP,
 ```yaml
 mcp:
   aperture:
-    url: https://aperture.tarik02.me/mcp   # auth omitted: OAuth on demand
+    url: https://aperture.tarik02.me/mcp # auth omitted: OAuth on demand
   github:
     url: https://api.githubcopilot.com/mcp
-    auth: {kind: oauth, scopes: [repo]}    # inline secret with options
+    auth: { kind: oauth, scopes: [repo] } # inline secret with options
   internal:
     url: https://internal.example/mcp
-    auth: keychain                         # kind shorthand
+    auth: keychain # kind shorthand
   shared:
     url: https://shared.example/mcp
-    auth: !secret team-token               # shared top-level secret
+    auth: !secret team-token # shared top-level secret
   public:
     url: https://public.example/mcp
     auth: none

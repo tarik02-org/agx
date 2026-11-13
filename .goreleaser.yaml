@@ -68,7 +68,7 @@ changelog:
   sort: asc
   filters:
     exclude:
-      - '^Merge '
+      - "^Merge "
 
 release:
   github:

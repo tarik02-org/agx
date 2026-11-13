@@ -37,6 +37,7 @@ holds the decrypted values, and keychain items of one user are open to that user
 once unlocked. The file can be backed up or inspected without exposing values.
 
 Rejected:
+
 - Splitting long values across several keychain items: it keeps a prompt per item and the race
   between processes.
 - A key derived from a passphrase: the daemon must start without a person present.

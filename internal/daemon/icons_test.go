@@ -52,6 +52,7 @@ func TestMCPIcons(t *testing.T) {
 	// What is not an image, or not HTTPS, is not drawn; a server declaring none forgets its icon.
 	for _, declared := range [][]mcp.Icon{
 		{{Source: server.URL + "/page"}},
+		{{Source: server.URL + "/page", MIMEType: "image/png"}},
 		{{Source: "http://example.com/icon.png"}},
 		{{Source: "data:text/html;base64,PGh0bWw+"}},
 		nil,

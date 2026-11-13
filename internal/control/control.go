@@ -38,6 +38,10 @@ func (u unavailable) Error() string { return string(u) }
 
 func (u unavailable) Is(target error) bool { return target == ErrUnavailable }
 
+// ErrStale is discovery whose daemon no longer holds the startup lock: it stopped without
+// shutting down.
+var ErrStale error = unavailable("daemon stopped without shutting down; run agx daemon start")
+
 type Discovery struct {
 	Version    string `json:"version"`
 	InstanceID string `json:"instance_id"`
@@ -46,6 +50,8 @@ type Discovery struct {
 	Config     string `json:"config"`
 	// PID is the daemon's process, for diagnosing one that stopped answering.
 	PID int `json:"pid,omitempty"`
+	// Managed means only the external service manager may start or recover this daemon.
+	Managed bool `json:"managed,omitempty"`
 }
 
 // ReadDiscovery reads the authenticated endpoint for this configuration.
@@ -75,7 +81,9 @@ func ReadDiscovery(paths platform.Paths) (Discovery, error) {
 }
 
 const (
-	ShutdownGrace  = 10 * time.Second
-	StoppingHeader = "Agx-Daemon-Stopping"
-	EndedHeader    = "Agx-Launch-Ended"
+	// RestartExitCode asks an on-failure supervisor to restart after graceful shutdown.
+	RestartExitCode = 75
+	ShutdownGrace   = 10 * time.Second
+	StoppingHeader  = "Agx-Daemon-Stopping"
+	EndedHeader     = "Agx-Launch-Ended"
 )

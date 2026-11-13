@@ -32,11 +32,17 @@ refuses it and its MCP endpoints answer 401. A forced stop revokes every launch;
 or a crash leaves them to their wrappers. Launch files no attached launch claims within a lease
 of the daemon starting belong to harnesses that ended meanwhile and are removed.
 
-A launch keeps its definitions: when its directory no longer resolves to its snapshot ID, its
-MCP servers answer 403 until relaunch. Upstream MCP sessions do not survive; endpoints answer
-404 for unknown session IDs and clients start a new session. If the saved port is taken,
-endpoint URLs held by harnesses are lost until relaunch or, for Codex app-server threads,
-`thread/resume`.
+An attached launch gets the MCP servers its directory selects when it is attached, as they are
+defined then: the daemon that held its snapshot is gone, and nothing else kept it. A server
+removed meanwhile answers 403, one changed meanwhile is served as it is now, and one added
+meanwhile is reached with `agx mcp call`; the harness learns its native servers when it starts.
+Environment inputs the configuration no longer reads are dropped, and a server reading a
+variable the wrapper never collected fails alone, when a session starts. The launch keeps the
+snapshot ID it started with, which names the skills and instructions its harness loaded.
+
+Upstream MCP sessions do not survive; endpoints answer 404 for unknown session IDs and clients
+start a new session. If the saved port is taken, endpoint URLs held by harnesses are lost until
+relaunch or, for Codex app-server threads, `thread/resume`.
 
 A stopping daemon drains first: it refuses new launches, attachments, and MCP sessions with a
 retryable error marked `Agx-Daemon-Stopping`, lets requests in flight finish for 10 seconds
@@ -58,6 +64,11 @@ and outside its caller's job object on Windows.
   never saw, so any local process, of any user, could then create launches using the owner's
   MCP credentials. Management authorization proves the caller is the owner; the tokens prove it
   holds the launch.
+- Refusing MCP access to an attached launch whose directory resolves to another snapshot ID:
+  the ID covers the whole configuration and the content of skills and instructions, so an
+  edited instruction cut off servers that had not changed, until relaunch.
+- Keeping snapshots on disk for attached launches to get their own definitions back: files to
+  write, find, and sweep, to serve a server the configuration no longer selects.
 - Re-initializing upstream sessions behind an unknown `Mcp-Session-Id`: the client's
   capabilities are unknown, so the new session could not negotiate honestly.
 - Closing the listener at once and letting `http.Server.Shutdown` drain: callers would see

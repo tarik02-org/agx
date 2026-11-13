@@ -5,7 +5,7 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -14,20 +14,44 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v7
+          persist-credentials: false
+      - name: Require a commit of master that passed CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --no-tags origin master
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "::error::$GITHUB_REF_NAME is not on master"
+            exit 1
+          fi
+          passed=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow CI --commit "$GITHUB_SHA" \
+            --event push --status success --json databaseId --jq length)
+          if [ "$passed" -eq 0 ]; then
+            echo "::error::CI has not passed on $GITHUB_SHA"
+            exit 1
+          fi
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
       - name: Forget nightly tags
         # GoReleaser would take one on the same commit, or the last one, as the current or
         # previous tag.
         run: git tag --list 'nightly*' | xargs --no-run-if-empty git tag --delete
-      - uses: goreleaser/goreleaser-action@v7
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
           version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: dist/checksums.txt
