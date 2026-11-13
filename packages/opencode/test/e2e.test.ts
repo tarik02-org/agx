@@ -480,11 +480,12 @@ export default define({
       otherSkills.map((entry) => entry.name),
       ["hidden"],
     );
-    assert.equal(
-      (await api.mcp.list({ location: { directory: alpha } })).data.filter((entry) =>
-        entry.name.startsWith("agx-"),
-      ).length,
-      1,
+    assert.deepEqual(
+      (await api.mcp.list({ location: { directory: alpha } })).data
+        .filter((entry) => entry.name.startsWith("agx-"))
+        .map((entry) => entry.name.slice("agx-".length, entry.name.lastIndexOf("-")))
+        .toSorted(),
+      ["agx", "team-echo"],
     );
     let nativeServers = (await api.mcp.list({ location: { directory: alpha } })).data.filter(
       (entry) => entry.name.startsWith("agx-"),
