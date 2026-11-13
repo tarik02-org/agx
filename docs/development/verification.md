@@ -43,6 +43,13 @@ through the system prompt; from an unscoped directory they did not follow them.
 fx 0.0.16 (`fx acp`) refuses that system prompt, since it implements an earlier
 draft; agx sent the session again without it, and fx called the tool and
 followed the instructions from the first prompt.
+Every agent in the ACP registry (46, on 2026-11-13) then ran through agx in the
+same sandbox, once from a scoped directory, where agx added MCP servers and
+instructions, and once from an unscoped one: each initialized and answered
+`session/new` the same way in both (a session, or the same sign-in or setup
+error), except fast-agent and minion-code, whose packages fail to start. Of the
+agents that run a prompt without signing in, opencode and opencode-v2 called
+the managed tool and followed the scoped instructions.
 opencode 2.2.6 (`opencode acp`, HTTP MCP servers, no system prompt) called the
 tool, and pi-acp 0.0.34 (neither) followed the instructions, both from the
 first prompt. kilo 7.8.27 accepted sessions with agx resources; Gemini CLI
