@@ -15,6 +15,8 @@ type version struct {
 	closes []string
 	// capabilities reads what an initialize result advertises.
 	capabilities func(result relay.Object) capabilities
+	// typedStdio says stdio MCP servers name their type, as servers of other transports do.
+	typedStdio bool
 }
 
 // opening is how a session setup request names its session.
@@ -32,6 +34,8 @@ const (
 type capabilities struct {
 	// http says the agent accepts HTTP MCP servers.
 	http bool
+	// stdio says the agent accepts stdio MCP servers.
+	stdio bool
 	// systemPrompt says the agent accepts a client system prompt in append mode.
 	systemPrompt bool
 }
@@ -50,22 +54,32 @@ var versions = map[int]version{
 			agent, _ := result.Object("agentCapabilities")
 			mcp, _ := agent.Object("mcpCapabilities")
 			session, _ := agent.Object("sessionCapabilities")
-			return capabilities{http: isTrue(mcp, "http"), systemPrompt: present(session, "systemPrompt")}
+			// Every version 1 agent takes stdio MCP servers.
+			return capabilities{
+				http:         isTrue(mcp, "http"),
+				stdio:        true,
+				systemPrompt: present(session, "systemPrompt"),
+			}
 		},
 	},
 	// Version 2 is a draft: it moves capabilities under capabilities.session, makes them objects,
-	// and drops session/load for session/resume.
+	// makes stdio MCP servers optional and typed, and drops session/load for session/resume.
 	2: {
 		opens: map[string]opening{
 			"session/new":    created,
 			"session/fork":   forked,
 			"session/resume": continued,
 		},
-		closes: []string{"session/close", "session/delete"},
+		closes:     []string{"session/close", "session/delete"},
+		typedStdio: true,
 		capabilities: func(result relay.Object) capabilities {
 			session, _ := result.Path("capabilities", "session")
 			mcp, _ := session.Object("mcp")
-			return capabilities{http: present(mcp, "http"), systemPrompt: present(session, "systemPrompt")}
+			return capabilities{
+				http:         present(mcp, "http"),
+				stdio:        present(mcp, "stdio"),
+				systemPrompt: present(session, "systemPrompt"),
+			}
 		},
 	},
 }

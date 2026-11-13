@@ -143,3 +143,63 @@ harnesses:
 		t.Errorf("the agent exited but its session's grant answers %d", got)
 	}
 }
+
+func TestACPAgentStdioMCP(t *testing.T) {
+	e := newEnv(t)
+	e.write("config/main.yaml", `mcp:
+  echo:
+    command: ['`+filepath.ToSlash(binaries.mcp)+`']
+    environment:
+      ECHO_TOKEN: work
+      ECHO_EXTRA: extra
+scopes:
+  - directory: ../work
+    add:
+      mcp: [echo]
+harnesses:
+  fake-acp:
+    base: acp
+    executable: '`+filepath.ToSlash(binaries.harness)+`'
+    args: [acp, --no-http]
+`)
+	e.write("config/agx.yaml", "fragments: [main.yaml]\n")
+	e.ok("daemon", "start")
+	t.Cleanup(func() { e.stopDaemon(true) })
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binaries.agx, "fake-acp")
+	cmd.Dir = filepath.Join(e.dir, "home")
+	cmd.Env = e.vars
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	a := &appServer{t: t, stdin: stdin, stdout: bufio.NewReader(stdout)}
+	a.call("initialize", map[string]any{"protocolVersion": 1})
+
+	// An agent without HTTP MCP servers reaches the session's servers through the stdio bridge.
+	result := a.call("session/new", map[string]any{"cwd": e.work, "mcpServers": []any{}})
+	tools, _ := result["tools"].(map[string]any)
+	if got := tools["agx-echo"]; got != "echo:hello:work:extra" || len(tools) != 1 {
+		t.Errorf("session tools = %v\n%s", tools, stderr.String())
+	}
+	servers, _ := received(result)["mcpServers"].([]any)
+	if len(servers) != 1 || strings.Contains(fmt.Sprint(servers[0].(map[string]any)["args"]), "Bearer") {
+		t.Errorf("session servers = %v", servers)
+	}
+
+	_ = stdin.Close()
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("agx fake-acp: %v\n%s", err, stderr.String())
+	}
+}

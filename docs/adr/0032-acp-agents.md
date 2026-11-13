@@ -42,7 +42,7 @@ the agent did not:
 
 | Resource     | Advertised                                                              | Otherwise                                                 |
 | ------------ | ----------------------------------------------------------------------- | --------------------------------------------------------- |
-| MCP servers  | HTTP servers appended to the client's, with a per-session grant         | not applied, with one warning per process                 |
+| MCP servers  | HTTP servers appended to the client's, with a per-session grant         | stdio servers that bridge to them (below)                 |
 | Instructions | a `systemPrompt` text block after the client's, in its mode or `append` | a text block before a new session's first prompt          |
 | Skills       | none in ACP                                                             | not applied, with a warning per session that selects some |
 
@@ -54,6 +54,23 @@ agents implementing an earlier draft of the RFD do (a bare content array with
 sees only that response; the process's later sessions take instructions as if
 the agent had no system prompt. The capability cannot tell the drafts apart, so
 the refusal is the only signal.
+
+## MCP servers over stdio
+
+Version 1 requires every agent to accept stdio MCP servers; HTTP ones are
+optional, and agents such as Mistral Vibe take none. Such an agent gets each
+server as a stdio server whose command is the relaying agx's own executable
+with `mcp bridge <url>`, and whose environment carries the session's grant as
+`AGX_MCP_GRANT`, since command lines are visible to other processes. The bridge
+copies MCP messages between its standard input and output and the daemon's
+HTTP endpoint unchanged, so the agent negotiates with the server itself, and
+the grant's revocation ends its access as it ends an HTTP server's. Version 2
+makes stdio a capability too and types its entries; an agent with neither
+transport gets no agx MCP servers, with one warning per process.
+
+The bridge uses the MCP SDK's transports. Its HTTP connection opens the stream
+for messages outside a request's response only for the SDK's own client, so
+such messages, list change notifications among them, do not reach the agent.
 
 ## Versions
 
@@ -69,6 +86,7 @@ Rejected: the `coder/acp-go-sdk` types, which drop fields they do not know when 
 relay re-encodes a message and lag the specification (no `systemPrompt`); a full
 ACP client inside agx, which would duplicate the editor's job; per-agent
 adapters, which capability negotiation makes unnecessary; proxy chains and MCP
-over ACP, still drafts that no agent agx was tested with speaks; resolving
+over ACP, still drafts that no agent agx was tested with speaks, where the
+stdio bridge already reaches every agent that MCP over ACP would; resolving
 resources for `additionalDirectories`, whose rules would conflict with the
 session's own directory.
