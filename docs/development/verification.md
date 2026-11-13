@@ -50,6 +50,9 @@ instructions, and once from an unscoped one: each initialized and answered
 error), except fast-agent and minion-code, whose packages fail to start. Of the
 agents that run a prompt without signing in, opencode and opencode-v2 called
 the managed tool and followed the scoped instructions.
+Pointed at an OpenAI-compatible endpoint, goose 1.59.0 and Qwen Code 0.27.3
+called the tool and followed the scoped instructions, and Mistral Vibe 3.1.1
+and deepagents 0.1.7, which take no HTTP MCP servers, followed them.
 opencode 2.2.6 (`opencode acp`, HTTP MCP servers, no system prompt) called the
 tool, and pi-acp 0.0.34 (neither) followed the instructions, both from the
 first prompt. kilo 7.8.27 accepted sessions with agx resources; Gemini CLI
