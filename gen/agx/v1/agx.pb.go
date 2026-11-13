@@ -1319,8 +1319,12 @@ type ConfiguredHarness struct {
 	Name    string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Builtin string                 `protobuf:"bytes,2,opt,name=builtin,proto3" json:"builtin,omitempty"`
 	// Empty for built-in harnesses.
-	Base          string `protobuf:"bytes,3,opt,name=base,proto3" json:"base,omitempty"`
-	Hidden        bool   `protobuf:"varint,4,opt,name=hidden,proto3" json:"hidden,omitempty"`
+	Base   string `protobuf:"bytes,3,opt,name=base,proto3" json:"base,omitempty"`
+	Hidden bool   `protobuf:"varint,4,opt,name=hidden,proto3" json:"hidden,omitempty"`
+	// The harness name unless the definition sets one.
+	DisplayName string `protobuf:"bytes,5,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	// Defined but unable to launch.
+	Disabled      bool `protobuf:"varint,6,opt,name=disabled,proto3" json:"disabled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1379,6 +1383,20 @@ func (x *ConfiguredHarness) GetBase() string {
 func (x *ConfiguredHarness) GetHidden() bool {
 	if x != nil {
 		return x.Hidden
+	}
+	return false
+}
+
+func (x *ConfiguredHarness) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *ConfiguredHarness) GetDisabled() bool {
+	if x != nil {
+		return x.Disabled
 	}
 	return false
 }
@@ -8339,12 +8357,14 @@ const file_agx_v1_agx_proto_rawDesc = "" +
 	"\x11scope_directories\x18\x03 \x03(\tR\x10scopeDirectories\x12\x1a\n" +
 	"\boverlays\x18\x04 \x03(\tR\boverlays\x12\x1a\n" +
 	"\brevision\x18\x06 \x01(\x03R\brevision\x12\x12\n" +
-	"\x04home\x18\x05 \x01(\tR\x04home\"m\n" +
+	"\x04home\x18\x05 \x01(\tR\x04home\"\xac\x01\n" +
 	"\x11ConfiguredHarness\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\abuiltin\x18\x02 \x01(\tR\abuiltin\x12\x12\n" +
 	"\x04base\x18\x03 \x01(\tR\x04base\x12\x16\n" +
-	"\x06hidden\x18\x04 \x01(\bR\x06hidden\"H\n" +
+	"\x06hidden\x18\x04 \x01(\bR\x06hidden\x12!\n" +
+	"\fdisplay_name\x18\x05 \x01(\tR\vdisplayName\x12\x1a\n" +
+	"\bdisabled\x18\x06 \x01(\bR\bdisabled\"H\n" +
 	"\x18CompleteDirectoryRequest\x12\x16\n" +
 	"\x06prefix\x18\x01 \x01(\tR\x06prefix\x12\x14\n" +
 	"\x05files\x18\x02 \x01(\bR\x05files\"S\n" +

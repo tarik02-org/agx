@@ -26,7 +26,7 @@ func TestLocalRelationalRoundTrip(t *testing.T) {
    "http":{"url":"https://example.com/mcp","headers":{"X-Mode":"work"},"auth":{"kind":"oauth","issuer":"https://example.com","client_id":"agx","resource":"https://example.com/mcp","scopes":["read","write"]}}
   },
   "bundles":{"work":{"skills":["guide"],"instructions":[{"id":"inline-policy","text":"Inline policy."}],"mcp":["stdio","http"]}},
-  "harnesses":{"work":{"base":"codex","hidden":false,"args":[{"values":["--model","example"],"modes":["interactive"]},{"values":[{"$file":"prompt.txt"}]}],"environment":{"MODE":"work"},"settings":{"model":"example","custom":{"$env":"literal-env"},"credential":{"$secret":"literal-secret"},"removed":null},"add":{"bundles":["work"]},"remove":{"mcp":["http"]}}},
+  "harnesses":{"work":{"base":"codex","hidden":false,"display_name":"Work","enabled":false,"args":[{"values":["--model","example"],"modes":["interactive"]},{"values":[{"$file":"prompt.txt"}]}],"environment":{"MODE":"work"},"settings":{"model":"example","custom":{"$env":"literal-env"},"credential":{"$secret":"literal-secret"},"removed":null},"add":{"bundles":["work"]},"remove":{"mcp":["http"]}}},
   "scopes":[{"directory":".","harnesses":["work"],"add":{"bundles":["work"],"mcp":[{"id":"scoped","command":["scoped"],"environment":{"MODE":"local"}}]},"remove":{"skills":["guide"]}}]
  }`
 	if err := json.Unmarshal([]byte(document), &local.Document); err != nil {
