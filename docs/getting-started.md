@@ -45,9 +45,8 @@ anything:
 agx instructions add --id pnpm --text 'Use pnpm, not npm.'
 ```
 
-agx asks before saving (on a terminal). The definition goes into agx's local
-configuration, a database the daemon keeps; no YAML file is written. Without
-`--scope`, the instructions apply everywhere.
+The definition goes into agx's local configuration, a database the daemon keeps;
+no YAML file is written. Without `--scope`, the instructions apply everywhere.
 
 ## 4. Add a skill
 
