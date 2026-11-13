@@ -12,6 +12,11 @@ definitions can set the native client's executable, arguments and environment;
 set the plugin's `harness` option to the same definition name so its sessions
 resume with that configuration.
 
+**ACP agents**: any agent that speaks the
+[Agent Client Protocol](https://agentclientprotocol.com), such as `opencode acp`,
+through a definition based on `acp`. Each session the client starts gets the
+resources of its own directory. See [ACP agents](#acp-agents).
+
 ## Launching
 
 ```sh
@@ -120,6 +125,7 @@ sense:
 | codex   | `interactive`, `exec`, `resume`, `app-server`, `passthrough` |
 | claude  | `interactive`, `print`, `resume`, `passthrough`              |
 | pi      | `interactive`, `print`, `rpc`, `resume`, `passthrough`       |
+| acp     | `acp`, `passthrough`                                         |
 
 For example, `codex exec …` is `exec`, `claude -p …` is `print`, and `claude
 --resume …` is `resume`; help, version, and login commands are `passthrough`.
@@ -281,6 +287,40 @@ agx updates.
 
 Claude Code driven by the Agent SDK (`--input-format stream-json`) still gets
 agx's instructions, combined with the host's own system prompt additions.
+
+### ACP agents
+
+`acp` is a base for agents that speak the Agent Client Protocol on standard
+input and output. ACP agents share no executable name, so a definition names
+the agent's absolute `executable` and the `args` that start its ACP server:
+
+```yaml
+harnesses:
+  opencode-acp:
+    base: acp
+    executable: ~/.local/bin/opencode
+    args: [acp]
+```
+
+A client (an editor, T3 Code) then runs `agx opencode-acp`, or the
+`opencode-acp` [shim](#shims), as the agent's command. agx relays the protocol
+and, for every session the client creates, forks, loads, or resumes, resolves
+the resources of the session's `cwd`:
+
+- **MCP servers** are added to the session's own as HTTP servers, when the
+  agent advertises HTTP MCP support. A server the client names the same way
+  stays the client's.
+- **Instructions** are appended to the session's system prompt when the agent
+  advertises a client system prompt; otherwise they are placed before the first
+  prompt of a new session. Forked, loaded, and resumed sessions already have
+  them in their history.
+- **Skills** have no place in ACP and are not applied; agx warns when a
+  session's directory selects some.
+
+Closing or deleting a session, or the agent exiting, ends its MCP access. ACP
+protocol versions 1 and 2 are supported; a session of another version runs
+without agx resources, with a warning. The launcher does not offer ACP
+definitions, and their sessions belong to the client, not `agx sessions`.
 
 ### Supported versions
 

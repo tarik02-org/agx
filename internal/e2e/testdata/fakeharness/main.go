@@ -56,6 +56,10 @@ func main() {
 		appServer(args)
 		return
 	}
+	if slices.Contains(args, "acp") {
+		acpAgent()
+		return
+	}
 	r := record{Args: args, Env: map[string]string{}, Skills: map[string]string{}, Endpoints: map[string]string{},
 		Tools: map[string]string{}}
 	r.Directory, _ = os.Getwd()
@@ -479,5 +483,57 @@ func appServer(args []string) {
 			continue
 		}
 		_ = out.Encode(map[string]any{"id": request.ID, "result": result})
+	}
+}
+
+// acpAgent answers newline-delimited JSON-RPC like an ACP version 1 agent that accepts HTTP MCP
+// servers and a client system prompt. Every result echoes the request's params as "received";
+// session/new also returns a new session and the echo tool's reply from every MCP server it got.
+func acpAgent() {
+	reader := bufio.NewReader(os.Stdin)
+	out := json.NewEncoder(os.Stdout)
+	sessions := 0
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			return
+		}
+		var request struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+			Params map[string]any  `json:"params"`
+		}
+		if json.Unmarshal(line, &request) != nil || request.ID == nil {
+			continue
+		}
+		result := map[string]any{"received": request.Params}
+		switch request.Method {
+		case "initialize":
+			result["protocolVersion"] = 1
+			result["agentCapabilities"] = map[string]any{
+				"mcpCapabilities":     map[string]any{"http": true},
+				"sessionCapabilities": map[string]any{"systemPrompt": map[string]any{}, "close": map[string]any{}},
+			}
+		case "session/new":
+			sessions++
+			result["sessionId"] = fmt.Sprintf("session-%d", sessions)
+			clients := map[string]*mcpClient{}
+			servers, _ := request.Params["mcpServers"].([]any)
+			for _, s := range servers {
+				server, _ := s.(map[string]any)
+				name, _ := server["name"].(string)
+				url, _ := server["url"].(string)
+				authorization := ""
+				headers, _ := server["headers"].([]any)
+				for _, h := range headers {
+					if header, _ := h.(map[string]any); header["name"] == "Authorization" {
+						authorization, _ = header["value"].(string)
+					}
+				}
+				clients[name] = &mcpClient{url: url, authorization: authorization}
+			}
+			result["tools"], _ = echoAll(clients, nil)
+		}
+		_ = out.Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": result})
 	}
 }

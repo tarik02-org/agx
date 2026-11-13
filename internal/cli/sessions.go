@@ -311,7 +311,8 @@ func runLauncher(ctx context.Context, a *app) error {
 }
 
 // launcherHarnesses lists the harnesses the launcher offers: built-ins first, then definitions,
-// each in name order. Hidden ones still run by name.
+// each in name order. Hidden ones still run by name, and so do protocol servers such as ACP
+// agents, which a terminal cannot drive.
 func launcherHarnesses(c *config.Config, registry adapters.Registry) ([]launcher.Harness, error) {
 	out := []launcher.Harness{}
 	names := registry.Launchable(c)
@@ -320,6 +321,11 @@ func launcherHarnesses(c *config.Config, registry adapters.Registry) ([]launcher
 			h, err := c.Harness(name)
 			if err != nil {
 				return nil, err
+			}
+			if adapter, ok := registry.Adapter(h.Builtin); ok {
+				if t, ok := adapter.(adapters.Threads); ok && t.ThreadServer(nil) {
+					continue
+				}
 			}
 			if (h.Builtin == name) == builtin && !h.Hidden {
 				out = append(out, launcher.Harness{Name: name, Builtin: h.Builtin})
