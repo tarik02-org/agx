@@ -18,16 +18,16 @@ built-in server.
 Its tool list stays small; upstream servers and tool schemas are discovered only
 when requested. Startup does not wait for discovery.
 
-| Tool | Purpose |
-| --- | --- |
-| `get_context` | Current launch, directory, harness, initial selection, temporary attachments and configuration revision. |
-| `list_resources` | Browse all configured resources, including those outside the initial selection. Filter by `kind` and `query`; `limit` defaults to 50, maximum 200. Follow `next_offset` with `offset` for more. |
-| `get_resource` | Read skill content, instructions or resource definitions. Credentials are redacted; secrets expose status only. |
-| `update_configuration` | Commit semantic edits immediately, using `expected_revision` from `get_context`. |
-| `attach_mcp` | Temporarily attach a configured server by `id`, or an ad-hoc `definition`. |
-| `detach_mcp` | Remove a temporary attachment by `server` ID. |
-| `search_tools` | Search names and descriptions on selected and temporarily attached servers, returning schemas. Optional `server`, `query`, `limit` and `offset`; follow `next_offset` for more. |
-| `call_tool` | Call a `server` and `tool` with an `arguments` object; preserves rich content, structured results and tool errors. |
+| Tool                   | Purpose                                                                                                                                                                                         |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_context`          | Current launch, directory, harness, initial selection, temporary attachments and configuration revision.                                                                                        |
+| `list_resources`       | Browse all configured resources, including those outside the initial selection. Filter by `kind` and `query`; `limit` defaults to 50, maximum 200. Follow `next_offset` with `offset` for more. |
+| `get_resource`         | Read skill content, instructions or resource definitions. Credentials are redacted; secrets expose status only.                                                                                 |
+| `update_configuration` | Commit semantic edits immediately, using `expected_revision` from `get_context`.                                                                                                                |
+| `attach_mcp`           | Temporarily attach a configured server by `id`, or an ad-hoc `definition`.                                                                                                                      |
+| `detach_mcp`           | Remove a temporary attachment by `server` ID.                                                                                                                                                   |
+| `search_tools`         | Search names and descriptions on selected and temporarily attached servers, returning schemas. Optional `server`, `query`, `limit` and `offset`; follow `next_offset` for more.                 |
+| `call_tool`            | Call a `server` and `tool` with an `arguments` object; preserves rich content, structured results and tool errors.                                                                              |
 
 For example, an agent can call these tools in sequence:
 
@@ -47,9 +47,9 @@ explicit injection objects in place of YAML tags:
     "id": "temporary-docs",
     "definition": {
       "command": ["docs-mcp", "--stdio"],
-      "environment": {"API_KEY": {"$env": "DOCS_KEY"}}
+      "environment": { "API_KEY": { "$env": "DOCS_KEY" } }
     },
-    "environment": {"DOCS_KEY": "value supplied by the caller"}
+    "environment": { "DOCS_KEY": "value supplied by the caller" }
   }
 }
 ```
@@ -85,8 +85,8 @@ changes as the management API: `define`, `undefine`, `enable`, `disable`, and
   "arguments": {
     "expected_revision": 0,
     "changes": [
-      {"define": {"kind": "instructions", "id": "precise", "value": {"text": "Be precise."}}},
-      {"enable": {"kind": "instructions", "id": "precise", "directory": "/work/project"}}
+      { "define": { "kind": "instructions", "id": "precise", "value": { "text": "Be precise." } } },
+      { "enable": { "kind": "instructions", "id": "precise", "directory": "/work/project" } }
     ]
   }
 }
