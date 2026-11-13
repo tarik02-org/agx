@@ -35,10 +35,15 @@ skill disabled in `skills/list`; resuming and forking a thread by ID alone kept
 its directory's resources. Claude Code 2.1.300 driven by the Agent SDK that T3
 Code ships, with its own system prompt append, received agx instructions and
 the SDK's append once each, also on resume.
-opencode 2.2.6 run as `opencode acp` through an `acp` definition (ACP version 1,
-HTTP MCP servers, no client system prompt) called a managed MCP tool from a
-session in a scoped directory and followed that directory's instructions,
-which reached it in the session's first prompt.
+ACP agents from the ACP registry ran through `acp` definitions in a bubblewrap
+sandbox (ACP version 1). From a scoped directory, claude-agent-acp 0.106.0 and
+codex-acp 2.6.0 (HTTP MCP servers and a client system prompt) called a managed
+MCP tool and followed the directory's instructions, which reached them only
+through the system prompt; from an unscoped directory they did not follow them.
+opencode 2.2.6 (`opencode acp`, HTTP MCP servers, no system prompt) called the
+tool, and pi-acp 0.0.34 (neither) followed the instructions, both from the
+first prompt. kilo 7.8.27 accepted sessions with agx resources; Gemini CLI
+0.68.0 and Qwen Code 0.27.3 initialized but were not signed in.
 These depend on installed harnesses, terminals, or keychains, so they are not
 part of the automated suite.
 
