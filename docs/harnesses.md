@@ -96,19 +96,22 @@ the command line with:
 agx harness add codex-work --base codex --env 'OPENAI_API_KEY=!env WORK_OPENAI_KEY' -- --profile work
 ```
 
-| Field           | Meaning                                                                         |
-| --------------- | ------------------------------------------------------------------------------- |
-| `base`          | the harness this one extends: a built-in or another definition                  |
-| `executable`    | absolute path of the binary; default: found on `PATH`                           |
-| `args`          | arguments placed before the ones you type                                       |
-| `environment`   | environment variables for the harness                                           |
-| `settings`      | the harness's own settings, see [Settings](#settings)                           |
-| `add`, `remove` | resources for every launch of this harness, applied after directory rules       |
-| `hidden`        | `true` leaves the harness out of the [launcher](sessions.md)'s new-session list |
+| Field           | Meaning                                                                                    |
+| --------------- | ------------------------------------------------------------------------------------------ |
+| `base`          | the harness this one extends: a built-in or another definition                             |
+| `executable`    | absolute path of the binary; default: found on `PATH`                                      |
+| `args`          | arguments placed before the ones you type                                                  |
+| `environment`   | environment variables for the harness                                                      |
+| `settings`      | the harness's own settings, see [Settings](#settings)                                      |
+| `add`, `remove` | resources for every launch of this harness, applied after directory rules                  |
+| `hidden`        | `true` leaves the harness out of the [launcher](sessions.md)'s new-session list            |
+| `display_name`  | the name shown to people in place of the harness name; default: the name                   |
+| `enabled`       | `false` keeps the definition but stops it launching, see [Disabling](#disabling-harnesses) |
 
 A definition inherits from its base: arguments add up (base first),
-`environment` and `settings` merge key by key, and `executable` is replaced; `hidden` is not
-inherited. Names cannot clash with agx commands such as `install`.
+`environment` and `settings` merge key by key, and `executable` is replaced; `hidden`,
+`display_name` and `enabled` are not inherited. Names cannot clash with agx commands such as
+`install`.
 
 ### Arguments per mode
 
@@ -229,6 +232,38 @@ harnesses:
 
 A hidden harness still runs by name (`agx codex`, or a `codex` link), and its
 sessions still appear in the launcher and resume with it.
+
+### Disabling harnesses
+
+A configuration shared between machines can define a harness that one of them
+should not offer. `enabled: false`, set in a fragment only that machine loads,
+keeps the definition and stops it launching:
+
+```yaml
+harnesses:
+  codex-cpa: { enabled: false }
+```
+
+A disabled harness has no `agx <name>` command, no shim and no launcher entry,
+and launching it by name fails. `agx install` and `agx doctor` skip it. Its
+sessions stay listed but do not resume until it is enabled again. Definitions
+based on it are not disabled with it, so disabling a built-in leaves its
+variants launchable.
+
+### Display names
+
+`display_name` gives a harness a name for people: the launcher shows it beside
+the harness name, and `agx harness list --json` reports it as `display_name`
+for tools that list harnesses, such as an editor's provider picker. Without
+one it is the harness name. Commands, shims and scope rules keep using the
+name.
+
+```yaml
+harnesses:
+  codex-cpa:
+    base: codex
+    display_name: Codex CPA
+```
 
 ## Shims
 

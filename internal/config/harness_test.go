@@ -150,6 +150,45 @@ func TestHarnessHidden(t *testing.T) {
 	}
 }
 
+func TestHarnessDisplayNameAndEnabled(t *testing.T) {
+	root := fragment(t, t.TempDir(), `harnesses:
+  codex: {enabled: false, display_name: OpenAI Codex}
+  codex-cpa: {base: codex, display_name: Codex CPA}
+  codex-old: {base: codex-cpa, enabled: false}
+  claude: {enabled: true}
+`)
+	c := read(t, root)
+	for name, want := range map[string]struct {
+		display string
+		enabled bool
+	}{
+		"codex": {"OpenAI Codex", false},
+		// Neither field comes from the base: a disabled or renamed base leaves its variants as they are.
+		"codex-cpa": {"Codex CPA", true},
+		"codex-old": {"codex-old", false},
+		"claude":    {"claude", true},
+		"pi":        {"pi", true},
+	} {
+		h, err := c.Harness(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if h.DisplayName != want.display || h.Enabled != want.enabled {
+			t.Errorf(
+				"%s = %q enabled %v, want %q enabled %v",
+				name,
+				h.DisplayName,
+				h.Enabled,
+				want.display,
+				want.enabled,
+			)
+		}
+	}
+	if got := c.HarnessNames(); !slices.Contains(got, "codex") {
+		t.Errorf("disabled harness left the harness names: %v", got)
+	}
+}
+
 func TestHarnessOverride(t *testing.T) {
 	dir := t.TempDir()
 	write(
@@ -200,6 +239,27 @@ func TestHarnessErrors(t *testing.T) {
 				"main.yaml": "harnesses:\n  codex: {hidden: false}\n",
 			},
 			want: []string{"harness codex: hidden already set at", "one.yaml"},
+		},
+		{
+			name: "display name set in two fragments",
+			files: map[string]string{
+				"one.yaml":  "harnesses:\n  codex: {display_name: One}\n",
+				"main.yaml": "harnesses:\n  codex: {display_name: Two}\n",
+			},
+			want: []string{"harness codex: display_name already set at", "one.yaml"},
+		},
+		{
+			name: "enabled set in two fragments",
+			files: map[string]string{
+				"one.yaml":  "harnesses:\n  codex: {enabled: false}\n",
+				"main.yaml": "harnesses:\n  codex: {enabled: true}\n",
+			},
+			want: []string{"harness codex: enabled already set at", "one.yaml"},
+		},
+		{
+			name:  "display name over several lines",
+			files: map[string]string{"main.yaml": "harnesses:\n  codex: {display_name: \"Codex\\nCPA\"}\n"},
+			want:  []string{"main.yaml:2", "harness codex: display_name must be one line"},
 		},
 		{"base cycle", map[string]string{"main.yaml": "harnesses:\n  a: {base: b}\n  b: {base: a}\n"}, []string{"harness base cycle: a -> b -> a"}},
 		{"unknown base", map[string]string{"main.yaml": "harnesses:\n  a: {base: nope}\n"}, []string{`harness a: unknown base "nope"`}},

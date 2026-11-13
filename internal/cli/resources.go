@@ -129,7 +129,7 @@ func excerpt(text string, limit int) string {
 func harnessCommand(a *app) *cobra.Command {
 	command := &cobra.Command{Use: "harness", Short: "Add, list, and remove harness definitions", GroupID: "config"}
 	var env []string
-	base, executable := "", ""
+	base, executable, displayName := "", "", ""
 	add := &cobra.Command{
 		Use:         "add <name> --base <harness> [-- args...]",
 		Annotations: map[string]string{createsConfig: ""},
@@ -174,6 +174,9 @@ func harnessCommand(a *app) *cobra.Command {
 			if executable != "" {
 				definition["executable"] = executable
 			}
+			if displayName != "" {
+				definition["display_name"] = displayName
+			}
 			if len(native) > 0 {
 				items := []any{}
 				for _, arg := range native {
@@ -203,6 +206,7 @@ func harnessCommand(a *app) *cobra.Command {
 	}
 	add.Flags().StringVar(&base, "base", "", "harness this definition extends")
 	add.Flags().StringVar(&executable, "executable", "", "absolute path of the native executable")
+	add.Flags().StringVar(&displayName, "display-name", "", "name shown in place of the harness name")
 	add.Flags().
 		StringArrayVar(&env, "env", nil, "environment KEY=VALUE; VALUE may be '!secret id', '!env NAME', or '!file path'")
 	command.AddCommand(
@@ -230,6 +234,9 @@ func harnessRows(c *config.Config) ([]string, [][]string, any) {
 		source := ""
 		if defined {
 			source = location(c, def.Source)
+		}
+		if !h.Enabled {
+			base += " (disabled)"
 		}
 		rows = append(rows, []string{out.ID(name), base, h.Builtin, ui.ShortPath(h.Executable, ""), out.Path(source)})
 		h.Environment = redact(h.Environment)

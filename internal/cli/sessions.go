@@ -311,7 +311,7 @@ func runLauncher(ctx context.Context, a *app) error {
 }
 
 // launcherHarnesses lists the harnesses the launcher offers: built-ins first, then definitions,
-// each in name order. Hidden ones still run by name.
+// each in name order. Hidden ones still run by name; disabled ones are not launchable.
 func launcherHarnesses(c *config.Config, registry adapters.Registry) ([]launcher.Harness, error) {
 	out := []launcher.Harness{}
 	names := registry.Launchable(c)
@@ -322,7 +322,7 @@ func launcherHarnesses(c *config.Config, registry adapters.Registry) ([]launcher
 				return nil, err
 			}
 			if (h.Builtin == name) == builtin && !h.Hidden {
-				out = append(out, launcher.Harness{Name: name, Builtin: h.Builtin})
+				out = append(out, launcher.Harness{Name: name, Builtin: h.Builtin, DisplayName: h.DisplayName})
 			}
 		}
 	}

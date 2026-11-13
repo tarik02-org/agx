@@ -167,6 +167,9 @@ func (s *Server) launchBasis(directory, name, id string, native []string) (launc
 	if err != nil {
 		return launchBasis{}, rpcError(connect.CodeInvalidArgument, err.Error())
 	}
+	if !harness.Enabled {
+		return launchBasis{}, rpcError(connect.CodeFailedPrecondition, "harness "+name+" is disabled")
+	}
 	adapter, ok := s.adapters.Launcher(harness.Builtin)
 	if !ok {
 		return launchBasis{}, rpcError(

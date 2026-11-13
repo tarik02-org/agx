@@ -100,7 +100,8 @@ func TestJSONShapes(t *testing.T) {
 		{[]string{"instructions", "list"}, "{conventions:{source:" + source + ",text:string}}"},
 		{
 			[]string{"harness", "list"},
-			"[{args:null,builtin:string,chain:[string],environment:{},executable:string,hidden:bool,name:string," +
+			"[{args:null,builtin:string,chain:[string],display_name:string,enabled:bool,environment:{}," +
+				"executable:string,hidden:bool,name:string," +
 				"setting_sources:null,settings:{}}]",
 		},
 		{
