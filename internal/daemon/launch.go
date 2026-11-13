@@ -311,6 +311,20 @@ func launchInputs(snapshot *config.Snapshot, given map[string]string, forwarded 
 	return inputs, nil
 }
 
+// attachedInputs keeps the environment inputs a wrapper holds that the directory's
+// configuration still reads. The configuration may have changed since the launch started, so
+// nothing here fails the launch: a server reading a variable the wrapper never collected fails
+// alone, when a session starts.
+func attachedInputs(snapshot *config.Snapshot, given map[string]string, forwarded []string) map[string]string {
+	inputs := map[string]string{}
+	for _, name := range append(slices.Clone(snapshot.RequiredEnvironment), forwarded...) {
+		if value, ok := given[name]; ok {
+			inputs[name] = value
+		}
+	}
+	return inputs
+}
+
 // endpoints starts the endpoints of the snapshot's MCP servers for launch id and lists those the
 // harness gets natively; on-demand servers stay reachable only through agx mcp call.
 func (s *Server) endpoints(

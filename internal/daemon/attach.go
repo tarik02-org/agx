@@ -14,10 +14,6 @@ import (
 	"github.com/tarik02-org/agx/internal/adapters"
 )
 
-// staleSnapshot is why the MCP servers of an attached launch are not served when its directory
-// no longer resolves to the snapshot it started with: a launch keeps its definitions.
-const staleSnapshot = "configuration changed since this launch started; relaunch for MCP access"
-
 // AttachLaunch takes a launch from its wrapper when this daemon does not hold it, or let it
 // expire: after a restart, an upgrade, or a crash. The launch keeps its ID, grant, and lifecycle
 // token, so its harness's MCP configuration stays valid, and gets its thread launches back.
@@ -130,7 +126,8 @@ func (s *Server) attachable(id, grant, lifecycle string) (*launch, error) {
 
 // attachProcess builds a launch of the harness process from what its wrapper keeps; the caller
 // adds it. A process serving threads gets its harness definition again, which its thread
-// launches need.
+// launches need. The launch gets the MCP servers its directory selects now, which the
+// configuration may have changed since it started.
 func (s *Server) attachProcess(ctx context.Context, msg *v1.AttachLaunchRequest) (*launch, error) {
 	view := msg.Launch
 	if view.Kind == v1.Launch_KIND_RESOURCES {
@@ -143,29 +140,19 @@ func (s *Server) attachProcess(ctx context.Context, msg *v1.AttachLaunchRequest)
 	if b.mode != view.Mode {
 		return nil, rpcError(connect.CodeInvalidArgument, "native arguments differ from the launch's")
 	}
-	stale := b.snapshot.ID != view.SnapshotId
 	l := s.newLaunch(view, b, msg.Grant, msg.LifecycleToken, nil)
-	inputs := map[string]string{}
-	if !stale || b.threadServer {
-		if inputs, err = launchInputs(b.snapshot, msg.EnvironmentInputs, adapters.Forwarded(b.adapter)); err != nil {
-			l.cancel()
-			return nil, err
-		}
-	}
-	switch {
-	case b.threadServer:
-		args, env, lookup, err := s.resolveHarness(ctx, b, inputs)
-		if err != nil {
-			l.cancel()
-			return nil, err
-		}
-		l.target = adapters.NewTarget(b.harness, args, env, msg.NativeArguments, lookup)
-		l.target.Resolved = msg.Executable
-	case stale:
-		l.unavailable = staleSnapshot
-	default:
+	inputs := attachedInputs(b.snapshot, msg.EnvironmentInputs, adapters.Forwarded(b.adapter))
+	if !b.threadServer {
 		l.endpoints, _ = s.endpoints(l.ctx, view.Id, b.snapshot, inputs, b.snapshot.Directory)
+		return l, nil
 	}
+	args, env, lookup, err := s.resolveHarness(ctx, b, inputs)
+	if err != nil {
+		l.cancel()
+		return nil, err
+	}
+	l.target = adapters.NewTarget(b.harness, args, env, msg.NativeArguments, lookup)
+	l.target.Resolved = msg.Executable
 	return l, nil
 }
 
@@ -206,14 +193,8 @@ func (s *Server) attachThread(parent *launch, thread *v1.AttachedThread) bool {
 	s.mu.Lock()
 	l := s.newLaunch(view, launchBasis{snapshot: snapshot}, thread.Grant, "", parent)
 	s.mu.Unlock()
-	if snapshot.ID != view.SnapshotId {
-		l.unavailable = staleSnapshot
-	} else if inputs, err := launchInputs(snapshot, thread.EnvironmentInputs, nil); err != nil {
-		l.cancel()
-		return fail(err)
-	} else {
-		l.endpoints, _ = s.endpoints(l.ctx, view.Id, snapshot, inputs, snapshot.Directory)
-	}
+	inputs := attachedInputs(snapshot, thread.EnvironmentInputs, nil)
+	l.endpoints, _ = s.endpoints(l.ctx, view.Id, snapshot, inputs, snapshot.Directory)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !active(parent.view.State) || s.stopped {
