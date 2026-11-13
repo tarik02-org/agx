@@ -5,7 +5,7 @@
 **One config for every coding agent.**<br>
 Skills, MCP servers, and instructions — scoped to the directory you're in.
 
-Codex · Claude Code · Pi · OpenCode 2
+Codex · Claude Code · Pi · OpenCode 2 · any ACP agent
 
 [![CI](https://github.com/tarik02-org/agx/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/tarik02-org/agx/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/tarik02-org/agx?sort=semver)](https://github.com/tarik02-org/agx/releases)
@@ -192,6 +192,8 @@ OpenCode 2 uses a [native Effect plugin](packages/opencode/README.md), which
 connects its server directly to AGX for directory-scoped configuration.
 
 Any tool that starts Codex, Claude Code, or Pi can run them through agx: point it at a [shim](docs/harnesses.md#shims) instead of the agent's own binary. See [Integrations](docs/integrations.md) for [T3 Code](docs/integrations.md#t3-code).
+
+Editors and other [Agent Client Protocol](https://agentclientprotocol.com) clients can run any ACP agent through agx, with each session scoped to its own directory: see [ACP clients](docs/integrations.md#acp-clients).
 
 ## Docs
 

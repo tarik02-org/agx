@@ -146,6 +146,10 @@ func (a *app) runDoctor(
 				defined = true
 			}
 		}
+		if _, err := adapter.Executable(""); errors.Is(err, adapters.ErrNoExecutable) {
+			// A base without an executable of its own; definitionExecutables checks what runs.
+			continue
+		}
 		executable, findErr := adapter.Executable(configured)
 		if findErr == nil {
 			executables[name] = executable
@@ -164,7 +168,12 @@ func (a *app) runDoctor(
 		})
 	}
 	wg.Wait()
-	add(harnessRows...)
+	for _, row := range harnessRows {
+		if row.Name != "" {
+			add(row)
+		}
+	}
+	add(definitionExecutables(c, a.registry)...)
 
 	if loaded {
 		add(definitionChecks(ctx, c, a.registry, a.paths.Cache)...)
@@ -349,6 +358,38 @@ func harnessCheck(
 	}
 	row.Status = checkPass
 	return row
+}
+
+// definitionExecutables checks the executables of definitions whose base has none of its own.
+func definitionExecutables(c *config.Config, registry adapters.Registry) []check {
+	rows := []check{}
+	for _, name := range slices.Sorted(maps.Keys(c.Harnesses)) {
+		h, err := c.Harness(name)
+		if err != nil {
+			continue
+		}
+		adapter, ok := registry.Launcher(h.Builtin)
+		if !ok {
+			continue
+		}
+		if _, err := adapter.Executable(""); !errors.Is(err, adapters.ErrNoExecutable) {
+			continue
+		}
+		row := check{Group: "harness", Name: name, Status: checkPass}
+		executable, err := adapter.Executable(h.Executable)
+		switch {
+		case errors.Is(err, adapters.ErrNoExecutable):
+			row.Status, row.Detail = checkFail, "no executable configured"
+			row.Hint = fmt.Sprintf("set harnesses.%s.executable to the agent's absolute path", name)
+		case err != nil:
+			row.Status, row.Detail = checkFail, err.Error()
+			row.Hint = fmt.Sprintf("fix harnesses.%s.executable", name)
+		default:
+			row.Detail = fmt.Sprintf("%s (%s)", shownPath(executable), h.Builtin)
+		}
+		rows = append(rows, row)
+	}
+	return rows
 }
 
 // definitionChecks runs the checks of the adapters that have their own, for every harness

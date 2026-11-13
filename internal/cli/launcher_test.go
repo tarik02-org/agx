@@ -33,7 +33,7 @@ type nativeClientInvocation struct {
 	Defined   string
 }
 
-func TestLauncherHarnessesSkipHidden(t *testing.T) {
+func TestLauncherHarnessesSkipHiddenAndProtocolServers(t *testing.T) {
 	root, fragment := writeConfig(t, t.TempDir(), "")
 	if err := os.WriteFile(fragment, []byte(`harnesses:
   claude: {hidden: true}

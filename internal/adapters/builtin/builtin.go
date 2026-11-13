@@ -3,6 +3,7 @@ package builtin
 
 import (
 	"github.com/tarik02-org/agx/internal/adapters"
+	"github.com/tarik02-org/agx/internal/adapters/acp"
 	"github.com/tarik02-org/agx/internal/adapters/claude"
 	"github.com/tarik02-org/agx/internal/adapters/codex"
 	"github.com/tarik02-org/agx/internal/adapters/opencode"
@@ -10,5 +11,11 @@ import (
 )
 
 func Registry() adapters.Registry {
-	return adapters.NewRegistry(codex.Adapter{}, claude.Adapter{}, pi.Adapter{}, opencode.Adapter{})
+	return adapters.NewRegistry(
+		codex.Adapter{},
+		claude.Adapter{},
+		pi.Adapter{},
+		opencode.Adapter{},
+		acp.Adapter{},
+	)
 }

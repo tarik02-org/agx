@@ -312,10 +312,15 @@ func runHarness(
 	if assigned != "" {
 		record.SessionIds, record.Exact = []string{assigned}, true
 	}
-	if storeErr != nil {
+	// A harness without a local session store, such as an ACP agent, leaves nothing to resume.
+	recorded := storeErr == nil && store != ""
+	switch {
+	case storeErr != nil:
 		ui.Diagnose(ui.Warn, "cannot locate the session store for resumption: %v", storeErr)
-	} else if err := link.record(ctx, record); err != nil {
-		ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
+	case recorded:
+		if err := link.record(ctx, record); err != nil {
+			ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
+		}
 	}
 
 	finished := make(chan struct{})
@@ -474,7 +479,7 @@ func runHarness(
 		finish.Outcome = &v1.FinishLaunchRequest_SpawnFailure{SpawnFailure: "native process could not start"}
 	}
 	record.FinishedAt = finishedAt
-	if storeErr == nil {
+	if recorded {
 		if err := link.record(context.Background(), record); err != nil {
 			ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
 		}
