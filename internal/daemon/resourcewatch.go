@@ -106,7 +106,8 @@ func resourceMCPDigest(c *config.Config, id config.ID) (string, error) {
 }
 
 // Polling keeps resource detection daemon-owned, including local content that config.Inputs
-// does not track. Each stream resolves one scope at most once per interval.
+// does not track. Each stream resolves one scope once per interval, and at once after an edit
+// committed through this daemon; edits made on disk or through another process wait for the poll.
 const resourceWatchInterval = time.Second
 
 func (s *Server) WatchResources(
@@ -121,6 +122,8 @@ func (s *Server) WatchResources(
 	ticker := time.NewTicker(resourceWatchInterval)
 	defer ticker.Stop()
 	for {
+		// Taken before resolving, so an edit committed meanwhile is not missed.
+		edited := s.edited.next()
 		message := &v1.WatchResourcesResponse{}
 		snapshot, err := s.resourceSnapshot(req.Msg.Directory, req.Msg.Harness)
 		var manifest *v1.ResourceManifest
@@ -157,6 +160,7 @@ func (s *Server) WatchResources(
 		case <-s.drain.stopping.Done():
 			return refusal()
 		case <-ticker.C:
+		case <-edited:
 		}
 	}
 }

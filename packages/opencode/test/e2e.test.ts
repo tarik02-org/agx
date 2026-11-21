@@ -872,6 +872,36 @@ export default define({
         ),
       ),
     );
+    const committed = async (command: ReadonlyArray<string>, present: boolean) => {
+      await exec(binary, ["instructions", ...command], { env });
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const before = requests.length;
+        await api.session.generate({
+          sessionID: session.id,
+          prompt: "Confirm automatic local configuration reload.",
+        });
+        if (
+          requests
+            .slice(before)
+            .some((request) =>
+              request.messages.some(
+                (message) =>
+                  message.role === "system" &&
+                  JSON.stringify(message.content).includes("AGX_COMMITTED_SENTINEL"),
+              ),
+            ) === present
+        ) {
+          return;
+        }
+        await setTimeout(100);
+      }
+      assert.fail(`agx instructions ${command[0]} did not update instructions automatically`);
+    };
+    await committed(
+      ["add", "--id", "committed", "--text", "AGX_COMMITTED_SENTINEL", "--scope", alpha],
+      true,
+    );
+    await committed(["remove", "committed", "--force"], false);
     const leaseBeforeInvalid = (await readRuntime()).launches.find(
       (entry) => entry.directory === alpha && entry.state === "STATE_RUNNING",
     );

@@ -84,8 +84,9 @@ Native process settings such as executable, argv and environment are not applied
 
 The daemon streams manifests containing selected resource identities, digests,
 settings and diagnostics. Content is fetched only when preparing resources;
-the watch does not send blobs. A one-second observation loop detects configuration
-and selected local file changes. Unrelated configuration edits do not rotate the
+the watch does not send blobs. A one-second observation loop detects local
+configuration, overlay and selected local file changes; an edit committed through
+the daemon is sent at once. Unrelated configuration edits do not rotate the
 lease. Invalid configuration emits an explicit state and preserves last-good
 resources; recovery is reported even when the revision is unchanged.
 

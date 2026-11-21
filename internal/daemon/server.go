@@ -116,6 +116,8 @@ type Server struct {
 	installs       sync.WaitGroup
 	installsClosed bool
 	port           int
+	// edited wakes resource watchers when an edit is committed through this daemon.
+	edited notifier
 	// changed wakes runtime watchers when launches or their MCP servers change.
 	changed *notifier
 	// clients pools the daemon's own MCP client sessions for ListTools and CallTool.

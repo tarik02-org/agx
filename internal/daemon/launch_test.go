@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -302,4 +303,76 @@ func TestTakeResolved(t *testing.T) {
 	if got := take(c, resolved.ID); got == resolved || got.ID != resolved.ID {
 		t.Errorf("a taken snapshot was taken again, or resolved to %s", got.ID)
 	}
+}
+
+// Running consumers follow both authorities: local configuration committed through the daemon
+// and declarative overlays edited on disk, along with the files either one names.
+func TestResourceWatchFollowsLocalAndOverlayEdits(t *testing.T) {
+	s, dir := editorServer(t, editorConfig)
+	s.drain = newDrain()
+	s.discovery.Token = "management"
+	_, handler := agxv1connect.NewResourceServiceHandler(s)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	client := agxv1connect.NewResourceServiceClient(http.DefaultClient, server.URL)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	req := connect.NewRequest(&v1.WatchResourcesRequest{Directory: dir})
+	req.Header().Set("Authorization", "Bearer management")
+	stream, err := client.WatchResources(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stream.Close() }()
+	revisions := map[string]bool{}
+	next := func(edit string, want ...string) {
+		t.Helper()
+		if !stream.Receive() || stream.Msg().GetManifest() == nil {
+			t.Fatalf("%s: no manifest: %v %v", edit, stream.Msg(), stream.Err())
+		}
+		manifest := stream.Msg().GetManifest()
+		if revisions[manifest.Revision] {
+			t.Fatalf("%s: revision %s repeated", edit, manifest.Revision)
+		}
+		revisions[manifest.Revision] = true
+		got := []string{}
+		for _, entry := range manifest.Resources {
+			got = append(got, entry.Resource.GetSkillId()+entry.Resource.GetInstructionsId()+entry.Resource.GetMcpId())
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, want) {
+			t.Fatalf("%s: resources = %v, want %v", edit, got, want)
+		}
+	}
+	revision := int64(0)
+	local := func(changes ...*v1.ConfigChange) {
+		t.Helper()
+		response, err := s.UpdateConfiguration(t.Context(), connect.NewRequest(
+			&v1.UpdateConfigurationRequest{Changes: changes, ExpectedRevision: revision},
+		))
+		if err != nil {
+			t.Fatal(err)
+		}
+		revision = response.Msg.Revision
+	}
+	next("initial")
+	local(define("instructions", "note", map[string]any{"text": "first"}), enable("instructions", "note"))
+	next("local selection", "note")
+	local(define("instructions", "note", map[string]any{"text": "second"}))
+	next("local definition", "note")
+	writeFile(t, filepath.Join(dir, "main.yaml"), editorConfig+"scopes:\n  - add:\n      skills: [alpha]\n")
+	next("overlay selection", "alpha", "note")
+	writeFile(
+		t,
+		filepath.Join(dir, "skills", "alpha", "SKILL.md"),
+		"---\nname: alpha\ndescription: Alpha skill.\n---\nChanged.\n",
+	)
+	next("overlay file", "alpha", "note")
+	local(
+		define("skills", "beta", map[string]any{"description": "Beta skill.", "content": "Body."}),
+		enable("skills", "beta"),
+	)
+	next("local skill", "alpha", "beta", "note")
+	local(define("skills", "beta", map[string]any{"description": "Beta skill.", "content": "Changed."}))
+	next("local skill content", "alpha", "beta", "note")
 }
