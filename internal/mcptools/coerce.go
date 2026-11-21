@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -147,9 +148,13 @@ func Arguments(
 			}
 		}
 		if previous, exists := out.Get(key); exists && given[key] {
-			items, isArray := previous.([]any)
-			if !isArray || !r.accepts(property, "array") {
+			if !r.accepts(property, "array") {
 				return nil, ArgumentError{fmt.Sprintf("argument %s is given twice and is not an array", key)}
+			}
+			items, isArray := previous.([]any)
+			if !isArray {
+				// The first value of an argument that is a string or a list of them.
+				items = []any{previous}
 			}
 			added, isList := value.([]any)
 			if !isList {
@@ -285,30 +290,33 @@ func (r renderer) coerce(s *Schema, key, text string) (any, error) {
 		return text, nil
 	}
 	has := func(t string) bool { return slices.Contains(types, t) }
+	array, isArray := jsonLiteral(text)
+	if _, isList := array.([]any); !isList {
+		isArray = false
+	}
+	integer, isInteger := integerLiteral(text)
+	number, isNumber := numberLiteral(text)
 	switch {
 	case has("null") && text == "null":
 		return nil, nil
+	case has("array") && isArray:
+		return array, nil
 	case has("string"):
 		return text, nil
 	case has("boolean") && (text == "true" || text == "false"):
 		return text == "true", nil
-	case has("integer") && isInteger(text):
-		return json.Number(text), nil
-	case has("number") && isNumber(text):
-		return json.Number(text), nil
+	case has("integer") && isInteger:
+		return integer, nil
+	case has("number") && isNumber:
+		return number, nil
 	case has("object") && strings.HasPrefix(strings.TrimSpace(text), "{"):
 		value, ok := jsonLiteral(text)
 		if !ok {
 			return nil, ArgumentError{fmt.Sprintf("argument %s is not a valid JSON object", key)}
 		}
 		return value, nil
-	case has("array") && strings.HasPrefix(strings.TrimSpace(text), "["):
-		value, ok := jsonLiteral(text)
-		if !ok {
-			return nil, ArgumentError{fmt.Sprintf("argument %s is not a valid JSON array", key)}
-		}
-		return value, nil
 	case has("array"):
+		// Also text that only starts like a JSON array, such as "[WIP] fix".
 		item, err := r.coerce(r.items(s), key, text)
 		if err != nil {
 			return nil, err
@@ -372,15 +380,23 @@ func matches(v any, text string) bool {
 	return false
 }
 
-func isInteger(text string) bool {
-	_, err := strconv.ParseInt(text, 10, 64)
-	return err == nil
+// integerLiteral is text as JSON spells the integer: Go also reads 007 and +5, which JSON does not.
+func integerLiteral(text string) (json.Number, bool) {
+	n, err := strconv.ParseInt(text, 10, 64)
+	return json.Number(strconv.FormatInt(n, 10)), err == nil
 }
 
-func isNumber(text string) bool {
-	_, err := strconv.ParseFloat(text, 64)
-	return err == nil && !strings.ContainsAny(text, "xXpP_") && !strings.EqualFold(text, "inf") &&
-		!strings.EqualFold(text, "+inf") && !strings.EqualFold(text, "-inf") && !strings.EqualFold(text, "nan")
+// numberLiteral is text as a JSON number, kept as written when JSON reads it, so that no digit
+// is lost; Go also reads .5, 5. and +5.
+func numberLiteral(text string) (json.Number, bool) {
+	f, err := strconv.ParseFloat(text, 64)
+	switch {
+	case err != nil || math.IsInf(f, 0) || math.IsNaN(f) || strings.ContainsAny(text, "xXpP_"):
+		return "", false
+	case json.Valid([]byte(text)):
+		return json.Number(text), true
+	}
+	return json.Number(strconv.FormatFloat(f, 'g', -1, 64)), true
 }
 
 // jsonLiteral parses text as a JSON object or array.

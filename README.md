@@ -101,15 +101,15 @@ Run `agx` to start an agent or resume any past session, from any harness.
 
 ## Install
 
-Download `agx` from the [releases page](https://github.com/tarik02-org/agx/releases) and put it on your `PATH`.
+Download an archive from the [releases page](https://github.com/tarik02-org/agx/releases) and put `agx` and `agxd` from it on your `PATH`.
 
 <details>
 <summary><b>macOS: first run</b></summary>
 
-Clear the quarantine flag once:
+Clear the quarantine flag of both binaries once:
 
 ```sh
-xattr -d com.apple.quarantine ./agx
+xattr -d com.apple.quarantine ./agx ./agxd
 ```
 
 </details>
@@ -140,7 +140,8 @@ to the drop-in `agx.d/10-home-manager.yaml`, validated at build time; `settings.
 goes to the root `agx.yaml` instead:
 
 ```nix
-{ config, pkgs, ... }: {
+# inputs.agx.url = "github:tarik02-org/agx"; pass inputs to the module with extraSpecialArgs.
+{ config, pkgs, inputs, ... }: {
   imports = [ inputs.agx.homeManagerModules.default ];
   programs.agx = {
     enable = true;

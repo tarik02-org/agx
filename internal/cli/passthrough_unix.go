@@ -13,5 +13,8 @@ func passthrough(cmd *exec.Cmd) error {
 	if cmd.Err != nil {
 		return cmd.Err
 	}
-	return syscall.Exec(cmd.Path, cmd.Args, cmd.Env)
+	return replaceProcess(cmd.Path, cmd.Args, cmd.Env)
 }
+
+// replaceProcess is a variable for tests, whose process must go on to report their results.
+var replaceProcess = syscall.Exec

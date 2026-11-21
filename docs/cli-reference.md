@@ -1,5 +1,36 @@
 # CLI reference
 
+Every command also accepts `-h`/`--help`, which is the authoritative list of
+flags for your version. `agx man` prints a man page of every command.
+
+## Global options
+
+Put these before the command.
+
+| Option                        | Meaning                                                                                              |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `--config <file>`             | root configuration file (default: `agx/agx.yaml` in your config directory; `AGX_CONFIG`); must exist |
+| `--cache <dir>`               | package and artifact cache (default: `agx` in your cache directory; `AGX_CACHE`)                     |
+| `--color auto\|always\|never` | style output; `auto` styles terminals unless `NO_COLOR` is set                                       |
+| `--json`                      | print [JSON documents](#json-output) instead of text; never prompts. Also accepted after the command |
+| `-v`, `--version`             | print the version                                                                                    |
+
+### Environment variables
+
+| Variable                                    | Meaning                                                                                                                                                             |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AGX_CONFIG`                                | root configuration file, absolute                                                                                                                                   |
+| `AGX_CACHE`                                 | cache directory, absolute                                                                                                                                           |
+| `AGX_STATE`                                 | state directory, absolute; defaults to `<cache>/state` when the cache is not the default                                                                            |
+| `AGX_NO_AUTOSTART=1`                        | never start the daemon automatically                                                                                                                                |
+| `AGX_DAEMON`                                | `agxd` to start, absolute; by default the one beside `agx`                                                                                                          |
+| `AGX_LAUNCH_ID`, `AGX_MCP_GRANT`            | set by agx in a harness's environment: the launch and its grant, which `agx mcp tools`, `agx mcp call`, and generated clients use to reach the launch's MCP servers |
+| `NO_COLOR`, `CLICOLOR_FORCE`, `FORCE_COLOR` | turn styling off, or force it on                                                                                                                                    |
+
+See [Where files live](configuration.md#where-files-live) for the defaults.
+
+## Integrations
+
 `agx --json daemon connect` locates the authenticated daemon for a local
 configuration consumer. It uses normal autostart/version handling and returns
 `data.discovery`, the absolute path of the private discovery file, without its
@@ -10,46 +41,19 @@ it rereads discovery when reconnecting after a daemon replacement.
 instance crashed: its discovery remains and its startup lock is free. An
 intentional stop removes discovery and is not restarted by this option.
 
-Every command also accepts `-h`/`--help`, which is the authoritative list of
-flags for your version. `agx man` prints a man page of every command.
-
-## Global options
-
-Put these before the command.
-
-| Option                        | Meaning                                                                                                                                          |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--config <file>`             | root configuration file (default: `agx/agx.yaml` in your config directory; `AGX_CONFIG`); must exist, except for `add` commands, which create it |
-| `--cache <dir>`               | package and artifact cache (default: `agx` in your cache directory; `AGX_CACHE`)                                                                 |
-| `--color auto\|always\|never` | style output; `auto` styles terminals unless `NO_COLOR` is set                                                                                   |
-| `--json`                      | print [JSON documents](#json-output) instead of text; never prompts. Also accepted after the command                                             |
-| `-v`, `--version`             | print the version                                                                                                                                |
-
-### Environment variables
-
-| Variable                                    | Meaning                                                                                                                                                             |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AGX_CONFIG`                                | root configuration file, absolute                                                                                                                                   |
-| `AGX_CACHE`                                 | cache directory, absolute                                                                                                                                           |
-| `AGX_STATE`                                 | state directory, absolute; defaults to `<cache>/state` when the cache is not the default                                                                            |
-| `AGX_NO_AUTOSTART=1`                        | never start the daemon automatically                                                                                                                                |
-| `AGX_LAUNCH_ID`, `AGX_MCP_GRANT`            | set by agx in a harness's environment: the launch and its grant, which `agx mcp tools`, `agx mcp call`, and generated clients use to reach the launch's MCP servers |
-| `NO_COLOR`, `CLICOLOR_FORCE`, `FORCE_COLOR` | turn styling off, or force it on                                                                                                                                    |
-
-See [Where files live](configuration.md#where-files-live) for the defaults.
-
 ## Harnesses
 
-| Command                           | Description                                                                |
-| --------------------------------- | -------------------------------------------------------------------------- |
-| `agx`                             | open the [launcher](sessions.md) on a terminal; print help otherwise       |
-| `agx codex [args...]`             | launch Codex with this directory's resources                               |
-| `agx claude [args...]`            | launch Claude Code                                                         |
-| `agx pi [args...]`                | launch Pi                                                                  |
-| `agx <definition> [args...]`      | launch one of your [harness definitions](harnesses.md#harness-definitions) |
-| `agx run <harness> -- [args...]`  | launch a harness by name                                                   |
-| `agx sessions [query] [--all]`    | list sessions to resume, here or (`--all`) everywhere                      |
-| `agx shims install\|list\|remove` | manage [shims](harnesses.md#shims)                                         |
+| Command                           | Description                                                                                               |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `agx`                             | open the [launcher](sessions.md) on a terminal; print help otherwise                                      |
+| `agx codex [args...]`             | launch Codex with this directory's resources                                                              |
+| `agx claude [args...]`            | launch Claude Code                                                                                        |
+| `agx pi [args...]`                | launch Pi                                                                                                 |
+| `agx opencode [args...]`          | run the OpenCode 2 client; its server gets resources through the [plugin](../packages/opencode/README.md) |
+| `agx <definition> [args...]`      | launch one of your [harness definitions](harnesses.md#harness-definitions)                                |
+| `agx run <harness> -- [args...]`  | launch a harness by name                                                                                  |
+| `agx sessions [query] [--all]`    | list sessions to resume, here or (`--all`) everywhere                                                     |
+| `agx shims install\|list\|remove` | manage [shims](harnesses.md#shims)                                                                        |
 
 Arguments after a harness name go to the harness unchanged; agx's own options
 go before it.
@@ -99,18 +103,17 @@ Commands that write take:
 | `--scope user\|here\|<dir>`                 | where to enable: everywhere (default), here and below, or a directory                                            |
 | `--harness <name>`                          | only for these harnesses; repeatable                                                                             |
 | `--define-only`                             | define without enabling (`add` only)                                                                             |
-| `-y`, `--yes`                               | write without confirming; implied without a terminal                                                             |
 | `--force`                                   | `remove`: also remove the entries that refer to the definition (a package's enabling rule entries go without it) |
 | `--kind skills\|instructions\|mcp\|bundles` | `use`/`unuse`: which kind, when an ID names several                                                              |
 
 Command-specific flags:
 
-| Command            | Flags                                                                                                                                                                                                                                                                                                    |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mcp add`          | `--header KEY=VALUE` (remote), `--env KEY=VALUE` (local), `--auth none\|oauth\|keychain\|'!secret <id>'\|'!env NAME'\|'!file PATH'`, `--client-id <id>` (OAuth public client), `--description <text>`, `--load native\|on_demand`, `--share none\|directory\|repository\|global` (local), `--no-browser` |
-| `skill add`        | `--skill <name>` (repeatable), `--all`, `--ref <ref>`, `--path <dir>`, `--package <id>`                                                                                                                                                                                                                  |
-| `instructions add` | `--id <id>`, `--text <text>`                                                                                                                                                                                                                                                                             |
-| `harness add`      | `--base <harness>`, `--executable <path>`, `--env KEY=VALUE` (repeatable)                                                                                                                                                                                                                                |
+| Command            | Flags                                                                                                                                                                                                                                                                                              |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mcp add`          | `--header KEY=VALUE` (remote), `--env KEY=VALUE` (local), `--auth none\|oauth\|keychain\|'!secret <id>'\|'!env NAME'\|'!file PATH'`, `--client-id <id>` (OAuth public client), `--description <text>`, `--load native\|on_demand`, `--share none\|directory\|repo\|global` (local), `--no-browser` |
+| `skill add`        | `--skill <name>` (repeatable), `--all`, `--ref <ref>`, `--path <dir>`, `--package <id>`                                                                                                                                                                                                            |
+| `instructions add` | `--id <id>`, `--text <text>`                                                                                                                                                                                                                                                                       |
+| `harness add`      | `--base <harness>`, `--executable <path>`, `--display-name <name>`, `--env KEY=VALUE` (repeatable)                                                                                                                                                                                                 |
 
 In `--header` and `--env`, a value written `!secret <id>`, `!env NAME`, or
 `!file PATH` becomes that [tag](secrets.md#using-values-from-elsewhere).
@@ -194,8 +197,7 @@ result; harness launches and the launcher reject it. With `--json`:
 
 - stdout carries only JSON, one document per line; messages and warnings stay
   on stderr;
-- nothing is asked: `--json` implies `--yes`, and a missing argument is an
-  error.
+- nothing is asked: a missing argument is an error.
 
 A successful command prints a `data` document:
 

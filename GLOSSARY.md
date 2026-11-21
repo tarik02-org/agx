@@ -6,7 +6,7 @@ harness runs.
 ## Language
 
 **Local configuration**: Definitions and scope rules managed through agx commands
-or its web UI for one root configuration.
+for one root configuration.
 
 **Overlay**: Declarative configuration that takes precedence over local
 configuration; a same-name definition replaces the local definition as a whole.

@@ -76,7 +76,8 @@ func (a *app) fragmentConfig() (*config.Config, error) {
 }
 
 func (a *app) autostart() bool {
-	if a.harnesses.path == a.paths.Config && a.harnesses.config != nil && a.harnesses.err == nil {
+	if a.harnesses.path == a.paths.Config && a.harnesses.config != nil && a.harnesses.err == nil &&
+		!a.harnesses.bare {
 		return autostart(a.harnesses.config)
 	}
 	root, err := config.ReadRoot(a.paths.Config, a.builtins)

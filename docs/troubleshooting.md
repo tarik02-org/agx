@@ -30,6 +30,13 @@ Run `agx config validate`; it names the file and line. Edit commands never
 write an invalid configuration, so the message explains what the change would
 have broken.
 
+**The configuration stopped loading because of something a command saved.**
+For example, a skill added with `agx skill add` whose directory was deleted
+since. Remove the definition the message names, such as
+`agx skill remove <id> --force`. While the configuration does not load, an edit
+is saved only if it changes what is wrong, so repair it one message at a time.
+`agx config export` prints what the commands saved, also then.
+
 **A launch warns "package … is not installed; run agx install".**
 A package or Git skill is not installed yet, or changed since it was installed
 (for example after `git pull` in your configuration repository). The launch

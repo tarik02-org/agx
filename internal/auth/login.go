@@ -328,7 +328,9 @@ func (m *Manager) begin(
 			},
 			client,
 		)
-		if err != nil || registration.ClientSecret != "" {
+		// Atlassian issues a client_secret even for clients registered with
+		// token_endpoint_auth_method "none"; the confirmed method decides.
+		if err != nil || registration.ClientSecret != "" && registration.TokenEndpointAuthMethod != "none" {
 			return nil, fmt.Errorf("OAuth public-client registration failed")
 		}
 		clientID = registration.ClientID
@@ -471,7 +473,10 @@ func (m *Manager) Callback(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadRequest, errors.New("authorization was not completed"))
 		return
 	}
-	ctx := context.WithValue(r.Context(), oauth2.HTTPClient, client)
+	// The code is spent once the server answers; a tab closed meanwhile must not lose the login.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), RefreshTimeout)
+	defer cancel()
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, client)
 	token, err := p.oauth.Exchange(
 		ctx,
 		query.Get("code"),

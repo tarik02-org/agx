@@ -627,7 +627,8 @@ func (e *Endpoint) sessionEnded(id string, s *stdioSession) {
 	if e.sessions[id] == s {
 		delete(e.sessions, id)
 	}
-	if !e.closed {
+	// Sessions that go on serving keep the server connected.
+	if !e.closed && len(e.sessions) == 0 {
 		e.setState("connecting", e.problem)
 	}
 }

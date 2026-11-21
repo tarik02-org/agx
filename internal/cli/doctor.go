@@ -9,6 +9,8 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"net/netip"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -135,14 +137,20 @@ func (a *app) runDoctor(
 	for i, name := range a.registry.Launchers() {
 		adapter, _ := a.registry.Launcher(name)
 		configured := ""
+		used := false
 		if h, err := c.Harness(name); err == nil {
 			configured = h.Executable
+			used = h.Enabled
 		}
 		defined := false
 		for definition := range c.Harnesses {
-			if h, err := c.Harness(definition); err == nil && h.Builtin == name {
+			if h, err := c.Harness(definition); err == nil && h.Builtin == name && h.Enabled {
 				defined = true
 			}
+		}
+		// A disabled built-in that no enabled definition runs need not be installed.
+		if !used && !defined {
+			continue
 		}
 		executable, findErr := adapter.Executable(configured)
 		if findErr == nil {
@@ -162,9 +170,13 @@ func (a *app) runDoctor(
 		})
 	}
 	wg.Wait()
-	add(harnessRows...)
+	for _, row := range harnessRows {
+		if row.Name != "" {
+			add(row)
+		}
+	}
 
-	if loaded && len(c.Skills) > 0 {
+	if loaded {
 		add(definitionChecks(ctx, c, a.registry, a.paths.Cache)...)
 	}
 
@@ -172,6 +184,9 @@ func (a *app) runDoctor(
 	add(daemonRow)
 	if client != nil && loaded {
 		add(mcpChecks(ctx, client, c, directory, all)...)
+	}
+	if loaded {
+		add(cleartextChecks(c)...)
 	}
 	if client != nil {
 		add(secretChecks(ctx, client)...)
@@ -359,7 +374,7 @@ func definitionChecks(ctx context.Context, c *config.Config, registry adapters.R
 	rows := []check{}
 	for _, name := range names {
 		h, err := c.Harness(name)
-		if err != nil {
+		if err != nil || !h.Enabled {
 			continue
 		}
 		adapter, _ := registry.Launcher(h.Builtin)
@@ -488,13 +503,48 @@ func mcpChecks(ctx context.Context, c *client, cfg *config.Config, directory str
 				Scope: &v1.McpCallScope{Directory: directory, All: true, EnvironmentInputs: inputs},
 			}))
 			var msg *v1.McpTools
-			if err == nil {
+			switch {
+			case err == nil && len(response.Msg.Servers) == 0:
+				err = errors.New("the daemon listed no tools for the server")
+			case err == nil:
 				msg = response.Msg.Servers[0]
 			}
 			rows[i] = mcpCheck(id, cfg.MCP[id], msg, err)
 		})
 	}
 	wg.Wait()
+	return rows
+}
+
+// cleartextChecks warn about remote MCP servers whose credentials cross a network unencrypted.
+// Such servers exist on purpose, on a home network or a tailnet, so this is no error.
+func cleartextChecks(c *config.Config) []check {
+	rows := []check{}
+	for _, id := range slices.Sorted(maps.Keys(c.MCP)) {
+		server := c.MCP[id]
+		u, err := url.Parse(server.URL)
+		if err != nil || u.Scheme != "http" {
+			continue
+		}
+		if ip, err := netip.ParseAddr(u.Hostname()); u.Hostname() == "localhost" || err == nil && ip.IsLoopback() {
+			continue
+		}
+		injected := func(v config.Value) bool { return v.Env != "" || v.File != "" || v.Secret != "" }
+		// On-demand OAuth holds no credential until the server asks for a login.
+		credentials := injected(server.Auth.Value) || server.Auth.Inline != nil && !server.Auth.Inline.Implicit
+		for _, header := range server.Headers {
+			credentials = credentials || injected(header)
+		}
+		if credentials {
+			rows = append(rows, check{
+				Group:  "mcp",
+				Name:   string(id),
+				Status: checkWarn,
+				Detail: "sends its credentials to " + u.Host + " unencrypted",
+				Hint:   "use an https URL unless the network between is trusted",
+			})
+		}
+	}
 	return rows
 }
 

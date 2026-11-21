@@ -1,6 +1,6 @@
 # Configuration
 
-agx combines local configuration managed by its CLI and web UI with declarative
+agx combines local configuration managed by its commands with declarative
 YAML overlays. Local definitions and scope rules live in `state.db`, keyed by
 the canonical root configuration path. The root YAML file lists overlays and
 holds daemon settings; it may be absent.
@@ -258,13 +258,12 @@ Options shared by the commands that write:
 | `--scope <dir>`    | that directory and below; it must exist, except for `unuse` |
 | `--harness <name>` | only for launches of that harness; repeatable               |
 | `--define-only`    | define without enabling (`add` commands)                    |
-| `-y`, `--yes`      | write without asking                                        |
 
-On a terminal, missing arguments become prompts and commands ask before saving.
-Without a terminal, commands save without asking and a missing argument is an
-error. Every change is validated against the combined configuration before its
-local definitions, rules, and package locks are committed in one transaction.
-Concurrent edits fail with a conflict and can be retried.
+On a terminal, missing arguments become prompts; without one, a missing argument
+is an error. Commands save without asking. Every change is validated against the
+combined configuration before its local definitions, rules, and package locks
+are committed in one transaction. Concurrent edits fail with a conflict and can
+be retried.
 
 - A same-directory YAML rule that opposes `use` or `unuse` is reported as
   read-only, so a command cannot silently save a change that YAML defeats.
@@ -274,9 +273,9 @@ Concurrent edits fail with a conflict and can be retried.
   stay read-only; a reference in an overlay may require changing that overlay.
 - `agx skill remove <package-id>` removes a local package, its locks, and the
   local rules enabling its skills. Other references need `--force`.
-- Local resource files remain ordinary files. The web UI can edit configured
-  skill/instructions contents, including files named by YAML; package/cache
-  contents and configuration files cannot be edited this way.
+- Local resource files remain ordinary files. The management API can write
+  configured skill/instructions contents, including files named by YAML;
+  package/cache contents and configuration files cannot be written this way.
 
 `agx config export` prints local definitions and rules as YAML, including
 injection tags. Save it outside the root's overlay globs until you intend to
@@ -284,7 +283,7 @@ make it authoritative. Local relative paths are based at the canonical root's
 directory; exported relative paths need that same base. Package locks of local
 sources live in the database; run `agx install` after promoting them to YAML to
 create portable lockfiles. Bundles and other declarations not covered by CLI
-add commands can be supplied by the web UI or a YAML overlay.
+add commands can be supplied by a YAML overlay.
 
 ## Editor support
 

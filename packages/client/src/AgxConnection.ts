@@ -7,7 +7,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Schema from "effect/Schema";
 
 import { ConnectionError } from "./error.ts";
-import { Bootstrap, ConnectionOptions, Discovery } from "./schema.ts";
+import { Bootstrap, BootstrapFailure, ConnectionOptions, Discovery } from "./schema.ts";
 
 export class AgxConnection extends Context.Service<
   AgxConnection,
@@ -56,11 +56,25 @@ export const makeAgxConnection = Effect.fn("makeAgxConnection")(function* (
       );
     const result = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Bootstrap))(output).pipe(
       Effect.catchTag("SchemaError", (cause) =>
-        Effect.fail(
-          new ConnectionError({
-            operation: "daemon bootstrap response",
-            reason: "bootstrap",
-            cause,
+        // A failed command prints why as its JSON document, such as a daemon that cannot start.
+        Schema.decodeUnknownEffect(Schema.fromJsonString(BootstrapFailure))(output).pipe(
+          Effect.matchEffect({
+            onFailure: () =>
+              Effect.fail(
+                new ConnectionError({
+                  operation: "daemon bootstrap response",
+                  reason: "bootstrap",
+                  cause,
+                }),
+              ),
+            onSuccess: (failure) =>
+              Effect.fail(
+                new ConnectionError({
+                  operation: "daemon bootstrap",
+                  reason: "bootstrap",
+                  detail: failure.message,
+                }),
+              ),
           }),
         ),
       ),

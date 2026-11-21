@@ -66,7 +66,7 @@ func mcpAddCommand(a *app) *cobra.Command {
 			return cobra.MaximumNArgs(2)(cmd, args)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := a.newSession(cmd.Context(), flags.yes)
+			s, err := a.newSession(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -359,14 +359,13 @@ func listCommand(a *app, kind config.Kind) *cobra.Command {
 
 // removeCommand deletes a definition, refusing while other entries reference it unless forced.
 func removeCommand(a *app, kind config.Kind) *cobra.Command {
-	var flags editFlags
 	force := false
 	cmd := &cobra.Command{
 		Use:   "remove <id>",
 		Short: removeShort(kind.Label()),
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := a.newSession(cmd.Context(), flags.yes)
+			s, err := a.newSession(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -410,7 +409,6 @@ func removeCommand(a *app, kind config.Kind) *cobra.Command {
 			return s.report()
 		},
 	}
-	flags.registerYes(cmd)
 	cmd.Flags().BoolVar(&force, "force", false, "also remove the entries that reference it")
 	return cmd
 }

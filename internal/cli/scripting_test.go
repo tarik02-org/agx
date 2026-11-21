@@ -181,7 +181,7 @@ func TestJSONEdits(t *testing.T) {
 	failJSON(t, 1, "use", "missing", "--json")
 	failJSON(t, 1, "harness", "remove", "codex", "--json")
 	failJSON(t, 1, "harness", "remove", "pi", "--json")
-	// --json implies --yes and never prompts: a missing argument is a usage error.
+	// --json never prompts: a missing argument is a usage error.
 	failJSON(t, 2, "mcp", "remove", "--json")
 
 	b, err := os.ReadFile(path)

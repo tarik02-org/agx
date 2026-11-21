@@ -35,4 +35,4 @@ New to agx? Read [Getting started](getting-started.md) first.
 ## Working on agx
 
 [Development notes](development/README.md), the management API, and the
-[architecture decision records](adr/) live separately from these usage docs.
+[architecture decision records](adr/README.md) live separately from these usage docs.

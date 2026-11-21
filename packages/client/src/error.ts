@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 export class ConnectionError extends Schema.TaggedError<ConnectionError>()("ConnectionError", {
   operation: Schema.String,
   reason: Schema.Literals(["options", "bootstrap", "discovery"]),
+  detail: Schema.optionalKey(Schema.String),
   cause: Schema.optionalKey(
     Schema.Union([
       Schema.instanceOf(PlatformError.PlatformError),
@@ -13,7 +14,7 @@ export class ConnectionError extends Schema.TaggedError<ConnectionError>()("Conn
   ),
 }) {
   override get message() {
-    return `AGX ${this.operation} failed (${this.reason})`;
+    return `AGX ${this.operation} failed (${this.reason})${this.detail === undefined ? "" : `: ${this.detail}`}`;
   }
 }
 

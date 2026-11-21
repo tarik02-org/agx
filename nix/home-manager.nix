@@ -243,7 +243,7 @@ in
                 | "agx shims: \(.action) \(.name)"' <<< "$agx_shims"
             else
               warnEcho "agx shims install failed; shims may be stale: $(
-                ${lib.getExe pkgs.jq} -r '.error.message // "unknown error"' <<< "$agx_shims" 2>/dev/null || echo "$agx_shims"
+                ${lib.getExe pkgs.jq} -r '.message // "unknown error"' <<< "$agx_shims" 2>/dev/null || echo "$agx_shims"
               )"
             fi
           fi

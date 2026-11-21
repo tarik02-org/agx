@@ -55,7 +55,7 @@ func run(osArgs []string, stdout io.Writer) int {
 	color := ui.ColorAuto
 	root.PersistentFlags().Var(&color, "color", "style output: auto (terminals without NO_COLOR), always, never")
 	root.PersistentFlags().
-		BoolVar(&scripting.enabled, "json", false, "versioned JSON output; never prompts (implies --yes)")
+		BoolVar(&scripting.enabled, "json", false, "versioned JSON output; never prompts")
 	root.AddGroup(
 		&cobra.Group{ID: "harness", Title: "Harnesses"},
 		&cobra.Group{ID: "config", Title: "Configuration"},
@@ -83,6 +83,10 @@ func run(osArgs []string, stdout io.Writer) int {
 			RunE: func(cmd *cobra.Command, args []string) error {
 				if len(args) == 0 {
 					return fmt.Errorf("harness required: %s", strings.Join(a.harnesses.config.HarnessNames(), ", "))
+				}
+				// Flags are the harness's, but before its name there is none to pass them to.
+				if args[0] == "-h" || args[0] == "--help" {
+					return cmd.Help()
 				}
 				name := args[0]
 				args = args[1:]
@@ -123,15 +127,16 @@ func run(osArgs []string, stdout io.Writer) int {
 			Short: "Print local configuration as a YAML overlay",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
-				c, err := a.config()
+				// Not the loaded configuration: one that does not load is the one to export and fix.
+				local, err := a.localConfig()
 				if err != nil {
 					return err
 				}
-				data, err := c.Local.Export()
+				data, err := local.Export()
 				if err != nil {
 					return err
 				}
-				return emit(c.Local.Document, func() error { _, err := cmd.OutOrStdout().Write(data); return err })
+				return emit(local.Document, func() error { _, err := cmd.OutOrStdout().Write(data); return err })
 			},
 		},
 	)
@@ -351,7 +356,7 @@ func run(osArgs []string, stdout io.Writer) int {
 	}
 	versionOnly := len(args) == 1 && (args[0] == "--version" || args[0] == "-v")
 	if !completing && (versionOnly || len(args) == 0 || len(args) > 0 && args[0] == "daemon") {
-		a.harnesses = harnessConfig{path: a.paths.Config, config: config.Bare(a.builtins)}
+		a.harnesses = harnessConfig{path: a.paths.Config, config: config.Bare(a.builtins), bare: true}
 	} else {
 		a.harnesses = a.fragments()
 	}
@@ -359,7 +364,7 @@ func run(osArgs []string, stdout io.Writer) int {
 		short := "Launch " + name + " with directory-scoped resources"
 		if _, builtin := a.registry.Adapter(name); !builtin {
 			h, _ := a.harnesses.config.Harness(name)
-			short = "Launch " + name + " (" + h.Builtin + ")"
+			short = "Launch " + h.DisplayName + " (" + h.Builtin + ")"
 		}
 		root.AddCommand(
 			&cobra.Command{
@@ -369,6 +374,22 @@ func run(osArgs []string, stdout io.Writer) int {
 				DisableFlagParsing: true,
 				// Native arguments are the harness's own; the shell completes them as files.
 				ValidArgsFunction: files,
+				RunE: func(cmd *cobra.Command, args []string) error {
+					return runHarness(cmd.Context(), a.paths, a.registry, a.harnesses, name, args, "")
+				},
+			},
+		)
+	}
+	// A disabled harness keeps a command off the help, so running it says why it does not launch.
+	for _, name := range a.harnesses.config.HarnessNames() {
+		if h, err := a.harnesses.config.Harness(name); err != nil || h.Enabled {
+			continue
+		}
+		root.AddCommand(
+			&cobra.Command{
+				Use:                name,
+				Hidden:             true,
+				DisableFlagParsing: true,
 				RunE: func(cmd *cobra.Command, args []string) error {
 					return runHarness(cmd.Context(), a.paths, a.registry, a.harnesses, name, args, "")
 				},

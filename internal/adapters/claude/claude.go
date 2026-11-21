@@ -105,20 +105,23 @@ func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	prefix := []string{"--plugin-dir", filepath.Join(l.Artifacts, "plugin")}
-	if len(l.Instructions) > 0 {
-		prefix = append(prefix, "--append-system-prompt-file", l.InstructionsFile())
-		// An Agent SDK initialize request's appendSystemPrompt replaces the file's content.
-		if streamInput(l.Native) {
-			l.PrependInitializePrompt(strings.TrimRight(string(l.Instructions), "\n"))
-		}
-	}
+	prefix := []string{}
+	// First: --mcp-config takes every value up to the next flag, so a prompt that followed it
+	// would be read as another configuration file.
 	if servers := l.HTTPServers(); len(servers) > 0 {
 		b, err := json.Marshal(map[string]any{"mcpServers": servers})
 		if err != nil {
 			return nil, err
 		}
 		prefix = append(prefix, "--mcp-config", string(b))
+	}
+	prefix = append(prefix, "--plugin-dir", filepath.Join(l.Artifacts, "plugin"))
+	if len(l.Instructions) > 0 {
+		prefix = append(prefix, "--append-system-prompt-file", l.InstructionsFile())
+		// An Agent SDK initialize request's appendSystemPrompt replaces the file's content.
+		if streamInput(l.Native) {
+			l.PrependInitializePrompt(strings.TrimRight(string(l.Instructions), "\n"))
+		}
 	}
 	return prefix, nil
 }

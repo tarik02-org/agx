@@ -116,7 +116,18 @@ type mcpIcon struct {
 	Icon   string `json:"icon"`
 }
 
-func newMCPIcons(path string) *mcpIcons { return &mcpIcons{path: path, client: http.DefaultClient} }
+func newMCPIcons(path string) *mcpIcons {
+	return &mcpIcons{path: path, client: &http.Client{
+		// A server declares where its icon is; a redirect must not take the daemon anywhere the
+		// declaration could not, such as a service on this machine.
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if req.URL.Scheme != "https" || len(via) >= 3 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
+	}}
+}
 
 // load reads the file once; a missing or broken one is an empty cache. c.mu is held.
 func (c *mcpIcons) load() {
@@ -249,7 +260,8 @@ func (c *mcpIcons) resolve(ctx context.Context, icon mcp.Icon) string {
 	}
 	known := slices.Collect(maps.Values(iconTypes))
 	mimeType, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if !slices.Contains(known, mimeType) {
+	// The declared type stands in only for an answer that names none.
+	if mimeType == "" || mimeType == "application/octet-stream" {
 		mimeType = icon.MIMEType
 	}
 	if !slices.Contains(known, mimeType) {

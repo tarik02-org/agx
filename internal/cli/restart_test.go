@@ -28,7 +28,7 @@ func TestSessionsRespectConfiguredAutostart(t *testing.T) {
 }
 
 func TestCommandsRespectConfiguredAutostart(t *testing.T) {
-	for _, args := range [][]string{{"doctor"}, {"launch", "list"}, {"install"}, {"secret", "status"}, {"secret", "login", "token"}} {
+	for _, args := range [][]string{{"doctor"}, {"launch", "list"}, {"install"}, {"secret", "status"}, {"secret", "login", "token"}, {"daemon", "connect"}} {
 		t.Run(args[0], func(t *testing.T) {
 			isolate(t, "")
 			t.Setenv("AGX_NO_AUTOSTART", "0")

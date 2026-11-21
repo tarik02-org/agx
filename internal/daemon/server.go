@@ -72,9 +72,6 @@ type launch struct {
 	lease time.Duration
 	// threadServer marks a harness process serving many threads; its launch has no endpoints.
 	threadServer bool
-	// unavailable says why an attached launch's MCP servers cannot be served, when its directory
-	// no longer resolves to the snapshot it started with.
-	unavailable string
 	// wrapperPID and harnessPID are the processes the last renewal reported, for telling why the
 	// lease ran out; zero when unknown.
 	wrapperPID, harnessPID int
@@ -277,36 +274,7 @@ func Serve(
 	slog.Info("daemon started", "version", control.Version, "pid", os.Getpid(), "url", discovery.URL)
 	s.manager = auth.New(discovery.URL+"/oauth/callback", secretstore.Open(paths.State))
 	mux := http.NewServeMux()
-	interceptor := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			// Lifecycle procedures check the lifecycle token, and tool procedures accept a launch
-			// grant instead of the management token; they authorize themselves.
-			if !selfAuthorized[req.Spec().Procedure] {
-				if !equalBearer(req.Header().Get("Authorization"), discovery.Token) {
-					return nil, rpcError(connect.CodeUnauthenticated, "management credential required")
-				}
-			}
-			if s.drain.draining() && startsWork[req.Spec().Procedure] {
-				return nil, refusal()
-			}
-			return next(ctx, req)
-		}
-	})
-	opts := []connect.HandlerOption{connect.WithInterceptors(interceptor), connect.WithReadMaxBytes(16 * 1024 * 1024)}
-	path, handler := agxv1connect.NewConfigurationServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewPackageServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewLaunchServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewResourceServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewSessionProviderServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewRuntimeServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewSecretServiceHandler(s, opts...)
-	mux.Handle(path, handler)
+	s.handle(mux, discovery.Token)
 	mux.HandleFunc("/launch/", s.serveMCP)
 	mux.HandleFunc("/oauth/callback", s.manager.Callback)
 	tracked := s.drain.track(mux)
@@ -411,6 +379,69 @@ loop:
 	return nil
 }
 
+// handle serves the daemon's Connect services on mux to callers holding token.
+func (s *Server) handle(mux *http.ServeMux, token string) {
+	opts := []connect.HandlerOption{
+		connect.WithInterceptors(gate{token: token, draining: s.drain.draining}),
+		connect.WithReadMaxBytes(16 * 1024 * 1024),
+	}
+	path, handler := agxv1connect.NewConfigurationServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewPackageServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewLaunchServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewResourceServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewSessionProviderServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewRuntimeServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewSecretServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+}
+
+// gate admits a call to a procedure. A unary interceptor alone would leave streaming procedures
+// open to callers without the management token.
+type gate struct {
+	token    string
+	draining func() bool
+}
+
+func (g gate) admit(spec connect.Spec, header http.Header) error {
+	// Lifecycle procedures check the lifecycle token, and tool procedures accept a launch
+	// grant instead of the management token; they authorize themselves.
+	if !selfAuthorized[spec.Procedure] && !equalBearer(header.Get("Authorization"), g.token) {
+		return rpcError(connect.CodeUnauthenticated, "management credential required")
+	}
+	if g.draining() && startsWork[spec.Procedure] {
+		return refusal()
+	}
+	return nil
+}
+
+func (g gate) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
+	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		if err := g.admit(req.Spec(), req.Header()); err != nil {
+			return nil, err
+		}
+		return next(ctx, req)
+	}
+}
+
+func (gate) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
+	return next
+}
+
+func (g gate) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
+	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
+		if err := g.admit(conn.Spec(), conn.RequestHeader()); err != nil {
+			return err
+		}
+		return next(ctx, conn)
+	}
+}
+
 // selfAuthorized are the procedures that check their own credentials.
 var selfAuthorized = map[string]bool{
 	agxv1connect.ResourceServiceRefreshResourcesProcedure: true,
@@ -484,10 +515,10 @@ func (s *Server) reload() (*config.Config, error) {
 	s.mu.Lock()
 	current, currentErr, inputs := s.config, s.configErr, s.inputs
 	s.mu.Unlock()
-	if inputs != nil && !inputs.Changed() {
-		if currentErr != nil {
-			return nil, currentErr
-		}
+	changed := inputs == nil || inputs.Changed()
+	// A failed load is tried again: validation names files that are no inputs, such as a skill's
+	// missing directory, whose return would otherwise go unnoticed.
+	if !changed && currentErr == nil {
 		return current, nil
 	}
 	inputs = &config.Inputs{}
@@ -506,7 +537,9 @@ func (s *Server) reload() (*config.Config, error) {
 		s.config = c
 	}
 	// Changed configuration may mean a command secret's command now prints another value.
-	s.manager.ForgetHelpers()
+	if changed || err == nil {
+		s.manager.ForgetHelpers()
+	}
 	return c, err
 }
 
@@ -527,6 +560,16 @@ func (s *Server) end(l *launch, state v1.Launch_State) {
 		return
 	}
 	if !active(l.view.State) {
+		// Its wrapper attaches an expired launch again unless a revocation refuses that.
+		if state == v1.Launch_STATE_REVOKED && l.view.State == v1.Launch_STATE_EXPIRED {
+			l.view.State = state
+			s.revoke(l.view.Id, time.Now())
+			s.changed.notify()
+			go s.release(l.view.Id, nil)
+			for _, child := range s.children(l) {
+				s.end(child, state)
+			}
+		}
 		return
 	}
 	l.view.State = state
@@ -534,10 +577,7 @@ func (s *Server) end(l *launch, state v1.Launch_State) {
 	l.cancel()
 	s.changed.notify()
 	if state == v1.Launch_STATE_REVOKED {
-		if s.revoked == nil {
-			s.revoked = map[string]time.Time{}
-		}
-		s.revoked[l.view.Id] = l.ended
+		s.revoke(l.view.Id, l.ended)
 	}
 	// A finished launch is the normal outcome; the others cut a running harness off.
 	if state != v1.Launch_STATE_FINISHED && l.view.ParentLaunchId == "" {
@@ -548,10 +588,23 @@ func (s *Server) end(l *launch, state v1.Launch_State) {
 		slog.Info("launch ended", attrs...)
 	}
 	s.clients.closeLaunch(l.view.Id)
-	go s.release(l.view.Id, l.endpoints)
+	if state == v1.Launch_STATE_EXPIRED {
+		// Its wrapper may attach the launch again, and its harness still reads the launch files.
+		go closeEndpoints(l.endpoints)
+	} else {
+		go s.release(l.view.Id, l.endpoints)
+	}
 	for _, child := range s.children(l) {
 		s.end(child, state)
 	}
+}
+
+// revoke refuses attaching a launch from now on; s.mu must be held.
+func (s *Server) revoke(id string, at time.Time) {
+	if s.revoked == nil {
+		s.revoked = map[string]time.Time{}
+	}
+	s.revoked[id] = at
 }
 
 // children lists a launch's thread launches; s.mu must be held.
@@ -742,6 +795,9 @@ func (s *Server) prune(now time.Time) {
 	for id, l := range s.launches {
 		if !active(l.view.State) && l.ended.Before(cutoff) {
 			delete(s.launches, id)
+			if l.view.State == v1.Launch_STATE_EXPIRED {
+				go s.release(id, nil)
+			}
 		}
 	}
 }
@@ -809,12 +865,8 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	e, unavailable := l.endpoints[config.ID(parts[1])], l.unavailable
+	e := l.endpoints[config.ID(parts[1])]
 	s.mu.Unlock()
-	if unavailable != "" {
-		http.Error(w, unavailable, http.StatusForbidden)
-		return
-	}
 	if e == nil {
 		http.Error(w, "MCP server not selected for launch", http.StatusForbidden)
 		return
@@ -935,9 +987,6 @@ func (s *Server) WatchRuntime(
 	req *connect.Request[v1.WatchRuntimeRequest],
 	stream *connect.ServerStream[v1.WatchRuntimeResponse],
 ) error {
-	if !equalBearer(req.Header().Get("Authorization"), s.discovery.Token) {
-		return rpcError(connect.CodeUnauthenticated, "management credential required")
-	}
 	previous := ""
 	for {
 		changed := s.changed.next()

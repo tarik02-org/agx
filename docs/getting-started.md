@@ -45,9 +45,8 @@ anything:
 agx instructions add --id pnpm --text 'Use pnpm, not npm.'
 ```
 
-agx asks before saving local configuration (on a terminal), and
-writes your configuration file, creating it if needed. Without `--scope`, the
-instructions apply everywhere.
+The definition goes into agx's local configuration, a database the daemon keeps;
+no YAML file is written. Without `--scope`, the instructions apply everywhere.
 
 ## 4. Add a skill
 
@@ -91,8 +90,8 @@ agx explain
 ```
 
 `explain` lists the instructions, skills, and MCP servers selected for the
-current directory, and which line of which file selected each one. Run it in
-another directory to compare.
+current directory, and what selected each one: `local` for what the commands
+above saved, or the line of a YAML file. Run it in another directory to compare.
 
 ## 7. Launch
 
@@ -119,10 +118,12 @@ daemon, MCP servers, and secrets, and prints a fix for each problem.
 
 ## Where things went
 
-- Your configuration is `agx/agx.yaml` in your configuration directory
-  (`~/.config` on Linux, `~/Library/Application Support` on macOS), which
-  lists `agx.d/main.yaml`, where the commands above wrote your definitions.
-  They save local definitions and rules; YAML overlays remain declarative. See
+- The commands above saved local configuration in agx's state database, not
+  in a file. `agx config export` prints it as YAML.
+- Configuration you would rather write, review, or keep in Git goes into YAML
+  files: `agx/agx.yaml` in your configuration directory (`~/.config` on Linux,
+  `~/Library/Application Support` on macOS) lists them, and what they define
+  takes precedence over local configuration. Neither file needs to exist. See
   [Configuration](configuration.md).
 - The first command that needed it started the agx [daemon](daemon.md) in the
   background. It runs your MCP servers and holds their credentials.

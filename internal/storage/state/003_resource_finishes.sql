@@ -6,4 +6,4 @@ CREATE TABLE resource_finishes (
     PRIMARY KEY(configuration, launch)
 );
 
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;

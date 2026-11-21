@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/gofrs/flock"
@@ -51,6 +53,10 @@ func TestNewerVersion(t *testing.T) {
 		{"dev", "1.2.3", false},
 		{"1.2.3", "dev", false},
 		{"0.0.0-dev+abc1234", "0.0.0+nightly.1.abc1234", false},
+		// Nix builds carry their commit's time.
+		{"0.0.0-dev.20261111205409+abc1234", "0.0.0-dev.20261110101010+def5678", true},
+		{"0.0.0-dev.20261110101010+def5678", "0.0.0-dev.20261111205409+abc1234", false},
+		{"0.0.0-dev.20261111205409+abc1234", "0.0.0-dev+def5678", true},
 		{"1.2.3", "", false},
 	} {
 		if got := newerVersion(test.a, test.b); got != test.want {
@@ -137,5 +143,20 @@ func TestConfiguredAutostart(t *testing.T) {
 	loaded.path = filepath.Join(dir, "other.yaml")
 	if (&app{paths: platform.Paths{Config: root}, harnesses: loaded}).autostart() {
 		t.Error("fragments of another root configuration decided")
+	}
+}
+
+func TestEnvironOverridesOnce(t *testing.T) {
+	t.Setenv("AGX_TEST_DEFINED", "caller")
+	t.Setenv("AGX_TEST_UNSET", "caller")
+	got := []string{}
+	for _, pair := range environ(map[string]string{"AGX_TEST_DEFINED": "definition"}, []string{"AGX_TEST_UNSET"}) {
+		if strings.HasPrefix(pair, "AGX_TEST_") {
+			got = append(got, pair)
+		}
+	}
+	// A program started in place of agx reads the first of two values, which was the caller's.
+	if !slices.Equal(got, []string{"AGX_TEST_DEFINED=definition"}) {
+		t.Fatalf("environment = %q", got)
 	}
 }

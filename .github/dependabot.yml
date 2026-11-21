@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # Workflow actions are pinned to commits; this proposes the commits of their new releases.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

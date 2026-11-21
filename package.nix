@@ -3,14 +3,19 @@
   installShellFiles,
   lib,
   stdenv,
-  # The flake passes its commit.
+  # The flake passes its commit and when it was made.
   rev ? null,
+  lastModified ? null,
 }:
 
 buildGoModule (finalAttrs: {
   pname = "agx";
-  # Until the first tag.
-  version = "0.0.0-dev" + lib.optionalString (rev != null) "+${rev}";
+  # Until the first tag. The commit's time orders builds, so that a command replaces the daemon
+  # an earlier generation left running; the commit alone would tell them apart without an order.
+  version =
+    "0.0.0-dev"
+    + lib.optionalString (lastModified != null) ".${lastModified}"
+    + lib.optionalString (rev != null) "+${rev}";
 
   src = lib.fileset.toSource {
     root = ./.;

@@ -262,7 +262,12 @@ func (s *Server) UpdateConfiguration(
 	defer s.editMu.Unlock()
 	c, err := s.reload()
 	if err != nil {
-		return nil, configError(err)
+		// Only an edit repairs local definitions, which no file holds. The fragments and local
+		// configuration alone carry it; committing decides whether what results is saved.
+		invalid := err
+		if c, err = configstore.Load(s.paths.Config, s.paths.State, config.Options{Builtins: s.builtins}); err != nil {
+			return nil, configError(invalid)
+		}
 	}
 	if c.Local.Revision != req.Msg.ExpectedRevision {
 		return nil, rpcError(connect.CodeAborted, config.ErrConflict.Error())
@@ -395,29 +400,29 @@ func editError(err error) error {
 	if errors.As(err, &edited) {
 		switch edited.Code {
 		case configedit.ConfigInvalid:
-			return configInvalid(err.Error(), err)
+			return configInvalid(redacted(err), err)
 		case configedit.ReadOnly:
-			return rpcError(connect.CodeFailedPrecondition, err.Error())
+			return rpcError(connect.CodeFailedPrecondition, redacted(err))
 		case configedit.Conflict:
-			return rpcError(connect.CodeAborted, err.Error())
+			return rpcError(connect.CodeAborted, redacted(err))
 		case configedit.NotFound:
-			return rpcError(connect.CodeNotFound, err.Error())
+			return rpcError(connect.CodeNotFound, redacted(err))
 		case configedit.InvalidRequest:
-			return rpcError(connect.CodeInvalidArgument, err.Error())
+			return rpcError(connect.CodeInvalidArgument, redacted(err))
 
 		}
 	}
 	switch {
 	case errors.Is(err, packages.ErrStaleLock):
-		return rpcError(connect.CodeAborted, err.Error())
+		return rpcError(connect.CodeAborted, redacted(err))
 	case errors.Is(err, packages.ErrUnknown):
-		return rpcError(connect.CodeNotFound, err.Error())
+		return rpcError(connect.CodeNotFound, redacted(err))
 	case errors.Is(err, packages.ErrFetch):
-		return rpcError(connect.CodeFailedPrecondition, err.Error())
+		return rpcError(connect.CodeFailedPrecondition, redacted(err))
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return rpcError(connect.CodeDeadlineExceeded, err.Error())
+		return rpcError(connect.CodeDeadlineExceeded, redacted(err))
 	}
-	return rpcError(connect.CodeInternal, err.Error())
+	return rpcError(connect.CodeInternal, redacted(err))
 }
 
 // listRefsTimeout bounds asking a Git server for its refs.

@@ -1,3 +1,7 @@
 # The root file lists the fragments to load and holds daemon settings. Machine-specific
 # mappings can live in drop-ins; a glob may match nothing.
 fragments: [main.yaml, local.d/*.yaml]
+
+daemon:
+  lease_seconds: 60
+  renew_seconds: 20

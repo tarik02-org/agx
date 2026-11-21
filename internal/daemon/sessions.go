@@ -19,9 +19,6 @@ func (s *Server) ListSessions(
 	req *connect.Request[v1.ListSessionsRequest],
 	stream *connect.ServerStream[v1.ListSessionsResponse],
 ) error {
-	if !equalBearer(req.Header().Get("Authorization"), s.discovery.Token) {
-		return rpcError(connect.CodeUnauthenticated, "management credential required")
-	}
 	for name, root := range req.Msg.Stores {
 		if _, ok := s.adapters.SessionStore(name); !ok || !filepath.IsAbs(root) {
 			return rpcError(connect.CodeInvalidArgument, fmt.Sprintf("invalid session store %q", name))

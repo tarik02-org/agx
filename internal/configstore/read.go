@@ -59,6 +59,10 @@ func readLocalResources(ctx context.Context, q *statedb.Queries, root string, de
 		if r.Hidden.Valid {
 			m["hidden"] = r.Hidden.Bool
 		}
+		localStrings(m, "display_name", r.DisplayName)
+		if r.Enabled.Valid {
+			m["enabled"] = r.Enabled.Bool
+		}
 		if err := readLocalJSON(m, "settings", r.Settings); err != nil {
 			return err
 		}

@@ -70,6 +70,19 @@ func TestHarnessSettings(t *testing.T) {
 	if err := json.Unmarshal([]byte(claude.Settings), &settings); err != nil || settings["model"] != "opus" {
 		t.Fatalf("settings file = %q", claude.Settings)
 	}
+	// An Agent SDK host's own --settings merges into the definition's file instead of replacing it.
+	claude, r = e.harness("claude-work", "--settings", `{"showThinkingSummaries":true}`, "-p", "hi")
+	if r.code != 0 {
+		t.Fatalf("claude-work exited %d: %s", r.code, r.stderr)
+	}
+	if slices.Index(claude.Args[1:], "--settings") >= 0 {
+		t.Fatalf("claude args = %q", claude.Args)
+	}
+	settings = nil
+	if err := json.Unmarshal([]byte(claude.Settings), &settings); err != nil ||
+		settings["model"] != "opus" || settings["showThinkingSummaries"] != true {
+		t.Fatalf("settings file = %q", claude.Settings)
+	}
 	// The daemon removes a launch's files once it ends.
 	deadline := time.Now().Add(10 * time.Second)
 	for _, err := os.Stat(claude.Args[1]); !os.IsNotExist(err); _, err = os.Stat(claude.Args[1]) {

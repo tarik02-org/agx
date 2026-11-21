@@ -77,11 +77,15 @@ export const makeSkillDeployer = Effect.fn("makeSkillDeployer")(function* () {
     let content = text;
     let frontmatter: unknown = {};
     if (text.startsWith("---\n")) {
-      const end = text.indexOf("\n---", 4);
-      if (end === -1) {
+      // The closing line holds only the dashes, also right after the opening one; a rule such as
+      // ---- in the body closes nothing.
+      const closing = /\n---[ \t]*(?=\n|$)/g;
+      closing.lastIndex = 3;
+      const end = closing.exec(text);
+      if (end === null) {
         return yield* new IntegrationError({ operation: "skill frontmatter", reason: "content" });
       }
-      frontmatter = yield* Effect.try((): unknown => parse(text.slice(4, end)) ?? {}).pipe(
+      frontmatter = yield* Effect.try((): unknown => parse(text.slice(4, end.index)) ?? {}).pipe(
         Effect.catchTag("UnknownError", (error) => {
           const cause = error.cause;
           const code = Schema.is(Schema.instanceOf(YAMLParseError))(cause)
@@ -102,7 +106,7 @@ export const makeSkillDeployer = Effect.fn("makeSkillDeployer")(function* () {
               );
         }),
       );
-      content = text.slice(end + 4).replace(/^\n/, "");
+      content = text.slice(end.index + end[0].length).replace(/^\n/, "");
     }
     const metadata = yield* Schema.decodeUnknownEffect(Frontmatter)(frontmatter).pipe(
       Effect.catchTag("SchemaError", (cause) =>

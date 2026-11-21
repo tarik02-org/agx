@@ -44,6 +44,10 @@ func Alive(pid int) bool {
 
 func Interrupts() []os.Signal { return []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP} }
 
+// Forwarded are the signals a wrapper passes on to its harness. Ctrl-\ is among them: uncaught, it
+// would end the wrapper with a stack dump and leave its launch unfinished.
+func Forwarded() []os.Signal { return append(Interrupts(), syscall.SIGQUIT) }
+
 // StopSignals are the signals that stop the daemon gracefully. A daemon attached to a terminal
 // also stops when it hangs up; a detached one ignores SIGHUP, which it gets only by accident.
 func StopSignals(attached bool) []os.Signal {
@@ -79,9 +83,9 @@ func SurviveBrokenPipes() { signal.Notify(make(chan os.Signal, 1), syscall.SIGPI
 
 // TerminalDelivered reports whether a terminal-generated sig already reached pid because pid is in the
 // terminal's foreground process group. Signals sent with kill to the wrapper alone cannot be told apart
-// there, so a foreground child relies on the terminal for SIGINT and SIGHUP.
+// there, so a foreground child relies on the terminal for SIGINT, SIGQUIT and SIGHUP.
 func TerminalDelivered(pid int, s os.Signal) bool {
-	if s != os.Interrupt && s != syscall.SIGHUP {
+	if s != os.Interrupt && s != syscall.SIGHUP && s != syscall.SIGQUIT {
 		return false
 	}
 	group, err := syscall.Getpgid(pid)

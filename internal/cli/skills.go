@@ -147,7 +147,7 @@ func skillAddCommand(a *app) *cobra.Command {
 			"  agx skill add anthropics/skills --skill pdf --skill docx",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := a.newSession(cmd.Context(), flags.yes)
+			s, err := a.newSession(cmd.Context())
 			if err != nil {
 				return err
 			}

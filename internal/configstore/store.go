@@ -19,7 +19,7 @@ func Read(ctx context.Context, state, root string) (*config.Local, error) {
 	if state == "" {
 		return local, nil
 	}
-	root, err := platform.Canonical(root)
+	root, err := platform.CanonicalFile(root)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +44,7 @@ func Write(ctx context.Context, state, root string, local *config.Local) (int64,
 	if state == "" {
 		return 0, errors.New("local configuration needs a state directory")
 	}
-	root, err := platform.Canonical(root)
+	root, err := platform.CanonicalFile(root)
 	if err != nil {
 		return 0, err
 	}
@@ -138,7 +138,7 @@ func Write(ctx context.Context, state, root string, local *config.Local) (int64,
 }
 
 func Revision(state, root string) string {
-	root, err := platform.Canonical(root)
+	root, err := platform.CanonicalFile(root)
 	if err != nil {
 		return "error:" + err.Error()
 	}

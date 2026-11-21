@@ -336,15 +336,7 @@ func (s *Server) attachResources(msg *v1.AttachLaunchRequest) (*launch, error) {
 	}
 	l := s.newLaunch(view, launchBasis{config: snapshot.Config, snapshot: snapshot}, msg.Grant, msg.LifecycleToken, nil)
 	l.resourceFamily = &resourceFamily{}
-	if snapshot.ID != view.SnapshotId {
-		l.unavailable = staleSnapshot
-		return l, nil
-	}
-	inputs, err := launchInputs(snapshot, msg.EnvironmentInputs, nil)
-	if err != nil {
-		l.cancel()
-		return nil, err
-	}
+	inputs := attachedInputs(snapshot, msg.EnvironmentInputs, nil)
 	directory, err := resourceMCPDirectory(snapshot, msg.McpDirectory)
 	if err != nil {
 		l.cancel()

@@ -32,7 +32,7 @@ The Go module path is `github.com/tarik02-org/agx`.
   `RecordLaunch` saves idempotent start/completion history independently of leases
   and configuration loading, so a replacement can record a finished wrapper.
 - `RuntimeService`: inspect redacted daemon, launch, and MCP server state, with
-  `WatchRuntime` supplying live views for the web UI;
+  `WatchRuntime` supplying live views for a UI;
   `ListSessions` supplying cached and refreshed session history for the caller's
   explicit store roots;
   `ListTools` and `CallTool`, which list and call the

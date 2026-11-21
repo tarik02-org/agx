@@ -18,6 +18,7 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
+	"github.com/tarik02-org/agx/internal/cli/launcher"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/sessionprovider"
@@ -58,6 +59,41 @@ func TestLauncherHarnessesSkipHidden(t *testing.T) {
 	}
 	if want := []string{"opencode", "pi", "claude-cpa", "codex-cpa"}; !slices.Equal(names, want) {
 		t.Fatalf("launcher harnesses = %v, want %v", names, want)
+	}
+}
+
+func TestDisabledHarnessesAreNotLaunchable(t *testing.T) {
+	root, fragment := writeConfig(t, t.TempDir(), "")
+	if err := os.WriteFile(fragment, []byte(`harnesses:
+  codex: {enabled: false}
+  codex-cpa: {base: codex, display_name: Codex CPA}
+  codex-old: {base: codex, enabled: false}
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry := builtin.Registry()
+	c, err := config.Load(root, config.Options{Builtins: registry.Builtins(nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	harnesses, err := launcherHarnesses(c, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []launcher.Harness{
+		{Name: "claude", Builtin: "claude", DisplayName: "claude"},
+		{Name: "opencode", Builtin: "opencode", DisplayName: "opencode"},
+		{Name: "pi", Builtin: "pi", DisplayName: "pi"},
+		{Name: "codex-cpa", Builtin: "codex", DisplayName: "Codex CPA"},
+	}
+	if !slices.Equal(harnesses, want) {
+		t.Fatalf("launcher harnesses = %v, want %v", harnesses, want)
+	}
+	for _, name := range []string{"codex", "codex-old"} {
+		err := runHarness(t.Context(), platform.Paths{}, registry, harnessConfig{config: c}, name, nil, "")
+		if err == nil || !strings.Contains(err.Error(), "harness "+name+" is disabled") {
+			t.Errorf("%s: err = %v, want it refused as disabled", name, err)
+		}
 	}
 }
 

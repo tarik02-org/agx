@@ -45,12 +45,15 @@ func (i *Inputs) Changed() bool {
 	return false
 }
 
+// fileState includes where links lead: files of the Nix store share one modification time, so
+// a link pointed at another of them may change nothing else.
 func fileState(path string) string {
 	info, err := os.Stat(path)
 	if err != nil {
 		return "error:" + err.Error()
 	}
-	return fmt.Sprintf("%d:%d:%s", info.ModTime().UnixNano(), info.Size(), info.Mode())
+	resolved, _ := filepath.EvalSymlinks(path)
+	return fmt.Sprintf("%d:%d:%s:%s", info.ModTime().UnixNano(), info.Size(), info.Mode(), resolved)
 }
 
 func globState(pattern string) string {
