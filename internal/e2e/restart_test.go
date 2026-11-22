@@ -281,6 +281,40 @@ func TestDaemonRestart(t *testing.T) {
 		}
 	})
 
+	t.Run("configuration changed while no daemon ran", func(t *testing.T) {
+		e := restartEnv(t)
+		t.Cleanup(func() { e.stopDaemon(true) })
+		h := e.hold(binaries.agx)
+		original, err := os.ReadFile(filepath.Join(e.dir, "config", "main.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		restartWith := func(old, replacement string) {
+			e.stopDaemon(false)
+			e.write("config/main.yaml", strings.Replace(string(original), old, replacement, 1))
+			e.ok("secret", "status")
+		}
+
+		// The directory resolves to another snapshot, with the server defined as before.
+		restartWith("E2E instructions.", "Other instructions.")
+		awaitServing(t, h.endpoint(), h.grant())
+		if tools, _ := h.call(); tools["agx-echo"] != want {
+			t.Fatalf("echo after instructions changed = %q\n%s", tools["agx-echo"], h.stderr.String())
+		}
+
+		restartWith("mcp: [echo]", "mcp: []")
+		deadline := time.Now().Add(30 * time.Second)
+		for mcpStatus(t, h.endpoint(), h.grant()) != http.StatusForbidden {
+			if time.Now().After(deadline) {
+				t.Fatalf("a server no longer selected answers HTTP %d", mcpStatus(t, h.endpoint(), h.grant()))
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		restartWith("", "")
+		awaitServing(t, h.endpoint(), h.grant())
+	})
+
 	t.Run("a newer agx replaces a busy daemon", func(t *testing.T) {
 		e := restartEnv(t)
 		t.Cleanup(func() { e.stopDaemon(true) })

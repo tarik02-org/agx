@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/tarik02-org/agx/internal/adapters/claude"
+	"github.com/tarik02-org/agx/internal/config"
 )
 
 func TestClassify(t *testing.T) {
@@ -33,7 +34,7 @@ func TestClassify(t *testing.T) {
 		{[]string{"--input-format", "text"}, "interactive"},
 		{[]string{"--", "--input-format", "stream-json"}, "interactive"},
 	} {
-		if got := (claude.Adapter{}).Classify(tt.args); got != tt.mode {
+		if got := (claude.Adapter{}).Classify(config.ResolvedHarness{}, tt.args); got != tt.mode {
 			t.Errorf("Classify(%q) = %s, want %s", tt.args, got, tt.mode)
 		}
 	}

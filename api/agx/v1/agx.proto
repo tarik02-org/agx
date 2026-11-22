@@ -219,6 +219,10 @@ message ConfiguredHarness {
   // Empty for built-in harnesses.
   string base = 3;
   bool hidden = 4;
+  // The harness name unless the definition sets one.
+  string display_name = 5;
+  // Defined but unable to launch.
+  bool disabled = 6;
 }
 message CompleteDirectoryRequest {
   // An absolute path or one starting with ~/; the last segment is a name prefix.

@@ -179,6 +179,10 @@ func (p *protocol) open(
 	p.mu.Lock()
 	systemPrompt := caps.systemPrompt && !p.rejected
 	p.mu.Unlock()
+	if l.Instructions != "" && !systemPrompt && caps.antigravityPrompt {
+		addAntigravityPrompt(params, l.Instructions)
+		return true, func(response relay.Response) relay.Answer { return settle(response, "") }
+	}
 	if l.Instructions == "" || !systemPrompt {
 		return changed, func(response relay.Response) relay.Answer { return settle(response, pending) }
 	}
@@ -324,6 +328,22 @@ func addSystemPrompt(params *relay.Object, instructions string) {
 	content, _ := prompt.Array("content")
 	prompt.Set("content", relay.EncodeArray(append(content, text(instructions))))
 	params.Set("systemPrompt", prompt.Marshal())
+}
+
+// addAntigravityPrompt appends instructions to the text the request's
+// _meta.antigravity.systemPrompt.append adds to the system prompt, after the client's, keeping
+// the rest of _meta.
+func addAntigravityPrompt(params *relay.Object, instructions string) {
+	meta, _ := params.Object("_meta")
+	antigravity, _ := meta.Object("antigravity")
+	prompt, _ := antigravity.Object("systemPrompt")
+	if theirs, _ := prompt.String("append"); theirs != "" {
+		instructions = theirs + "\n\n" + instructions
+	}
+	prompt.Set("append", relay.Encode(instructions))
+	antigravity.Set("systemPrompt", prompt.Marshal())
+	meta.Set("antigravity", antigravity.Marshal())
+	params.Set("_meta", meta.Marshal())
 }
 
 // prompt puts pending instructions before the first prompt of a new session.

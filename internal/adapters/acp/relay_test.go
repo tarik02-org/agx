@@ -188,6 +188,42 @@ func TestRelayVersion2Stdio(t *testing.T) {
 	}
 }
 
+func TestRelayAntigravitySystemPrompt(t *testing.T) {
+	s := start(t)
+	initialize(s, `{"protocolVersion":1,"agentCapabilities":{"loadSession":true,`+
+		`"_meta":{"antigravity":{"tier":true,"systemPrompt":{"append":true}}}}}`)
+
+	// Antigravity takes the instructions in its _meta extension, after the client's text and
+	// beside the rest of the client's _meta.
+	s.Expect(
+		s.Client(`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/a","mcpServers":[],`+
+			`"_meta":{"antigravity":{"disabledTools":["run_workflow"],"systemPrompt":{"append":"T3"}}}}}`),
+		`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/a","mcpServers":[],`+
+			`"_meta":{"antigravity":{"disabledTools":["run_workflow"],"systemPrompt":{"append":"T3\n\nAGX /a"}}}}}`,
+	)
+	s.Server(`{"jsonrpc":"2.0","id":1,"result":{"sessionId":"A"}}`)
+
+	// Without the client's _meta, agx adds its own; the first prompt passes unchanged.
+	s.Expect(
+		s.Client(`{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/b","mcpServers":[]}}`),
+		`{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/b","mcpServers":[],`+
+			`"_meta":{"antigravity":{"systemPrompt":{"append":"AGX /b"}}}}}`,
+	)
+	s.Server(`{"jsonrpc":"2.0","id":2,"result":{"sessionId":"B"}}`)
+	s.Eventually(func(bound map[string]string, _ []string) bool { return bound["B"] == "L2" })
+	prompt := `{"jsonrpc":"2.0","id":3,"method":"session/prompt","params":{"sessionId":"B","prompt":[]}}`
+	s.Expect(s.Client(prompt), prompt)
+
+	// A loaded session gets them too, as with the standard system prompt.
+	s.Expect(
+		s.Client(
+			`{"jsonrpc":"2.0","id":4,"method":"session/load","params":{"sessionId":"A","cwd":"/a","mcpServers":[]}}`,
+		),
+		`{"jsonrpc":"2.0","id":4,"method":"session/load","params":{"sessionId":"A","cwd":"/a","mcpServers":[],`+
+			`"_meta":{"antigravity":{"systemPrompt":{"append":"AGX /a"}}}}}`,
+	)
+}
+
 func TestRelayVersion2(t *testing.T) {
 	s := start(t)
 	initialize(

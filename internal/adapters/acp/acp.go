@@ -21,12 +21,63 @@ func (Adapter) Name() string { return "acp" }
 
 func (Adapter) Modes() []string { return []string{modeACP, config.ModePassthrough} }
 
-// Classify serves the protocol unless args probe the agent's help or version.
-func (Adapter) Classify(args []string) string {
+// settingServe names the setting listing the leading arguments that start the agent's ACP server.
+const settingServe = "serve"
+
+// Classify serves the protocol when args start with the definition's serve arguments, or always
+// without them, unless args probe the agent's help or version. Everything else runs the agent's
+// own command line, so one executable can be both a terminal agent and an ACP server.
+func (Adapter) Classify(h config.ResolvedHarness, args []string) string {
 	if adapters.Probe(args) {
 		return config.ModePassthrough
 	}
+	serve := serveArgs(h.Settings)
+	if len(serve) > 0 && (len(args) < len(serve) || !slices.Equal(args[:len(serve)], serve)) {
+		return config.ModePassthrough
+	}
 	return modeACP
+}
+
+// LeadingArguments puts the definition's arguments after the serve arguments, where the agent
+// takes its ACP server's own flags.
+func (a Adapter) LeadingArguments(h config.ResolvedHarness, args []string) int {
+	if a.Classify(h, args) != modeACP {
+		return 0
+	}
+	return len(serveArgs(h.Settings))
+}
+
+// serveArgs reads the serve setting, which ValidateSettings has checked.
+func serveArgs(settings map[string]any) []string {
+	values, _ := settings[settingServe].([]any)
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		out = append(out, v.(string))
+	}
+	return out
+}
+
+// ValidateSettings accepts only serve, a list of non-empty strings.
+func (Adapter) ValidateSettings(settings map[string]any, _ []string) error {
+	for key, value := range settings {
+		if key != settingServe {
+			return fmt.Errorf(
+				"settings %s: acp takes only %s, the arguments that start the agent's ACP server",
+				key,
+				settingServe,
+			)
+		}
+		values, ok := value.([]any)
+		if !ok || len(values) == 0 {
+			return fmt.Errorf("settings %s: expected a non-empty list of arguments, such as [acp]", settingServe)
+		}
+		for _, v := range values {
+			if s, ok := v.(string); !ok || s == "" {
+				return fmt.Errorf("settings %s: every argument must be a non-empty string", settingServe)
+			}
+		}
+	}
+	return nil
 }
 
 // Executable requires a configured path: ACP agents have no common executable name.
@@ -48,7 +99,9 @@ func (Adapter) Directory(args []string, cwd string) (string, []string, error) {
 // Arguments adds nothing: every session takes its resources in its setup request.
 func (Adapter) Arguments(adapters.Launch) ([]string, error) { return []string{}, nil }
 
-func (a Adapter) ThreadServer(args []string) bool { return a.Classify(args) == modeACP }
+func (a Adapter) ThreadServer(h config.ResolvedHarness, args []string) bool {
+	return a.Classify(h, args) == modeACP
+}
 
 // ThreadPlan describes the launch's MCP servers as ACP HTTP servers authorized by grant.
 func (Adapter) ThreadPlan(l adapters.Launch, grant string) (adapters.ThreadPlan, error) {

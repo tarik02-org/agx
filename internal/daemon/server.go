@@ -72,9 +72,6 @@ type launch struct {
 	lease time.Duration
 	// threadServer marks a harness process serving many threads; its launch has no endpoints.
 	threadServer bool
-	// unavailable says why an attached launch's MCP servers cannot be served, when its directory
-	// no longer resolves to the snapshot it started with.
-	unavailable string
 	// wrapperPID and harnessPID are the processes the last renewal reported, for telling why the
 	// lease ran out; zero when unknown.
 	wrapperPID, harnessPID int
@@ -857,12 +854,8 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	e, unavailable := l.endpoints[config.ID(parts[1])], l.unavailable
+	e := l.endpoints[config.ID(parts[1])]
 	s.mu.Unlock()
-	if unavailable != "" {
-		http.Error(w, unavailable, http.StatusForbidden)
-		return
-	}
 	if e == nil {
 		http.Error(w, "MCP server not selected for launch", http.StatusForbidden)
 		return

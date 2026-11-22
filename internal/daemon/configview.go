@@ -37,10 +37,12 @@ func (s *Server) GetConfiguration(
 			continue
 		}
 		out.Harnesses = append(out.Harnesses, &v1.ConfiguredHarness{
-			Name:    name,
-			Builtin: h.Builtin,
-			Base:    c.Harnesses[name].Base,
-			Hidden:  h.Hidden,
+			Name:        name,
+			Builtin:     h.Builtin,
+			Base:        c.Harnesses[name].Base,
+			Hidden:      h.Hidden,
+			DisplayName: h.DisplayName,
+			Disabled:    !h.Enabled,
 		})
 	}
 	for _, scope := range c.Scopes {

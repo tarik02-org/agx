@@ -45,9 +45,11 @@ A snapshot ID fingerprints the resolved configuration, lock and package content,
 platform inputs, canonical directory, and harness, including each injected value's
 tag and argument but never the value, a token, or a timestamp. A launch never
 rereads configuration; it keeps its snapshot's definitions, though credential
-refresh and revocation still apply. Only a fully valid reload is published: an
-invalid one leaves active launches on their snapshots and rejects new
-preparations until fixed.
+refresh and revocation still apply, and a launch attached to another daemon
+gets the MCP servers its directory selects then
+([ADR 0016](0016-launches-survive-daemon-restarts.md)). Only a fully valid
+reload is published: an invalid one leaves active launches on their snapshots
+and rejects new preparations until fixed.
 
 [ADR 0011](0011-straightforward-configuration.md) adds anonymous Git packages
 and pinned sources that need no lock entry.

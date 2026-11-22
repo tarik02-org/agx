@@ -117,11 +117,8 @@ func (s *Server) launchScope(authorization string, management bool, id string) (
 		s.mu.Unlock()
 		return nil, rpcError(connect.CodeUnauthenticated, "invalid or expired launch grant")
 	}
-	endpoints, snapshot, unavailable := l.endpoints, l.snapshot, l.unavailable
+	endpoints, snapshot := l.endpoints, l.snapshot
 	s.mu.Unlock()
-	if unavailable != "" {
-		return nil, rpcError(connect.CodeFailedPrecondition, unavailable)
-	}
 	scope := &callScope{
 		launch:    l,
 		endpoints: endpoints,

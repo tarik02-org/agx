@@ -38,6 +38,10 @@ type capabilities struct {
 	stdio bool
 	// systemPrompt says the agent accepts a client system prompt in append mode.
 	systemPrompt bool
+	// antigravityPrompt says the agent takes text to append to its system prompt in the session
+	// setup's _meta.antigravity.systemPrompt.append, Antigravity's extension, which it advertises
+	// in its capabilities' _meta instead of the standard systemPrompt.
+	antigravityPrompt bool
 }
 
 // versions are the ACP protocol versions agx rewrites, by number; others pass unchanged.
@@ -56,9 +60,10 @@ var versions = map[int]version{
 			session, _ := agent.Object("sessionCapabilities")
 			// Every version 1 agent takes stdio MCP servers.
 			return capabilities{
-				http:         isTrue(mcp, "http"),
-				stdio:        true,
-				systemPrompt: present(session, "systemPrompt"),
+				http:              isTrue(mcp, "http"),
+				stdio:             true,
+				systemPrompt:      present(session, "systemPrompt"),
+				antigravityPrompt: antigravityPrompt(agent),
 			}
 		},
 	},
@@ -75,13 +80,21 @@ var versions = map[int]version{
 		capabilities: func(result relay.Object) capabilities {
 			session, _ := result.Path("capabilities", "session")
 			mcp, _ := session.Object("mcp")
+			all, _ := result.Object("capabilities")
 			return capabilities{
-				http:         present(mcp, "http"),
-				stdio:        present(mcp, "stdio"),
-				systemPrompt: present(session, "systemPrompt"),
+				http:              present(mcp, "http"),
+				stdio:             present(mcp, "stdio"),
+				systemPrompt:      present(session, "systemPrompt"),
+				antigravityPrompt: antigravityPrompt(all),
 			}
 		},
 	},
+}
+
+// antigravityPrompt reads Antigravity's _meta.antigravity.systemPrompt.append capability.
+func antigravityPrompt(advertised relay.Object) bool {
+	prompt, _ := advertised.Path("_meta", "antigravity", "systemPrompt")
+	return isTrue(prompt, "append")
 }
 
 // present reports whether key holds an object, the form of capabilities that carry options.

@@ -250,16 +250,19 @@ func (q *Queries) InsertLocalEnvironment(ctx context.Context, arg InsertLocalEnv
 }
 
 const insertLocalHarness = `-- name: InsertLocalHarness :exec
-INSERT INTO local_harnesses(root, key, base, executable, hidden, settings) VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO local_harnesses(root, key, base, executable, hidden, settings, display_name, enabled)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertLocalHarnessParams struct {
-	Root       string
-	Key        string
-	Base       string
-	Executable string
-	Hidden     sql.NullBool
-	Settings   sql.NullString
+	Root        string
+	Key         string
+	Base        string
+	Executable  string
+	Hidden      sql.NullBool
+	Settings    sql.NullString
+	DisplayName string
+	Enabled     sql.NullBool
 }
 
 func (q *Queries) InsertLocalHarness(ctx context.Context, arg InsertLocalHarnessParams) error {
@@ -270,6 +273,8 @@ func (q *Queries) InsertLocalHarness(ctx context.Context, arg InsertLocalHarness
 		arg.Executable,
 		arg.Hidden,
 		arg.Settings,
+		arg.DisplayName,
+		arg.Enabled,
 	)
 	return err
 }
@@ -864,7 +869,7 @@ func (q *Queries) ListLocalEnvironments(ctx context.Context, root string) ([]Loc
 }
 
 const listLocalHarnesses = `-- name: ListLocalHarnesses :many
-SELECT root, "key", base, executable, hidden, settings FROM local_harnesses WHERE root = ? ORDER BY root, key
+SELECT root, "key", base, executable, hidden, settings, display_name, enabled FROM local_harnesses WHERE root = ? ORDER BY root, key
 `
 
 func (q *Queries) ListLocalHarnesses(ctx context.Context, root string) ([]LocalHarness, error) {
@@ -883,6 +888,8 @@ func (q *Queries) ListLocalHarnesses(ctx context.Context, root string) ([]LocalH
 			&i.Executable,
 			&i.Hidden,
 			&i.Settings,
+			&i.DisplayName,
+			&i.Enabled,
 		); err != nil {
 			return nil, err
 		}

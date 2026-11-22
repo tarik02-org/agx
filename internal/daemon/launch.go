@@ -167,6 +167,9 @@ func (s *Server) launchBasis(directory, name, id string, native []string) (launc
 	if err != nil {
 		return launchBasis{}, rpcError(connect.CodeInvalidArgument, err.Error())
 	}
+	if !harness.Enabled {
+		return launchBasis{}, rpcError(connect.CodeFailedPrecondition, "harness "+name+" is disabled")
+	}
 	adapter, ok := s.adapters.Launcher(harness.Builtin)
 	if !ok {
 		return launchBasis{}, rpcError(
@@ -174,7 +177,7 @@ func (s *Server) launchBasis(directory, name, id string, native []string) (launc
 			"harness "+harness.Builtin+" has no process launcher",
 		)
 	}
-	mode := adapter.Classify(native)
+	mode := adapter.Classify(harness, native)
 	if mode == config.ModePassthrough {
 		return launchBasis{}, rpcError(
 			connect.CodeInvalidArgument,
@@ -192,7 +195,7 @@ func (s *Server) launchBasis(directory, name, id string, native []string) (launc
 		adapter:      adapter,
 		mode:         mode,
 		snapshot:     snapshot,
-		threadServer: isThreads && threads.ThreadServer(native),
+		threadServer: isThreads && threads.ThreadServer(harness, native),
 	}, nil
 }
 
@@ -309,6 +312,20 @@ func launchInputs(snapshot *config.Snapshot, given map[string]string, forwarded 
 		)
 	}
 	return inputs, nil
+}
+
+// attachedInputs keeps the environment inputs a wrapper holds that the directory's
+// configuration still reads. The configuration may have changed since the launch started, so
+// nothing here fails the launch: a server reading a variable the wrapper never collected fails
+// alone, when a session starts.
+func attachedInputs(snapshot *config.Snapshot, given map[string]string, forwarded []string) map[string]string {
+	inputs := map[string]string{}
+	for _, name := range append(slices.Clone(snapshot.RequiredEnvironment), forwarded...) {
+		if value, ok := given[name]; ok {
+			inputs[name] = value
+		}
+	}
+	return inputs
 }
 
 // endpoints starts the endpoints of the snapshot's MCP servers for launch id and lists those the

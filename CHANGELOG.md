@@ -30,7 +30,8 @@ agx has not been released yet. What the first release contains:
 - Any agent that speaks the Agent Client Protocol (versions 1 and 2), through harness
   definitions on the `acp` base: each session gets its directory's MCP servers and
   instructions in the forms the agent advertises; agents without HTTP MCP servers reach
-  them over stdio through `agx mcp bridge`.
+  them over stdio through `agx mcp bridge`. `settings.serve` names the arguments that
+  start the ACP server, so an agent that is also a terminal CLI keeps working as one.
 - Injected values (`!env`, `!file`, `!secret`) that never reach snapshots, output, or logs;
   secrets from commands, sops, an encrypted store keyed by the OS keychain, or OAuth with
   `agx secret login` and automatic refresh.

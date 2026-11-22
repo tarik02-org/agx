@@ -138,6 +138,9 @@ func runHarness(
 	if err != nil {
 		return err
 	}
+	if !h.Enabled {
+		return fmt.Errorf("harness %s is disabled; remove enabled: false from harnesses.%s to launch it", name, name)
+	}
 	if adapter, ok := registry.ClientLauncher(h.Builtin); ok {
 		return runClientHarness(ctx, paths, adapter, harnesses, h, args)
 	}
@@ -155,7 +158,7 @@ func runHarness(
 	if err != nil {
 		return err
 	}
-	mode := adapter.Classify(args)
+	mode := adapter.Classify(h, args)
 	if mode == config.ModePassthrough && harnesses.err != nil {
 		cmd := exec.CommandContext(ctx, executable, args...)
 		cmd.Env = guardEnviron(os.Environ())
@@ -428,7 +431,7 @@ func runHarness(
 	threads, isThreads := adapter.(adapters.Threads)
 	relayed := make(chan error, 1)
 	var serverOutput *io.PipeWriter
-	if isThreads && threads.ThreadServer(nativeArgs) {
+	if isThreads && threads.ThreadServer(h, nativeArgs) {
 		host := &threadHost{
 			lease:   link,
 			parent:  p.Launch.Id,

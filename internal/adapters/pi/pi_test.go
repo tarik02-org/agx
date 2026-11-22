@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/tarik02-org/agx/internal/adapters/pi"
+	"github.com/tarik02-org/agx/internal/config"
 )
 
 func TestClassify(t *testing.T) {
@@ -28,7 +29,7 @@ func TestClassify(t *testing.T) {
 		{[]string{"-v"}, "passthrough"},
 		{[]string{"--", "-p"}, "interactive"},
 	} {
-		if got := (pi.Adapter{}).Classify(tt.args); got != tt.mode {
+		if got := (pi.Adapter{}).Classify(config.ResolvedHarness{}, tt.args); got != tt.mode {
 			t.Errorf("Classify(%q) = %s, want %s", tt.args, got, tt.mode)
 		}
 	}
