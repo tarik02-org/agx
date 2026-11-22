@@ -101,6 +101,14 @@ type SessionAssigner interface {
 	AssignSession(args []string, id string) (string, []string)
 }
 
+// LeadingArgumentsAdapter is a Launcher whose definition arguments belong after a command the
+// caller names first, such as the subcommand that starts an agent's protocol server, whose own
+// flags must follow it.
+type LeadingArgumentsAdapter interface {
+	// LeadingArguments returns how many of the caller's args precede the definition's.
+	LeadingArguments(h config.ResolvedHarness, args []string) int
+}
+
 // SettingsValidator checks native settings without requiring process delivery.
 type SettingsValidator interface {
 	// ValidateSettings checks resolved settings, and the definition's literal arguments, for what
@@ -528,9 +536,14 @@ func Build(
 	}); err != nil {
 		return Plan{}, err
 	}
+	leading := 0
+	if la, ok := a.(LeadingArgumentsAdapter); ok {
+		leading = la.LeadingArguments(h, args)
+	}
 	prefix = append(slices.Clone(settings), prefix...)
+	prefix = append(prefix, args[:leading]...)
 	prefix = append(prefix, harnessArgs...)
-	prefix = append(prefix, args...)
+	prefix = append(prefix, args[leading:]...)
 	plan.Arguments = prefix
 	// Shell-provided upstream secrets have reached the daemon; don't leak them into the harness.
 	plan.Unset = append(plan.Unset, l.Snapshot.MCPEnvironment()...)

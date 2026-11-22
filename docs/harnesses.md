@@ -343,9 +343,12 @@ harnesses:
 
 A client (an editor, T3 Code) then runs `agx agy acp`, or the `agy`
 [shim](#shims) with `acp`, as the agent's command, and `agy` in a terminal
-still opens the agent itself. Clients that run the agent without arguments
-need a definition whose `args` start the server instead, such as
-`args: [acp]` without `serve`. agx relays the protocol
+still opens the agent itself. With `serve`, the definition's `args` follow the
+serve arguments, where the server takes its own flags: `args: [--disable-telemetry]`
+runs `agy acp --disable-telemetry …`, and a terminal `agy` gets none of them.
+Clients that run the agent without arguments need a definition whose `args`
+start the server instead, such as `args: [acp]` without `serve`. agx relays the
+protocol
 and, for every session the client creates, forks, loads, or resumes, resolves
 the resources of the session's `cwd`:
 

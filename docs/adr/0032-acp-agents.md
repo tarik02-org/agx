@@ -28,7 +28,10 @@ client, so launches are not recorded for `agx sessions`.
 
 `serve` matches a prefix of the caller's arguments rather than reading the
 definition's own `args`, because those are prepended to every launch and could
-not tell a terminal launch from a server one. It lives in `settings`, the
+not tell a terminal launch from a server one. In a served launch the
+definition's `args` go after the serve arguments instead of before them:
+agents parse flags per subcommand, so the server's own flags must follow it
+(`agy --disable-telemetry acp` is rejected). It lives in `settings`, the
 place for base-specific options, instead of a field every harness would carry.
 
 ## The relay

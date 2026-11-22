@@ -72,6 +72,11 @@ harnesses:
   codex: {executable: `+executable+`}
   claude: {executable: `+executable+`}
   pi: {executable: `+executable+`}
+  agy:
+    base: acp
+    executable: `+executable+`
+    settings: {serve: [acp]}
+  acp-only: {base: acp, executable: `+executable+`}
 `)
 	c, err := config.Load(
 		filepath.Join(dir, "agx.yaml"),
@@ -245,6 +250,26 @@ func TestBuildPi(t *testing.T) {
 	for _, want := range []string{`"agx-up":{`, "/launch/L/mcp/up", "process.env.AGX_MCP_GRANT", "pi.registerMcpServer"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("extension lacks %q:\n%s", want, b)
+		}
+	}
+}
+
+func TestBuildACPDefinitionArgumentsFollowServe(t *testing.T) {
+	f := newFixture(t)
+	for _, tt := range []struct {
+		harness string
+		native  []string
+		want    []string
+	}{
+		{"agy", []string{"acp", "--gemini-dir", "/g"}, []string{"acp", "--definition", "--gemini-dir", "/g"}},
+		{"acp-only", []string{"--stdio"}, []string{"--definition", "--stdio"}},
+	} {
+		plan, _, err := f.build(t, tt.harness, tt.native...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(plan.Arguments, tt.want) {
+			t.Errorf("%s %q: arguments = %q, want %q", tt.harness, tt.native, plan.Arguments, tt.want)
 		}
 	}
 }

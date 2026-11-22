@@ -66,6 +66,12 @@ func TestClassify(t *testing.T) {
 	if a.ThreadServer(serve, nil) {
 		t.Error("with serve, a bare launch should not be a thread server")
 	}
+	if n := a.LeadingArguments(serve, []string{"acp", "--x"}); n != 1 {
+		t.Errorf("leading arguments of a served launch = %d, want 1", n)
+	}
+	if n := a.LeadingArguments(serve, []string{"-p", "hi"}); n != 0 {
+		t.Errorf("leading arguments of a passthrough launch = %d, want 0", n)
+	}
 	if _, err := a.Executable(""); !errors.Is(err, adapters.ErrNoExecutable) {
 		t.Errorf("executable without a configured path: %v", err)
 	}

@@ -38,6 +38,15 @@ func (Adapter) Classify(h config.ResolvedHarness, args []string) string {
 	return modeACP
 }
 
+// LeadingArguments puts the definition's arguments after the serve arguments, where the agent
+// takes its ACP server's own flags.
+func (a Adapter) LeadingArguments(h config.ResolvedHarness, args []string) int {
+	if a.Classify(h, args) != modeACP {
+		return 0
+	}
+	return len(serveArgs(h.Settings))
+}
+
 // serveArgs reads the serve setting, which ValidateSettings has checked.
 func serveArgs(settings map[string]any) []string {
 	values, _ := settings[settingServe].([]any)
