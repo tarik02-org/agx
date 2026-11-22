@@ -356,8 +356,9 @@ the resources of the session's `cwd`:
   agent advertises HTTP MCP support. A server the client names the same way
   stays the client's.
 - **Instructions** are appended to the session's system prompt when the agent
-  advertises a client system prompt; otherwise they are placed before the first
-  prompt of a new session. Forked, loaded, and resumed sessions already have
+  advertises a client system prompt, or to the text Antigravity appends to its
+  system prompt through its `_meta.antigravity.systemPrompt` extension;
+  otherwise they are placed before the first prompt of a new session. Forked, loaded, and resumed sessions already have
   them in their history. An agent that refuses the system prompt it
   advertises, such as one built on an earlier draft of it, is treated as having
   none, with a warning.

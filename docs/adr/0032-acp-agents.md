@@ -61,6 +61,15 @@ the agent did not:
 | Instructions | a `systemPrompt` text block after the client's, in its mode or `append` | a text block before a new session's first prompt          |
 | Skills       | none in ACP                                                             | not applied, with a warning per session that selects some |
 
+Antigravity advertises no standard system prompt but an extension of its own:
+`_meta.antigravity.systemPrompt.append` in its capabilities, and the same path
+in a session setup's `_meta` for text appended to its system prompt. agx
+appends the instructions there, after the client's text and beside the rest of
+the client's `_meta`, for every setup, as it would to a standard system
+prompt. One vendor's extension lives in the capability table beside the
+version differences instead of a per-agent adapter; the standard field wins
+when an agent advertises both.
+
 A client server of the same name wins. Forked, loaded, and resumed sessions
 carry instructions in their history, so without a system prompt they get none.
 An agent that refuses the system prompt it advertises with invalid params, as
