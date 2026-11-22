@@ -3,15 +3,17 @@ package adapters
 import (
 	"context"
 	"io"
+
+	"github.com/tarik02-org/agx/internal/config"
 )
 
 // Threads is implemented by adapters whose harness can serve many threads from one process,
 // each in its own directory. agx then prepares every thread as a launch of its own and relays
 // the process's protocol to hand each thread its resources.
 type Threads interface {
-	// ThreadServer reports whether native args start such a process. Its own launch carries no
-	// snapshot resources; Arguments receives the same args in Launch.Native.
-	ThreadServer(args []string) bool
+	// ThreadServer reports whether native args start such a process of h. Its own launch carries
+	// no snapshot resources; Arguments receives the same args in Launch.Native.
+	ThreadServer(h config.ResolvedHarness, args []string) bool
 	// ThreadPlan returns what a thread launch adds to the thread's native requests. Its MCP
 	// servers carry grant directly, since one process cannot hold a variable per thread.
 	ThreadPlan(l Launch, grant string) (ThreadPlan, error)

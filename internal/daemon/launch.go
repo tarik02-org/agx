@@ -177,7 +177,7 @@ func (s *Server) launchBasis(directory, name, id string, native []string) (launc
 			"harness "+harness.Builtin+" has no process launcher",
 		)
 	}
-	mode := adapter.Classify(native)
+	mode := adapter.Classify(harness, native)
 	if mode == config.ModePassthrough {
 		return launchBasis{}, rpcError(
 			connect.CodeInvalidArgument,
@@ -195,7 +195,7 @@ func (s *Server) launchBasis(directory, name, id string, native []string) (launc
 		adapter:      adapter,
 		mode:         mode,
 		snapshot:     snapshot,
-		threadServer: isThreads && threads.ThreadServer(native),
+		threadServer: isThreads && threads.ThreadServer(harness, native),
 	}, nil
 }
 

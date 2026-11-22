@@ -35,8 +35,8 @@ type Launcher interface {
 	Adapter
 	// Modes lists every mode Classify returns, passthrough included.
 	Modes() []string
-	// Classify sorts a native invocation into a mode; passthrough runs without a managed launch.
-	Classify(args []string) string
+	// Classify sorts a native invocation of h into a mode; passthrough runs without a managed launch.
+	Classify(h config.ResolvedHarness, args []string) string
 	// Executable locates the native executable, preferring the configured absolute path.
 	Executable(configured string) (string, error)
 	// Directory resolves the launch directory from native working-directory flags and returns
@@ -99,6 +99,14 @@ type SessionAssigner interface {
 	// AssignSession returns the ID of the session native args start, and args that start it
 	// under that ID: id, unless args name one. It returns "" when args resume a session.
 	AssignSession(args []string, id string) (string, []string)
+}
+
+// LeadingArgumentsAdapter is a Launcher whose definition arguments belong after a command the
+// caller names first, such as the subcommand that starts an agent's protocol server, whose own
+// flags must follow it.
+type LeadingArgumentsAdapter interface {
+	// LeadingArguments returns how many of the caller's args precede the definition's.
+	LeadingArguments(h config.ResolvedHarness, args []string) int
 }
 
 // SettingsValidator checks native settings without requiring process delivery.
@@ -528,9 +536,14 @@ func Build(
 	}); err != nil {
 		return Plan{}, err
 	}
+	leading := 0
+	if la, ok := a.(LeadingArgumentsAdapter); ok {
+		leading = la.LeadingArguments(h, args)
+	}
 	prefix = append(slices.Clone(settings), prefix...)
+	prefix = append(prefix, args[:leading]...)
 	prefix = append(prefix, harnessArgs...)
-	prefix = append(prefix, args...)
+	prefix = append(prefix, args[leading:]...)
 	plan.Arguments = prefix
 	// Shell-provided upstream secrets have reached the daemon; don't leak them into the harness.
 	plan.Unset = append(plan.Unset, l.Snapshot.MCPEnvironment()...)

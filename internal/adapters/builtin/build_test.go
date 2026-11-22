@@ -72,6 +72,11 @@ harnesses:
   codex: {executable: `+executable+`}
   claude: {executable: `+executable+`}
   pi: {executable: `+executable+`}
+  agy:
+    base: acp
+    executable: `+executable+`
+    settings: {serve: [acp]}
+  acp-only: {base: acp, executable: `+executable+`}
 `)
 	c, err := config.Load(
 		filepath.Join(dir, "agx.yaml"),
@@ -249,6 +254,26 @@ func TestBuildPi(t *testing.T) {
 	}
 }
 
+func TestBuildACPDefinitionArgumentsFollowServe(t *testing.T) {
+	f := newFixture(t)
+	for _, tt := range []struct {
+		harness string
+		native  []string
+		want    []string
+	}{
+		{"agy", []string{"acp", "--gemini-dir", "/g"}, []string{"acp", "--definition", "--gemini-dir", "/g"}},
+		{"acp-only", []string{"--stdio"}, []string{"--definition", "--stdio"}},
+	} {
+		plan, _, err := f.build(t, tt.harness, tt.native...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(plan.Arguments, tt.want) {
+			t.Errorf("%s %q: arguments = %q, want %q", tt.harness, tt.native, plan.Arguments, tt.want)
+		}
+	}
+}
+
 func TestBuildCodex(t *testing.T) {
 	f := newFixture(t)
 	hash, err := f.config.Skills["review"].ContentHash()
@@ -334,7 +359,7 @@ func TestBuildCodexAppServer(t *testing.T) {
 		{[]string{"app-server", "generate-ts"}, false},
 		{[]string{"exec", "hi"}, false},
 	} {
-		if got := threads.ThreadServer(tt.args); got != tt.want {
+		if got := threads.ThreadServer(config.ResolvedHarness{}, tt.args); got != tt.want {
 			t.Errorf("ThreadServer(%q) = %v", tt.args, got)
 		}
 	}

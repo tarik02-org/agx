@@ -35,6 +35,28 @@ skill disabled in `skills/list`; resuming and forking a thread by ID alone kept
 its directory's resources. Claude Code 2.1.300 driven by the Agent SDK that T3
 Code ships, with its own system prompt append, received agx instructions and
 the SDK's append once each, also on resume.
+ACP agents from the ACP registry ran through `acp` definitions in a bubblewrap
+sandbox (ACP version 1). From a scoped directory, claude-agent-acp 0.106.0 and
+codex-acp 2.6.0 (HTTP MCP servers and a client system prompt) called a managed
+MCP tool and followed the directory's instructions, which reached them only
+through the system prompt; from an unscoped directory they did not follow them.
+fx 0.0.16 (`fx acp`) refuses that system prompt, since it implements an earlier
+draft; agx sent the session again without it, and fx called the tool and
+followed the instructions from the first prompt.
+Every agent in the ACP registry (46, on 2026-11-13) then ran through agx in the
+same sandbox, once from a scoped directory, where agx added MCP servers and
+instructions, and once from an unscoped one: each initialized and answered
+`session/new` the same way in both (a session, or the same sign-in or setup
+error), except fast-agent and minion-code, whose packages fail to start. Of the
+agents that run a prompt without signing in, opencode and opencode-v2 called
+the managed tool and followed the scoped instructions.
+Pointed at an OpenAI-compatible endpoint, goose 1.59.0 and Qwen Code 0.27.3
+called the tool and followed the scoped instructions, and Mistral Vibe 3.1.1
+and deepagents 0.1.7, which take no HTTP MCP servers, followed them.
+opencode 2.2.6 (`opencode acp`, HTTP MCP servers, no system prompt) called the
+tool, and pi-acp 0.0.34 (neither) followed the instructions, both from the
+first prompt. kilo 7.8.27 accepted sessions with agx resources; Gemini CLI
+0.68.0 and Qwen Code 0.27.3 initialized but were not signed in.
 These depend on installed harnesses, terminals, or keychains, so they are not
 part of the automated suite.
 
@@ -64,6 +86,11 @@ clients must start a new session on 404, as the MCP specification requires.
 Claude Code recovers for tool calls in recent releases; Codex bundling rmcp
 older than 1.2 does not re-initialize and needs a new thread or `thread/resume`;
 Pi was not checked.
+
+ACP version 2 follows the draft schema `2.0.0-alpha.15` and is tested only with
+scripted messages, since no agent speaking it was available. Instructions reach
+an ACP agent without client system prompt support only through a new session's
+first prompt, so a session loaded or resumed from outside agx goes without them.
 
 The daemon reloads configuration on demand (resolution, launches, status) and
 skips the load while every file, glob, lockfile, and package cache entry it read

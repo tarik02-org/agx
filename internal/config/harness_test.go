@@ -83,7 +83,7 @@ func TestHarnessMerge(t *testing.T) {
 
 	if got := c.HarnessNames(); !slices.Equal(
 		got,
-		[]string{"claude", "codex", "codex-cpa", "opencode", "pi", "pi-flat"},
+		[]string{"acp", "claude", "codex", "codex-cpa", "opencode", "pi", "pi-flat"},
 	) {
 		t.Errorf("harness names = %v", got)
 	}

@@ -89,3 +89,22 @@ harnesses:
 ```
 
 Changes to agx configuration apply to the next session T3 Code starts.
+
+## ACP clients
+
+Editors and other clients that start agents over the
+[Agent Client Protocol](https://agentclientprotocol.com) take the agent's
+command. Define the agent on the `acp` base (see
+[ACP agents](harnesses.md#acp-agents)) and give the client `agx <definition>`,
+or the definition's shim, as that command:
+
+```yaml
+harnesses:
+  opencode-acp:
+    base: acp
+    executable: ~/.local/bin/opencode
+    args: [acp]
+```
+
+Each session the client opens gets the MCP servers and instructions of its own
+working directory, whatever directory the client started the agent in.

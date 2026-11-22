@@ -44,7 +44,7 @@ var valueFlags = []string{
 	"-a", "--ask-for-approval",
 }
 
-func (Adapter) Classify(args []string) string {
+func (Adapter) Classify(_ config.ResolvedHarness, args []string) string {
 	if adapters.Probe(args) {
 		return config.ModePassthrough
 	}
@@ -108,10 +108,14 @@ func (Adapter) Directory(args []string, cwd string) (string, []string, error) {
 	return adapters.ResolveDirectory(args, cwd, dir, flags)
 }
 
-// ThreadServer reports whether args start an app server on standard input and output, the
+func (a Adapter) ThreadServer(_ config.ResolvedHarness, args []string) bool {
+	return a.stdioAppServer(args)
+}
+
+// stdioAppServer reports whether args start an app server on standard input and output, the
 // transport agx relays; the last --listen or --stdio wins.
-func (a Adapter) ThreadServer(args []string) bool {
-	if a.Classify(args) != modeAppServer {
+func (a Adapter) stdioAppServer(args []string) bool {
+	if a.Classify(config.ResolvedHarness{}, args) != modeAppServer {
 		return false
 	}
 	stdio := true
@@ -130,7 +134,7 @@ func (a Adapter) ThreadServer(args []string) bool {
 }
 
 func (a Adapter) Arguments(l adapters.Launch) ([]string, error) {
-	if a.ThreadServer(l.Native) {
+	if a.stdioAppServer(l.Native) {
 		// Threads take their resources per request. Disabling agx skill plugins here would also
 		// hide them from skills/list, where the relay marks each directory's selection instead.
 		return []string{}, nil

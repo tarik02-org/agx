@@ -26,6 +26,7 @@
             "modes": {
               "items": {
                 "enum": [
+                  "acp",
                   "app-server",
                   "exec",
                   "interactive",
