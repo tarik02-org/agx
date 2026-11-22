@@ -137,14 +137,20 @@ func (a *app) runDoctor(
 	for i, name := range a.registry.Launchers() {
 		adapter, _ := a.registry.Launcher(name)
 		configured := ""
+		used := false
 		if h, err := c.Harness(name); err == nil {
 			configured = h.Executable
+			used = h.Enabled
 		}
 		defined := false
 		for definition := range c.Harnesses {
-			if h, err := c.Harness(definition); err == nil && h.Builtin == name {
+			if h, err := c.Harness(definition); err == nil && h.Builtin == name && h.Enabled {
 				defined = true
 			}
+		}
+		// A disabled built-in that no enabled definition runs need not be installed.
+		if !used && !defined {
+			continue
 		}
 		if _, err := adapter.Executable(""); errors.Is(err, adapters.ErrNoExecutable) {
 			// A base without an executable of its own; definitionExecutables checks what runs.
@@ -365,7 +371,7 @@ func definitionExecutables(c *config.Config, registry adapters.Registry) []check
 	rows := []check{}
 	for _, name := range slices.Sorted(maps.Keys(c.Harnesses)) {
 		h, err := c.Harness(name)
-		if err != nil {
+		if err != nil || !h.Enabled {
 			continue
 		}
 		adapter, ok := registry.Launcher(h.Builtin)
@@ -405,7 +411,7 @@ func definitionChecks(ctx context.Context, c *config.Config, registry adapters.R
 	rows := []check{}
 	for _, name := range names {
 		h, err := c.Harness(name)
-		if err != nil {
+		if err != nil || !h.Enabled {
 			continue
 		}
 		adapter, _ := registry.Launcher(h.Builtin)

@@ -371,12 +371,12 @@ func (r Registry) Launchers() []string {
 	return names
 }
 
-// Launchable lists configured harnesses whose adapter can start a native process.
+// Launchable lists configured, enabled harnesses whose adapter can start a native process.
 func (r Registry) Launchable(c *config.Config) []string {
 	names := []string{}
 	for _, name := range c.HarnessNames() {
 		h, err := c.Harness(name)
-		if err != nil {
+		if err != nil || !h.Enabled {
 			continue
 		}
 		if _, ok := r.Launcher(h.Builtin); ok {
@@ -430,6 +430,9 @@ func (r Registry) Install(
 		h, err := c.Harness(name)
 		if err != nil {
 			return nil, err
+		}
+		if !h.Enabled {
+			continue
 		}
 		target := InstallTarget(h, lookup)
 		if s, ok := r.adapters[h.Builtin].(SettingsAdapter); ok && len(h.Settings) > 0 {

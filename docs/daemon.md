@@ -172,6 +172,12 @@ job object. When the harness exits on its own, what it started keeps running.
 On Unix, killing the wrapper with SIGKILL leaves the harness running until the
 host closes its terminal or pipes; SIGTERM and SIGINT reach the harness.
 
+A launch attached to the next daemon gets the MCP servers its directory selects
+at that moment. If the configuration changed while it ran, a server removed
+from it stops answering, a changed one is served as it is now, and one added
+to it needs a new session to appear in the harness; `agx mcp call` reaches it
+at once.
+
 A wrapper whose launch the daemon refuses to take back, because the launch's
 directory no longer resolves or the configuration does not load, retries for 5
 minutes and then warns that MCP access is lost.

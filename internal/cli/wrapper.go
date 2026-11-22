@@ -138,6 +138,9 @@ func runHarness(
 	if err != nil {
 		return err
 	}
+	if !h.Enabled {
+		return fmt.Errorf("harness %s is disabled; remove enabled: false from harnesses.%s to launch it", name, name)
+	}
 	if adapter, ok := registry.ClientLauncher(h.Builtin); ok {
 		return runClientHarness(ctx, paths, adapter, harnesses, h, args)
 	}

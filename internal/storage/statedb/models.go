@@ -95,12 +95,14 @@ type LocalEnvironment struct {
 }
 
 type LocalHarness struct {
-	Root       string
-	Key        string
-	Base       string
-	Executable string
-	Hidden     sql.NullBool
-	Settings   sql.NullString
+	Root        string
+	Key         string
+	Base        string
+	Executable  string
+	Hidden      sql.NullBool
+	Settings    sql.NullString
+	DisplayName string
+	Enabled     sql.NullBool
 }
 
 type LocalHeader struct {
