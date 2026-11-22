@@ -323,7 +323,7 @@ func launcherHarnesses(c *config.Config, registry adapters.Registry) ([]launcher
 				return nil, err
 			}
 			if adapter, ok := registry.Adapter(h.Builtin); ok {
-				if t, ok := adapter.(adapters.Threads); ok && t.ThreadServer(nil) {
+				if t, ok := adapter.(adapters.Threads); ok && t.ThreadServer(h, nil) {
 					continue
 				}
 			}

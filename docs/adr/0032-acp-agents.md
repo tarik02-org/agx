@@ -11,13 +11,25 @@ scopes resources for any ACP agent without an adapter per agent.
 ## A built-in to base definitions on
 
 `acp` is a built-in harness that only definitions run: ACP agents share no
-executable name, so a definition sets `base: acp`, an absolute `executable`, and
-the `args` that start the agent's ACP server. `agx <definition>` is then the
-command a client runs as the agent. Every launch is a thread server, except a
-help or version probe, which passes through. The launcher does not offer such
-harnesses, since a terminal cannot drive them; `agx doctor` checks each
+executable name, so a definition sets `base: acp` and an absolute `executable`.
+`agx <definition>` is then the command a client runs as the agent. Many agents
+are also terminal CLIs that start their ACP server with a subcommand or flag
+(`agy acp`, `opencode acp`, `qwen --acp`), and clients such as T3 Code pass it
+themselves. The definition's `settings.serve` lists those leading arguments: a
+launch that starts with them is a thread server, and any other launch passes
+through, so one definition and its shim serve both the client and a terminal.
+Without `serve`, every launch is a thread server, which suits dedicated ACP
+executables (`claude-agent-acp`) and clients that pass no arguments; a
+definition's `args` can then start the server. A help or version probe always
+passes through. The launcher offers only definitions with `serve`, since a
+terminal cannot drive a bare thread server; `agx doctor` checks each
 definition's executable instead of the bare base. ACP sessions belong to the
 client, so launches are not recorded for `agx sessions`.
+
+`serve` matches a prefix of the caller's arguments rather than reading the
+definition's own `args`, because those are prepended to every launch and could
+not tell a terminal launch from a server one. It lives in `settings`, the
+place for base-specific options, instead of a field every harness would carry.
 
 ## The relay
 

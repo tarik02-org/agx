@@ -327,18 +327,25 @@ agx's instructions, combined with the host's own system prompt additions.
 
 `acp` is a base for agents that speak the Agent Client Protocol on standard
 input and output. ACP agents share no executable name, so a definition names
-the agent's absolute `executable` and the `args` that start its ACP server:
+the agent's absolute `executable`. When the executable is also a terminal
+agent, `settings.serve` lists the leading arguments that start its ACP server:
+launches that begin with them are relayed, and any other launch runs the agent
+unchanged, without agx resources. Without `serve`, every launch is relayed.
 
 ```yaml
 harnesses:
-  opencode-acp:
+  agy:
     base: acp
-    executable: ~/.local/bin/opencode
-    args: [acp]
+    executable: ~/.local/share/mise/shims/agy
+    settings:
+      serve: [acp]
 ```
 
-A client (an editor, T3 Code) then runs `agx opencode-acp`, or the
-`opencode-acp` [shim](#shims), as the agent's command. agx relays the protocol
+A client (an editor, T3 Code) then runs `agx agy acp`, or the `agy`
+[shim](#shims) with `acp`, as the agent's command, and `agy` in a terminal
+still opens the agent itself. Clients that run the agent without arguments
+need a definition whose `args` start the server instead, such as
+`args: [acp]` without `serve`. agx relays the protocol
 and, for every session the client creates, forks, loads, or resumes, resolves
 the resources of the session's `cwd`:
 
@@ -357,7 +364,8 @@ the resources of the session's `cwd`:
 Closing or deleting a session, or the agent exiting, ends its MCP access. ACP
 protocol versions 1 and 2 are supported; a session of another version runs
 without agx resources, with a warning. The launcher does not offer ACP
-definitions, and their sessions belong to the client, not `agx sessions`.
+definitions without `serve`, and their sessions belong to the client, not
+`agx sessions`.
 
 ### Supported versions
 

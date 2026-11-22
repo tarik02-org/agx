@@ -334,7 +334,7 @@ func TestBuildCodexAppServer(t *testing.T) {
 		{[]string{"app-server", "generate-ts"}, false},
 		{[]string{"exec", "hi"}, false},
 	} {
-		if got := threads.ThreadServer(tt.args); got != tt.want {
+		if got := threads.ThreadServer(config.ResolvedHarness{}, tt.args); got != tt.want {
 			t.Errorf("ThreadServer(%q) = %v", tt.args, got)
 		}
 	}

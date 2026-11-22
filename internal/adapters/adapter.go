@@ -35,8 +35,8 @@ type Launcher interface {
 	Adapter
 	// Modes lists every mode Classify returns, passthrough included.
 	Modes() []string
-	// Classify sorts a native invocation into a mode; passthrough runs without a managed launch.
-	Classify(args []string) string
+	// Classify sorts a native invocation of h into a mode; passthrough runs without a managed launch.
+	Classify(h config.ResolvedHarness, args []string) string
 	// Executable locates the native executable, preferring the configured absolute path.
 	Executable(configured string) (string, error)
 	// Directory resolves the launch directory from native working-directory flags and returns
