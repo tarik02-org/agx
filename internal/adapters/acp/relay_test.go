@@ -198,7 +198,12 @@ func TestRelayAntigravitySystemPrompt(t *testing.T) {
 	s.Expect(
 		s.Client(`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/a","mcpServers":[],`+
 			`"_meta":{"antigravity":{"disabledTools":["run_workflow"],"systemPrompt":{"append":"T3"}}}}}`),
-		`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/a","mcpServers":[],`+
+		`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/a","mcpServers":[`+bridged(
+			t,
+			"/a",
+			"L1",
+			"",
+		)+`],`+
 			`"_meta":{"antigravity":{"disabledTools":["run_workflow"],"systemPrompt":{"append":"T3\n\nAGX /a"}}}}}`,
 	)
 	s.Server(`{"jsonrpc":"2.0","id":1,"result":{"sessionId":"A"}}`)
@@ -206,7 +211,12 @@ func TestRelayAntigravitySystemPrompt(t *testing.T) {
 	// Without the client's _meta, agx adds its own; the first prompt passes unchanged.
 	s.Expect(
 		s.Client(`{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/b","mcpServers":[]}}`),
-		`{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/b","mcpServers":[],`+
+		`{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/b","mcpServers":[`+bridged(
+			t,
+			"/b",
+			"L2",
+			"",
+		)+`],`+
 			`"_meta":{"antigravity":{"systemPrompt":{"append":"AGX /b"}}}}}`,
 	)
 	s.Server(`{"jsonrpc":"2.0","id":2,"result":{"sessionId":"B"}}`)
@@ -219,7 +229,12 @@ func TestRelayAntigravitySystemPrompt(t *testing.T) {
 		s.Client(
 			`{"jsonrpc":"2.0","id":4,"method":"session/load","params":{"sessionId":"A","cwd":"/a","mcpServers":[]}}`,
 		),
-		`{"jsonrpc":"2.0","id":4,"method":"session/load","params":{"sessionId":"A","cwd":"/a","mcpServers":[],`+
+		`{"jsonrpc":"2.0","id":4,"method":"session/load","params":{"sessionId":"A","cwd":"/a","mcpServers":[`+bridged(
+			t,
+			"/a",
+			"L3",
+			"",
+		)+`],`+
 			`"_meta":{"antigravity":{"systemPrompt":{"append":"AGX /a"}}}}}`,
 	)
 }
