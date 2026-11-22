@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"os/exec"
@@ -57,7 +58,7 @@ func main() {
 		return
 	}
 	if slices.Contains(args, "acp") {
-		acpAgent()
+		acpAgent(!slices.Contains(args, "--no-http"))
 		return
 	}
 	r := record{Args: args, Env: map[string]string{}, Skills: map[string]string{}, Endpoints: map[string]string{},
@@ -352,6 +353,83 @@ func (c *mcpClient) echo(arguments map[string]any) (string, error) {
 	return reply.Result.Content[0].Text, nil
 }
 
+// echoStdio starts an ACP stdio MCP server, runs the MCP handshake over its standard input and
+// output, and calls the echo tool, returning its text or the error.
+func echoStdio(command string, server map[string]any) string {
+	args := []string{}
+	raw, _ := server["args"].([]any)
+	for _, a := range raw {
+		s, _ := a.(string)
+		args = append(args, s)
+	}
+	cmd := exec.Command(command, args...)
+	cmd.Env = os.Environ()
+	env, _ := server["env"].([]any)
+	for _, e := range env {
+		variable, _ := e.(map[string]any)
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%v=%v", variable["name"], variable["value"]))
+	}
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	stdin, _ := cmd.StdinPipe()
+	stdout, _ := cmd.StdoutPipe()
+	if err := cmd.Start(); err != nil {
+		return "error: " + err.Error()
+	}
+	defer func() {
+		_ = stdin.Close()
+		_ = cmd.Wait()
+	}()
+	out := json.NewEncoder(stdin)
+	in := bufio.NewReader(stdout)
+	call := func(message map[string]any) (map[string]any, error) {
+		message["jsonrpc"] = "2.0"
+		if err := out.Encode(message); err != nil {
+			return nil, err
+		}
+		if message["id"] == nil {
+			return nil, nil
+		}
+		for {
+			line, err := in.ReadBytes('\n')
+			if err != nil {
+				return nil, fmt.Errorf("%w: %s", err, stderr.String())
+			}
+			var reply map[string]any
+			if json.Unmarshal(line, &reply) == nil && reply["id"] != nil {
+				return reply, nil
+			}
+		}
+	}
+	if _, err := call(map[string]any{"id": 1, "method": "initialize", "params": map[string]any{
+		"protocolVersion": "2025-11-25", "capabilities": map[string]any{},
+		"clientInfo": map[string]any{"name": "fakeharness", "version": "1"},
+	}}); err != nil {
+		return "error: " + err.Error()
+	}
+	if _, err := call(map[string]any{"method": "notifications/initialized"}); err != nil {
+		return "error: " + err.Error()
+	}
+	reply, err := call(map[string]any{"id": 2, "method": "tools/call", "params": map[string]any{
+		"name": "echo", "arguments": map[string]any{"text": "hello"},
+	}})
+	if err != nil {
+		return "error: " + err.Error()
+	}
+	var result struct {
+		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	b, _ := json.Marshal(reply)
+	if json.Unmarshal(b, &result) != nil || len(result.Result.Content) == 0 {
+		return fmt.Sprintf("error: unexpected tools/call response %s", b)
+	}
+	return result.Result.Content[0].Text
+}
+
 // callEcho runs the MCP handshake over streamable HTTP and calls the echo tool.
 func callEcho(url, authorization string) (string, error) {
 	return (&mcpClient{url: url, authorization: authorization}).echo(nil)
@@ -486,10 +564,11 @@ func appServer(args []string) {
 	}
 }
 
-// acpAgent answers newline-delimited JSON-RPC like an ACP version 1 agent that accepts HTTP MCP
-// servers and a client system prompt. Every result echoes the request's params as "received";
-// session/new also returns a new session and the echo tool's reply from every MCP server it got.
-func acpAgent() {
+// acpAgent answers newline-delimited JSON-RPC like an ACP version 1 agent that accepts a client
+// system prompt and, with http, HTTP MCP servers. Every result echoes the request's params as
+// "received"; session/new also returns a new session and the echo tool's reply from every MCP
+// server it got, HTTP or stdio.
+func acpAgent(http bool) {
 	reader := bufio.NewReader(os.Stdin)
 	out := json.NewEncoder(os.Stdout)
 	sessions := 0
@@ -511,17 +590,21 @@ func acpAgent() {
 		case "initialize":
 			result["protocolVersion"] = 1
 			result["agentCapabilities"] = map[string]any{
-				"mcpCapabilities":     map[string]any{"http": true},
+				"mcpCapabilities":     map[string]any{"http": http},
 				"sessionCapabilities": map[string]any{"systemPrompt": map[string]any{}, "close": map[string]any{}},
 			}
 		case "session/new":
 			sessions++
 			result["sessionId"] = fmt.Sprintf("session-%d", sessions)
-			clients := map[string]*mcpClient{}
+			clients, stdio := map[string]*mcpClient{}, map[string]string{}
 			servers, _ := request.Params["mcpServers"].([]any)
 			for _, s := range servers {
 				server, _ := s.(map[string]any)
 				name, _ := server["name"].(string)
+				if command, ok := server["command"].(string); ok {
+					stdio[name] = echoStdio(command, server)
+					continue
+				}
 				url, _ := server["url"].(string)
 				authorization := ""
 				headers, _ := server["headers"].([]any)
@@ -532,7 +615,9 @@ func acpAgent() {
 				}
 				clients[name] = &mcpClient{url: url, authorization: authorization}
 			}
-			result["tools"], _ = echoAll(clients, nil)
+			tools, _ := echoAll(clients, nil)
+			maps.Copy(tools, stdio)
+			result["tools"] = tools
 		}
 		_ = out.Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": result})
 	}

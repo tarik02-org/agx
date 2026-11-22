@@ -36,6 +36,7 @@ func mcpCommand(a *app) *cobra.Command {
 		mcpTypesCommand(a),
 		mcpProcessesCommand(a),
 		mcpStopCommand(a),
+		mcpBridgeCommand(),
 	)
 	return command
 }

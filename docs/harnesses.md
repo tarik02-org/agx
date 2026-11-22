@@ -352,9 +352,10 @@ protocol
 and, for every session the client creates, forks, loads, or resumes, resolves
 the resources of the session's `cwd`:
 
-- **MCP servers** are added to the session's own as HTTP servers, when the
-  agent advertises HTTP MCP support. A server the client names the same way
-  stays the client's.
+- **MCP servers** are added to the session's own as HTTP servers when the
+  agent advertises HTTP MCP support, and otherwise as stdio servers that run
+  agx's bridge to them (`agx mcp bridge`), which every version 1 agent accepts.
+  A server the client names the same way stays the client's.
 - **Instructions** are appended to the session's system prompt when the agent
   advertises a client system prompt, or to the text Antigravity appends to its
   system prompt through its `_meta.antigravity.systemPrompt` extension;
