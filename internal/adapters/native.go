@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -105,3 +106,7 @@ func Probe(args []string, extra ...string) bool {
 	}
 	return false
 }
+
+// ErrNoExecutable is returned by Executable when the adapter has no executable of its own and
+// none is configured, as for a base that only definitions run.
+var ErrNoExecutable = errors.New("no executable configured")

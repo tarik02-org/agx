@@ -66,7 +66,7 @@ func (s *Server) ResolvePassthrough(
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	adapter, ok := s.adapters.Launcher(h.Builtin)
-	if !ok || adapter.Classify(req.Msg.NativeArguments) != config.ModePassthrough {
+	if !ok || adapter.Classify(h, req.Msg.NativeArguments) != config.ModePassthrough {
 		return nil, rpcError(connect.CodeInvalidArgument, "native arguments must select passthrough mode")
 	}
 	args, environment, err := s.resolveCommandValues(ctx, c, h, config.ModePassthrough, req.Msg.EnvironmentInputs)

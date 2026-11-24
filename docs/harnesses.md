@@ -12,6 +12,11 @@ definitions can set the native client's executable, arguments and environment;
 set the plugin's `harness` option to the same definition name so its sessions
 resume with that configuration.
 
+**ACP agents**: any agent that speaks the
+[Agent Client Protocol](https://agentclientprotocol.com), such as `opencode acp`,
+through a definition based on `acp`. Each session the client starts gets the
+resources of its own directory. See [ACP agents](#acp-agents).
+
 ## Launching
 
 ```sh
@@ -123,6 +128,7 @@ sense:
 | codex   | `interactive`, `exec`, `resume`, `app-server`, `passthrough` |
 | claude  | `interactive`, `print`, `resume`, `passthrough`              |
 | pi      | `interactive`, `print`, `rpc`, `resume`, `passthrough`       |
+| acp     | `acp`, `passthrough`                                         |
 
 For example, `codex exec …` is `exec`, `claude -p …` is `print`, and `claude
 --resume …` is `resume`; help, version, and login commands are `passthrough`.
@@ -316,6 +322,55 @@ agx updates.
 
 Claude Code driven by the Agent SDK (`--input-format stream-json`) still gets
 agx's instructions, combined with the host's own system prompt additions.
+
+### ACP agents
+
+`acp` is a base for agents that speak the Agent Client Protocol on standard
+input and output. ACP agents share no executable name, so a definition names
+the agent's absolute `executable`. When the executable is also a terminal
+agent, `settings.serve` lists the leading arguments that start its ACP server:
+launches that begin with them are relayed, and any other launch runs the agent
+unchanged, without agx resources. Without `serve`, every launch is relayed.
+
+```yaml
+harnesses:
+  agy:
+    base: acp
+    executable: ~/.local/share/mise/shims/agy
+    settings:
+      serve: [acp]
+```
+
+A client (an editor, T3 Code) then runs `agx agy acp`, or the `agy`
+[shim](#shims) with `acp`, as the agent's command, and `agy` in a terminal
+still opens the agent itself. With `serve`, the definition's `args` follow the
+serve arguments, where the server takes its own flags: `args: [--disable-telemetry]`
+runs `agy acp --disable-telemetry …`, and a terminal `agy` gets none of them.
+Clients that run the agent without arguments need a definition whose `args`
+start the server instead, such as `args: [acp]` without `serve`. agx relays the
+protocol
+and, for every session the client creates, forks, loads, or resumes, resolves
+the resources of the session's `cwd`:
+
+- **MCP servers** are added to the session's own as HTTP servers when the
+  agent advertises HTTP MCP support, and otherwise as stdio servers that run
+  agx's bridge to them (`agx mcp bridge`), which every version 1 agent accepts.
+  A server the client names the same way stays the client's.
+- **Instructions** are appended to the session's system prompt when the agent
+  advertises a client system prompt, or to the text Antigravity appends to its
+  system prompt through its `_meta.antigravity.systemPrompt` extension;
+  otherwise they are placed before the first prompt of a new session. Forked, loaded, and resumed sessions already have
+  them in their history. An agent that refuses the system prompt it
+  advertises, such as one built on an earlier draft of it, is treated as having
+  none, with a warning.
+- **Skills** have no place in ACP and are not applied; agx warns when a
+  session's directory selects some.
+
+Closing or deleting a session, or the agent exiting, ends its MCP access. ACP
+protocol versions 1 and 2 are supported; a session of another version runs
+without agx resources, with a warning. The launcher does not offer ACP
+definitions without `serve`, and their sessions belong to the client, not
+`agx sessions`.
 
 ### Supported versions
 
