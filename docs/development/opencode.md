@@ -79,7 +79,8 @@ npm packages live under `packages/opencode/licenses`.
 One resource lease belongs to each OpenCode location. Sessions in that location
 share its skills and MCP catalog; locations resolve independently. AGX instruction
 text is included in primary, compaction, generation and title requests. `/agx-reload`
-acquires current configuration for the location and replaces only AGX's resources.
+syncs the location's lease with current configuration and reloads only the native
+catalogs that changed; the lease keeps its ID and grant.
 Native process settings such as executable, argv and environment are not applied.
 
 Text-only skills use OpenCode's virtual `skill://` paths and create no files.
@@ -96,8 +97,8 @@ that location. Upstream MCP environment inputs and management/lifecycle tokens
 are removed from shell environments. The server's global environment is unchanged.
 
 The plugin renews leases and watches discovery. A daemon replacement reattaches
-the existing lease; changed configuration or endpoint origin triggers fresh
-preparation and native catalog reload. Revocation is respected. A crashed daemon
+the existing lease and syncs it; changed configuration or endpoint origin reloads the
+affected native catalogs. Revocation is respected. A crashed daemon
 can be restarted through the CLI's startup-lock checks; an intentional daemon
 stop is left stopped. Runtime operations fail while their resources are unavailable.
 

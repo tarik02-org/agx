@@ -20,6 +20,7 @@ import {
   type ResolveResourcesRequestSchema,
   type PrepareResourcesResponse,
   type ResolveResourcesResponse,
+  type SyncResourcesResponse,
 } from "../gen/agx/v1/agx_pb.ts";
 import { DaemonError, EndState } from "./error.ts";
 import type { Discovery, LifecycleToken } from "./schema.ts";
@@ -39,6 +40,12 @@ export class AgxClient extends Context.Service<
       target: Discovery,
       input: PrepareInput,
     ) => Effect.Effect<PrepareResourcesResponse, DaemonError>;
+    readonly sync: (
+      target: Discovery,
+      launchId: string,
+      environmentInputs: Record<string, string>,
+      token: LifecycleToken,
+    ) => Effect.Effect<SyncResourcesResponse, DaemonError>;
     readonly renew: (
       target: Discovery,
       launchId: string,
@@ -97,6 +104,21 @@ export const makeAgxClient = Effect.fn("makeAgxClient")(() =>
       ),
     );
 
+    const sync = Effect.fn("AgxClient.sync")(
+      (
+        target: Discovery,
+        launchId: string,
+        environmentInputs: Record<string, string>,
+        token: LifecycleToken,
+      ) =>
+        call(target, "sync resources", token, (transport, options) =>
+          createClient(ResourceService, transport).syncResources(
+            { launchId, environmentInputs },
+            options,
+          ),
+        ),
+    );
+
     const renew = Effect.fn("AgxClient.renew")(
       (target: Discovery, launchId: string, token: LifecycleToken) =>
         call(target, "renew resources", token, (transport, options) =>
@@ -130,7 +152,7 @@ export const makeAgxClient = Effect.fn("makeAgxClient")(() =>
       ),
     );
 
-    return AgxClient.of({ resolve, prepare, renew, attach, release });
+    return AgxClient.of({ resolve, prepare, sync, renew, attach, release });
   }),
 );
 

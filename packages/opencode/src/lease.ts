@@ -11,27 +11,51 @@ import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import type * as Scope from "effect/Scope";
-import * as ScopedRef from "effect/ScopedRef";
 import * as Semaphore from "effect/Semaphore";
 
 import { Configuration } from "./Configuration.ts";
-import { IntegrationError, type IntegrationFailure } from "./error.ts";
-import { LeaseEnvelope, Prepared, Snapshot } from "./schema.ts";
+import { IntegrationError } from "./error.ts";
+import { LeaseEnvelope, LeaseResources, Prepared, Snapshot } from "./schema.ts";
 import { SkillDeployer } from "./SkillDeployer.ts";
 
-export interface ActiveLease {
-  readonly prepared: Prepared;
+export interface ResourceChanges {
+  readonly skills: boolean;
+  readonly mcp: boolean;
+}
+
+interface Applied {
+  readonly resources: LeaseResources;
   readonly skills: ReadonlyArray<Skill.Info>;
-  readonly environmentInputs: Record<string, string>;
-  readonly configuration: string;
-  readonly origin: string;
   readonly endpoints: ReadonlyArray<{ readonly name: string; readonly url: URL }>;
+}
+
+// One lease for the plugin's lifetime: it follows the directory's configuration through
+// SyncResources, so its ID, grant and lifecycle token never change.
+export interface ActiveLease extends Applied {
+  readonly prepared: Prepared;
+  readonly configuration: string;
+  environmentInputs: Record<string, string>;
+  origin: string;
   instance: string;
   renewAt: number;
 }
 
-export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effect.Effect<void>) {
+const decodeResources = (raw: unknown) =>
+  Schema.decodeUnknownEffect(LeaseResources)(raw).pipe(
+    Effect.catchTag("SchemaError", (cause) =>
+      Effect.fail(new IntegrationError({ operation: "lease resources", reason: "content", cause })),
+    ),
+  );
+
+const skillsOf = (skills: LeaseResources["content"]["skills"]) =>
+  skills.map((skill) => `${skill.id}:${skill.digest}`).join("\n");
+
+const urlsOf = (applied: Applied) =>
+  applied.endpoints.map((endpoint) => `${endpoint.name}:${endpoint.url.href}`).join("\n");
+
+export const acquireLease = Effect.fn("acquireLease")(function* (
+  onChange: (changes: ResourceChanges) => Effect.Effect<void>,
+) {
   const client = yield* AgxClient;
   const connection = yield* AgxConnection;
   const configuration = yield* Configuration;
@@ -39,31 +63,11 @@ export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effec
   const crypto = yield* Crypto.Crypto;
   const lock = Semaphore.makeUnsafe(1);
 
-  const acquire = Effect.fn("lease.acquire")(function* (): Effect.fn.Return<
-    ActiveLease,
-    IntegrationFailure,
-    Scope.Scope
-  > {
-    const target = yield* connection.discover();
-    const resolve = yield* client.resolve(target, {
-      directory: configuration.scopeDirectory,
-      harness: configuration.harness,
-    });
-    if (resolve.settings.length > 0) {
-      return yield* new IntegrationError({
-        operation: "native settings are unsupported",
-        reason: "settings",
-      });
-    }
-    const snapshot = yield* Schema.decodeUnknownEffect(Snapshot)(resolve.snapshot).pipe(
-      Effect.catchTag("SchemaError", (cause) =>
-        Effect.fail(
-          new IntegrationError({ operation: "resolved snapshot", reason: "content", cause }),
-        ),
-      ),
-    );
-    const environmentInputs: Record<string, string> = {};
-    for (const name of snapshot.requiredEnvironment) {
+  const environmentFor = Effect.fn("lease.environmentFor")(function* (
+    names: ReadonlyArray<string>,
+  ) {
+    const inputs: Record<string, string> = {};
+    for (const name of names) {
       const value = yield* Config.option(Config.String(name)).pipe(
         Effect.catchTag("ConfigError", (cause) =>
           Effect.fail(
@@ -72,55 +76,31 @@ export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effec
         ),
       );
       if (Option.isSome(value)) {
-        environmentInputs[name] = value.value;
+        inputs[name] = value.value;
       }
     }
-    const raw = yield* client.prepare(target, {
-      snapshotId: snapshot.id,
-      directory: configuration.scopeDirectory,
-      harness: configuration.harness,
-      environmentInputs,
-      mcpDirectory: configuration.mcpDirectory,
-    });
-    const envelope = yield* Schema.decodeUnknownEffect(LeaseEnvelope)(raw).pipe(
-      Effect.catchTag("SchemaError", (cause) =>
-        Effect.fail(
-          new IntegrationError({
-            operation: "resource lease credentials",
-            reason: "content",
-            cause,
-          }),
-        ),
-      ),
-    );
-    yield* Effect.addFinalizer(() =>
-      connection
-        .poll()
-        .pipe(
-          Effect.flatMap((current) =>
-            client.release(current, envelope.launch.id, envelope.lifecycleToken),
-          ),
-        )
-        .pipe(
-          Effect.catchTags({
-            ConnectionError: (error) => Effect.logWarning(error.message),
-            DaemonError: (error) => Effect.logWarning(error.message),
-          }),
-        ),
-    );
-    const prepared = yield* Schema.decodeUnknownEffect(Prepared)(raw).pipe(
-      Effect.catchTag("SchemaError", (cause) =>
-        Effect.fail(
-          new IntegrationError({ operation: "prepared resources", reason: "content", cause }),
-        ),
-      ),
-    );
-    if (prepared.mcp.some((endpoint) => endpoint.url.origin !== target.url.origin)) {
+    return inputs;
+  });
+
+  const apply = Effect.fn("lease.apply")(function* (
+    target: Discovery,
+    resources: LeaseResources,
+  ): Effect.fn.Return<Applied, IntegrationError> {
+    if (resources.settings.length > 0) {
+      return yield* new IntegrationError({
+        operation: "native settings are unsupported",
+        reason: "settings",
+      });
+    }
+    if (resources.mcp.some((endpoint) => endpoint.url.origin !== target.url.origin)) {
       return yield* new IntegrationError({ operation: "MCP endpoint origin", reason: "content" });
     }
-    const skills = yield* Effect.forEach(prepared.content.skills, (tree) => deployer.prepare(tree));
-    const endpoints = yield* Effect.forEach(prepared.mcp, (endpoint) =>
-      Effect.gen(function* () {
+    const skills = yield* Effect.forEach(resources.content.skills, (tree) =>
+      deployer.prepare(tree),
+    );
+    const endpoints = yield* Effect.forEach(
+      resources.mcp,
+      Effect.fn("lease.endpoint")(function* (endpoint) {
         const digest = yield* crypto
           .digest("SHA-256", new TextEncoder().encode(endpoint.id))
           .pipe(
@@ -134,100 +114,162 @@ export const acquireLease = Effect.fn("acquireLease")(function* (onChange: Effec
         return { name: `agx-${label}-${Hex.encode(digest).slice(0, 12)}`, url: endpoint.url };
       }),
     );
-    const now = yield* Clock.currentTimeMillis;
-    return {
-      prepared,
-      skills,
-      environmentInputs,
-      configuration: target.config,
-      origin: target.url.origin,
-      endpoints,
-      instance: target.instance_id,
-      renewAt: now + prepared.renewAfterSeconds * 1000,
-    };
+    return { resources, skills, endpoints };
   });
 
-  const acquireCurrent = acquire().pipe(
-    Effect.retry({
-      times: 2,
-      while: (error) => error._tag === "DaemonError" && error.code === Code.Aborted,
-    }),
+  const initial = yield* connection.discover();
+  const resolve = yield* client.resolve(initial, {
+    directory: configuration.scopeDirectory,
+    harness: configuration.harness,
+  });
+  const snapshot = yield* Schema.decodeUnknownEffect(Snapshot)(resolve.snapshot).pipe(
+    Effect.catchTag("SchemaError", (cause) =>
+      Effect.fail(
+        new IntegrationError({ operation: "resolved snapshot", reason: "content", cause }),
+      ),
+    ),
   );
-  const state = yield* ScopedRef.fromAcquire(acquireCurrent);
-  let terminal: DaemonError | null = null;
-  const replace = Effect.fn("lease.replace")(function* () {
-    yield* ScopedRef.set(state, acquireCurrent);
-    yield* onChange;
-    terminal = null;
+  const environmentInputs = yield* environmentFor(snapshot.requiredEnvironment);
+  const raw = yield* client.prepare(initial, {
+    directory: configuration.scopeDirectory,
+    harness: configuration.harness,
+    environmentInputs,
+    mcpDirectory: configuration.mcpDirectory,
   });
-  const restore = Effect.fn("lease.restore")(function* (target: Discovery, active: ActiveLease) {
-    yield* client.attach(target, {
-      launch: active.prepared.launch,
-      grant: active.prepared.grant,
-      lifecycleToken: active.prepared.lifecycleToken,
-      environmentInputs: active.environmentInputs,
-      mcpDirectory: active.prepared.mcpDirectory,
-    });
-    const resolved = yield* client.resolve(target, {
-      directory: configuration.scopeDirectory,
-      harness: configuration.harness,
-    });
+  const envelope = yield* Schema.decodeUnknownEffect(LeaseEnvelope)(raw).pipe(
+    Effect.catchTag("SchemaError", (cause) =>
+      Effect.fail(
+        new IntegrationError({ operation: "resource lease credentials", reason: "content", cause }),
+      ),
+    ),
+  );
+  yield* Effect.addFinalizer(() =>
+    connection.poll().pipe(
+      Effect.flatMap((current) =>
+        client.release(current, envelope.launch.id, envelope.lifecycleToken),
+      ),
+      Effect.catchTags({
+        ConnectionError: (error) => Effect.logWarning(error.message),
+        DaemonError: (error) => Effect.logWarning(error.message),
+      }),
+    ),
+  );
+  const prepared = yield* Schema.decodeUnknownEffect(Prepared)(raw).pipe(
+    Effect.catchTag("SchemaError", (cause) =>
+      Effect.fail(
+        new IntegrationError({ operation: "prepared resources", reason: "content", cause }),
+      ),
+    ),
+  );
+  const active: ActiveLease = {
+    ...(yield* apply(initial, prepared.resources)),
+    prepared,
+    configuration: initial.config,
+    environmentInputs,
+    origin: initial.url.origin,
+    instance: initial.instance_id,
+    renewAt: (yield* Clock.currentTimeMillis) + prepared.renewAfterSeconds * 1000,
+  };
+
+  // Changes a failed catalog reload left unapplied, retried by the next sync.
+  let pending: ResourceChanges = { skills: false, mcp: false };
+  const sync = Effect.fn("lease.sync")(function* (target: Discovery) {
+    const request = (inputs: Record<string, string>) =>
+      client
+        .sync(target, prepared.launch.id, inputs, prepared.lifecycleToken)
+        .pipe(Effect.flatMap((response) => decodeResources(response.resources)));
+    let inputs = active.environmentInputs;
+    let resources = yield* request(inputs);
+    // The daemon names the inputs its current selection reads; values only go to those names.
+    const wanted = yield* environmentFor(resources.snapshot.requiredEnvironment);
     if (
-      resolved.snapshot?.id !== active.prepared.launch.snapshotId ||
-      active.origin !== target.url.origin
+      Object.keys(wanted).length !== Object.keys(inputs).length ||
+      Object.entries(wanted).some(([name, value]) => inputs[name] !== value)
     ) {
-      yield* replace();
-      return;
+      inputs = wanted;
+      resources = yield* request(inputs);
     }
-    yield* client.renew(target, active.prepared.launch.id, active.prepared.lifecycleToken);
-    active.instance = target.instance_id;
-    active.renewAt = (yield* Clock.currentTimeMillis) + active.prepared.renewAfterSeconds * 1000;
+    const next = yield* apply(target, resources);
+    const changes: ResourceChanges = {
+      skills:
+        pending.skills ||
+        skillsOf(active.resources.content.skills) !== skillsOf(next.resources.content.skills),
+      mcp:
+        pending.mcp ||
+        active.resources.mcpRevision !== next.resources.mcpRevision ||
+        urlsOf(active) !== urlsOf(next),
+    };
+    Object.assign(active, next, { environmentInputs: inputs, origin: target.url.origin });
+    if (changes.skills || changes.mcp) {
+      pending = changes;
+      yield* onChange(changes);
+      pending = { skills: false, mcp: false };
+    }
   });
 
-  const synchronize = Effect.fn("lease.synchronize")(function* () {
+  const restore = Effect.fn("lease.restore")(function* (target: Discovery) {
+    yield* client.attach(target, {
+      launch: prepared.launch,
+      grant: prepared.grant,
+      lifecycleToken: prepared.lifecycleToken,
+      environmentInputs: active.environmentInputs,
+      mcpDirectory: prepared.mcpDirectory,
+    });
+    active.instance = target.instance_id;
+    active.renewAt = (yield* Clock.currentTimeMillis) + prepared.renewAfterSeconds * 1000;
+    yield* sync(target);
+  });
+
+  const synchronize = Effect.fn("lease.synchronize")(function* (refresh: boolean) {
     const target = yield* connection.poll();
-    const active = yield* ScopedRef.get(state);
     if (active.instance !== target.instance_id) {
-      yield* restore(target, active);
-      return;
+      return yield* restore(target);
     }
     const now = yield* Clock.currentTimeMillis;
-    if (now < active.renewAt) {
-      return;
-    }
-    yield* client
-      .renew(target, active.prepared.launch.id, active.prepared.lifecycleToken)
-      .pipe(
+    if (refresh) {
+      return yield* sync(target).pipe(
         Effect.catchTag("DaemonError", (error) =>
           error.code === Code.NotFound || error.ended === "expired"
-            ? restore(target, active)
+            ? restore(target)
             : Effect.fail(error),
         ),
       );
-    active.renewAt = now + active.prepared.renewAfterSeconds * 1000;
+    }
+    if (now < active.renewAt) {
+      return undefined;
+    }
+    yield* client
+      .renew(target, prepared.launch.id, prepared.lifecycleToken)
+      .pipe(
+        Effect.catchTag("DaemonError", (error) =>
+          error.code === Code.NotFound || error.ended === "expired"
+            ? restore(target)
+            : Effect.fail(error),
+        ),
+      );
+    active.renewAt = now + prepared.renewAfterSeconds * 1000;
+    return undefined;
   });
 
-  const ensure = Effect.suspend(() =>
-    terminal === null ? synchronize() : Effect.fail(terminal),
-  ).pipe(
-    Effect.catchTag("DaemonError", (error) =>
-      error.ended === "revoked" || error.ended === "finished"
-        ? Effect.sync(() => {
-            terminal = error;
-          }).pipe(Effect.andThen(Effect.fail(error)))
-        : error.code === Code.Unavailable ||
-            error.code === Code.Unknown ||
-            error.code === Code.DeadlineExceeded
-          ? connection
-              .reconnect(ScopedRef.getUnsafe(state).instance)
-              .pipe(Effect.andThen(synchronize()))
-          : Effect.fail(error),
-    ),
-    lock.withPermits(1),
-  );
+  let terminal: DaemonError | null = null;
+  const guarded = (refresh: boolean) =>
+    Effect.suspend(() => (terminal === null ? synchronize(refresh) : Effect.fail(terminal))).pipe(
+      Effect.catchTag("DaemonError", (error) =>
+        error.ended === "revoked" || error.ended === "finished"
+          ? Effect.sync(() => {
+              terminal = error;
+            }).pipe(Effect.andThen(Effect.fail(error)))
+          : error.code === Code.Unavailable ||
+              error.code === Code.Unknown ||
+              error.code === Code.DeadlineExceeded
+            ? connection.reconnect(active.instance).pipe(Effect.andThen(synchronize(refresh)))
+            : Effect.fail(error),
+      ),
+      lock.withPermits(1),
+    );
   return {
-    current: () => ScopedRef.getUnsafe(state),
-    ensure,
-    refresh: replace().pipe(lock.withPermits(1)),
+    current: (): ActiveLease => active,
+    ensure: guarded(false),
+    refresh: guarded(true),
   };
 });

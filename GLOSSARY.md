@@ -63,7 +63,8 @@ and harness at a point in time.
 held by a configuration consumer independently of a process.
 
 **Resource lease**: A launch that grants configuration resources to a consumer
-without starting or managing a harness process.
+without starting or managing a harness process. It follows its directory's current
+configuration when synced, instead of keeping one snapshot.
 
 **Launch grant**: Authorization to use the selected MCP servers during a launch.
 

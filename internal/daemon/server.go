@@ -75,6 +75,12 @@ type launch struct {
 	// wrapperPID and harnessPID are the processes the last renewal reported, for telling why the
 	// lease ran out; zero when unknown.
 	wrapperPID, harnessPID int
+	// A resource lease follows its directory's configuration. endpointKeys identify what each
+	// endpoint runs, so a sync restarts only the servers whose basis changed; mcpDirectory is
+	// where they run. syncMu serializes the lease's syncs.
+	endpointKeys map[config.ID]string
+	mcpDirectory string
+	syncMu       sync.Mutex
 }
 
 type Server struct {
@@ -439,16 +445,18 @@ func (g gate) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.St
 
 // selfAuthorized are the procedures that check their own credentials.
 var selfAuthorized = map[string]bool{
-	agxv1connect.LaunchServiceRenewLaunchProcedure:  true,
-	agxv1connect.LaunchServiceFinishLaunchProcedure: true,
-	agxv1connect.RuntimeServiceListToolsProcedure:   true,
-	agxv1connect.RuntimeServiceCallToolProcedure:    true,
+	agxv1connect.ResourceServiceSyncResourcesProcedure: true,
+	agxv1connect.LaunchServiceRenewLaunchProcedure:     true,
+	agxv1connect.LaunchServiceFinishLaunchProcedure:    true,
+	agxv1connect.RuntimeServiceListToolsProcedure:      true,
+	agxv1connect.RuntimeServiceCallToolProcedure:       true,
 }
 
 // startsWork are the procedures a stopping daemon refuses, so that callers retry them with the
 // next daemon.
 var startsWork = map[string]bool{
 	agxv1connect.ResourceServicePrepareResourcesProcedure:         true,
+	agxv1connect.ResourceServiceSyncResourcesProcedure:            true,
 	agxv1connect.LaunchServicePrepareLaunchProcedure:              true,
 	agxv1connect.LaunchServiceAttachLaunchProcedure:               true,
 	agxv1connect.LaunchServicePrepareThreadLaunchProcedure:        true,

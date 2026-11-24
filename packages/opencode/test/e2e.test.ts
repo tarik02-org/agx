@@ -785,6 +785,11 @@ export default define({
     });
     await api.experimental.session.wait({ sessionID: session.id });
     assert.ok(requests.filter(echoCompleted).length > priorCalls);
+    const alphaLeases = async () =>
+      (await readRuntime()).launches
+        .filter((entry) => entry.directory === alpha && entry.state === "STATE_RUNNING")
+        .map((entry) => entry.id);
+    const beforeReload = await alphaLeases();
     fragment.instructions.alpha.text = "AGX_RELOADED_SENTINEL";
     await writeFragment();
     await api.session.command({ sessionID: session.id, name: "agx-reload", text: "" });
@@ -798,6 +803,7 @@ export default define({
         ),
       ),
     );
+    assert.deepEqual(await alphaLeases(), beforeReload, "a reload replaced the resource lease");
     const betaLease = (await readRuntime()).launches.find(
       (entry) => entry.directory === beta && entry.state === "STATE_RUNNING",
     );

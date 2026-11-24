@@ -60,10 +60,18 @@ export const LeaseEnvelope = Schema.Struct({
   lifecycleToken: LifecycleToken,
 });
 
-export const Prepared = Schema.Struct({
-  ...LeaseEnvelope.fields,
+export const LeaseResources = Schema.Struct({
+  snapshot: Snapshot,
   content: Schema.Struct({ skills: Schema.Array(SkillTree), instructions: Schema.String }),
   mcp: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, url: Schema.URLFromString })),
+  mcpRevision: Schema.NonEmptyString,
+  settings: Schema.Array(Schema.Struct({ path: Schema.Array(Schema.String) })),
+});
+export type LeaseResources = typeof LeaseResources.Type;
+
+export const Prepared = Schema.Struct({
+  ...LeaseEnvelope.fields,
+  resources: LeaseResources,
   grant: McpGrant,
   renewAfterSeconds: Schema.Int.check(Schema.isGreaterThan(0)),
   mcpDirectory: Schema.String,

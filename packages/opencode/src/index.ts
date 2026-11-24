@@ -16,8 +16,12 @@ import { registerSessions } from "./sessions.ts";
 const register = Effect.fn("register")(function* (ctx: Context) {
   const configuration = yield* Configuration;
   const path = yield* Path.Path;
-  const reload = Effect.all([ctx.skill.reload(), ctx.mcp.reload()]).pipe(Effect.asVoid);
-  const lease = yield* acquireLease(reload);
+  const lease = yield* acquireLease((changes) =>
+    Effect.all([
+      changes.skills ? ctx.skill.reload() : Effect.void,
+      changes.mcp ? ctx.mcp.reload() : Effect.void,
+    ]).pipe(Effect.asVoid),
+  );
   yield* registerSessions(ctx).pipe(
     Effect.catchTags({
       SchemaError: (cause) =>
@@ -58,7 +62,7 @@ const register = Effect.fn("register")(function* (ctx: Context) {
   const instructions = Effect.fn("instructions")(
     function* (event: SessionRequest) {
       yield* lease.ensure;
-      const text = lease.current().prepared.content.instructions;
+      const text = lease.current().resources.content.instructions;
       event.system = event.system.filter((part) => part.metadata?.["agx.instructions"] !== true);
       if (text !== "") {
         event.system.push({ type: "text", text, metadata: { "agx.instructions": true } });
@@ -141,7 +145,7 @@ const register = Effect.fn("register")(function* (ctx: Context) {
   );
   yield* Effect.logInfo("AGX resources ready", {
     skills: lease.current().skills.length,
-    mcp: lease.current().prepared.mcp.length,
+    mcp: lease.current().resources.mcp.length,
   });
 });
 

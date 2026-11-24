@@ -125,6 +125,9 @@ const (
 	// ResourceServicePrepareResourcesProcedure is the fully-qualified name of the ResourceService's
 	// PrepareResources RPC.
 	ResourceServicePrepareResourcesProcedure = "/agx.v1.ResourceService/PrepareResources"
+	// ResourceServiceSyncResourcesProcedure is the fully-qualified name of the ResourceService's
+	// SyncResources RPC.
+	ResourceServiceSyncResourcesProcedure = "/agx.v1.ResourceService/SyncResources"
 	// SessionProviderServicePublishSessionsProcedure is the fully-qualified name of the
 	// SessionProviderService's PublishSessions RPC.
 	SessionProviderServicePublishSessionsProcedure = "/agx.v1.SessionProviderService/PublishSessions"
@@ -999,6 +1002,9 @@ func (UnimplementedLaunchServiceHandler) AttachLaunch(context.Context, *connect.
 type ResourceServiceClient interface {
 	ResolveResources(context.Context, *connect.Request[v1.ResolveResourcesRequest]) (*connect.Response[v1.ResolveResourcesResponse], error)
 	PrepareResources(context.Context, *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error)
+	// Brings a resource lease to its directory's current configuration, keeping its identity and
+	// credentials. Authorized by the lease's lifecycle token.
+	SyncResources(context.Context, *connect.Request[v1.SyncResourcesRequest]) (*connect.Response[v1.SyncResourcesResponse], error)
 }
 
 // NewResourceServiceClient constructs a client for the agx.v1.ResourceService service. By default,
@@ -1024,6 +1030,12 @@ func NewResourceServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(resourceServiceMethods.ByName("PrepareResources")),
 			connect.WithClientOptions(opts...),
 		),
+		syncResources: connect.NewClient[v1.SyncResourcesRequest, v1.SyncResourcesResponse](
+			httpClient,
+			baseURL+ResourceServiceSyncResourcesProcedure,
+			connect.WithSchema(resourceServiceMethods.ByName("SyncResources")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1031,6 +1043,7 @@ func NewResourceServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 type resourceServiceClient struct {
 	resolveResources *connect.Client[v1.ResolveResourcesRequest, v1.ResolveResourcesResponse]
 	prepareResources *connect.Client[v1.PrepareResourcesRequest, v1.PrepareResourcesResponse]
+	syncResources    *connect.Client[v1.SyncResourcesRequest, v1.SyncResourcesResponse]
 }
 
 // ResolveResources calls agx.v1.ResourceService.ResolveResources.
@@ -1043,10 +1056,18 @@ func (c *resourceServiceClient) PrepareResources(ctx context.Context, req *conne
 	return c.prepareResources.CallUnary(ctx, req)
 }
 
+// SyncResources calls agx.v1.ResourceService.SyncResources.
+func (c *resourceServiceClient) SyncResources(ctx context.Context, req *connect.Request[v1.SyncResourcesRequest]) (*connect.Response[v1.SyncResourcesResponse], error) {
+	return c.syncResources.CallUnary(ctx, req)
+}
+
 // ResourceServiceHandler is an implementation of the agx.v1.ResourceService service.
 type ResourceServiceHandler interface {
 	ResolveResources(context.Context, *connect.Request[v1.ResolveResourcesRequest]) (*connect.Response[v1.ResolveResourcesResponse], error)
 	PrepareResources(context.Context, *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error)
+	// Brings a resource lease to its directory's current configuration, keeping its identity and
+	// credentials. Authorized by the lease's lifecycle token.
+	SyncResources(context.Context, *connect.Request[v1.SyncResourcesRequest]) (*connect.Response[v1.SyncResourcesResponse], error)
 }
 
 // NewResourceServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1068,12 +1089,20 @@ func NewResourceServiceHandler(svc ResourceServiceHandler, opts ...connect.Handl
 		connect.WithSchema(resourceServiceMethods.ByName("PrepareResources")),
 		connect.WithHandlerOptions(opts...),
 	)
+	resourceServiceSyncResourcesHandler := connect.NewUnaryHandler(
+		ResourceServiceSyncResourcesProcedure,
+		svc.SyncResources,
+		connect.WithSchema(resourceServiceMethods.ByName("SyncResources")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agx.v1.ResourceService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ResourceServiceResolveResourcesProcedure:
 			resourceServiceResolveResourcesHandler.ServeHTTP(w, r)
 		case ResourceServicePrepareResourcesProcedure:
 			resourceServicePrepareResourcesHandler.ServeHTTP(w, r)
+		case ResourceServiceSyncResourcesProcedure:
+			resourceServiceSyncResourcesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1089,6 +1118,10 @@ func (UnimplementedResourceServiceHandler) ResolveResources(context.Context, *co
 
 func (UnimplementedResourceServiceHandler) PrepareResources(context.Context, *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ResourceService.PrepareResources is not implemented"))
+}
+
+func (UnimplementedResourceServiceHandler) SyncResources(context.Context, *connect.Request[v1.SyncResourcesRequest]) (*connect.Response[v1.SyncResourcesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ResourceService.SyncResources is not implemented"))
 }
 
 // SessionProviderServiceClient is a client for the agx.v1.SessionProviderService service.
