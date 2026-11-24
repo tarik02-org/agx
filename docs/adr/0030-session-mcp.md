@@ -25,11 +25,14 @@ sandbox: the same user's processes already have management authority.
 
 Persistent edits commit immediately through the existing semantic editor, with
 revision checks, full validation, atomic batches and read-only YAML/package
-ownership. They affect future launches. Temporary attachments are a separate
-operation: a configured ID or an ad-hoc stdio/HTTP definition becomes reachable
-immediately through `search_tools` and `call_tool`, without changing persistent
-configuration or the harness's native catalog. Only temporary servers can be
-detached. Explicit process-sharing settings retain their existing meaning.
+ownership. Running launches take their MCP changes as ADR 0033 describes; the rest
+affects future launches. Temporary attachments are a separate operation: a
+configured ID or an ad-hoc stdio/HTTP definition becomes reachable immediately
+through `search_tools` and `call_tool`, without changing persistent configuration
+or the harness's native catalog. Reconciling a launch leaves its temporary servers
+in place, and one keeps its ID even when the directory later selects a server of
+the same name. Only temporary servers can be detached. Explicit process-sharing
+settings retain their existing meaning.
 
 Private session owners reuse relational configuration tables. Definitions and
 per-server environment inputs commit together; injected inputs are encrypted

@@ -1,6 +1,6 @@
 # Consume configuration independently of process launch and storage
 
-Status: accepted. Revises the adapter contract in ADR 0012.
+Status: accepted. Revises the adapter contract in ADR 0012; resource leases revised by ADR 0033.
 
 An integration running inside a harness needs configuration even when agx did not
 start its process, and the consumer may use a different filesystem. AGX resolves

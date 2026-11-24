@@ -29,7 +29,7 @@ func (a Adapter) Executable(configured string) (string, error) {
 	return adapters.FindExecutable(a.Name(), configured)
 }
 
-func (Adapter) Classify(args []string) string {
+func (Adapter) Classify(_ config.ResolvedHarness, args []string) string {
 	if adapters.Probe(args, "-v") {
 		return config.ModePassthrough
 	}

@@ -364,7 +364,7 @@ func run(osArgs []string, stdout io.Writer) int {
 		short := "Launch " + name + " with directory-scoped resources"
 		if _, builtin := a.registry.Adapter(name); !builtin {
 			h, _ := a.harnesses.config.Harness(name)
-			short = "Launch " + name + " (" + h.Builtin + ")"
+			short = "Launch " + h.DisplayName + " (" + h.Builtin + ")"
 		}
 		root.AddCommand(
 			&cobra.Command{
@@ -374,6 +374,22 @@ func run(osArgs []string, stdout io.Writer) int {
 				DisableFlagParsing: true,
 				// Native arguments are the harness's own; the shell completes them as files.
 				ValidArgsFunction: files,
+				RunE: func(cmd *cobra.Command, args []string) error {
+					return runHarness(cmd.Context(), a.paths, a.registry, a.harnesses, name, args, "")
+				},
+			},
+		)
+	}
+	// A disabled harness keeps a command off the help, so running it says why it does not launch.
+	for _, name := range a.harnesses.config.HarnessNames() {
+		if h, err := a.harnesses.config.Harness(name); err != nil || h.Enabled {
+			continue
+		}
+		root.AddCommand(
+			&cobra.Command{
+				Use:                name,
+				Hidden:             true,
+				DisableFlagParsing: true,
 				RunE: func(cmd *cobra.Command, args []string) error {
 					return runHarness(cmd.Context(), a.paths, a.registry, a.harnesses, name, args, "")
 				},

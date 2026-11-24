@@ -137,14 +137,24 @@ func (a *app) runDoctor(
 	for i, name := range a.registry.Launchers() {
 		adapter, _ := a.registry.Launcher(name)
 		configured := ""
+		used := false
 		if h, err := c.Harness(name); err == nil {
 			configured = h.Executable
+			used = h.Enabled
 		}
 		defined := false
 		for definition := range c.Harnesses {
-			if h, err := c.Harness(definition); err == nil && h.Builtin == name {
+			if h, err := c.Harness(definition); err == nil && h.Builtin == name && h.Enabled {
 				defined = true
 			}
+		}
+		// A disabled built-in that no enabled definition runs need not be installed.
+		if !used && !defined {
+			continue
+		}
+		if _, err := adapter.Executable(""); errors.Is(err, adapters.ErrNoExecutable) {
+			// A base without an executable of its own; definitionExecutables checks what runs.
+			continue
 		}
 		executable, findErr := adapter.Executable(configured)
 		if findErr == nil {
@@ -164,7 +174,12 @@ func (a *app) runDoctor(
 		})
 	}
 	wg.Wait()
-	add(harnessRows...)
+	for _, row := range harnessRows {
+		if row.Name != "" {
+			add(row)
+		}
+	}
+	add(definitionExecutables(c, a.registry)...)
 
 	if loaded {
 		add(definitionChecks(ctx, c, a.registry, a.paths.Cache)...)
@@ -351,6 +366,38 @@ func harnessCheck(
 	return row
 }
 
+// definitionExecutables checks the executables of definitions whose base has none of its own.
+func definitionExecutables(c *config.Config, registry adapters.Registry) []check {
+	rows := []check{}
+	for _, name := range slices.Sorted(maps.Keys(c.Harnesses)) {
+		h, err := c.Harness(name)
+		if err != nil || !h.Enabled {
+			continue
+		}
+		adapter, ok := registry.Launcher(h.Builtin)
+		if !ok {
+			continue
+		}
+		if _, err := adapter.Executable(""); !errors.Is(err, adapters.ErrNoExecutable) {
+			continue
+		}
+		row := check{Group: "harness", Name: name, Status: checkPass}
+		executable, err := adapter.Executable(h.Executable)
+		switch {
+		case errors.Is(err, adapters.ErrNoExecutable):
+			row.Status, row.Detail = checkFail, "no executable configured"
+			row.Hint = fmt.Sprintf("set harnesses.%s.executable to the agent's absolute path", name)
+		case err != nil:
+			row.Status, row.Detail = checkFail, err.Error()
+			row.Hint = fmt.Sprintf("fix harnesses.%s.executable", name)
+		default:
+			row.Detail = fmt.Sprintf("%s (%s)", shownPath(executable), h.Builtin)
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
 // definitionChecks runs the checks of the adapters that have their own, for every harness
 // definition based on them.
 func definitionChecks(ctx context.Context, c *config.Config, registry adapters.Registry, cache string) []check {
@@ -364,7 +411,7 @@ func definitionChecks(ctx context.Context, c *config.Config, registry adapters.R
 	rows := []check{}
 	for _, name := range names {
 		h, err := c.Harness(name)
-		if err != nil {
+		if err != nil || !h.Enabled {
 			continue
 		}
 		adapter, _ := registry.Launcher(h.Builtin)

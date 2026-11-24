@@ -32,7 +32,8 @@ INSERT INTO local_packages(root, key, path, git, ref, hash, subdir) VALUES (?, ?
 SELECT * FROM local_harnesses WHERE root = ? ORDER BY root, key;
 
 -- name: InsertLocalHarness :exec
-INSERT INTO local_harnesses(root, key, base, executable, hidden, settings) VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO local_harnesses(root, key, base, executable, hidden, settings, display_name, enabled)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: ListLocalMCPs :many
 SELECT * FROM local_mcp WHERE root = ? ORDER BY root, key;

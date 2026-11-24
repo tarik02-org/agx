@@ -13,4 +13,4 @@ CREATE TABLE session_environment (
     ciphertext TEXT NOT NULL,
     PRIMARY KEY(owner, mcp, name)
 );
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;

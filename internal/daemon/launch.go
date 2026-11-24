@@ -120,11 +120,11 @@ func (s *Server) PrepareLaunch(
 		endpoints:    endpoints,
 		snapshot:     snapshot,
 		target:       target,
+		inputs:       inputs,
 		created:      time.Now(),
 		lease:        time.Duration(b.config.Daemon.LeaseSeconds) * time.Second,
 		threadServer: b.threadServer,
 		local:        config.EmptyLocal(),
-		inputs:       inputs,
 		temporary:    map[config.ID]config.MCPServer{},
 	}
 	l.extend(time.Now().Add(l.lease))
@@ -170,6 +170,9 @@ func (s *Server) launchBasis(directory, name, id string, native []string) (launc
 	if err != nil {
 		return launchBasis{}, rpcError(connect.CodeInvalidArgument, err.Error())
 	}
+	if !harness.Enabled {
+		return launchBasis{}, rpcError(connect.CodeFailedPrecondition, "harness "+name+" is disabled")
+	}
 	adapter, ok := s.adapters.Launcher(harness.Builtin)
 	if !ok {
 		return launchBasis{}, rpcError(
@@ -177,7 +180,7 @@ func (s *Server) launchBasis(directory, name, id string, native []string) (launc
 			"harness "+harness.Builtin+" has no process launcher",
 		)
 	}
-	mode := adapter.Classify(native)
+	mode := adapter.Classify(harness, native)
 	if mode == config.ModePassthrough {
 		return launchBasis{}, rpcError(
 			connect.CodeInvalidArgument,
@@ -195,7 +198,7 @@ func (s *Server) launchBasis(directory, name, id string, native []string) (launc
 		adapter:      adapter,
 		mode:         mode,
 		snapshot:     snapshot,
-		threadServer: isThreads && threads.ThreadServer(native),
+		threadServer: isThreads && threads.ThreadServer(harness, native),
 	}, nil
 }
 
@@ -339,35 +342,46 @@ func (s *Server) endpoints(
 ) (map[config.ID]*mcpruntime.Endpoint, []adapters.Endpoint) {
 	endpoints := map[config.ID]*mcpruntime.Endpoint{}
 	native := []adapters.Endpoint{}
-	native = append(native, adapters.Endpoint{ID: config.AgxMCP, URL: s.discovery.URL + "/launch/" + id + "/mcp/agx"})
+	native = append(native, s.nativeEndpoint(id, config.AgxMCP))
 	for _, r := range snapshot.Resources {
 		if r.Kind != "mcp" {
 			continue
 		}
-		definition, root := mcpDefinition(snapshot.Config.MCP[r.ID], directory)
-		// Each server gets only the inputs it reads, so launches that differ in others still
-		// share its process.
-		own := map[string]string{}
-		for _, name := range scopeSnapshot(snapshot.Config, []config.ID{r.ID}).MCPEnvironment() {
-			if value, ok := inputs[name]; ok {
-				own[name] = value
-			}
-		}
+		definition, root, own := endpointBasis(snapshot, r.ID, inputs, directory)
 		endpoints[r.ID] = mcpruntime.New(
 			ctx, r.ID, definition, snapshot.Config.Secrets, own, s.manager, s.shared, root,
 		)
-		if definition.Load == config.LoadOnDemand {
-			continue
+		if definition.Load != config.LoadOnDemand {
+			native = append(native, s.nativeEndpoint(id, r.ID))
 		}
-		native = append(
-			native,
-			adapters.Endpoint{
-				ID:  r.ID,
-				URL: s.discovery.URL + "/launch/" + id + "/mcp/" + url.PathEscape(string(r.ID)),
-			},
-		)
 	}
 	return endpoints, native
+}
+
+// endpointBasis is what MCP server id of snapshot runs with in directory: its definition, share
+// root and the inputs it reads. Each server gets only those inputs, so launches that differ in
+// others still share its process.
+func endpointBasis(
+	snapshot *config.Snapshot,
+	id config.ID,
+	inputs map[string]string,
+	directory string,
+) (config.MCPServer, string, map[string]string) {
+	definition, root := mcpDefinition(snapshot.Config.MCP[id], directory)
+	own := map[string]string{}
+	for _, name := range scopeSnapshot(snapshot.Config, []config.ID{id}).MCPEnvironment() {
+		if value, ok := inputs[name]; ok {
+			own[name] = value
+		}
+	}
+	return definition, root, own
+}
+
+func (s *Server) nativeEndpoint(launchID string, id config.ID) adapters.Endpoint {
+	return adapters.Endpoint{
+		ID:  id,
+		URL: s.discovery.URL + "/launch/" + launchID + "/mcp/" + url.PathEscape(string(id)),
+	}
 }
 
 // mcpDefinition prepares an MCP server's definition for a launch in directory: its working

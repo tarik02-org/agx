@@ -65,11 +65,14 @@ configured server with `--all`.
 **Snapshot**: The resolved selection of resources and settings for a directory
 and harness at a point in time.
 
-**Launch**: A leased use of a snapshot, associated with a harness process or
-held by a configuration consumer independently of a process.
+**Launch**: A leased use of a directory's configuration, associated with a harness
+process or held by a configuration consumer independently of a process. Its MCP
+servers follow the current configuration; a process launch keeps the snapshot its
+harness loaded for everything else.
 
 **Resource lease**: A launch that grants configuration resources to a consumer
-without starting or managing a harness process.
+without starting or managing a harness process. Its content follows the
+directory's current configuration too.
 
 **Launch grant**: Authorization to use a launch's MCP servers and manage resources
 through its built-in agx server until the launch ends.

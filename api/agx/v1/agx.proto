@@ -70,6 +70,10 @@ service LaunchService {
 service ResourceService {
   rpc ResolveResources(ResolveResourcesRequest) returns (ResolveResourcesResponse);
   rpc PrepareResources(PrepareResourcesRequest) returns (PrepareResourcesResponse);
+  // Streams what a resource lease provides as the daemon keeps it on its directory's current
+  // configuration: first its current resources, then each change. Authorized by the lease's
+  // lifecycle token.
+  rpc WatchResources(WatchResourcesRequest) returns (stream WatchResourcesResponse);
 }
 
 // Integrations publish session summaries bound to configured harnesses.
@@ -219,6 +223,10 @@ message ConfiguredHarness {
   // Empty for built-in harnesses.
   string base = 3;
   bool hidden = 4;
+  // The harness name unless the definition sets one.
+  string display_name = 5;
+  // Defined but unable to launch.
+  bool disabled = 6;
 }
 message CompleteDirectoryRequest {
   // An absolute path or one starting with ~/; the last segment is a name prefix.
@@ -287,27 +295,54 @@ message ResolveResourcesResponse {
   repeated HarnessSetting settings = 4;
 }
 message PrepareResourcesRequest {
-  string snapshot_id = 1;
-  string directory = 2;
-  string harness = 3;
-  // Sensitive: only the resource environment names declared by ResolveResources are accepted.
-  map<string, string> environment_inputs = 4;
+  string directory = 1;
+  string harness = 2;
+  // Sensitive: values for the resource environment names ResolveResources declared. Names the
+  // configuration no longer reads are dropped.
+  map<string, string> environment_inputs = 3;
   // Optional execution directory on the daemon's host, separate from the consumer's scope
   // directory. Required for MCP servers that inherit cwd or share per directory/repository.
-  string mcp_directory = 5;
+  string mcp_directory = 4;
 }
 message PrepareResourcesResponse {
-  // A running resource lease, renewed, finished and reattached through LaunchService.
+  // A running resource lease, renewed, synchronized, finished and reattached by its lifecycle
+  // token.
   Launch launch = 1;
+  LeaseResources resources = 2;
+  // Sensitive: authorizes only this lease's MCP access.
+  string grant = 3;
+  // Sensitive: held by the integration for renewal, synchronization and release.
+  string lifecycle_token = 4;
+  uint32 renew_after_seconds = 5;
+  // Canonical daemon-side directory, retained for AttachLaunch; empty when unnecessary.
+  string mcp_directory = 6;
+}
+// What a resource lease provides under its directory's current configuration.
+message LeaseResources {
+  // Its required_environment names the inputs the selection reads. An integration holding values
+  // for names it has not sent opens a new watch with them.
+  Snapshot snapshot = 1;
   ResourceContent content = 2;
   repeated McpEndpoint mcp = 3;
-  // Sensitive: authorizes only this lease's MCP access.
-  string grant = 4;
-  // Sensitive: held by the integration for renewal and release.
-  string lifecycle_token = 5;
-  uint32 renew_after_seconds = 6;
-  // Canonical daemon-side directory, retained for AttachLaunch; empty when unnecessary.
-  string mcp_directory = 7;
+  // Changes when an endpoint is added, removed, or restarted behind its URL.
+  string mcp_revision = 4;
+  repeated HarnessSetting settings = 5;
+}
+message WatchResourcesRequest {
+  string launch_id = 1;
+  // Sensitive: replaces the lease's environment inputs for this watch. Names the configuration
+  // does not read are dropped.
+  map<string, string> environment_inputs = 2;
+}
+// The configuration could not be resolved; the lease keeps its last resources until it can.
+message ResourceWatchInvalid {
+  repeated Diagnostic diagnostics = 1;
+}
+message WatchResourcesResponse {
+  oneof state {
+    LeaseResources resources = 1;
+    ResourceWatchInvalid invalid = 2;
+  }
 }
 message ResourceContent {
   repeated SkillContent skills = 1;

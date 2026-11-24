@@ -15,7 +15,7 @@ written.
 | [0012](0012-harness-adapters-and-shims.md)                   | Isolate harnesses behind adapters; expose definitions as shims            | accepted; adapter contract revised by 0031 |
 | [0013](0013-launcher-and-session-search.md)                  | Open a launcher with session search when agx runs bare                    | accepted; session index replaced by 0028   |
 | [0014](0014-configuration-editing-commands.md)               | Edit configuration from the CLI                                           | superseded by 0029                         |
-| [0015](0015-per-thread-resources-for-multi-session-hosts.md) | Per-thread resources for multi-session hosts                              | accepted                                   |
+| [0015](0015-per-thread-resources-for-multi-session-hosts.md) | Per-thread resources for multi-session hosts                              | accepted; extended to ACP by 0032          |
 | [0016](0016-launches-survive-daemon-restarts.md)             | Launches survive daemon restarts                                          | accepted                                   |
 | [0022](0022-on-demand-mcp-calls.md)                          | Call MCP servers on demand from the shell                                 | accepted; discovery replaced by 0030       |
 | [0024](0024-shared-mcp-server-processes.md)                  | Share MCP server processes across launches on request                     | accepted                                   |
@@ -25,15 +25,17 @@ written.
 | [0028](0028-sqlite-state.md)                                 | Keep machine-managed state in SQLite                                      | accepted                                   |
 | [0029](0029-local-configuration.md)                          | Local configuration with declarative overlays                             | accepted                                   |
 | [0030](0030-session-mcp.md)                                  | Manage agx from a launch's built-in MCP server                            | accepted                                   |
-| [0031](0031-portable-resource-consumption.md)                | Consume configuration independently of process launch and storage         | accepted                                   |
+| [0031](0031-portable-resource-consumption.md)                | Consume configuration independently of process launch and storage         | accepted; resource leases revised by 0033  |
+| [0032](0032-acp-agents.md)                                   | Relay ACP agents, giving each session its directory's resources           | accepted                                   |
+| [0033](0033-launches-follow-configuration.md)                | Launches follow their directory's configuration                           | accepted                                   |
 
 ## Numbers without a record
 
 - **0001 to 0006** were the original design records. [0000](0000-background.md)
   condenses them.
 - **0017 to 0021 and 0023** were deferred proposals, never implemented and
-  removed: an ACP proxy, a harness version manager, agx self-management for
-  agents, a daemonless runtime, configuration provisioning, and an OpenCode
-  plugin of an earlier design.
+  removed: an ACP proxy (ACP support was later decided in 0032), a harness
+  version manager, agx self-management for agents, a daemonless runtime,
+  configuration provisioning, and an OpenCode plugin of an earlier design.
 
 Numbers are not reused.

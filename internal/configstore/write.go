@@ -106,6 +106,7 @@ func writeLocalDefinition(
 		}
 	case config.KindHarnesses:
 		hidden, present := m["hidden"].(bool)
+		enabled, enabledPresent := m["enabled"].(bool)
 		settings, err := localJSON(m["settings"])
 		if err != nil {
 			return err
@@ -113,12 +114,14 @@ func writeLocalDefinition(
 		if err := q.InsertLocalHarness(
 			ctx,
 			statedb.InsertLocalHarnessParams{
-				Root:       root,
-				Key:        key,
-				Base:       localText(m, "base"),
-				Executable: localText(m, "executable"),
-				Hidden:     sql.NullBool{Bool: hidden, Valid: present},
-				Settings:   settings,
+				Root:        root,
+				Key:         key,
+				Base:        localText(m, "base"),
+				Executable:  localText(m, "executable"),
+				Hidden:      sql.NullBool{Bool: hidden, Valid: present},
+				Settings:    settings,
+				DisplayName: localText(m, "display_name"),
+				Enabled:     sql.NullBool{Bool: enabled, Valid: enabledPresent},
 			},
 		); err != nil {
 			return err

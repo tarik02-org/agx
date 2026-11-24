@@ -192,10 +192,10 @@ func (s *Server) PrepareThreadLaunch(
 		endpoints: endpoints,
 		snapshot:  snapshot,
 		target:    p.target,
+		inputs:    inputs,
 		created:   time.Now(),
 		lease:     p.launch.lease,
 		local:     config.EmptyLocal(),
-		inputs:    inputs,
 		temporary: map[config.ID]config.MCPServer{},
 	}); err != nil {
 		discard()

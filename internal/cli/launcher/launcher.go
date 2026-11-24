@@ -21,7 +21,9 @@ import (
 	"github.com/tarik02-org/agx/internal/sessions"
 )
 
-type Harness struct{ Name, Builtin string }
+// Harness is a harness offered for new sessions. DisplayName is its name unless the definition
+// sets one.
+type Harness struct{ Name, Builtin, DisplayName string }
 
 type Options struct {
 	// Harnesses are offered for new sessions in this order.
@@ -470,7 +472,10 @@ func (m model) renderLine(line bodyLine) string {
 			return m.sessionRow(*row.entry, m.harnessWidth, line.row == m.cursor)
 		}
 		text := pad(row.harness.Name, m.harnessWidth)
-		if row.harness.Builtin != row.harness.Name {
+		switch {
+		case row.harness.DisplayName != "" && row.harness.DisplayName != row.harness.Name:
+			text += "  " + m.render(m.styles.muted, row.harness.DisplayName)
+		case row.harness.Builtin != row.harness.Name:
 			text += "  " + m.render(m.styles.muted, row.harness.Builtin)
 		}
 		return m.line(text, line.row == m.cursor)

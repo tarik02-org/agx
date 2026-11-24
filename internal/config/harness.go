@@ -1,12 +1,14 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 
 	"go.yaml.in/yaml/v4"
 )
@@ -76,15 +78,17 @@ func (a *Args) UnmarshalYAML(node *yaml.Node) error {
 
 // Harness is one fragment's declaration of a harness.
 type Harness struct {
-	Base        string           `yaml:"base"        jsonschema_description:"Harness this definition extends."`
-	Executable  string           `yaml:"executable"  jsonschema_description:"Absolute path of the native executable; may start with ~/."`
-	Args        Args             `yaml:"args"        jsonschema_description:"Native arguments inserted before the caller's: a list of strings for every session mode, or a list of {values, modes} groups."`
-	Environment map[string]Value `yaml:"environment" jsonschema_description:"Environment variables for the harness."`
-	Add         SelectionSpec    `yaml:"add"         jsonschema_description:"Resources selected for this harness."`
-	Remove      SelectionSpec    `yaml:"remove"      jsonschema_description:"Resources deselected for this harness."`
-	Hidden      *bool            `yaml:"hidden"      jsonschema_description:"Leave this harness out of the launcher's new-session list; it still runs by name. Not inherited."`
-	Settings    Settings         `yaml:"settings"    jsonschema_description:"Native settings in the harness's own schema: Codex config.toml keys, Claude Code settings.json keys."`
-	Override    bool             `yaml:"override"    jsonschema_description:"Replace the definition from earlier fragments."`
+	Base        string           `yaml:"base"         jsonschema_description:"Harness this definition extends."`
+	Executable  string           `yaml:"executable"   jsonschema_description:"Absolute path of the native executable; may start with ~/."`
+	Args        Args             `yaml:"args"         jsonschema_description:"Native arguments inserted before the caller's: a list of strings for every session mode, or a list of {values, modes} groups."`
+	Environment map[string]Value `yaml:"environment"  jsonschema_description:"Environment variables for the harness."`
+	Add         SelectionSpec    `yaml:"add"          jsonschema_description:"Resources selected for this harness."`
+	Remove      SelectionSpec    `yaml:"remove"       jsonschema_description:"Resources deselected for this harness."`
+	Hidden      *bool            `yaml:"hidden"       jsonschema_description:"Leave this harness out of the launcher's new-session list; it still runs by name. Not inherited."`
+	DisplayName string           `yaml:"display_name" jsonschema_description:"Name shown to people in place of the harness name, in the launcher and to tools listing harnesses. Not inherited."`
+	Enabled     *bool            `yaml:"enabled"      jsonschema_description:"false keeps the harness defined but unable to launch: no command, shim, or launcher entry. Definitions based on it still launch. Not inherited."`
+	Settings    Settings         `yaml:"settings"     jsonschema_description:"Native settings in the harness's own schema: Codex config.toml keys, Claude Code settings.json keys."`
+	Override    bool             `yaml:"override"     jsonschema_description:"Replace the definition from earlier fragments."`
 }
 
 // HarnessDefinition merges every fragment declaring one harness name.
@@ -95,6 +99,8 @@ type HarnessDefinition struct {
 	Environment map[string]Value   `json:"environment,omitempty"`
 	Selections  []HarnessSelection `json:"selections,omitempty"`
 	Hidden      bool               `json:"hidden,omitempty"`
+	DisplayName string             `json:"display_name,omitempty"`
+	Disabled    bool               `json:"disabled,omitempty"`
 	// Settings are the definition's own native settings; null leaves remove inherited keys.
 	Settings map[string]any `json:"settings,omitempty"`
 	// SettingSources locates each leaf of Settings, keyed by settingKey of its path.
@@ -123,6 +129,11 @@ type ResolvedHarness struct {
 	// Hidden keeps the harness out of the launcher's new-session list. Definitions based on it do
 	// not inherit it, so hiding a built-in leaves its variants offered.
 	Hidden bool `json:"hidden"`
+	// DisplayName is the name to show people: the definition's own, or Name without one.
+	DisplayName string `json:"display_name"`
+	// Enabled is false for a harness that stays defined but cannot launch. Like Hidden, it is the
+	// definition's own, so disabling a built-in leaves its variants launchable.
+	Enabled bool `json:"enabled"`
 	// Settings are the native settings layered along the chain, without nulls.
 	Settings map[string]any `json:"settings"`
 	// SettingSources locates each resolved leaf in the definition that set it.
@@ -173,6 +184,8 @@ func (c *Config) Harness(name string) (ResolvedHarness, error) {
 		Chain:       chain,
 		Environment: map[string]Value{},
 		Hidden:      c.Harnesses[name].Hidden,
+		DisplayName: cmp.Or(c.Harnesses[name].DisplayName, name),
+		Enabled:     !c.Harnesses[name].Disabled,
 	}
 	settings := map[string]any{}
 	for _, n := range chain {
@@ -263,6 +276,28 @@ func (m *merger) harnesses(d Document) error {
 		}
 		if h.Hidden != nil {
 			if err := set("hidden", at("hidden"), func() { def.Hidden = *h.Hidden }); err != nil {
+				return err
+			}
+		}
+		if h.DisplayName != "" {
+			if strings.TrimSpace(h.DisplayName) != h.DisplayName ||
+				strings.ContainsFunc(h.DisplayName, unicode.IsControl) {
+				return errorAt(
+					at("display_name"),
+					"harness %s: display_name must be one line without leading or trailing spaces",
+					name,
+				)
+			}
+			if err := set(
+				"display_name",
+				at("display_name"),
+				func() { def.DisplayName = h.DisplayName },
+			); err != nil {
+				return err
+			}
+		}
+		if h.Enabled != nil {
+			if err := set("enabled", at("enabled"), func() { def.Disabled = !*h.Enabled }); err != nil {
 				return err
 			}
 		}
