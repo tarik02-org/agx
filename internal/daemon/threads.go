@@ -192,6 +192,7 @@ func (s *Server) PrepareThreadLaunch(
 		endpoints: endpoints,
 		snapshot:  snapshot,
 		target:    p.target,
+		inputs:    inputs,
 		created:   time.Now(),
 		lease:     p.launch.lease,
 	}); err != nil {

@@ -188,6 +188,21 @@ func (sh *Shared) forget(s *sharedServer) {
 	}
 }
 
+// Basis identifies what an endpoint of server id runs: its definition, share root, secret
+// definitions and inputs. An endpoint whose basis is unchanged can keep serving a launch.
+func Basis(
+	id config.ID,
+	definition config.MCPServer,
+	root string,
+	secrets map[config.ID]config.Secret,
+	inputs map[string]string,
+) string {
+	return shareKey(id, definition, root, secrets, inputs)
+}
+
+// Basis is the basis the endpoint was started with.
+func (e *Endpoint) Basis() string { return e.shareKey }
+
 // shareKey identifies the process a definition may share: the same server, root, command,
 // environment, secret definitions, and environment inputs. Sources and descriptions are left
 // out, so editing other lines of a configuration file keeps the process.

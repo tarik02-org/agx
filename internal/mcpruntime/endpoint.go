@@ -119,9 +119,7 @@ func New(
 	if shared == nil {
 		e.shared = NewShared(ctx, "", nil)
 	}
-	if c.Transport == "stdio" {
-		e.shareKey = shareKey(id, c, root, secrets, inputs)
-	}
+	e.shareKey = shareKey(id, c, root, secrets, inputs)
 	go e.expireIdle()
 	return e
 }

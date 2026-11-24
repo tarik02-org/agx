@@ -287,6 +287,7 @@ func (s *Server) UpdateConfiguration(
 		return nil, editError(err)
 	}
 	_, _ = s.reload()
+	s.edited.notify()
 	return connect.NewResponse(&v1.UpdateConfigurationResponse{Revision: session.Local.Revision}), nil
 }
 
@@ -303,6 +304,7 @@ func (s *Server) WriteResourceFile(
 	if err := configedit.WriteFile(c, s.paths, req.Msg.Path, []byte(req.Msg.Content)); err != nil {
 		return nil, editError(err)
 	}
+	s.edited.notify()
 	return connect.NewResponse(&v1.WriteResourceFileResponse{}), nil
 }
 

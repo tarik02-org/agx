@@ -24,8 +24,9 @@ written.
 | [0027](0027-root-file-and-fragments.md)                      | Split configuration into a root file and fragments                        | accepted                                   |
 | [0028](0028-sqlite-state.md)                                 | Keep machine-managed state in SQLite                                      | accepted                                   |
 | [0029](0029-local-configuration.md)                          | Local configuration with declarative overlays                             | accepted                                   |
-| [0031](0031-portable-resource-consumption.md)                | Consume configuration independently of process launch and storage         | accepted                                   |
+| [0031](0031-portable-resource-consumption.md)                | Consume configuration independently of process launch and storage         | accepted; resource leases revised by 0033  |
 | [0032](0032-acp-agents.md)                                   | Relay ACP agents, giving each session its directory's resources           | accepted                                   |
+| [0033](0033-launches-follow-configuration.md)                | Launches follow their directory's configuration                           | accepted                                   |
 
 ## Numbers without a record
 
