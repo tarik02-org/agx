@@ -12,7 +12,7 @@ agx doctor --all      # test every MCP server, not only the ones selected here
 for every problem. It checks:
 
 - that the configuration loads, and from which files;
-- that packages are installed and lockfiles are current;
+- that packages are installed, unchanged in the cache, and lockfiles are current;
 - each harness: found, and new enough;
 - Codex skill plugins, per Codex-based harness definition;
 - the daemon: running, the same agx version, serving this configuration;
@@ -30,12 +30,24 @@ Run `agx config validate`; it names the file and line. Edit commands never
 write an invalid configuration, so the message explains what the change would
 have broken.
 
+**The configuration stopped loading because of something a command saved.**
+For example, a skill added with `agx skill add` whose directory was deleted
+since. Remove the definition the message names, such as
+`agx skill remove <id> --force`. While the configuration does not load, an edit
+is saved only if it changes what is wrong, so repair it one message at a time.
+`agx config export` prints what the commands saved, also then.
+
 **A launch warns "package … is not installed; run agx install".**
 A package or Git skill is not installed yet, or changed since it was installed
 (for example after `git pull` in your configuration repository). The launch
 goes on without that package's skills, instructions, and MCP servers; run
 `agx install` to get them. Launches never download anything themselves.
 `agx config validate` and `agx doctor` list every missing package.
+
+**`agx doctor` says "cache entry … does not match its content hash".**
+Something changed the files of an installed package in the cache. Launches
+use them as they are. Delete the directory the message names and run
+`agx install` to install the package again.
 
 **`agx install` says "git is not on PATH".**
 Git packages and Git skills are fetched with `git`. Install it, or add it to
@@ -54,7 +66,7 @@ Run `agx secret login <id>` for an OAuth server, or store a new token with
 `needs-auth`.
 
 **An MCP server does not start or answer.**
-Run `agx mcp test <id>`: it connects outside any harness and shows the server's
+Run `agx mcp tools <id> --all`: it connects outside any harness and shows the server's
 error. For local servers, check that the command is on the daemon's `PATH` (or
 use an absolute path), and look at the [daemon log](#logs).
 
@@ -74,9 +86,10 @@ plugins are not turned off (`features.plugins = false` in Codex's
 `config.toml`). `agx doctor` checks both. agx installs only skills that a rule
 selects, so check with `agx explain` that the skill is selected.
 
-**"daemon of another build" or "version mismatch".**
-A daemon from another agx build is running and the command could not replace
-it. Run `agx daemon stop`, then try again.
+**"the daemon runs agx X, which this agx Y cannot use".**
+A daemon of an agx with an incompatible protocol is running, and this agx is
+not newer, so it leaves the daemon alone. Use the newer agx, or run
+`agx daemon restart` to replace the daemon with one of this agx.
 
 **"upgrade agx".**
 A newer agx wrote one of agx's own files (package pins), and
@@ -91,13 +104,6 @@ of the real binary (see [Harnesses](harnesses.md#which-executable-runs)).
 Automatic starting is off (`daemon.autostart: false` or `AGX_NO_AUTOSTART=1`).
 Run `agx daemon start`, or check the [log](#logs) if it does not stay up.
 
-**The daemon serves another configuration.**
-You used a different `AGX_CONFIG` or `--config` with the same cache while a
-harness launched with the other configuration still runs. agx replaces a daemon
-of another configuration only when it has no active launches (`agx launch
-list`), so their MCP servers keep working. Exit those harnesses, rerun with the
-configuration the message names, or give the other setup its own `AGX_CACHE`.
-
 **A shim is not found.**
 Add `~/.local/share/agx/shims` to your `PATH`, and run `agx shims install`
 after adding harness definitions.
@@ -108,20 +114,22 @@ added: `xattr -d com.apple.quarantine /path/to/agx`.
 
 ## Logs
 
-The daemon writes `daemon.log` in the `runtime` directory of the cache:
+The daemon writes `daemon.log` in its configuration's hashed runtime directory:
 
-| Platform | Default log location |
-| --- | --- |
-| Linux | `~/.cache/agx/runtime/daemon.log` |
-| macOS | `~/Library/Caches/agx/runtime/daemon.log` |
-| Windows | `%LOCALAPPDATA%\cache\agx\runtime\daemon.log` |
+| Platform | Default log location                                      |
+| -------- | --------------------------------------------------------- |
+| Linux    | `~/.cache/agx/runtime/<root-hash>/daemon.log`             |
+| macOS    | `~/Library/Caches/agx/runtime/<root-hash>/daemon.log`     |
+| Windows  | `%LOCALAPPDATA%\cache\agx\runtime\<root-hash>\daemon.log` |
 
 `agx daemon start` prints the path.
 
 ## Starting over
 
-To reset agx without touching your configuration, stop the daemon and delete the
-cache directory, then reinstall:
+To rebuild disposable caches, stop the daemon and delete the cache directory,
+then reinstall. Preserve the state directory: `state.db` holds local configuration,
+credentials, and launch history. With an overridden cache, state may live in
+`<cache>/state`; preserve that subdirectory before clearing its parent:
 
 ```sh
 agx daemon stop --force
@@ -129,5 +137,6 @@ rm -rf ~/.cache/agx          # ~/Library/Caches/agx on macOS
 agx install
 ```
 
-Stored secrets and OAuth logins live in the OS keychain and survive this; remove
-them with `agx secret logout <id>`.
+Stored secrets and OAuth logins live encrypted in `state.db` and survive cache
+rebuilds. Remove one with `agx secret logout <id>`, or every stored credential
+with `agx secret logout --all`, which preserves configuration and launch history.

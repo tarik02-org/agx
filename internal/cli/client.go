@@ -2,16 +2,13 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/spf13/cobra"
 
 	"github.com/tarik02-org/agx/gen/agx/v1/agxv1connect"
-	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/daemon"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
@@ -22,8 +19,9 @@ const (
 )
 
 type client struct {
-	discovery daemon.Discovery
+	discovery control.Discovery
 	config    agxv1connect.ConfigurationServiceClient
+	packages  agxv1connect.PackageServiceClient
 	launches  agxv1connect.LaunchServiceClient
 	runtime   agxv1connect.RuntimeServiceClient
 	secrets   agxv1connect.SecretServiceClient
@@ -31,23 +29,33 @@ type client struct {
 }
 
 func newClient(paths platform.Paths) (*client, error) {
-	d, err := daemon.ReadDiscovery(paths)
+	d, err := liveDiscovery(paths)
 	if err != nil {
 		return nil, err
 	}
 	return dial(d), nil
 }
 
-// newAnyVersionClient reaches a daemon of another version so it can still be detected and stopped.
-func newAnyVersionClient(paths platform.Paths) (*client, error) {
-	d, err := daemon.ReadDiscovery(paths)
-	if err != nil && !errors.Is(err, daemon.ErrVersionMismatch) {
-		return nil, err
+// liveDiscovery reads the endpoint of the daemon that holds the startup lock. Discovery outlives
+// a daemon that stopped without shutting down, and its port may since belong to another user's
+// process, which would be sent secrets and decide what a launch runs. Only the lock, in a
+// directory no other user opens, tells the daemon from that process.
+func liveDiscovery(paths platform.Paths) (control.Discovery, error) {
+	d, err := control.ReadDiscovery(paths)
+	if err != nil {
+		return d, err
 	}
-	return dial(d), nil
+	held, err := lockHeld(paths)
+	if err != nil {
+		return d, err
+	}
+	if !held {
+		return d, control.ErrStale
+	}
+	return d, nil
 }
 
-func dial(d daemon.Discovery) *client {
+func dial(d control.Discovery) *client {
 	httpClient := &http.Client{
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}
@@ -55,6 +63,7 @@ func dial(d daemon.Discovery) *client {
 	return &client{
 		discovery: d,
 		config:    agxv1connect.NewConfigurationServiceClient(httpClient, d.URL, options),
+		packages:  agxv1connect.NewPackageServiceClient(httpClient, d.URL, options),
 		launches:  agxv1connect.NewLaunchServiceClient(httpClient, d.URL, options),
 		runtime:   agxv1connect.NewRuntimeServiceClient(httpClient, d.URL, options),
 		secrets:   agxv1connect.NewSecretServiceClient(httpClient, d.URL, options),
@@ -102,10 +111,4 @@ func (i daemonInterceptor) WrapStreamingClient(next connect.StreamingClientFunc)
 
 func (daemonInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
 	return next
-}
-
-// commandClient connects a command to the daemon, starting one unless the configuration turns
-// autostart off.
-func commandClient(cmd *cobra.Command, paths *platform.Paths, builtins *config.Builtins) (*client, error) {
-	return daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
 }

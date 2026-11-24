@@ -4,11 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -16,7 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime/debug"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,52 +31,22 @@ import (
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/configstore"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/mcpruntime"
 	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/secretstore"
 	"github.com/tarik02-org/agx/internal/securefs"
+	"github.com/tarik02-org/agx/internal/sessionprovider"
+	"github.com/tarik02-org/agx/internal/sessionstore"
+	"github.com/tarik02-org/agx/internal/storage"
 )
-
-// Version is set at build time with -ldflags "-X agx/internal/daemon.Version=..."; otherwise it
-// is the main module's version, which go install module@version records.
-var Version = "dev"
-
-func init() {
-	if Version != "dev" {
-		return
-	}
-	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
-		Version = strings.TrimPrefix(info.Main.Version, "v")
-	}
-}
-
-// ErrVersionMismatch is returned by ReadDiscovery together with the decoded
-// discovery when the running daemon has a different version.
-var ErrVersionMismatch = errors.New("daemon version mismatch")
-
-// ErrUnavailable marks ReadDiscovery errors that leave no daemon to reach: it is not running,
-// or its discovery file is invalid.
-var ErrUnavailable = errors.New("daemon unavailable")
-
-// unavailable keeps a discovery error's own message while matching ErrUnavailable.
-type unavailable string
-
-func (u unavailable) Error() string { return string(u) }
-
-func (u unavailable) Is(target error) bool { return target == ErrUnavailable }
 
 // historyRetention keeps ended launches around for status inspection.
 const historyRetention = time.Hour
 
-type Discovery struct {
-	Version    string `json:"version"`
-	Build      string `json:"build"`
-	InstanceID string `json:"instance_id"`
-	URL        string `json:"url"`
-	Token      string `json:"token"`
-	Config     string `json:"config"`
-	// PID is the daemon's process, for diagnosing one that stopped answering.
-	PID int `json:"pid,omitempty"`
-}
+// ErrRestart reports a graceful restart requested from an external service manager.
+var ErrRestart = errors.New("external daemon restart requested")
 
 // verifier hashes a launch credential, so the daemon never holds one it could leak.
 func verifier(value string) [32]byte { return sha256.Sum256([]byte(value)) }
@@ -96,6 +64,12 @@ type launch struct {
 	cancel    context.CancelFunc
 	endpoints map[config.ID]*mcpruntime.Endpoint
 	snapshot  *config.Snapshot
+	// attachments are MCP servers attached to this launch alone; attachMu serializes changing them.
+	attachments map[config.ID]*attachment
+	attachMu    sync.Mutex
+	// agx is the launch's agx MCP server, made on its first request.
+	agx     http.Handler
+	agxOnce sync.Once
 	// target is the harness process a launch started; its thread launches share it.
 	target  adapters.Target
 	ended   time.Time
@@ -104,9 +78,19 @@ type launch struct {
 	lease time.Duration
 	// threadServer marks a harness process serving many threads; its launch has no endpoints.
 	threadServer bool
-	// unavailable says why an attached launch's MCP servers cannot be served, when its directory
-	// no longer resolves to the snapshot it started with.
-	unavailable string
+	// wrapperPID and harnessPID are the processes the last renewal reported, for telling why the
+	// lease ran out; zero when unknown.
+	wrapperPID, harnessPID int
+	// inputs are the environment inputs its MCP servers read, kept so that servers its directory
+	// selects later get theirs.
+	inputs map[string]string
+	// mcpDirectory is where a resource lease's MCP servers run; a process launch's run in its
+	// directory.
+	mcpDirectory string
+	// resources is what a resource lease provides now and revision identifies it, "invalid" while
+	// its configuration cannot be resolved.
+	resources *v1.LeaseResources
+	revision  string
 }
 
 type Server struct {
@@ -118,7 +102,7 @@ type Server struct {
 	config    *config.Config
 	configErr error
 	inputs    *config.Inputs
-	discovery Discovery
+	discovery control.Discovery
 	manager   *auth.Manager
 	launches  map[string]*launch
 	ctx       context.Context
@@ -126,12 +110,14 @@ type Server struct {
 	stop      chan struct{}
 	// forced is set by a stop that revokes active launches instead of keeping them.
 	forced bool
+	// restart requests the service manager's on-failure restart exit status.
+	restart bool
 	// revoked maps launches revoked within revokedRetention, by this daemon or one before it, to
 	// when; their wrappers cannot attach them again.
 	revoked map[string]time.Time
 	// attachMu serializes AttachLaunch.
 	attachMu sync.Mutex
-	// grace, when set by a stop, replaces ShutdownGrace.
+	// grace, when set by a stop, replaces control.ShutdownGrace.
 	grace time.Duration
 	drain *drain
 	// stopped is set once a stopping daemon collected its launches; new launches are refused
@@ -142,10 +128,16 @@ type Server struct {
 	installs       sync.WaitGroup
 	installsClosed bool
 	port           int
+	// reconcileMu serializes bringing launches to their directories' configuration.
+	reconcileMu sync.Mutex
+	// edited wakes the reconciler when an edit is committed through this daemon.
+	edited notifier
 	// changed wakes runtime watchers when launches or their MCP servers change.
 	changed *notifier
 	// clients pools the daemon's own MCP client sessions for ListTools and CallTool.
-	clients *clientPool
+	clients   *clientPool
+	sessions  *sessionstore.Catalog
+	providers *sessionprovider.Catalog
 	// ui holds the web UI's login codes and sessions.
 	ui *uiSessions
 	// shared runs the stdio MCP servers launches share.
@@ -157,6 +149,9 @@ type Server struct {
 	previews previews
 	// icons remembers the icons MCP servers declared, for the web UI.
 	icons *mcpIcons
+	// resolved keeps the snapshots resolve requests returned, for preparing the launch that
+	// follows each without resolving, and hashing local skills, again; s.mu guards it.
+	resolved map[resolveKey]resolvedSnapshot
 }
 
 // Serve runs the daemon until stop closes or a stop request arrives, then shuts down gracefully:
@@ -175,38 +170,61 @@ func Serve(
 		return err
 	}
 	lock := flock.New(filepath.Join(paths.Runtime, "daemon.lock"))
-	ok, err := lock.TryLock()
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("daemon is already running")
+	discoveryPath := filepath.Join(paths.Runtime, "daemon.json")
+	// Commands take the lock for a moment to learn whether a daemon holds it, so a held lock is
+	// tried again for a while. Discovery means a daemon holds it, serving or replacing a crashed
+	// one; waiting longer would only let this one take over once that daemon stops.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		ok, err := lock.TryLock()
+		if err != nil {
+			return err
+		}
+		if ok {
+			break
+		}
+		if _, err := os.Stat(discoveryPath); err == nil || time.Now().After(deadline) {
+			return fmt.Errorf("daemon is already running")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
 	}
 	defer func() { _ = lock.Unlock() }()
-	discoveryPath := filepath.Join(paths.Runtime, "daemon.json")
 	// Discovery left behind names the port of a daemon that was killed, which its launches'
 	// harnesses use; the state file names the port of one that stopped.
 	port := 0
-	if previous, err := ReadDiscovery(paths); err == nil || errors.Is(err, ErrVersionMismatch) {
+	if previous, err := control.ReadDiscovery(paths); err == nil {
 		if u, err := url.Parse(previous.URL); err == nil {
 			port, _ = strconv.Atoi(u.Port())
 		}
 		slog.Warn("the previous daemon stopped without shutting down", "pid", previous.PID, "url", previous.URL)
 	}
 	// The startup lock makes stale discovery replacement safe.
-	if err := os.Remove(discoveryPath); err != nil && !os.IsNotExist(err) {
+	if err := removeDiscovery(discoveryPath); err != nil {
 		return err
 	}
 	inputs := &config.Inputs{}
-	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache, Inputs: inputs})
+	c, err := configstore.Load(
+		paths.Config, paths.State,
+		config.Options{Builtins: builtins, Cache: paths.Cache, Inputs: inputs},
+	)
+	configErr := err
 	if err != nil {
-		return err
+		c = config.Bare(builtins)
+		c.Root = paths.Config
+		c.Daemon = config.Daemon{LeaseSeconds: 60, RenewSeconds: 20}
+		if root, err := config.ReadRoot(paths.Config, builtins); err == nil {
+			c.Daemon.Managed = root.Daemon.Managed
+		}
 	}
 	// Holding the startup lock, no other daemon writes these directories.
 	removeAbandonedTemporaries(paths.State, time.Now())
-	state, err := loadState(StatePath(paths), time.Now())
+	state, err := loadState(paths, time.Now())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "agx daemon: %v\n", err)
+		return fmt.Errorf("load daemon state: %w", err)
 	}
 	if port == 0 {
 		port = state.Port
@@ -219,20 +237,21 @@ func Serve(
 	// Launches and their MCP servers outlive ctx until shutdown ends them.
 	serverCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
-	discovery := Discovery{
-		Version:    Version,
-		Build:      Build(),
+	discovery := control.Discovery{
+		Version:    control.Version,
 		InstanceID: securefs.Token(),
 		URL:        "http://" + listener.Addr().String(),
 		Token:      securefs.Token(),
 		Config:     paths.Config,
 		PID:        os.Getpid(),
+		Managed:    c.Daemon.Managed,
 	}
 	s := &Server{
 		paths:     paths,
 		adapters:  registry,
 		builtins:  builtins,
 		config:    c,
+		configErr: configErr,
 		inputs:    inputs,
 		discovery: discovery,
 		ctx:       serverCtx,
@@ -244,10 +263,11 @@ func Serve(
 		port:      listener.Addr().(*net.TCPAddr).Port,
 		clients:   newClientPool(),
 		ui:        newUISessions(),
-		icons:     newMCPIcons(filepath.Join(paths.Cache, "mcp-icons.json")),
+		sessions:  sessionstore.NewCatalog(serverCtx, registry, paths.Cache, paths.State),
+		icons:     newMCPIcons(storage.Cache(paths.Cache)),
 		changed:   &notifier{},
 	}
-	s.shared = mcpruntime.NewShared(serverCtx, Version, s.changed.notify)
+	s.shared = mcpruntime.NewShared(serverCtx, control.Version, s.changed.notify)
 	if port != 0 && port != s.port {
 		fmt.Fprintf(
 			os.Stderr,
@@ -263,42 +283,17 @@ func Serve(
 	// Launch files of launches whose wrappers did not attach them within a lease belong to
 	// harnesses that ended while no daemon ran.
 	started := time.Now()
-	sweep := time.AfterFunc(time.Duration(c.Daemon.LeaseSeconds)*time.Second, func() { s.sweep(started) })
-	defer sweep.Stop()
-	slog.Info("daemon started", "version", Version, "build", Build(), "pid", os.Getpid(), "url", discovery.URL)
-	s.manager = auth.New(discovery.URL+"/oauth/callback", auth.OpenStore(paths.State))
-	mux := http.NewServeMux()
-	interceptor := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			// Lifecycle procedures check the lifecycle token, and tool procedures accept a launch
-			// grant instead of the management token; they authorize themselves.
-			if !selfAuthorized[req.Spec().Procedure] {
-				if !s.managed(req.Header()) {
-					return nil, rpcError(connect.CodeUnauthenticated, "management credential required")
-				}
-			}
-			if s.drain.draining() && startsWork[req.Spec().Procedure] {
-				return nil, refusal()
-			}
-			return next(ctx, req)
-		}
+	// Cleaning the cache waits as long, so that launches of earlier agx versions have attached.
+	sweep := time.AfterFunc(time.Duration(c.Daemon.LeaseSeconds)*time.Second, func() {
+		s.sweep(started)
+		s.cleanCache(time.Now())
 	})
-	opts := []connect.HandlerOption{connect.WithInterceptors(interceptor), connect.WithReadMaxBytes(16 * 1024 * 1024)}
-	path, handler := agxv1connect.NewConfigurationServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewPackageServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewLaunchServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewRuntimeServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewSecretServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	path, handler = agxv1connect.NewUIServiceHandler(s, opts...)
-	mux.Handle(path, handler)
-	mux.HandleFunc("/ui/login", s.serveUILogin)
-	mux.HandleFunc("/ui/schema.json", s.serveUISchema)
-	mux.Handle("/ui/", s.serveUI())
+	defer sweep.Stop()
+	slog.Info("daemon started", "version", control.Version, "pid", os.Getpid(), "url", discovery.URL)
+	s.manager = auth.New(discovery.URL+"/oauth/callback", secretstore.Open(paths.State))
+	go s.reconcileLaunches()
+	mux := http.NewServeMux()
+	s.handle(mux, discovery.Token)
 	mux.HandleFunc("/launch/", s.serveMCP)
 	mux.HandleFunc("/oauth/callback", s.manager.Callback)
 	tracked := s.drain.track(mux)
@@ -316,14 +311,20 @@ func Serve(
 	}), ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 64 * 1024}
 	// Discovery goes first: the listener queues connections meanwhile, and a wrapper whose old
 	// client reaches this daemon on a reused port must find the token it needs then.
-	if err := securefs.WriteJSON(discoveryPath, discovery); err != nil {
+	if err := securefs.WritePrivateJSON(discoveryPath, discovery); err != nil {
 		return err
 	}
-	defer func() { _ = os.Remove(discoveryPath) }()
+	defer func() {
+		if err := removeDiscovery(discoveryPath); err != nil {
+			slog.Error("cannot remove the discovery file; commands take this daemon for a crashed one", "error", err)
+		}
+	}()
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.Serve(listener) }()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	cleaning := time.NewTicker(time.Hour)
+	defer cleaning.Stop()
 	var serveErr error
 	graceful := false
 loop:
@@ -342,6 +343,8 @@ loop:
 		case <-ticker.C:
 			s.expire()
 			s.clients.expire(time.Now())
+		case now := <-cleaning.C:
+			go s.cleanCache(now)
 		}
 	}
 	s.drain.start()
@@ -369,6 +372,13 @@ loop:
 	stopShutdown()
 	<-shutdownDone
 	_ = server.Close()
+	// Handlers cut off above may still be refreshing an OAuth token. The server invalidated the
+	// stored refresh token once it answered, so exiting before storing the new one loses the login.
+	refreshCtx, stopRefreshes := context.WithTimeout(context.Background(), auth.RefreshTimeout+5*time.Second)
+	if err := s.manager.Close(refreshCtx); err != nil {
+		slog.Error("OAuth credentials were not stored at shutdown", "error", err)
+	}
+	stopRefreshes()
 	s.cancel()
 	// Cancelled installations still remove what they started; they must not be cut off by exit.
 	installCtx, stopInstalls := context.WithTimeout(context.Background(), forcedGrace)
@@ -379,36 +389,116 @@ loop:
 	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 		return serveErr
 	}
+	s.mu.Lock()
+	restart := s.restart
+	s.mu.Unlock()
+	if restart {
+		return ErrRestart
+	}
 	return nil
+}
+
+// handle serves the daemon's Connect services and web UI on mux to callers holding token or a UI
+// session.
+func (s *Server) handle(mux *http.ServeMux, token string) {
+	opts := []connect.HandlerOption{
+		connect.WithInterceptors(gate{
+			managed:  func(h http.Header) bool { return managed(h, token, s.ui) },
+			draining: s.drain.draining,
+		}),
+		connect.WithReadMaxBytes(16 * 1024 * 1024),
+	}
+	path, handler := agxv1connect.NewConfigurationServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewPackageServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewLaunchServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewResourceServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewSessionProviderServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewRuntimeServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewSecretServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewUIServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	mux.HandleFunc("/ui/login", s.serveUILogin)
+	mux.HandleFunc("/ui/schema.json", s.serveUISchema)
+	mux.Handle("/ui/", s.serveUI())
+}
+
+// gate admits a call to a procedure. A unary interceptor alone would leave streaming procedures
+// open to callers without the management token.
+type gate struct {
+	managed  func(http.Header) bool
+	draining func() bool
+}
+
+func (g gate) admit(spec connect.Spec, header http.Header) error {
+	// Lifecycle procedures check the lifecycle token, and tool procedures accept a launch
+	// grant instead of the management token; they authorize themselves.
+	if !selfAuthorized[spec.Procedure] && !g.managed(header) {
+		return rpcError(connect.CodeUnauthenticated, "management credential required")
+	}
+	if g.draining() && startsWork[spec.Procedure] {
+		return refusal()
+	}
+	return nil
+}
+
+func (g gate) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
+	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		if err := g.admit(req.Spec(), req.Header()); err != nil {
+			return nil, err
+		}
+		return next(ctx, req)
+	}
+}
+
+func (gate) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
+	return next
+}
+
+func (g gate) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
+	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
+		if err := g.admit(conn.Spec(), conn.RequestHeader()); err != nil {
+			return err
+		}
+		return next(ctx, conn)
+	}
 }
 
 // selfAuthorized are the procedures that check their own credentials.
 var selfAuthorized = map[string]bool{
-	agxv1connect.LaunchServiceRenewLaunchProcedure:  true,
-	agxv1connect.LaunchServiceFinishLaunchProcedure: true,
-	agxv1connect.RuntimeServiceListToolsProcedure:   true,
-	agxv1connect.RuntimeServiceCallToolProcedure:    true,
+	agxv1connect.ResourceServiceWatchResourcesProcedure: true,
+	agxv1connect.LaunchServiceRenewLaunchProcedure:      true,
+	agxv1connect.LaunchServiceFinishLaunchProcedure:     true,
+	agxv1connect.RuntimeServiceListToolsProcedure:       true,
+	agxv1connect.RuntimeServiceCallToolProcedure:        true,
 }
 
 // startsWork are the procedures a stopping daemon refuses, so that callers retry them with the
 // next daemon.
 var startsWork = map[string]bool{
-	agxv1connect.LaunchServicePrepareLaunchProcedure:       true,
-	agxv1connect.LaunchServiceAttachLaunchProcedure:        true,
-	agxv1connect.LaunchServicePrepareThreadLaunchProcedure: true,
-	agxv1connect.PackageServiceInstallProcedure:            true,
-	agxv1connect.PackageServicePreviewSourceProcedure:      true,
-	agxv1connect.ConfigurationServicePlanChangesProcedure:  true,
-	agxv1connect.ConfigurationServiceApplyChangesProcedure: true,
-	agxv1connect.RuntimeServiceTestMcpServerProcedure:      true,
-	agxv1connect.RuntimeServiceListToolsProcedure:          true,
-	agxv1connect.RuntimeServiceCallToolProcedure:           true,
+	agxv1connect.ResourceServicePrepareResourcesProcedure:         true,
+	agxv1connect.ResourceServiceWatchResourcesProcedure:           true,
+	agxv1connect.LaunchServicePrepareLaunchProcedure:              true,
+	agxv1connect.LaunchServiceAttachLaunchProcedure:               true,
+	agxv1connect.LaunchServicePrepareThreadLaunchProcedure:        true,
+	agxv1connect.PackageServiceInstallProcedure:                   true,
+	agxv1connect.PackageServicePreviewSourceProcedure:             true,
+	agxv1connect.ConfigurationServiceUpdateConfigurationProcedure: true,
+	agxv1connect.ConfigurationServiceWriteResourceFileProcedure:   true,
+	agxv1connect.RuntimeServiceListToolsProcedure:                 true,
+	agxv1connect.RuntimeServiceCallToolProcedure:                  true,
 }
 
 // settle waits for the grace period until requests in flight finished, or ctx ends.
 func (s *Server) settle(ctx context.Context) {
 	s.mu.Lock()
-	grace := ShutdownGrace
+	grace := control.ShutdownGrace
 	if s.grace > 0 {
 		grace = s.grace
 	}
@@ -452,14 +542,17 @@ func (s *Server) reload() (*config.Config, error) {
 	s.mu.Lock()
 	current, currentErr, inputs := s.config, s.configErr, s.inputs
 	s.mu.Unlock()
-	if inputs != nil && !inputs.Changed() {
-		if currentErr != nil {
-			return nil, currentErr
-		}
+	changed := inputs == nil || inputs.Changed()
+	// A failed load is tried again: validation names files that are no inputs, such as a skill's
+	// missing directory, whose return would otherwise go unnoticed.
+	if !changed && currentErr == nil {
 		return current, nil
 	}
 	inputs = &config.Inputs{}
-	c, err := config.Load(s.paths.Config, config.Options{Builtins: s.builtins, Cache: s.paths.Cache, Inputs: inputs})
+	c, err := configstore.Load(
+		s.paths.Config, s.paths.State,
+		config.Options{Builtins: s.builtins, Cache: s.paths.Cache, Inputs: inputs},
+	)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if (err == nil) != (s.configErr == nil) {
@@ -469,6 +562,10 @@ func (s *Server) reload() (*config.Config, error) {
 	s.inputs = inputs
 	if err == nil {
 		s.config = c
+	}
+	// Changed configuration may mean a command secret's command now prints another value.
+	if changed || err == nil {
+		s.manager.ForgetHelpers()
 	}
 	return c, err
 }
@@ -487,6 +584,16 @@ func (l *launch) extend(expires time.Time) {
 // thread launches end with it. A revocation is saved by the caller.
 func (s *Server) end(l *launch, state v1.Launch_State) {
 	if !active(l.view.State) {
+		// Its wrapper attaches an expired launch again unless a revocation refuses that.
+		if state == v1.Launch_STATE_REVOKED && l.view.State == v1.Launch_STATE_EXPIRED {
+			l.view.State = state
+			s.revoke(l.view.Id, time.Now())
+			s.changed.notify()
+			go s.release(l.view.Id, nil)
+			for _, child := range s.children(l) {
+				s.end(child, state)
+			}
+		}
 		return
 	}
 	l.view.State = state
@@ -494,20 +601,37 @@ func (s *Server) end(l *launch, state v1.Launch_State) {
 	l.cancel()
 	s.changed.notify()
 	if state == v1.Launch_STATE_REVOKED {
-		if s.revoked == nil {
-			s.revoked = map[string]time.Time{}
-		}
-		s.revoked[l.view.Id] = l.ended
+		s.revoke(l.view.Id, l.ended)
 	}
 	// A finished launch is the normal outcome; the others cut a running harness off.
 	if state != v1.Launch_STATE_FINISHED && l.view.ParentLaunchId == "" {
-		slog.Info("launch ended", "launch", shortID(l.view.Id), "harness", l.view.Harness, "state", savedEnd(state))
+		attrs := []any{"launch", shortID(l.view.Id), "harness", l.view.Harness, "state", savedEnd(state)}
+		if state == v1.Launch_STATE_EXPIRED {
+			attrs = append(attrs, "reason", expiryReason(l.wrapperPID, l.harnessPID, platform.Alive))
+		}
+		slog.Info("launch ended", attrs...)
 	}
 	s.clients.closeLaunch(l.view.Id)
-	go s.release(l.view.Id, l.endpoints)
+	if (state == v1.Launch_STATE_FINISHED || state == v1.Launch_STATE_REVOKED) && len(l.attachments) > 0 {
+		go s.discardAttachments(l.view.Id)
+	}
+	if state == v1.Launch_STATE_EXPIRED {
+		// Its wrapper may attach the launch again, and its harness still reads the launch files.
+		go closeEndpoints(l.allEndpoints())
+	} else {
+		go s.release(l.view.Id, l.allEndpoints())
+	}
 	for _, child := range s.children(l) {
 		s.end(child, state)
 	}
+}
+
+// revoke refuses attaching a launch from now on; s.mu must be held.
+func (s *Server) revoke(id string, at time.Time) {
+	if s.revoked == nil {
+		s.revoked = map[string]time.Time{}
+	}
+	s.revoked[id] = at
 }
 
 // children lists a launch's thread launches; s.mu must be held.
@@ -544,6 +668,9 @@ func (s *Server) Stop(
 	if req.Msg.Grace != nil && grace <= 0 {
 		return nil, rpcError(connect.CodeInvalidArgument, "grace must be a positive duration")
 	}
+	if req.Msg.Restart && !s.discovery.Managed {
+		return nil, rpcError(connect.CodeFailedPrecondition, "daemon is not externally managed")
+	}
 	s.expire()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -560,6 +687,7 @@ func (s *Server) Stop(
 	select {
 	case <-s.stop:
 	default:
+		s.restart = req.Msg.Restart
 		close(s.stop)
 	}
 	return connect.NewResponse(&v1.StopResponse{KeptLaunches: kept}), nil
@@ -606,7 +734,7 @@ func (s *Server) closeLaunches(launches []*launch) {
 	var cleanup sync.WaitGroup
 	for _, l := range launches {
 		s.mu.Lock()
-		endpoints := l.endpoints
+		endpoints := l.allEndpoints()
 		s.mu.Unlock()
 		// end releases asynchronously; wait here so shutdown does not leave cache dirs.
 		if forced {
@@ -626,11 +754,51 @@ func (s *Server) sweep(started time.Time) {
 		return
 	}
 	for _, entry := range entries {
+		owner, err := os.ReadFile(filepath.Join(root, entry.Name(), "configuration"))
+		if err != nil || string(owner) != s.paths.Config {
+			continue
+		}
 		s.mu.Lock()
 		held := s.launches[entry.Name()] != nil
 		s.mu.Unlock()
 		if info, err := entry.Info(); err == nil && !held && info.ModTime().Before(started) {
 			_ = os.RemoveAll(filepath.Join(root, entry.Name()))
+		}
+	}
+}
+
+// cacheLeftovers are the name prefixes of what interrupted writes and installations leave, by
+// cache subdirectory.
+var cacheLeftovers = map[string][]string{
+	".":                               {".agx-"},
+	"sessions":                        {".agx-"},
+	"packages":                        {".install-", ".inspect-"},
+	filepath.Join("packages", "pins"): {".agx-"},
+	"native":                          {".plugin-"},
+	filepath.Join("native", "marketplace", ".agents", "plugins"): {".agx-"},
+}
+
+// abandonedCacheEntry is the age past which a staged cache entry was left by a process that
+// stopped before finishing it.
+const abandonedCacheEntry = time.Hour
+
+// cleanCache removes the artifact directories launches no longer use, and what interrupted
+// writes and installations left in the cache.
+func (s *Server) cleanCache(now time.Time) {
+	adapters.RemoveUnusedArtifacts(s.paths.Cache, now)
+	for sub, prefixes := range cacheLeftovers {
+		dir := filepath.Join(s.paths.Cache, sub)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if !slices.ContainsFunc(prefixes, func(p string) bool { return strings.HasPrefix(entry.Name(), p) }) {
+				continue
+			}
+			if info, err := entry.Info(); err == nil && now.Sub(info.ModTime()) > abandonedCacheEntry {
+				_ = os.RemoveAll(filepath.Join(dir, entry.Name()))
+			}
 		}
 	}
 }
@@ -654,6 +822,9 @@ func (s *Server) prune(now time.Time) {
 	for id, l := range s.launches {
 		if !active(l.view.State) && l.ended.Before(cutoff) {
 			delete(s.launches, id)
+			if l.view.State == v1.Launch_STATE_EXPIRED {
+				go s.release(id, nil)
+			}
 		}
 	}
 }
@@ -716,17 +887,19 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	// A stopping daemon finishes the sessions it serves but opens none; event streams would
 	// outlast it.
-	if s.drain.draining() && (r.Header.Get("Mcp-Session-Id") == "" || r.Method == http.MethodGet) {
+	if s.drain.draining() &&
+		(parts[1] == string(config.AgxMCP) || r.Header.Get("Mcp-Session-Id") == "" || r.Method == http.MethodGet) {
 		refuse(w)
 		return
 	}
-	s.mu.Lock()
-	e, unavailable := l.endpoints[config.ID(parts[1])], l.unavailable
-	s.mu.Unlock()
-	if unavailable != "" {
-		http.Error(w, unavailable, http.StatusForbidden)
+	if parts[1] == string(config.AgxMCP) {
+		r.Body = http.MaxBytesReader(w, r.Body, 4<<20)
+		s.sessionHandler(l).ServeHTTP(w, r)
 		return
 	}
+	s.mu.Lock()
+	e := l.allEndpoints()[config.ID(parts[1])]
+	s.mu.Unlock()
 	if e == nil {
 		http.Error(w, "MCP server not selected for launch", http.StatusForbidden)
 		return
@@ -734,15 +907,16 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	e.ServeHTTP(w, r)
 }
 
+// runtime reports the last configuration load rather than reloading: commands probe the daemon
+// with it before every launch, and a reload can take seconds where reading files is slow.
 func (s *Server) runtime() *v1.RuntimeView {
-	_, _ = s.reload()
 	type server struct {
 		launchID string
 		id       config.ID
 		endpoint *mcpruntime.Endpoint
 	}
 	s.mu.Lock()
-	view := &v1.RuntimeView{DaemonInstanceId: s.discovery.InstanceID, Version: Version}
+	view := &v1.RuntimeView{DaemonInstanceId: s.discovery.InstanceID, Version: control.Version}
 	if s.configErr != nil {
 		view.Diagnostics = append(
 			view.Diagnostics,
@@ -756,7 +930,7 @@ func (s *Server) runtime() *v1.RuntimeView {
 	for _, l := range s.launches {
 		view.Launches = append(view.Launches, proto.Clone(l.view).(*v1.Launch))
 		if active(l.view.State) {
-			for id, e := range l.endpoints {
+			for id, e := range l.allEndpoints() {
 				servers = append(servers, server{launchID: l.view.Id, id: id, endpoint: e})
 			}
 		}
@@ -821,7 +995,7 @@ func (s *Server) Resolve(
 			return nil, rpcError(connect.CodeInvalidArgument, err.Error())
 		}
 	}
-	snapshot, err := c.Resolve(req.Msg.Directory, req.Msg.Harness)
+	snapshot, err := s.resolve(c, req.Msg.Directory, req.Msg.Harness)
 	if err != nil {
 		return nil, rpcError(
 			connect.CodeFailedPrecondition,
@@ -835,6 +1009,9 @@ func (s *Server) GetRuntime(
 	ctx context.Context,
 	req *connect.Request[v1.GetRuntimeRequest],
 ) (*connect.Response[v1.GetRuntimeResponse], error) {
+	if req.Msg.ProbeOnly {
+		return connect.NewResponse(&v1.GetRuntimeResponse{}), nil
+	}
 	return connect.NewResponse(&v1.GetRuntimeResponse{Runtime: s.runtime()}), nil
 }
 
@@ -843,9 +1020,6 @@ func (s *Server) WatchRuntime(
 	req *connect.Request[v1.WatchRuntimeRequest],
 	stream *connect.ServerStream[v1.WatchRuntimeResponse],
 ) error {
-	if !s.managed(req.Header()) {
-		return rpcError(connect.CodeUnauthenticated, "management credential required")
-	}
 	previous := ""
 	for {
 		changed := s.changed.next()
@@ -864,8 +1038,19 @@ func (s *Server) WatchRuntime(
 			return refusal()
 		case <-changed:
 		}
+		// Changes come in bursts, such as a launch's MCP servers starting; one view covers them.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-s.drain.stopping.Done():
+			return refusal()
+		case <-time.After(watchCoalesce):
+		}
 	}
 }
+
+// watchCoalesce is how long a runtime watch waits after a change for the ones following it.
+const watchCoalesce = 250 * time.Millisecond
 
 // warnMissing logs the missing packages a launch goes without, once per package.
 func warnMissing(snapshot *config.Snapshot) {
@@ -922,6 +1107,7 @@ func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 					Change: change,
 					Source: &v1.SourceLocation{
 						Path:   step.Source.Path,
+						Local:  step.Source.Local,
 						Line:   uint32(step.Source.Line),
 						Column: uint32(step.Source.Column),
 					},
@@ -937,63 +1123,40 @@ func resolveMessage(s *config.Snapshot) *v1.ResolveResponse {
 	return out
 }
 
-// ReadDiscovery never returns credentials to inspection commands. On a version
-// mismatch it returns the valid discovery with an error wrapping
-// ErrVersionMismatch, so callers such as daemon stop can still reach the daemon.
-func ReadDiscovery(paths platform.Paths) (Discovery, error) {
-	var d Discovery
-	path := filepath.Join(paths.Runtime, "daemon.json")
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return d, unavailable("daemon unavailable; run agx daemon start")
+// removeDiscovery deletes the discovery file. On Windows a command reading it at that moment
+// makes the removal fail, so it retries briefly.
+func removeDiscovery(path string) error {
+	var err error
+	for range 20 {
+		if err = os.Remove(path); err == nil || errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	if err := json.Unmarshal(b, &d); err != nil {
-		return d, unavailable("invalid daemon discovery; restart the daemon")
-	}
-	u, err := url.Parse(d.URL)
-	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.User != nil || u.Path != "" ||
-		u.RawQuery != "" ||
-		u.Fragment != "" ||
-		d.Token == "" ||
-		d.InstanceID == "" {
-		return d, unavailable("invalid daemon discovery")
-	}
-	port, err := strconv.Atoi(u.Port())
-	if err != nil || port < 1 || port > 65535 {
-		return d, unavailable("invalid daemon port")
-	}
-	if d.Build != Build() {
-		return d, fmt.Errorf(
-			"%w: it runs a different agx build; run agx daemon stop, then retry",
-			ErrVersionMismatch,
-		)
-	}
-	return d, nil
+	return err
 }
 
-// Build identifies the running executable by content, so a rebuilt binary with an unchanged
-// version string still notices a daemon started from the old one.
-var Build = sync.OnceValue(func() string {
-	path, err := os.Executable()
-	if err != nil {
-		return ""
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return ""
-	}
-	defer func() { _ = f.Close() }()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return ""
-	}
-	return hex.EncodeToString(h.Sum(nil))[:16]
-})
-
-// configError reports why the daemon's configuration failed to load. Validation messages name
-// files, lines, and IDs, never resolved values.
 func configError(err error) error {
 	return configInvalid("daemon configuration invalid: "+err.Error(), err)
+}
+
+// expiryReason says why a lease ran out, from whether the wrapper and harness processes its last
+// renewal reported still run. A host that terminates the wrapper on Windows leaves an untied
+// harness running; a live wrapper renewing too rarely means a stalled daemon or a sleeping host.
+func expiryReason(wrapper, harness int, alive func(int) bool) string {
+	switch {
+	case harness == 0:
+		return "no renewal"
+	case !alive(harness) && wrapper != 0 && !alive(wrapper):
+		return "wrapper and harness gone"
+	case !alive(harness):
+		return "harness gone"
+	case wrapper == 0:
+		return "harness still running"
+	case !alive(wrapper):
+		return "wrapper gone, harness still running"
+	}
+	return "renewals stopped, wrapper still running"
 }
 
 // savedEnd names how a launch ended, for the log.
@@ -1010,7 +1173,7 @@ func savedEnd(state v1.Launch_State) string {
 	return "unknown"
 }
 
-// abandonedTemporary matches the temporary files securefs.Write creates; one that outlives its
+// abandonedTemporary matches the temporary files securefs.WritePrivate creates; one that outlives its
 // write was left by a process killed mid-write.
 var abandonedTemporary = regexp.MustCompile(`^\.agx-[0-9]+$`)
 

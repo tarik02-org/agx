@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/mcpruntime"
 )
 
@@ -64,7 +65,7 @@ func (p *clientPool) acquire(
 		c = &pooledClient{key: key, launchID: launchID, ready: make(chan struct{})}
 		p.clients[key] = c
 		go func() {
-			openCtx, cancel := context.WithTimeout(base, mcpTestTimeout)
+			openCtx, cancel := context.WithTimeout(base, 30*time.Second)
 			defer cancel()
 			session, endpoint, closer, err := open(openCtx)
 			p.mu.Lock()
@@ -129,11 +130,22 @@ func (p *clientPool) closeLaunch(id string) {
 	}
 }
 
+func (p *clientPool) closeServer(launchID, id string) {
+	key := "launch\x00" + launchID + "\x00" + id
+	for _, closer := range p.take(func(c *pooledClient) bool { return c.key == key }) {
+		closer()
+	}
+}
+
 // closeAll closes every session, waiting until they closed, and opens none from then on.
 func (p *clientPool) closeAll() {
 	p.mu.Lock()
 	p.closed = true
 	p.mu.Unlock()
+	p.reset()
+}
+
+func (p *clientPool) reset() {
 	var wg sync.WaitGroup
 	for _, closer := range p.take(func(*pooledClient) bool { return true }) {
 		wg.Go(closer)
@@ -165,7 +177,7 @@ func connectHandler(ctx context.Context, handler http.Handler) (*mcp.ClientSessi
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = server.Serve(listener) }()
 	transport := &http.Transport{DialContext: listener.dial, ForceAttemptHTTP2: false}
-	client := mcp.NewClient(&mcp.Implementation{Name: "agx", Version: Version}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "agx", Version: control.Version}, nil)
 	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
 		Endpoint:             "http://agx.invalid/",
 		HTTPClient:           &http.Client{Transport: transport},

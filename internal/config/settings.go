@@ -52,9 +52,16 @@ func settingKey(path []string) string {
 // the fragment, and records where each leaf is set.
 func (m *merger) settings(s Settings, name string) (map[string]any, map[string]Source, error) {
 	sources := map[string]Source{}
+	source := func(node *yaml.Node) Source {
+		at := Source{Path: m.path, Local: m.at.at().Local}
+		if !at.Local {
+			at.Line, at.Column = node.Line, node.Column
+		}
+		return at
+	}
 	var convert func(node *yaml.Node, path []string) (any, error)
 	convert = func(node *yaml.Node, path []string) (any, error) {
-		at := Source{Path: m.path, Line: node.Line, Column: node.Column}
+		at := source(node)
 		fail := func(format string, args ...any) error {
 			return errorAt(
 				at, "harness %s: settings %s: %s",
@@ -83,7 +90,7 @@ func (m *merger) settings(s Settings, name string) (map[string]any, map[string]S
 					return nil, err
 				}
 				if nested, ok := value.(map[string]any); !ok || len(nested) == 0 {
-					sources[settingKey(child)] = Source{Path: m.path, Line: key.Line, Column: key.Column}
+					sources[settingKey(child)] = source(key)
 				}
 				out[key.Value] = value
 			}

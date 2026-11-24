@@ -5,7 +5,101 @@ launch access to the servers selected for its directory. Credentials stay in
 the daemon; the harness only gets a short-lived grant for its own launch. The
 same servers can be [called from the shell](#calling-servers-from-the-shell),
 and [on-demand servers](#on-demand-servers) stay out of the harness's tool list
-until an agent calls them that way.
+until an agent calls them through the built-in `agx` server or the shell.
+
+## The built-in agx server
+
+Every managed harness launch gets a native MCP server named **`agx`**, including
+launches with no selected MCP servers. Codex app-server threads each get their
+own instance. Resource leases also receive this server. The ID `agx` is reserved
+in configuration. Help, login and other passthrough invocations have no launch or
+built-in server.
+
+Its tool list stays small; upstream servers and tool schemas are discovered only
+when requested. Startup does not wait for discovery.
+
+| Tool                   | Purpose                                                                                                                                                                                         |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_context`          | Current launch, directory, harness, initial selection, temporary attachments and configuration revision.                                                                                        |
+| `list_resources`       | Browse all configured resources, including those outside the initial selection. Filter by `kind` and `query`; `limit` defaults to 50, maximum 200. Follow `next_offset` with `offset` for more. |
+| `get_resource`         | Read skill content, instructions or resource definitions. Credentials are redacted; secrets expose status only.                                                                                 |
+| `update_configuration` | Commit semantic edits immediately, using `expected_revision` from `get_context`.                                                                                                                |
+| `attach_mcp`           | Temporarily attach a configured server by `id`, or an ad-hoc `definition`.                                                                                                                      |
+| `detach_mcp`           | Remove a temporary attachment by `server` ID.                                                                                                                                                   |
+| `search_tools`         | Search names and descriptions on selected and temporarily attached servers, returning schemas. Optional `server`, `query`, `limit` and `offset`; follow `next_offset` for more.                 |
+| `call_tool`            | Call a `server` and `tool` with an `arguments` object; preserves rich content, structured results and tool errors.                                                                              |
+
+For example, an agent can call these tools in sequence:
+
+```json
+{"name":"attach_mcp","arguments":{"id":"tracker"}}
+{"name":"search_tools","arguments":{"server":"tracker","query":"search issues"}}
+{"name":"call_tool","arguments":{"server":"tracker","tool":"search_issues","arguments":{"query":"startup"}}}
+```
+
+An ad-hoc attachment uses the same definition syntax as configuration, with
+explicit injection objects in place of YAML tags:
+
+```json
+{
+  "name": "attach_mcp",
+  "arguments": {
+    "id": "temporary-docs",
+    "definition": {
+      "command": ["docs-mcp", "--stdio"],
+      "environment": { "API_KEY": { "$env": "DOCS_KEY" } }
+    },
+    "environment": { "DOCS_KEY": "value supplied by the caller" }
+  }
+}
+```
+
+HTTP definitions use `url` and the usual `auth` settings. Interactive OAuth
+login still uses `agx secret login`: save an ad-hoc server as persistent
+configuration first if it needs a new login, or reference an existing configured
+credential. Missing `$env` inputs
+must be passed in `environment`; inputs already captured when the launch started
+are reused. Only declared inputs are accepted. Referenced secret definitions
+are retained privately for recovery; an existing attachment keeps its definitions
+when persistent configuration changes. Attachments use the existing credential
+manager, client pool, and explicit process-sharing settings.
+
+Attaching is lazy: it does not start or connect to the upstream server. Search
+or a call does that. A temporary server is immediately reachable through
+`search_tools` / `call_tool` and the launch-scoped shell commands; the harness's
+native MCP catalog does not change. Another launch cannot see the attachment.
+Initial scope-selected servers cannot be detached through `detach_mcp`.
+For resource leases, temporary servers follow the same daemon-side
+`mcp_directory`, `cwd`, and process-sharing rules as initially selected servers.
+Attachments survive daemon replacement, crashes and lease reattachment. They
+end with the launch, not a saved conversation: resuming a conversation in a new
+launch starts with its configured selection again.
+
+Persistent edits are separate. `update_configuration` accepts the same semantic
+changes as the management API: `define`, `undefine`, `enable`, `disable`, and
+`addPackage`. For example:
+
+```json
+{
+  "name": "update_configuration",
+  "arguments": {
+    "expected_revision": 0,
+    "changes": [
+      { "define": { "kind": "instructions", "id": "precise", "value": { "text": "Be precise." } } },
+      { "enable": { "kind": "instructions", "id": "precise", "directory": "/work/project" } }
+    ]
+  }
+}
+```
+
+A batch commits atomically or fails, including on a stale revision. YAML and
+package definitions remain read-only. Saved changes affect **future launches**;
+skills, instructions and native settings are not hot-reloaded. Saving an MCP
+server definition and attaching it are explicit separate actions.
+
+The built-in server has no credential-read tool or arbitrary file editor. Like
+shell commands, it runs with your authority and can save configuration or start
+commands you specify; see the [security model](security.md).
 
 ## Adding a server
 
@@ -49,13 +143,12 @@ agx secret login tracker
 This opens the authorization page in your browser and waits until you finish.
 `--no-browser` prints the URL instead, for example to open it on another device
 of yours; the browser must still be able to reach `127.0.0.1` on this machine,
-since that is where the login returns. Tokens are stored in the OS keychain
-(macOS Keychain, Windows Credential Manager, or the Secret Service on Linux) and
-refreshed automatically: an expired access token is renewed when the server is
+since that is where the login returns. Tokens are stored encrypted in agx’s state database, under a key held in the OS
+keychain, and refreshed automatically: an expired access token is renewed when the server is
 next used, and one the server rejects early, with 401, is renewed and the request
 sent again. `agx secret status` shows such a token as "renews on next use". When
 the authorization server refuses the refresh token itself, the secret reports
-`needs_login` with the server's error code until you log in again.
+an error message with the server's error code until you log in again.
 
 Until you log in, the server reports `needs-auth`, and tool calls from the
 harness fail with an error telling you to run the login.
@@ -109,22 +202,22 @@ agx sends the token as a bearer token. To replace it, run `secret set` again.
 ```yaml
 mcp:
   tracker:
-    url: https://tracker.example.com/mcp      # no auth: OAuth when the server asks
+    url: https://tracker.example.com/mcp # no auth: OAuth when the server asks
   sso:
     url: https://sso.example.com/mcp
-    auth: {kind: oauth, client_id: agx-cli}   # OAuth with a registered client
+    auth: { kind: oauth, client_id: agx-cli } # OAuth with a registered client
   github:
     url: https://api.githubcopilot.com/mcp/
-    auth: keychain                            # a token you store once
+    auth: keychain # a token you store once
   shared:
     url: https://shared.example.com/mcp
-    auth: !secret team-token                  # a secret defined under secrets
+    auth: !secret team-token # a secret defined under secrets
   ci:
     url: https://ci.example.com/mcp
-    auth: !env CI_TOKEN                       # or !file PATH
+    auth: !env CI_TOKEN # or !file PATH
   public:
     url: https://public.example.com/mcp
-    auth: none                                # never send credentials
+    auth: none # never send credentials
 ```
 
 - **Omitted**: the server is used without credentials until it answers with an
@@ -144,11 +237,11 @@ The secret of an inline `auth` takes the server's ID: `agx secret set github`,
 ## Testing a server
 
 ```sh
-agx mcp test tracker
+agx mcp tools tracker --all
 ```
 
-`test` connects to the server through the daemon, with its credentials, and
-lists its tools. When it fails, it says why: unreachable, needs a login, or the
+`tools <server> --all` connects to any configured server through the daemon,
+with its credentials, and lists its tools. When it fails, it says why: unreachable, needs a login, or the
 server's error. `agx doctor` tests every server selected for the current
 directory (`--all` for every server).
 
@@ -181,16 +274,16 @@ adds the raw input and output JSON Schemas.
 
 Arguments are `key=value` pairs, converted by the tool's schema:
 
-| You write | The tool receives |
-| --- | --- |
-| `limit=5` | `5` when `limit` is a number or integer, `"5"` when it is a string |
-| `exact=true` | `true` for a boolean |
-| `note=null` | `null` when the schema allows it |
-| `status=open` | `"open"`, checked against the enum |
-| `tags=a tags=b` | `["a", "b"]`; a single `tags=a` becomes `["a"]` |
-| `filter='{"owner":"me"}'` | an object or array, written as JSON |
-| `body=@notes.md` | the file's content |
-| `handle=@@me` | `"@me"`: `@@` escapes a leading `@` |
+| You write                 | The tool receives                                                  |
+| ------------------------- | ------------------------------------------------------------------ |
+| `limit=5`                 | `5` when `limit` is a number or integer, `"5"` when it is a string |
+| `exact=true`              | `true` for a boolean                                               |
+| `note=null`               | `null` when the schema allows it                                   |
+| `status=open`             | `"open"`, checked against the enum                                 |
+| `tags=a tags=b`           | `["a", "b"]`; a single `tags=a` becomes `["a"]`                    |
+| `filter='{"owner":"me"}'` | an object or array, written as JSON                                |
+| `body=@notes.md`          | the file's content                                                 |
+| `handle=@@me`             | `"@me"`: `@@` escapes a leading `@`                                |
 
 `--raw-strings` passes every value as a string, and `--args '<json>'` (or
 `--args -` to read standard input) gives the whole arguments object; `key=value`
@@ -211,13 +304,22 @@ except that binary content names its `path` and `size` instead of carrying
 base64 data:
 
 ```json
-{"version":1,"data":{"mcp_id":"tracker","tool":"search_issues","is_error":false,"content":[{"type":"text","text":"…"}],"structured_content":null}}
+{
+  "version": 1,
+  "data": {
+    "mcp_id": "tracker",
+    "tool": "search_issues",
+    "is_error": false,
+    "content": [{ "type": "text", "text": "…" }],
+    "structured_content": null
+  }
+}
 ```
 
 `call` exits 0 on success, 1 when the call fails or the tool reports an error
 (the result still prints), and 2 for malformed arguments. Errors inside the
-server have the code `mcp_failed`; a server that needs a login fails with
-`needs_login` and the `agx secret login` command to run. `--timeout` (default
+server are reported as error messages; a server that needs a login names
+the `agx secret login` command to run. `--timeout` (default
 `60s`) bounds the wait.
 
 Which servers a call reaches:
@@ -227,7 +329,7 @@ Which servers a call reaches:
   `AGX_LAUNCH_ID` and the launch grant `AGX_MCP_GRANT`, so values and
   environment inputs are the launch's.
 - Outside a launch, the servers selected for the current directory, with the
-  variables their values read taken from your shell, as `agx mcp test` does.
+  variables their values read taken from your shell, as `agx mcp tools` does.
 - With `--all`, every configured server, also inside a launch.
 
 The daemon keeps its client session to each server for about five idle
@@ -283,12 +385,12 @@ mcp:
     share: repo
 ```
 
-| `share` | One process for |
-| --- | --- |
-| `none` (default) | each harness session and each `agx mcp call` session |
-| `directory` | every launch in the same directory |
-| `repo` | every launch in the same repository, from any of its subdirectories; each worktree is a repository of its own, and outside a repository it acts like `directory` |
-| `global` | every launch, wherever it runs |
+| `share`          | One process for                                                                                                                                                  |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `none` (default) | each harness session and each `agx mcp call` session                                                                                                             |
+| `directory`      | every launch in the same directory                                                                                                                               |
+| `repo`           | every launch in the same repository, from any of its subdirectories; each worktree is a repository of its own, and outside a repository it acts like `directory` |
+| `global`         | every launch, wherever it runs                                                                                                                                   |
 
 A shared server runs in the directory or repository root it is shared for, or in
 your home directory for `global`, unless `cwd` says otherwise. It stays five
@@ -299,9 +401,10 @@ long with the mapping form:
 mcp:
   fff:
     command: [fff-mcp]
-    share: { type: repo, idle: 30m }   # idle: 0s stops it with its last session
+    share: { type: repo, idle: 30m } # idle: 0s stops it with its last session
 ```
- Launches still
+
+Launches still
 reach only the servers they select. Sessions that differ in the server's command,
 environment, secrets, `!env` values, or idle period get separate processes. A
 shared server also stops when a secret it uses changes or you log in again, and
@@ -357,8 +460,7 @@ await call("tracker", "add_comment", { key: open[0].key, body: "Investigating." 
 ```
 
 Each call resolves to `{isError, content, structuredContent, text}` and throws
-an `AgxError` with one of the JSON error codes (`invalid_request`,
-`mcp_failed`, `needs_login`, …) when it fails. A server whose ID is not a
+an `AgxError` with a diagnostic message when it fails. A server whose ID is not a
 JavaScript identifier is under `servers["team/docs"]`. Generated with `--all`,
 the client reaches every configured server, also inside a launch. Regenerate it
 when servers or their tools change.
@@ -367,33 +469,33 @@ when servers or their tools change.
 
 ```yaml
 mcp:
-  tracker:                          # remote (HTTP)
+  tracker: # remote (HTTP)
     url: https://tracker.example.com/mcp
     headers:
       X-Team: platform
       X-Api-Key: !secret tracker-key
     auth: none
 
-  fs:                               # local (stdio)
-    command: [npx, -y, '@modelcontextprotocol/server-filesystem', .]
-    cwd: ~/work                     # default: the launch directory
-    share: repo                     # one process per repository
+  fs: # local (stdio)
+    command: [npx, -y, "@modelcontextprotocol/server-filesystem", .]
+    cwd: ~/work # default: the launch directory
+    share: repo # one process per repository
     environment:
       LOG_LEVEL: warning
       API_TOKEN: !secret fs-token
 ```
 
-| Field | Applies to | Meaning |
-| --- | --- | --- |
-| `url` | remote | the server's MCP endpoint |
-| `headers` | remote | extra HTTP headers; values may use `!secret`, `!env`, `!file` |
-| `auth` | remote | credentials, see above |
-| `command` | local | the program and its arguments |
-| `cwd` | local | working directory; relative to the configuration file |
-| `environment` | local | environment variables; values may use `!secret`, `!env`, `!file` |
-| `description` | both | what the server offers, shown by `agx mcp tools` |
-| `load` | both | `native` (default): in the harness's tool list; `on_demand`: reached with `agx mcp call` only |
-| `share` | local | `none` (default), `directory`, `repo`, or `global`, or `{type, idle}`: see [Sharing a local server](#sharing-a-local-server) |
+| Field         | Applies to | Meaning                                                                                                                      |
+| ------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `url`         | remote     | the server's MCP endpoint                                                                                                    |
+| `headers`     | remote     | extra HTTP headers; values may use `!secret`, `!env`, `!file`                                                                |
+| `auth`        | remote     | credentials, see above                                                                                                       |
+| `command`     | local      | the program and its arguments                                                                                                |
+| `cwd`         | local      | working directory; relative to the configuration file                                                                        |
+| `environment` | local      | environment variables; values may use `!secret`, `!env`, `!file`                                                             |
+| `description` | both       | what the server offers, shown by `agx mcp tools`                                                                             |
+| `load`        | both       | `native` (default): in the harness's tool list; `on_demand`: reached with `agx mcp call` only                                |
+| `share`       | local      | `none` (default), `directory`, `repo`, or `global`, or `{type, idle}`: see [Sharing a local server](#sharing-a-local-server) |
 
 A server has either `url` or `command`. agx manages the `Authorization`,
 `Cookie`, `Host`, and `Mcp-Session-Id` headers itself.

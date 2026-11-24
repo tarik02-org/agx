@@ -15,8 +15,8 @@ A `sops` secret kind reads one value from a sops-encrypted file by running the
 secrets:
   github:
     kind: sops
-    file: ./secrets.yaml      # relative to the declaring fragment
-    key: github.token         # omit for dotenv/binary files read whole
+    file: ./secrets.yaml # relative to the declaring fragment
+    key: github.token # omit for dotenv/binary files read whole
 mcp:
   github:
     url: https://api.githubcopilot.com/mcp
@@ -47,8 +47,9 @@ modification time or size changes; values are never written to disk or logged.
 A missing `sops` executable, decryption failure, or missing key marks dependent
 servers `needs-auth` with sops's first error line, `agx secret status` reports the
 secret `unavailable` with that line, and a launch whose harness needs the secret
-fails naming the secret and file. Passthrough commands decrypt without the daemon,
-as for `command` and `keychain` secrets. `agx secret set` and `login` reject sops
+fails naming the secret and file. Passthrough commands resolve their configured
+environment through the daemon, including sops, command and keychain secrets
+(ADR 0028). `agx secret set` and `login` reject sops
 secrets with a hint to edit the file with `sops`.
 
 Validation fails when the file is missing: the configuration is portable only with

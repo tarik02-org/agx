@@ -4,10 +4,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 // Inputs records the state of every file and glob a load consulted.
-type Inputs struct{ entries []input }
+type Inputs struct {
+	entries        []input
+	revision       func() string
+	loadedRevision string
+}
 
 type input struct {
 	path  string
@@ -25,6 +30,9 @@ func (i *Inputs) glob(pattern string, matches []string) {
 
 // Changed reports whether any recorded input differs from its state at load time.
 func (i *Inputs) Changed() bool {
+	if i.revision != nil && i.revision() != i.loadedRevision {
+		return true
+	}
 	for _, e := range i.entries {
 		if e.glob {
 			if globState(e.path) != e.state {
@@ -37,12 +45,15 @@ func (i *Inputs) Changed() bool {
 	return false
 }
 
+// fileState includes where links lead: files of the Nix store share one modification time, so
+// a link pointed at another of them may change nothing else.
 func fileState(path string) string {
 	info, err := os.Stat(path)
 	if err != nil {
 		return "error:" + err.Error()
 	}
-	return fmt.Sprintf("%d:%d:%s", info.ModTime().UnixNano(), info.Size(), info.Mode())
+	resolved, _ := filepath.EvalSymlinks(path)
+	return fmt.Sprintf("%d:%d:%s:%s", info.ModTime().UnixNano(), info.Size(), info.Mode(), resolved)
 }
 
 func globState(pattern string) string {
@@ -65,5 +76,13 @@ func globFiles(pattern string) ([]string, error) {
 			files = append(files, match)
 		}
 	}
+	// Glob sorts each directory's names, not whole paths: agents/x sorts before agents-windows/x
+	// there, after it here. Loading sorts whole paths, and a different order would read as a change.
+	slices.Sort(files)
 	return files, nil
+}
+
+// TrackRevision includes externally loaded configuration in change detection.
+func (i *Inputs) TrackRevision(loaded string, read func() string) {
+	i.loadedRevision, i.revision = loaded, read
 }

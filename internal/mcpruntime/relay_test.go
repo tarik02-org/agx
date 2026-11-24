@@ -14,6 +14,7 @@ import (
 	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/mcpruntime"
+	"github.com/tarik02-org/agx/internal/secretstore"
 )
 
 const fakeServerEnv = "AGX_TEST_FAKE_STDIO_MCP"
@@ -112,7 +113,7 @@ func TestStdioRelaySurvivesNotificationsWithoutStream(t *testing.T) {
 		server,
 		nil,
 		nil,
-		auth.New("http://127.0.0.1:1/callback", auth.OpenStore(t.TempDir())),
+		auth.New("http://127.0.0.1:1/callback", secretstore.Open(t.TempDir())),
 		nil,
 		"",
 	)

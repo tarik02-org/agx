@@ -12,7 +12,6 @@ import (
 	"os/signal"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,15 +19,14 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/adapters/claude"
-	"github.com/tarik02-org/agx/internal/auth"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/platform"
-	"github.com/tarik02-org/agx/internal/sessions"
 )
 
 // wrapperPID holds, in a harness's environment, the PID of the agx wrapper that started it. agx
@@ -47,6 +45,38 @@ func guardEnviron(environ []string) []string {
 	return append(out, wrapperPID+"="+strconv.Itoa(os.Getpid()))
 }
 
+// environ is the caller's environment without the unset names and with the overrides. A name
+// left in twice would leave the choice to the program, and one started in place of agx reads
+// the caller's value first.
+func environ(overrides map[string]string, unset []string) []string {
+	key := func(name string) string {
+		if runtime.GOOS == "windows" {
+			return strings.ToUpper(name)
+		}
+		return name
+	}
+	removed := map[string]bool{}
+	for _, name := range unset {
+		removed[key(name)] = true
+	}
+	for name := range overrides {
+		removed[key(name)] = true
+	}
+	out := []string{}
+	for _, pair := range os.Environ() {
+		// Windows keeps per-drive working directories in entries such as "=C:=C:\dir".
+		name, _, _ := strings.Cut(pair, "=")
+		if name != "" && removed[key(name)] {
+			continue
+		}
+		out = append(out, pair)
+	}
+	for _, name := range slices.Sorted(maps.Keys(overrides)) {
+		out = append(out, name+"="+overrides[name])
+	}
+	return guardEnviron(out)
+}
+
 type ExitError struct{ Code int }
 
 func (e *ExitError) Error() string { return fmt.Sprintf("native process exited with %d", e.Code) }
@@ -54,17 +84,24 @@ func (e *ExitError) Error() string { return fmt.Sprintf("native process exited w
 // harnessConfig holds the definitions harness commands launch from. When configuration fails to
 // load, err records why and only the built-ins remain, so other commands keep working.
 type harnessConfig struct {
+	// path is the root configuration they were loaded from.
+	path   string
 	config *config.Config
 	err    error
+	// bare says no configuration was read: config holds the built-ins only.
+	bare bool
 }
 
-func loadHarnesses(path string, builtins config.Builtins) harnessConfig {
+type localConfigError struct{ error }
+
+func loadHarnesses(paths platform.Paths, builtins config.Builtins, local *config.Local) harnessConfig {
 	// Harnesses come only from configuration fragments, so packages need not be installed.
-	c, err := config.Load(path, config.Options{Builtins: builtins})
+	path := paths.Config
+	c, err := config.Load(path, config.Options{Builtins: builtins, Local: local})
 	if err != nil {
-		return harnessConfig{config: config.Bare(builtins), err: err}
+		return harnessConfig{path: path, config: config.Bare(builtins), err: err}
 	}
-	return harnessConfig{config: c}
+	return harnessConfig{path: path, config: c}
 }
 
 // runHarness launches harness name with native args. resumed is the ID of the session the launch
@@ -88,6 +125,10 @@ func runHarness(
 		)
 	}
 	if harnesses.err != nil {
+		var localErr *localConfigError
+		if errors.As(harnesses.err, &localErr) {
+			return harnesses.err
+		}
 		if _, builtin := registry.Adapter(name); !builtin {
 			return fmt.Errorf("unknown harness %s (harness definitions unavailable: %w)", name, harnesses.err)
 		}
@@ -97,9 +138,15 @@ func runHarness(
 	if err != nil {
 		return err
 	}
-	adapter, ok := registry.Adapter(h.Builtin)
+	if !h.Enabled {
+		return fmt.Errorf("harness %s is disabled; remove enabled: false from harnesses.%s to launch it", name, name)
+	}
+	if adapter, ok := registry.ClientLauncher(h.Builtin); ok {
+		return runClientHarness(ctx, paths, adapter, harnesses, h, args)
+	}
+	adapter, ok := registry.Launcher(h.Builtin)
 	if !ok {
-		return fmt.Errorf("no adapter for harness %s", h.Builtin)
+		return fmt.Errorf("harness %s has no native process launcher", h.Builtin)
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -111,28 +158,44 @@ func runHarness(
 	if err != nil {
 		return err
 	}
-	mode := adapter.Classify(args)
+	mode := adapter.Classify(h, args)
+	if mode == config.ModePassthrough && harnesses.err != nil {
+		cmd := exec.CommandContext(ctx, executable, args...)
+		cmd.Env = guardEnviron(os.Environ())
+		return passthrough(cmd)
+	}
 	if mode == config.ModePassthrough {
-		// Without a managed launch there is no daemon to ask, so secrets resolve here when their
-		// kind allows it: command, keychain, or sops.
-		harnessArgs, harnessEnv, err := h.Resolve(mode, os.LookupEnv, func(id config.ID) (string, error) {
-			secret, ok := harnesses.config.Secrets[id]
-			if !ok {
-				return "", fmt.Errorf("unknown secret %s; passthrough commands read only configuration fragments", id)
+		client, err := daemonClient(ctx, paths, autostart(harnesses.config))
+		if err != nil {
+			return err
+		}
+		inputs := map[string]string{}
+		for _, injection := range h.Injections() {
+			if name := harnesses.config.Variable(injection.Value); name != "" {
+				if value, ok := os.LookupEnv(name); ok {
+					inputs[name] = value
+				}
 			}
-			return auth.LocalValue(ctx, auth.OpenStore(paths.State), id, secret, harnesses.config.Secrets, os.LookupEnv)
-		})
+		}
+		resolved, err := client.config.ResolvePassthrough(
+			ctx,
+			connect.NewRequest(
+				&v1.ResolvePassthroughRequest{Harness: name, NativeArguments: args, EnvironmentInputs: inputs},
+			),
+		)
+		var harnessArgs []string
+		var harnessEnv map[string]string
+		if err == nil {
+			harnessArgs, harnessEnv = resolved.Msg.Arguments, resolved.Msg.Environment
+		}
+
 		if err != nil {
 			// Native commands agx does not manage, such as --help or login, still run as the
 			// definition says, so its environment must resolve for them too.
 			return fmt.Errorf("%w (%s applies its environment to every native command, --help included)", err, name)
 		}
 		cmd := exec.CommandContext(ctx, executable, append(harnessArgs, args...)...)
-		cmd.Env = os.Environ()
-		for _, key := range slices.Sorted(maps.Keys(harnessEnv)) {
-			cmd.Env = append(cmd.Env, key+"="+harnessEnv[key])
-		}
-		cmd.Env = guardEnviron(cmd.Env)
+		cmd.Env = environ(harnessEnv, nil)
 		return passthrough(cmd)
 	}
 	directory, nativeArgs, err := adapter.Directory(args, cwd)
@@ -147,31 +210,11 @@ func runHarness(
 	if info, err := os.Stat(directory); err != nil {
 		return statError("directory", directory, err)
 	} else if !info.IsDir() {
-		return codedf(codeInvalidRequest, "not a directory: %s", directory)
+		return fmt.Errorf("not a directory: %s", directory)
 	}
 	c, err := daemonClient(ctx, paths, autostart(harnesses.config))
 	if err != nil {
 		return err
-	}
-	if paths.Config != c.discovery.Config {
-		if !autostart(harnesses.config) {
-			return fmt.Errorf(
-				"the daemon serves configuration %s, not %s; rerun with --config %s, "+
-					"or run agx daemon stop and then agx --config %s daemon start",
-				c.discovery.Config,
-				paths.Config,
-				shellQuote(c.discovery.Config),
-				shellQuote(paths.Config),
-			)
-		}
-		// daemonClient replaced an idle daemon; this one still serves launches.
-		return fmt.Errorf(
-			"the daemon serves configuration %s, not %s, and keeps its launches' MCP servers; "+
-				"rerun with --config %s, or retry once its launches end (agx launch list)",
-			c.discovery.Config,
-			paths.Config,
-			shellQuote(c.discovery.Config),
-		)
 	}
 	resolved, err := c.config.Resolve(
 		ctx,
@@ -207,14 +250,14 @@ func runHarness(
 		return c.launches.PrepareLaunch(ctx, connect.NewRequest(prepare))
 	}
 	prepared, err := prepareLaunch()
-	// A restarting daemon refuses new launches; the next one, which the restart or this command
-	// starts, takes the same request.
+	// A restarting daemon refuses new launches; the next one, which whoever stopped it starts,
+	// takes the same request. Starting or replacing one here could race that start.
 	deadline := time.Now().Add(restartWait)
 	for attempt := 0; stopping(err) && time.Now().Before(deadline); attempt++ {
 		if err := pause(ctx, backoff(attempt)); err != nil {
 			return err
 		}
-		next, dialErr := daemonClient(ctx, paths, autostart(harnesses.config))
+		next, dialErr := newClient(paths)
 		if dialErr != nil {
 			continue
 		}
@@ -230,52 +273,25 @@ func runHarness(
 	}
 	cmd := exec.CommandContext(ctx, executable, p.Spawn.Arguments...)
 	cmd.Dir = p.Spawn.Directory
-	envKey := func(name string) string {
+	cmd.Env = environ(p.Spawn.EnvironmentOverrides, p.Spawn.UnsetEnvironment)
+	environment := map[string]string{}
+	for _, pair := range cmd.Env {
+		key, value, _ := strings.Cut(pair, "=")
 		if runtime.GOOS == "windows" {
-			return strings.ToUpper(name)
+			key = strings.ToUpper(key)
 		}
-		return name
+		environment[key] = value
 	}
-	removed := map[string]bool{}
-	for _, name := range p.Spawn.UnsetEnvironment {
-		removed[envKey(name)] = true
-	}
-	overrides := make([]string, 0, len(p.Spawn.EnvironmentOverrides))
-	for name := range p.Spawn.EnvironmentOverrides {
-		overrides = append(overrides, name)
-		removed[envKey(name)] = true
-	}
-	sort.Strings(overrides)
-	cmd.Env = []string{}
-	for _, pair := range os.Environ() {
-		// Windows keeps per-drive working directories in entries such as "=C:=C:\dir".
-		name, _, _ := strings.Cut(pair, "=")
-		if name != "" && removed[envKey(name)] {
-			continue
+	lookupSessionEnv := func(name string) string {
+		if runtime.GOOS == "windows" {
+			name = strings.ToUpper(name)
 		}
-		cmd.Env = append(cmd.Env, pair)
+		return environment[name]
 	}
-	for _, name := range overrides {
-		cmd.Env = append(cmd.Env, name+"="+p.Spawn.EnvironmentOverrides[name])
-	}
-	cmd.Env = guardEnviron(cmd.Env)
-	// The record lets the launcher resume this launch's sessions with the same definition.
-	records := sessions.NewRecords(paths.State)
-	record := sessions.Record{
-		Launch:    p.Launch.Id,
-		Harness:   name,
-		Builtin:   h.Builtin,
-		Directory: directory,
-		Started:   time.Now(),
-	}
-	if resumed != "" {
-		record.Sessions = []string{resumed}
-	}
-	if assigned != "" {
-		record.Sessions, record.Exact = []string{assigned}, true
-	}
-	if err := records.Start(record); err != nil {
-		ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
+	var store string
+	var storeErr error
+	if sessions, ok := registry.SessionStore(h.Builtin); ok {
+		store, storeErr = sessions.SessionRoot(cmd.Dir, lookupSessionEnv)
 	}
 	link := newLease(paths, c, &v1.AttachLaunchRequest{
 		Launch:            p.Launch,
@@ -284,19 +300,49 @@ func runHarness(
 		EnvironmentInputs: inputs,
 		NativeArguments:   nativeArgs,
 		Executable:        executable,
-	})
+	}, autostart(harnesses.config))
+	record := &v1.RecordLaunchRequest{
+		Id:        p.Launch.Id,
+		Harness:   name,
+		Builtin:   h.Builtin,
+		Store:     store,
+		Directory: directory,
+		StartedAt: timestamppb.Now(),
+	}
+	if resumed != "" {
+		record.SessionIds = []string{resumed}
+	}
+	if assigned != "" {
+		record.SessionIds, record.Exact = []string{assigned}, true
+	}
+	// A harness without a local session store, such as an ACP agent, leaves nothing to resume.
+	recorded := storeErr == nil && store != ""
+	switch {
+	case storeErr != nil:
+		ui.Diagnose(ui.Warn, "cannot locate the session store for resumption: %v", storeErr)
+	case recorded:
+		if err := link.record(ctx, record); err != nil {
+			ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
+		}
+	}
+
 	finished := make(chan struct{})
 	var wg sync.WaitGroup
 	start := func() {
 		// The daemon's expiry turns into a monotonic deadline, which a wall clock jump leaves be.
 		expires := time.Now().Add(time.Until(p.Launch.GetExpiresAt().AsTime()))
 		// Failures are retried for as long as the harness runs: a daemon may recover, or another
-		// one take the launch.
+		// one take the launch. One that keeps refusing to take it back is given up on.
 		paused := false
+		var refused refusals
 		renew := func() (bool, bool) {
 			response, err := link.renew(
 				context.Background(),
-				&v1.RenewLaunchRequest{LaunchId: p.Launch.Id, HarnessPid: uint64(cmd.Process.Pid)},
+				&v1.RenewLaunchRequest{
+					LaunchId:   p.Launch.Id,
+					HarnessPid: uint64(cmd.Process.Pid),
+					WrapperPid: uint64(os.Getpid()),
+				},
 			)
 			if err == nil {
 				if next := response.GetExpiresAt(); next != nil {
@@ -306,6 +352,7 @@ func runHarness(
 					ui.Diagnose(ui.Info, "MCP access is back.")
 					paused = false
 				}
+				refused = refusals{}
 				return true, true
 			}
 			switch code := connect.CodeOf(err); {
@@ -319,6 +366,14 @@ func runHarness(
 					ui.Warn,
 					"the daemon no longer holds this launch and refused to take it back: %v; MCP access is lost. "+
 						"Relaunch to reconnect.",
+					err,
+				)
+				return false, false
+			case refused.exhausted(err, time.Now()):
+				ui.Diagnose(
+					ui.Warn,
+					"the daemon has refused to take this launch back for %v: %v; MCP access is lost. Relaunch to reconnect.",
+					attachRefusedWait,
 					err,
 				)
 				return false, false
@@ -376,13 +431,13 @@ func runHarness(
 	threads, isThreads := adapter.(adapters.Threads)
 	relayed := make(chan error, 1)
 	var serverOutput *io.PipeWriter
-	if isThreads && threads.ThreadServer(nativeArgs) {
+	if isThreads && threads.ThreadServer(h, nativeArgs) {
 		host := &threadHost{
 			lease:   link,
 			parent:  p.Launch.Id,
 			harness: name,
 			builtin: h.Builtin,
-			records: records,
+			store:   store,
 		}
 		connect = func(cmd *exec.Cmd) (func(), error) {
 			input, err := cmd.StdinPipe()
@@ -408,6 +463,7 @@ func runHarness(
 		}
 	}
 	runErr := supervise(cmd, start, connect)
+	finishedAt := timestamppb.Now()
 	if serverOutput != nil {
 		_ = serverOutput.Close()
 		if cmd.Process != nil {
@@ -425,8 +481,11 @@ func runHarness(
 	} else if runErr != nil {
 		finish.Outcome = &v1.FinishLaunchRequest_SpawnFailure{SpawnFailure: "native process could not start"}
 	}
-	if err := records.Finish(p.Launch.Id, time.Now()); err != nil {
-		ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
+	record.FinishedAt = finishedAt
+	if recorded {
+		if err := link.record(context.Background(), record); err != nil {
+			ui.Diagnose(ui.Warn, "cannot record the launch for resumption: %v", err)
+		}
 	}
 	if err := link.call(func(c *client) error {
 		_, err := c.launches.FinishLaunch(context.Background(), withToken(finish, p.LifecycleToken))
@@ -458,10 +517,16 @@ func supervise(cmd *exec.Cmd, started func(), connect streams) error {
 	cmd.Stderr = os.Stderr
 	// The harness shares the terminal foreground process group for native job control.
 	signals := make(chan os.Signal, 8)
-	signal.Notify(signals, platform.Interrupts()...)
+	signal.Notify(signals, platform.Forwarded()...)
 	defer signal.Stop(signals)
-	if err := cmd.Start(); err != nil {
+	untie, err := platform.StartTied(cmd)
+	if untie == nil {
 		return err
+	}
+	// The harness exited on its own by the time supervise returns; what it left keeps running.
+	defer untie()
+	if err != nil {
+		ui.Diagnose(ui.Warn, "the native process would outlive agx if terminated: %v", err)
 	}
 	if connected != nil {
 		connected()

@@ -5,12 +5,12 @@ package pi
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/securefs"
 )
 
 const (
@@ -41,7 +41,7 @@ func (a Adapter) Executable(configured string) (string, error) {
 	return adapters.FindExecutable(a.Name(), configured)
 }
 
-func (Adapter) Classify(args []string) string {
+func (Adapter) Classify(_ config.ResolvedHarness, args []string) string {
 	if adapters.Probe(args, "-v") {
 		return config.ModePassthrough
 	}
@@ -94,6 +94,11 @@ func (Adapter) Directory(args []string, cwd string) (string, []string, error) {
 }
 
 func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
+	var err error
+	l.Artifacts, err = l.Materialize()
+	if err != nil {
+		return nil, err
+	}
 	prefix := []string{}
 	skills := adapters.SkillNames(l.Snapshot)
 	for _, r := range l.Snapshot.Resources {
@@ -112,11 +117,11 @@ func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
 		script := fmt.Sprintf(extension, b, adapters.GrantEnvironment)
 		// Endpoint URLs belong to a launch, so this extension is never a shared artifact.
 		launchDir := l.LaunchDirectory()
-		if err := securefs.EnsureDir(launchDir); err != nil {
+		if err := os.MkdirAll(launchDir, 0o700); err != nil {
 			return nil, err
 		}
 		path := filepath.Join(launchDir, "mcp-extension.mjs")
-		if err := securefs.Write(path, []byte(script), 0o600); err != nil {
+		if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
 			return nil, err
 		}
 		prefix = append(prefix, "--extension", path)

@@ -10,28 +10,26 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/spf13/cobra"
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 
-	"go.yaml.in/yaml/v4"
+	"github.com/spf13/cobra"
 
 	"github.com/tarik02-org/agx/internal/cli/prompt"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/configedit"
-	"github.com/tarik02-org/agx/internal/platform"
 )
 
-func skillCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func skillCommand(a *app) *cobra.Command {
 	command := &cobra.Command{Use: "skill", Short: "Add, list, and remove skills", GroupID: "config"}
-	remove := removeCommand(paths, builtins, config.KindSkills)
+	remove := removeCommand(a, config.KindSkills)
 	remove.Use = "remove <id | package-id>"
 	remove.Short = "Remove a skill definition, or a package that skill add declared with its skills"
 	remove.Example = "  agx skill remove deploy\n" +
 		"  agx skill remove anthropics      # the package agx skill add anthropics/skills declared"
 	command.AddCommand(
-		skillAddCommand(paths, builtins),
-		listCommand(paths, builtins, config.KindSkills),
+		skillAddCommand(a),
+		listCommand(a, config.KindSkills),
 		remove,
 	)
 	return command
@@ -45,6 +43,7 @@ func (s *session) removePackage(id config.ID, force bool) error {
 	if err != nil {
 		return err
 	}
+	s.undefine(config.KindPackages, string(id))
 	s.result.Removed = append(s.result.Removed, definitionID{Kind: config.KindPackages, ID: string(id)})
 	for _, r := range disabled {
 		s.result.Disabled = append(s.result.Disabled, definitionID{Kind: r.Kind, ID: string(r.ID)})
@@ -77,7 +76,7 @@ func localSource(arg string) (configedit.Source, error) {
 	if info, err := os.Stat(abs); err != nil {
 		return configedit.Source{}, statError("skill directory", arg, err)
 	} else if !info.IsDir() {
-		return configedit.Source{}, codedf(codeInvalidRequest, "%s is not a directory", arg)
+		return configedit.Source{}, fmt.Errorf("%s is not a directory", arg)
 	}
 	return configedit.Source{Local: abs}, nil
 }
@@ -91,7 +90,7 @@ type skillChoice struct {
 // picker on a terminal.
 func (s *session) choose(found []config.FoundSkill, choice skillChoice, where string) ([]config.FoundSkill, error) {
 	if len(found) == 0 {
-		return nil, codedf(codeNotFound, "no SKILL.md found in %s", where)
+		return nil, fmt.Errorf("no SKILL.md found in %s", where)
 	}
 	names := []string{}
 	for _, f := range found {
@@ -105,9 +104,7 @@ func (s *session) choose(found []config.FoundSkill, choice skillChoice, where st
 		for _, name := range choice.names {
 			i := slices.Index(names, name)
 			if i < 0 {
-				return nil, codedf(
-					codeNotFound,
-					"%s has no skill %s; it has %s",
+				return nil, fmt.Errorf("%s has no skill %s; it has %s",
 					where,
 					name,
 					strings.Join(names, ", "),
@@ -137,16 +134,7 @@ func (s *session) choose(found []config.FoundSkill, choice skillChoice, where st
 	return out, nil
 }
 
-// writtenPath spells a path for a fragment: relative to the fragment's directory when inside it,
-// else under ~/, else absolute.
-func writtenPath(file, path string) string {
-	if rel, err := filepath.Rel(filepath.Dir(file), path); err == nil && filepath.IsLocal(rel) {
-		return "./" + filepath.ToSlash(rel)
-	}
-	return configedit.HomeRelative(path)
-}
-
-func skillAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func skillAddCommand(a *app) *cobra.Command {
 	var flags editFlags
 	var choice skillChoice
 	var ref, subdir, packageID, githubBase string
@@ -159,7 +147,7 @@ func skillAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 			"  agx skill add anthropics/skills --skill pdf --skill docx",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := newSession(cmd.Context(), *paths, *builtins, flags.yes)
+			s, err := a.newSession(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -176,15 +164,11 @@ func skillAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 			if err != nil {
 				return err
 			}
-			file, err := s.definitionFile(flags.file)
-			if err != nil {
-				return err
-			}
 			if source.Local != "" {
 				if ref != "" || subdir != "" || packageID != "" {
 					return &usageError{fmt.Errorf("--ref, --path, and --package apply to Git sources")}
 				}
-				return s.addLocalSkills(source.Local, file, choice, flags)
+				return s.addLocalSkills(source.Local, choice, flags)
 			}
 			source.Ref = cmp.Or(ref, source.Ref)
 			source.Subdir = cmp.Or(subdir, source.Subdir)
@@ -204,7 +188,7 @@ func skillAddCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 }
 
 // addLocalSkills defines path skills for the chosen SKILL.md directories below dir.
-func (s *session) addLocalSkills(dir, file string, choice skillChoice, flags editFlags) error {
+func (s *session) addLocalSkills(dir string, choice skillChoice, flags editFlags) error {
 	found, err := config.FindSkills(dir)
 	if err != nil {
 		return err
@@ -216,7 +200,7 @@ func (s *session) addLocalSkills(dir, file string, choice skillChoice, flags edi
 	for _, skill := range chosen {
 		id := string(skill.ID)
 		path := filepath.Join(dir, filepath.FromSlash(skill.Path))
-		if err := s.define(config.KindSkills, id, file, edit.Mapping("path", writtenPath(file, path))); err != nil {
+		if err := s.define(config.KindSkills, id, map[string]any{"path": configedit.HomeRelative(path)}); err != nil {
 			return err
 		}
 		if err := s.enableAfterDefine(config.KindSkills, id, flags); err != nil {
@@ -251,13 +235,21 @@ func (s *session) addPackageSkills(
 	if declared {
 		s.result.Defined = append(s.result.Defined, definitionID{Kind: config.KindPackages, ID: string(id)})
 	}
+	s.changes = append(
+		s.changes,
+		&v1.ConfigChange{
+			Change: &v1.ConfigChange_AddPackage{
+				AddPackage: &v1.PackageSource{Id: string(id), Git: source.Git, Ref: source.Ref, Subdir: source.Subdir},
+			},
+		},
+	)
 	progress("Fetching " + source.Git)
 	if err := s.Install(s.ctx); err != nil {
 		return err
 	}
 	c, err := s.Load()
 	if err != nil {
-		return codedf(codeConfigInvalid, "package %s: %w", id, err)
+		return fmt.Errorf("package %s: %w", id, err)
 	}
 	found := []config.FoundSkill{}
 	prefix := string(id) + "/"
@@ -313,13 +305,4 @@ func skillRows(c *config.Config) ([]string, [][]string, any) {
 		rows = append(rows, []string{out.ID(string(id)), kind, from, out.Path(location(c, skill.Source))})
 	}
 	return []string{"ID", "KIND", "FROM", "SOURCE"}, rows, c.Skills
-}
-
-// textNode keeps multi-line text readable as a literal block.
-func textNode(text string) *yaml.Node {
-	n := edit.Scalar(text)
-	if strings.Contains(text, "\n") {
-		n.Style = yaml.LiteralStyle
-	}
-	return n
 }

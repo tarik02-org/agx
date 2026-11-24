@@ -60,7 +60,7 @@ formatted and commented as the CLI leaves them, or none if a file changed since
 the diff. New definitions go to the only writable fragment; with several, the review asks
 which one, or for a new file. Files that are links, such as those Home Manager manages, and
 definitions from packages are shown read-only. See
-[ADR 0028](adr/0028-web-ui.md) for the design.
+[ADR 0034](adr/0034-web-ui.md) for the design.
 
 ```sh
 agx ui            # opens the UI in your browser, signed in and scoped to this directory

@@ -30,17 +30,19 @@ func (s *Server) GetConfiguration(
 	if canonical, err := filepath.EvalSymlinks(home); err == nil {
 		home = canonical
 	}
-	out := &v1.GetConfigurationResponse{Root: c.Root, Home: home}
+	out := &v1.GetConfigurationResponse{Root: c.Root, Home: home, Revision: c.Local.Revision, Overlays: c.Files}
 	for _, name := range c.HarnessNames() {
 		h, err := c.Harness(name)
 		if err != nil {
 			continue
 		}
 		out.Harnesses = append(out.Harnesses, &v1.ConfiguredHarness{
-			Name:    name,
-			Builtin: h.Builtin,
-			Base:    c.Harnesses[name].Base,
-			Hidden:  h.Hidden,
+			Name:        name,
+			Builtin:     h.Builtin,
+			Base:        c.Harnesses[name].Base,
+			Hidden:      h.Hidden,
+			DisplayName: h.DisplayName,
+			Disabled:    !h.Enabled,
 		})
 	}
 	for _, scope := range c.Scopes {
@@ -49,32 +51,7 @@ func (s *Server) GetConfiguration(
 		}
 	}
 	slices.Sort(out.ScopeDirectories)
-	for _, path := range c.Files {
-		out.Files = append(out.Files, configurationFile(path))
-	}
 	return connect.NewResponse(out), nil
-}
-
-// configurationFile says whether agx may edit a configuration file: not through a symlink,
-// which belongs to whatever made it, and not without write permission.
-func configurationFile(path string) *v1.ConfigurationFile {
-	file := &v1.ConfigurationFile{Path: path}
-	info, err := os.Lstat(path)
-	if err != nil {
-		file.ReadOnly = true
-		return file
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		file.ReadOnly = true
-		file.LinkTarget, _ = os.Readlink(path)
-		return file
-	}
-	if f, err := os.OpenFile(path, os.O_WRONLY, 0); err != nil {
-		file.ReadOnly = true
-	} else {
-		_ = f.Close()
-	}
-	return file
 }
 
 func (s *Server) CompleteDirectory(
@@ -134,6 +111,7 @@ func harnessSettings(snapshot *config.Snapshot) []*v1.HarnessSetting {
 			ValueJson: string(value),
 			Source: &v1.SourceLocation{
 				Path:   at.Path,
+				Local:  at.Local,
 				Line:   uint32(at.Line),
 				Column: uint32(at.Column),
 			}, //nolint:gosec // lines fit

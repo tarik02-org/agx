@@ -22,7 +22,7 @@ type threadParent struct {
 	launch  *launch
 	target  adapters.Target
 	config  *config.Config
-	adapter adapters.Adapter
+	adapter adapters.Launcher
 	threads adapters.Threads
 }
 
@@ -46,13 +46,19 @@ func (s *Server) threadParent(id string) (threadParent, error) {
 	if !running {
 		return threadParent{}, rpcError(connect.CodeFailedPrecondition, "launch has ended or is a thread launch")
 	}
+	if l.view.Kind == v1.Launch_KIND_RESOURCES {
+		return threadParent{}, rpcError(connect.CodeFailedPrecondition, "resource leases serve no native threads")
+	}
 	harness, err := c.Harness(l.view.Harness)
 	if err != nil {
 		return threadParent{}, rpcError(connect.CodeFailedPrecondition, err.Error())
 	}
-	adapter, ok := s.adapters.Adapter(harness.Builtin)
+	adapter, ok := s.adapters.Launcher(harness.Builtin)
 	if !ok {
-		return threadParent{}, rpcError(connect.CodeInternal, "no adapter for harness "+harness.Builtin)
+		return threadParent{}, rpcError(
+			connect.CodeFailedPrecondition,
+			"harness "+harness.Builtin+" has no process launcher",
+		)
 	}
 	threads, ok := adapter.(adapters.Threads)
 	if !ok {
@@ -72,9 +78,12 @@ func (s *Server) ResolveThread(
 	if err != nil {
 		return nil, err
 	}
-	snapshot, err := p.config.Resolve(req.Msg.Directory, p.launch.view.Harness)
+	snapshot, err := s.resolve(p.config, req.Msg.Directory, p.launch.view.Harness)
 	if err != nil {
 		return nil, rpcError(connect.CodeFailedPrecondition, "directory cannot be resolved")
+	}
+	if req.Msg.SnapshotOnly {
+		return connect.NewResponse(&v1.ResolveThreadResponse{Snapshot: resolveMessage(snapshot).Snapshot}), nil
 	}
 	// Without endpoints or a grant, the plan carries only what the directory selects.
 	plan, err := adapters.BuildThread(
@@ -105,7 +114,7 @@ func (s *Server) PrepareThreadLaunch(
 	if err != nil {
 		return nil, err
 	}
-	snapshot, err := p.config.Resolve(msg.Directory, p.launch.view.Harness)
+	snapshot, err := s.takeResolved(p.config, msg.Directory, p.launch.view.Harness, msg.SnapshotId)
 	if err != nil {
 		return nil, rpcError(connect.CodeFailedPrecondition, "directory cannot be resolved")
 	}
@@ -122,7 +131,7 @@ func (s *Server) PrepareThreadLaunch(
 	parentCtx := p.launch.ctx
 	s.mu.Unlock()
 	launchCtx, cancel := context.WithCancel(parentCtx)
-	endpoints, nativeEndpoints := s.endpoints(launchCtx, id, snapshot, inputs)
+	endpoints, nativeEndpoints := s.endpoints(launchCtx, id, snapshot, inputs, snapshot.Directory)
 	discard := func() {
 		cancel()
 		s.release(id, endpoints)
@@ -151,6 +160,7 @@ func (s *Server) PrepareThreadLaunch(
 	}
 	s.mu.Lock()
 	view := &v1.Launch{
+		Kind:           v1.Launch_KIND_PROCESS,
 		Id:             id,
 		SnapshotId:     snapshot.ID,
 		Directory:      snapshot.Directory,
@@ -182,6 +192,7 @@ func (s *Server) PrepareThreadLaunch(
 		endpoints: endpoints,
 		snapshot:  snapshot,
 		target:    p.target,
+		inputs:    inputs,
 		created:   time.Now(),
 		lease:     p.launch.lease,
 	}); err != nil {

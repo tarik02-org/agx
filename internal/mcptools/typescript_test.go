@@ -1,7 +1,6 @@
 package mcptools_test
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -86,10 +85,7 @@ func TestClient(t *testing.T) {
 		}
 		if body["tool"] == "ping" {
 			w.WriteHeader(http.StatusBadRequest)
-			// ErrorDetail{reason: REASON_MCP_FAILED}, unpadded as Connect sends it.
-			value := base64.RawStdEncoding.EncodeToString([]byte{0x08, 11})
-			_, _ = io.WriteString(w, `{"code":"failed_precondition","message":"MCP server tracker: exploded",`+
-				`"details":[{"type":"agx.v1.ErrorDetail","value":"`+value+`"}]}`)
+			_, _ = io.WriteString(w, `{"code":"failed_precondition","message":"MCP server tracker: exploded"}`)
 			return
 		}
 		_, _ = io.WriteString(w, `{"contentJson":"[{\"type\":\"text\",\"text\":\"found 2\"}]",`+
@@ -107,7 +103,7 @@ console.log(JSON.stringify([result.isError, result.text, result.structuredConten
 try {
   await call("tracker", "ping");
 } catch (error) {
-  console.log(JSON.stringify([error instanceof AgxError, error.code, error.message]));
+  console.log(JSON.stringify([error instanceof AgxError, error.message]));
 }
 `)
 	run := func(env ...string) string {
@@ -121,7 +117,7 @@ try {
 		}
 		return string(out)
 	}
-	want := "[false,\"found 2\",{\"total\":2}]\n[true,\"mcp_failed\",\"MCP server tracker: exploded\"]\n"
+	want := "[false,\"found 2\",{\"total\":2}]\n[true,\"MCP server tracker: exploded\"]\n"
 	if got := run(); got != want {
 		t.Fatalf("outside a launch:\n got %s\nwant %s", got, want)
 	}

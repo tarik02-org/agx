@@ -1,16 +1,24 @@
 package platform
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"iter"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"github.com/adrg/xdg"
 )
 
-// Paths locates agx's files. Runtime holds the daemon's discovery, lock, and log under the
-// cache; State holds data worth keeping when the cache is wiped, such as launch records.
-type Paths struct{ Config, Cache, Runtime, State string }
+// Paths locates agx's files. Runtime holds discovery, lock, and log files under the cache;
+// State holds data worth keeping when the cache is wiped.
+type Paths struct {
+	Config, Cache, Runtime, State string
+	canonicalConfig               string
+}
 
 func DefaultPaths() (Paths, error) {
 	p := Paths{Config: filepath.Join(xdg.ConfigHome, "agx", "agx.yaml"), Cache: defaultCache()}
@@ -28,7 +36,7 @@ func DefaultPaths() (Paths, error) {
 			)
 		}
 	}
-	return p, p.Derive()
+	return p, nil
 }
 
 func defaultCache() string { return filepath.Join(xdg.CacheHome, "agx") }
@@ -37,9 +45,23 @@ func defaultCache() string { return filepath.Join(xdg.CacheHome, "agx") }
 // default keeps its state beside it, so a run isolated by AGX_CACHE or --cache stays isolated.
 // It also spells Config as the filesystem does, so that a daemon and its callers, comparing
 // configuration roots, do not tell apart spellings of one file (case, or a Windows short name).
+// A root that is a link keeps its own path: see CanonicalFile.
 func (p *Paths) Derive() error {
-	p.Config = ActualCase(filepath.Clean(p.Config))
-	p.Runtime = filepath.Join(p.Cache, "runtime")
+	cache, err := filepath.Abs(p.Cache)
+	if err != nil {
+		return err
+	}
+	p.Cache = cache
+	// Canonicalization walks the filesystem; repeated derivation of one root need not.
+	if p.Config != p.canonicalConfig {
+		p.Config, err = CanonicalFile(p.Config)
+		if err != nil {
+			return err
+		}
+		p.canonicalConfig = p.Config
+	}
+	hash := sha256.Sum256([]byte(p.Config))
+	p.Runtime = filepath.Join(p.Cache, "runtime", hex.EncodeToString(hash[:6]))
 	switch value := os.Getenv("AGX_STATE"); {
 	case value != "":
 		if !filepath.IsAbs(value) {
@@ -52,4 +74,68 @@ func (p *Paths) Derive() error {
 		p.State = filepath.Join(xdg.StateHome, "agx")
 	}
 	return nil
+}
+
+func Canonical(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	// Resolve the existing prefix as scopes may name directories not created yet, or
+	// ones this process may not read, such as a home directory seen from a build sandbox.
+	suffix := []string{}
+	for {
+		real, err := filepath.EvalSymlinks(abs)
+		if err == nil {
+			real = ActualCase(real)
+			for i := len(suffix) - 1; i >= 0; i-- {
+				real = filepath.Join(real, suffix[i])
+			}
+			return filepath.Clean(real), nil
+		}
+		if !os.IsNotExist(err) && !os.IsPermission(err) {
+			return "", err
+		}
+		parent := filepath.Dir(abs)
+		if parent == abs {
+			return "", err
+		}
+		suffix = append(suffix, filepath.Base(abs))
+		abs = parent
+	}
+}
+
+// CanonicalFile spells a file's directory canonically and keeps the file's own name, without
+// following a link the file is. A configuration root linked from elsewhere, such as the Nix
+// store, stays one root whatever it points at, with its fragments beside the link.
+func CanonicalFile(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	dir, err := Canonical(filepath.Dir(abs))
+	if err != nil {
+		return "", err
+	}
+	return ActualCase(filepath.Join(dir, filepath.Base(abs))), nil
+}
+
+// PathCandidates yields PATH positions and executable candidates in search order.
+func PathCandidates(name string) iter.Seq2[int, string] {
+	return func(yield func(int, string) bool) {
+		extensions := []string{""}
+		if runtime.GOOS == "windows" {
+			extensions = strings.Split(os.Getenv("PATHEXT"), ";")
+		}
+		for i, dir := range filepath.SplitList(os.Getenv("PATH")) {
+			if dir == "" {
+				continue
+			}
+			for _, ext := range extensions {
+				if !yield(i, filepath.Join(dir, name+ext)) {
+					return
+				}
+			}
+		}
+	}
 }

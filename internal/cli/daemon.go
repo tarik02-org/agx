@@ -5,57 +5,55 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
-	"os/signal"
 	"time"
 
-	"github.com/charmbracelet/x/term"
+	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/durationpb"
 
-	"github.com/tarik02-org/agx/internal/adapters"
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/daemon"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
-// replaceTimeout bounds waiting for a daemon of another build to exit; it first lets requests
-// in flight finish for its own grace period, which this build does not know.
-const replaceTimeout = time.Minute
+var errManagedDaemon = errors.New("daemon is externally managed; start it with its service manager")
 
-// serveDaemon serves the daemon in this process. The first stop signal shuts it down
-// gracefully, keeping its launches for the next daemon; a second one shuts it down at once.
-func serveDaemon(
-	ctx context.Context,
-	paths platform.Paths,
-	registry adapters.Registry,
-	builtins config.Builtins,
-) error {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, platform.StopSignals(term.IsTerminal(os.Stdin.Fd()))...)
-	defer signal.Stop(signals)
-	ctx, cancel := context.WithCancel(ctx)
+// externallyManaged checks both the running daemon's ownership and root bootstrap policy.
+// Checking at the spawn itself also covers recovery and explicit lifecycle commands.
+func externallyManaged(paths platform.Paths) (bool, error) {
+	if d, err := control.ReadDiscovery(paths); err == nil && d.Managed {
+		return true, nil
+	}
+	root, err := config.ReadRoot(paths.Config, config.Builtins{})
+	return root.Daemon.Managed, err
+}
+
+// awaitManaged waits for a ready daemon other than previous, without spawning or waiting for a
+// free startup lock: a supervisor may acquire that lock again before the client observes it.
+func awaitManaged(ctx context.Context, paths platform.Paths, previous string, timeout time.Duration) (*client, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	stop := make(chan struct{})
-	go func() {
-		select {
-		case <-signals:
-		case <-ctx.Done():
-			return
+	for {
+		c, err := newClient(paths)
+		if err == nil && c.discovery.Managed && c.discovery.InstanceID != previous {
+			probe, stop := context.WithTimeout(ctx, probeTimeout)
+			_, err = c.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{ProbeOnly: true}))
+			stop()
+			if err == nil {
+				return c, nil
+			}
 		}
-		close(stop)
-		select {
-		case <-signals:
-			cancel()
-		case <-ctx.Done():
+		if err := pause(ctx, 100*time.Millisecond); err != nil {
+			return nil, fmt.Errorf("external service manager did not provide a ready daemon: %w", err)
 		}
-	}()
-	return daemon.Serve(ctx, stop, paths, registry, builtins)
+	}
 }
 
 // daemonGone reports whether err says no daemon answers: none runs, or it just exited.
 func daemonGone(err error) bool {
 	var dial *net.OpError
-	return errors.Is(err, daemon.ErrUnavailable) || errors.As(err, &dial) && dial.Op == "dial"
+	return errors.Is(err, control.ErrUnavailable) || errors.As(err, &dial) && dial.Op == "dial"
 }
 
 // daemonRestarted is the daemon restart document.
@@ -68,36 +66,53 @@ type daemonRestarted struct {
 	KeptLaunches int `json:"kept_launches"`
 }
 
-// restartDaemon stops the running daemon, if any, waits until it exited, and starts one of this
-// build with the same root, unless keepRoot is false and paths names another. grace replaces the
-// daemon's shutdown grace period when positive.
+// restartDaemon stops the running daemon, if any, of any version, waits until it exited, and
+// starts one of this agx for the selected configuration. grace replaces the daemon's
+// shutdown grace period when positive.
 func restartDaemon(
 	ctx context.Context,
 	paths platform.Paths,
-	builtins config.Builtins,
-	keepRoot, force bool,
+	force bool,
 	grace time.Duration,
 ) (daemonRestarted, error) {
-	result := daemonRestarted{Version: daemon.Version}
-	c, err := newAnyVersionClient(paths)
+	result := daemonRestarted{Version: control.Version}
+	managed, err := externallyManaged(paths)
+	if err != nil {
+		return result, err
+	}
+	c, err := newClient(paths)
+	if managed {
+		if err != nil {
+			return result, errManagedDaemon
+		}
+		request := &v1.StopRequest{Force: force, Restart: true}
+		if grace > 0 {
+			request.Grace = durationpb.New(grace)
+		}
+		response, err := c.runtime.Stop(ctx, connect.NewRequest(request))
+		if err != nil {
+			return result, err
+		}
+		result.Stopped, result.KeptLaunches = true, int(response.Msg.KeptLaunches)
+		next, err := awaitManaged(ctx, paths, c.discovery.InstanceID, exitTimeout(grace)+restartWait)
+		if err != nil {
+			return result, err
+		}
+		result.Started, result.Version = true, next.discovery.Version
+		return result, nil
+	}
 	if err == nil {
 		result.KeptLaunches, err = stopDaemon(ctx, c, force, grace)
 	}
 	switch {
 	case err == nil:
 		result.Stopped = true
-		if keepRoot && c.discovery.Config != "" {
-			paths.Config = c.discovery.Config
-		}
+
 	case !daemonGone(err):
 		return result, err
 	}
 	if result.Stopped {
-		if grace <= 0 {
-			grace = daemon.ShutdownGrace
-		}
-		// Shutting down also lets MCP servers exit, which takes a few seconds more.
-		if err := awaitExit(ctx, paths, grace+startupTimeout); err != nil {
+		if err := awaitExit(ctx, paths, exitTimeout(grace)); err != nil {
 			return result, err
 		}
 	}
@@ -109,12 +124,12 @@ func restartDaemon(
 }
 
 // printDaemonStarted reports daemon start; started is false when a daemon already ran.
-func printDaemonStarted(started bool, logPath string) error {
+func printDaemonStarted(started bool, logPath, version string) error {
 	document := struct {
 		Started bool   `json:"started"`
 		Version string `json:"version"`
 		Log     string `json:"log"`
-	}{started, daemon.Version, logPath}
+	}{started, version, logPath}
 	return emit(document, func() error {
 		out := ui.Stdout
 		message := "Daemon started."

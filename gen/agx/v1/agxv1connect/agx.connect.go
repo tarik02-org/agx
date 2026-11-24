@@ -27,6 +27,10 @@ const (
 	PackageServiceName = "agx.v1.PackageService"
 	// LaunchServiceName is the fully-qualified name of the LaunchService service.
 	LaunchServiceName = "agx.v1.LaunchService"
+	// ResourceServiceName is the fully-qualified name of the ResourceService service.
+	ResourceServiceName = "agx.v1.ResourceService"
+	// SessionProviderServiceName is the fully-qualified name of the SessionProviderService service.
+	SessionProviderServiceName = "agx.v1.SessionProviderService"
 	// RuntimeServiceName is the fully-qualified name of the RuntimeService service.
 	RuntimeServiceName = "agx.v1.RuntimeService"
 	// UIServiceName is the fully-qualified name of the UIService service.
@@ -43,6 +47,15 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// ConfigurationServiceGetLocalConfigurationProcedure is the fully-qualified name of the
+	// ConfigurationService's GetLocalConfiguration RPC.
+	ConfigurationServiceGetLocalConfigurationProcedure = "/agx.v1.ConfigurationService/GetLocalConfiguration"
+	// ConfigurationServiceResolvePassthroughProcedure is the fully-qualified name of the
+	// ConfigurationService's ResolvePassthrough RPC.
+	ConfigurationServiceResolvePassthroughProcedure = "/agx.v1.ConfigurationService/ResolvePassthrough"
+	// ConfigurationServiceResolveClientCommandProcedure is the fully-qualified name of the
+	// ConfigurationService's ResolveClientCommand RPC.
+	ConfigurationServiceResolveClientCommandProcedure = "/agx.v1.ConfigurationService/ResolveClientCommand"
 	// ConfigurationServiceValidateProcedure is the fully-qualified name of the ConfigurationService's
 	// Validate RPC.
 	ConfigurationServiceValidateProcedure = "/agx.v1.ConfigurationService/Validate"
@@ -64,12 +77,12 @@ const (
 	// ConfigurationServiceReadFileProcedure is the fully-qualified name of the ConfigurationService's
 	// ReadFile RPC.
 	ConfigurationServiceReadFileProcedure = "/agx.v1.ConfigurationService/ReadFile"
-	// ConfigurationServicePlanChangesProcedure is the fully-qualified name of the
-	// ConfigurationService's PlanChanges RPC.
-	ConfigurationServicePlanChangesProcedure = "/agx.v1.ConfigurationService/PlanChanges"
-	// ConfigurationServiceApplyChangesProcedure is the fully-qualified name of the
-	// ConfigurationService's ApplyChanges RPC.
-	ConfigurationServiceApplyChangesProcedure = "/agx.v1.ConfigurationService/ApplyChanges"
+	// ConfigurationServiceWriteResourceFileProcedure is the fully-qualified name of the
+	// ConfigurationService's WriteResourceFile RPC.
+	ConfigurationServiceWriteResourceFileProcedure = "/agx.v1.ConfigurationService/WriteResourceFile"
+	// ConfigurationServiceUpdateConfigurationProcedure is the fully-qualified name of the
+	// ConfigurationService's UpdateConfiguration RPC.
+	ConfigurationServiceUpdateConfigurationProcedure = "/agx.v1.ConfigurationService/UpdateConfiguration"
 	// PackageServiceInstallProcedure is the fully-qualified name of the PackageService's Install RPC.
 	PackageServiceInstallProcedure = "/agx.v1.PackageService/Install"
 	// PackageServicePreviewSourceProcedure is the fully-qualified name of the PackageService's
@@ -84,6 +97,9 @@ const (
 	// PackageServiceInspectSourceProcedure is the fully-qualified name of the PackageService's
 	// InspectSource RPC.
 	PackageServiceInspectSourceProcedure = "/agx.v1.PackageService/InspectSource"
+	// LaunchServiceRecordLaunchProcedure is the fully-qualified name of the LaunchService's
+	// RecordLaunch RPC.
+	LaunchServiceRecordLaunchProcedure = "/agx.v1.LaunchService/RecordLaunch"
 	// LaunchServicePrepareLaunchProcedure is the fully-qualified name of the LaunchService's
 	// PrepareLaunch RPC.
 	LaunchServicePrepareLaunchProcedure = "/agx.v1.LaunchService/PrepareLaunch"
@@ -105,15 +121,30 @@ const (
 	// LaunchServiceAttachLaunchProcedure is the fully-qualified name of the LaunchService's
 	// AttachLaunch RPC.
 	LaunchServiceAttachLaunchProcedure = "/agx.v1.LaunchService/AttachLaunch"
+	// ResourceServiceResolveResourcesProcedure is the fully-qualified name of the ResourceService's
+	// ResolveResources RPC.
+	ResourceServiceResolveResourcesProcedure = "/agx.v1.ResourceService/ResolveResources"
+	// ResourceServicePrepareResourcesProcedure is the fully-qualified name of the ResourceService's
+	// PrepareResources RPC.
+	ResourceServicePrepareResourcesProcedure = "/agx.v1.ResourceService/PrepareResources"
+	// ResourceServiceWatchResourcesProcedure is the fully-qualified name of the ResourceService's
+	// WatchResources RPC.
+	ResourceServiceWatchResourcesProcedure = "/agx.v1.ResourceService/WatchResources"
+	// SessionProviderServicePublishSessionsProcedure is the fully-qualified name of the
+	// SessionProviderService's PublishSessions RPC.
+	SessionProviderServicePublishSessionsProcedure = "/agx.v1.SessionProviderService/PublishSessions"
+	// SessionProviderServiceConnectSessionSourceProcedure is the fully-qualified name of the
+	// SessionProviderService's ConnectSessionSource RPC.
+	SessionProviderServiceConnectSessionSourceProcedure = "/agx.v1.SessionProviderService/ConnectSessionSource"
 	// RuntimeServiceGetRuntimeProcedure is the fully-qualified name of the RuntimeService's GetRuntime
 	// RPC.
 	RuntimeServiceGetRuntimeProcedure = "/agx.v1.RuntimeService/GetRuntime"
 	// RuntimeServiceWatchRuntimeProcedure is the fully-qualified name of the RuntimeService's
 	// WatchRuntime RPC.
 	RuntimeServiceWatchRuntimeProcedure = "/agx.v1.RuntimeService/WatchRuntime"
-	// RuntimeServiceTestMcpServerProcedure is the fully-qualified name of the RuntimeService's
-	// TestMcpServer RPC.
-	RuntimeServiceTestMcpServerProcedure = "/agx.v1.RuntimeService/TestMcpServer"
+	// RuntimeServiceListSessionsProcedure is the fully-qualified name of the RuntimeService's
+	// ListSessions RPC.
+	RuntimeServiceListSessionsProcedure = "/agx.v1.RuntimeService/ListSessions"
 	// RuntimeServiceListToolsProcedure is the fully-qualified name of the RuntimeService's ListTools
 	// RPC.
 	RuntimeServiceListToolsProcedure = "/agx.v1.RuntimeService/ListTools"
@@ -146,23 +177,27 @@ const (
 
 // ConfigurationServiceClient is a client for the agx.v1.ConfigurationService service.
 type ConfigurationServiceClient interface {
+	// Managed definitions and package locks for local YAML validation and edit previews.
+	GetLocalConfiguration(context.Context, *connect.Request[v1.GetLocalConfigurationRequest]) (*connect.Response[v1.GetLocalConfigurationResponse], error)
+	// Resolve native passthrough arguments and environment without creating a managed launch.
+	ResolvePassthrough(context.Context, *connect.Request[v1.ResolvePassthroughRequest]) (*connect.Response[v1.ResolvePassthroughResponse], error)
+	// Resolve client harness arguments and environment; resource delivery belongs to its plugin.
+	ResolveClientCommand(context.Context, *connect.Request[v1.ResolveClientCommandRequest]) (*connect.Response[v1.ResolveClientCommandResponse], error)
 	Validate(context.Context, *connect.Request[v1.ValidateRequest]) (*connect.Response[v1.ValidateResponse], error)
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
 	// The configuration as loaded, for browsing it: harnesses, scope directories, and files.
 	GetConfiguration(context.Context, *connect.Request[v1.GetConfigurationRequest]) (*connect.Response[v1.GetConfigurationResponse], error)
 	// Directories whose path starts with a prefix, for directory pickers.
 	CompleteDirectory(context.Context, *connect.Request[v1.CompleteDirectoryRequest]) (*connect.Response[v1.CompleteDirectoryResponse], error)
-	// Every definition as configured, with the YAML that defines it.
+	// Every configured definition, including mutable local values.
 	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
 	// A skill's files, for browsing and editing a local one.
 	GetSkill(context.Context, *connect.Request[v1.GetSkillRequest]) (*connect.Response[v1.GetSkillResponse], error)
-	// One file of a configured skill or instructions definition, or of a configuration fragment.
+	// Read or replace the contents of a configured resource file.
 	ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error)
-	// Validates a set of changes against the configuration they would produce and returns their
-	// diff; writes nothing.
-	PlanChanges(context.Context, *connect.Request[v1.PlanChangesRequest]) (*connect.Response[v1.PlanChangesResponse], error)
-	// Writes a planned set of changes atomically, when no file changed since the plan.
-	ApplyChanges(context.Context, *connect.Request[v1.ApplyChangesRequest]) (*connect.Response[v1.ApplyChangesResponse], error)
+	WriteResourceFile(context.Context, *connect.Request[v1.WriteResourceFileRequest]) (*connect.Response[v1.WriteResourceFileResponse], error)
+	// Validate and commit semantic local changes in one transaction.
+	UpdateConfiguration(context.Context, *connect.Request[v1.UpdateConfigurationRequest]) (*connect.Response[v1.UpdateConfigurationResponse], error)
 }
 
 // NewConfigurationServiceClient constructs a client for the agx.v1.ConfigurationService service. By
@@ -176,6 +211,24 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 	baseURL = strings.TrimRight(baseURL, "/")
 	configurationServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("ConfigurationService").Methods()
 	return &configurationServiceClient{
+		getLocalConfiguration: connect.NewClient[v1.GetLocalConfigurationRequest, v1.GetLocalConfigurationResponse](
+			httpClient,
+			baseURL+ConfigurationServiceGetLocalConfigurationProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("GetLocalConfiguration")),
+			connect.WithClientOptions(opts...),
+		),
+		resolvePassthrough: connect.NewClient[v1.ResolvePassthroughRequest, v1.ResolvePassthroughResponse](
+			httpClient,
+			baseURL+ConfigurationServiceResolvePassthroughProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ResolvePassthrough")),
+			connect.WithClientOptions(opts...),
+		),
+		resolveClientCommand: connect.NewClient[v1.ResolveClientCommandRequest, v1.ResolveClientCommandResponse](
+			httpClient,
+			baseURL+ConfigurationServiceResolveClientCommandProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ResolveClientCommand")),
+			connect.WithClientOptions(opts...),
+		),
 		validate: connect.NewClient[v1.ValidateRequest, v1.ValidateResponse](
 			httpClient,
 			baseURL+ConfigurationServiceValidateProcedure,
@@ -218,16 +271,16 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(configurationServiceMethods.ByName("ReadFile")),
 			connect.WithClientOptions(opts...),
 		),
-		planChanges: connect.NewClient[v1.PlanChangesRequest, v1.PlanChangesResponse](
+		writeResourceFile: connect.NewClient[v1.WriteResourceFileRequest, v1.WriteResourceFileResponse](
 			httpClient,
-			baseURL+ConfigurationServicePlanChangesProcedure,
-			connect.WithSchema(configurationServiceMethods.ByName("PlanChanges")),
+			baseURL+ConfigurationServiceWriteResourceFileProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("WriteResourceFile")),
 			connect.WithClientOptions(opts...),
 		),
-		applyChanges: connect.NewClient[v1.ApplyChangesRequest, v1.ApplyChangesResponse](
+		updateConfiguration: connect.NewClient[v1.UpdateConfigurationRequest, v1.UpdateConfigurationResponse](
 			httpClient,
-			baseURL+ConfigurationServiceApplyChangesProcedure,
-			connect.WithSchema(configurationServiceMethods.ByName("ApplyChanges")),
+			baseURL+ConfigurationServiceUpdateConfigurationProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("UpdateConfiguration")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -235,15 +288,33 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 
 // configurationServiceClient implements ConfigurationServiceClient.
 type configurationServiceClient struct {
-	validate          *connect.Client[v1.ValidateRequest, v1.ValidateResponse]
-	resolve           *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
-	getConfiguration  *connect.Client[v1.GetConfigurationRequest, v1.GetConfigurationResponse]
-	completeDirectory *connect.Client[v1.CompleteDirectoryRequest, v1.CompleteDirectoryResponse]
-	listDefinitions   *connect.Client[v1.ListDefinitionsRequest, v1.ListDefinitionsResponse]
-	getSkill          *connect.Client[v1.GetSkillRequest, v1.GetSkillResponse]
-	readFile          *connect.Client[v1.ReadFileRequest, v1.ReadFileResponse]
-	planChanges       *connect.Client[v1.PlanChangesRequest, v1.PlanChangesResponse]
-	applyChanges      *connect.Client[v1.ApplyChangesRequest, v1.ApplyChangesResponse]
+	getLocalConfiguration *connect.Client[v1.GetLocalConfigurationRequest, v1.GetLocalConfigurationResponse]
+	resolvePassthrough    *connect.Client[v1.ResolvePassthroughRequest, v1.ResolvePassthroughResponse]
+	resolveClientCommand  *connect.Client[v1.ResolveClientCommandRequest, v1.ResolveClientCommandResponse]
+	validate              *connect.Client[v1.ValidateRequest, v1.ValidateResponse]
+	resolve               *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
+	getConfiguration      *connect.Client[v1.GetConfigurationRequest, v1.GetConfigurationResponse]
+	completeDirectory     *connect.Client[v1.CompleteDirectoryRequest, v1.CompleteDirectoryResponse]
+	listDefinitions       *connect.Client[v1.ListDefinitionsRequest, v1.ListDefinitionsResponse]
+	getSkill              *connect.Client[v1.GetSkillRequest, v1.GetSkillResponse]
+	readFile              *connect.Client[v1.ReadFileRequest, v1.ReadFileResponse]
+	writeResourceFile     *connect.Client[v1.WriteResourceFileRequest, v1.WriteResourceFileResponse]
+	updateConfiguration   *connect.Client[v1.UpdateConfigurationRequest, v1.UpdateConfigurationResponse]
+}
+
+// GetLocalConfiguration calls agx.v1.ConfigurationService.GetLocalConfiguration.
+func (c *configurationServiceClient) GetLocalConfiguration(ctx context.Context, req *connect.Request[v1.GetLocalConfigurationRequest]) (*connect.Response[v1.GetLocalConfigurationResponse], error) {
+	return c.getLocalConfiguration.CallUnary(ctx, req)
+}
+
+// ResolvePassthrough calls agx.v1.ConfigurationService.ResolvePassthrough.
+func (c *configurationServiceClient) ResolvePassthrough(ctx context.Context, req *connect.Request[v1.ResolvePassthroughRequest]) (*connect.Response[v1.ResolvePassthroughResponse], error) {
+	return c.resolvePassthrough.CallUnary(ctx, req)
+}
+
+// ResolveClientCommand calls agx.v1.ConfigurationService.ResolveClientCommand.
+func (c *configurationServiceClient) ResolveClientCommand(ctx context.Context, req *connect.Request[v1.ResolveClientCommandRequest]) (*connect.Response[v1.ResolveClientCommandResponse], error) {
+	return c.resolveClientCommand.CallUnary(ctx, req)
 }
 
 // Validate calls agx.v1.ConfigurationService.Validate.
@@ -281,35 +352,39 @@ func (c *configurationServiceClient) ReadFile(ctx context.Context, req *connect.
 	return c.readFile.CallUnary(ctx, req)
 }
 
-// PlanChanges calls agx.v1.ConfigurationService.PlanChanges.
-func (c *configurationServiceClient) PlanChanges(ctx context.Context, req *connect.Request[v1.PlanChangesRequest]) (*connect.Response[v1.PlanChangesResponse], error) {
-	return c.planChanges.CallUnary(ctx, req)
+// WriteResourceFile calls agx.v1.ConfigurationService.WriteResourceFile.
+func (c *configurationServiceClient) WriteResourceFile(ctx context.Context, req *connect.Request[v1.WriteResourceFileRequest]) (*connect.Response[v1.WriteResourceFileResponse], error) {
+	return c.writeResourceFile.CallUnary(ctx, req)
 }
 
-// ApplyChanges calls agx.v1.ConfigurationService.ApplyChanges.
-func (c *configurationServiceClient) ApplyChanges(ctx context.Context, req *connect.Request[v1.ApplyChangesRequest]) (*connect.Response[v1.ApplyChangesResponse], error) {
-	return c.applyChanges.CallUnary(ctx, req)
+// UpdateConfiguration calls agx.v1.ConfigurationService.UpdateConfiguration.
+func (c *configurationServiceClient) UpdateConfiguration(ctx context.Context, req *connect.Request[v1.UpdateConfigurationRequest]) (*connect.Response[v1.UpdateConfigurationResponse], error) {
+	return c.updateConfiguration.CallUnary(ctx, req)
 }
 
 // ConfigurationServiceHandler is an implementation of the agx.v1.ConfigurationService service.
 type ConfigurationServiceHandler interface {
+	// Managed definitions and package locks for local YAML validation and edit previews.
+	GetLocalConfiguration(context.Context, *connect.Request[v1.GetLocalConfigurationRequest]) (*connect.Response[v1.GetLocalConfigurationResponse], error)
+	// Resolve native passthrough arguments and environment without creating a managed launch.
+	ResolvePassthrough(context.Context, *connect.Request[v1.ResolvePassthroughRequest]) (*connect.Response[v1.ResolvePassthroughResponse], error)
+	// Resolve client harness arguments and environment; resource delivery belongs to its plugin.
+	ResolveClientCommand(context.Context, *connect.Request[v1.ResolveClientCommandRequest]) (*connect.Response[v1.ResolveClientCommandResponse], error)
 	Validate(context.Context, *connect.Request[v1.ValidateRequest]) (*connect.Response[v1.ValidateResponse], error)
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
 	// The configuration as loaded, for browsing it: harnesses, scope directories, and files.
 	GetConfiguration(context.Context, *connect.Request[v1.GetConfigurationRequest]) (*connect.Response[v1.GetConfigurationResponse], error)
 	// Directories whose path starts with a prefix, for directory pickers.
 	CompleteDirectory(context.Context, *connect.Request[v1.CompleteDirectoryRequest]) (*connect.Response[v1.CompleteDirectoryResponse], error)
-	// Every definition as configured, with the YAML that defines it.
+	// Every configured definition, including mutable local values.
 	ListDefinitions(context.Context, *connect.Request[v1.ListDefinitionsRequest]) (*connect.Response[v1.ListDefinitionsResponse], error)
 	// A skill's files, for browsing and editing a local one.
 	GetSkill(context.Context, *connect.Request[v1.GetSkillRequest]) (*connect.Response[v1.GetSkillResponse], error)
-	// One file of a configured skill or instructions definition, or of a configuration fragment.
+	// Read or replace the contents of a configured resource file.
 	ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error)
-	// Validates a set of changes against the configuration they would produce and returns their
-	// diff; writes nothing.
-	PlanChanges(context.Context, *connect.Request[v1.PlanChangesRequest]) (*connect.Response[v1.PlanChangesResponse], error)
-	// Writes a planned set of changes atomically, when no file changed since the plan.
-	ApplyChanges(context.Context, *connect.Request[v1.ApplyChangesRequest]) (*connect.Response[v1.ApplyChangesResponse], error)
+	WriteResourceFile(context.Context, *connect.Request[v1.WriteResourceFileRequest]) (*connect.Response[v1.WriteResourceFileResponse], error)
+	// Validate and commit semantic local changes in one transaction.
+	UpdateConfiguration(context.Context, *connect.Request[v1.UpdateConfigurationRequest]) (*connect.Response[v1.UpdateConfigurationResponse], error)
 }
 
 // NewConfigurationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -319,6 +394,24 @@ type ConfigurationServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	configurationServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("ConfigurationService").Methods()
+	configurationServiceGetLocalConfigurationHandler := connect.NewUnaryHandler(
+		ConfigurationServiceGetLocalConfigurationProcedure,
+		svc.GetLocalConfiguration,
+		connect.WithSchema(configurationServiceMethods.ByName("GetLocalConfiguration")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceResolvePassthroughHandler := connect.NewUnaryHandler(
+		ConfigurationServiceResolvePassthroughProcedure,
+		svc.ResolvePassthrough,
+		connect.WithSchema(configurationServiceMethods.ByName("ResolvePassthrough")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceResolveClientCommandHandler := connect.NewUnaryHandler(
+		ConfigurationServiceResolveClientCommandProcedure,
+		svc.ResolveClientCommand,
+		connect.WithSchema(configurationServiceMethods.ByName("ResolveClientCommand")),
+		connect.WithHandlerOptions(opts...),
+	)
 	configurationServiceValidateHandler := connect.NewUnaryHandler(
 		ConfigurationServiceValidateProcedure,
 		svc.Validate,
@@ -361,20 +454,26 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 		connect.WithSchema(configurationServiceMethods.ByName("ReadFile")),
 		connect.WithHandlerOptions(opts...),
 	)
-	configurationServicePlanChangesHandler := connect.NewUnaryHandler(
-		ConfigurationServicePlanChangesProcedure,
-		svc.PlanChanges,
-		connect.WithSchema(configurationServiceMethods.ByName("PlanChanges")),
+	configurationServiceWriteResourceFileHandler := connect.NewUnaryHandler(
+		ConfigurationServiceWriteResourceFileProcedure,
+		svc.WriteResourceFile,
+		connect.WithSchema(configurationServiceMethods.ByName("WriteResourceFile")),
 		connect.WithHandlerOptions(opts...),
 	)
-	configurationServiceApplyChangesHandler := connect.NewUnaryHandler(
-		ConfigurationServiceApplyChangesProcedure,
-		svc.ApplyChanges,
-		connect.WithSchema(configurationServiceMethods.ByName("ApplyChanges")),
+	configurationServiceUpdateConfigurationHandler := connect.NewUnaryHandler(
+		ConfigurationServiceUpdateConfigurationProcedure,
+		svc.UpdateConfiguration,
+		connect.WithSchema(configurationServiceMethods.ByName("UpdateConfiguration")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/agx.v1.ConfigurationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ConfigurationServiceGetLocalConfigurationProcedure:
+			configurationServiceGetLocalConfigurationHandler.ServeHTTP(w, r)
+		case ConfigurationServiceResolvePassthroughProcedure:
+			configurationServiceResolvePassthroughHandler.ServeHTTP(w, r)
+		case ConfigurationServiceResolveClientCommandProcedure:
+			configurationServiceResolveClientCommandHandler.ServeHTTP(w, r)
 		case ConfigurationServiceValidateProcedure:
 			configurationServiceValidateHandler.ServeHTTP(w, r)
 		case ConfigurationServiceResolveProcedure:
@@ -389,10 +488,10 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 			configurationServiceGetSkillHandler.ServeHTTP(w, r)
 		case ConfigurationServiceReadFileProcedure:
 			configurationServiceReadFileHandler.ServeHTTP(w, r)
-		case ConfigurationServicePlanChangesProcedure:
-			configurationServicePlanChangesHandler.ServeHTTP(w, r)
-		case ConfigurationServiceApplyChangesProcedure:
-			configurationServiceApplyChangesHandler.ServeHTTP(w, r)
+		case ConfigurationServiceWriteResourceFileProcedure:
+			configurationServiceWriteResourceFileHandler.ServeHTTP(w, r)
+		case ConfigurationServiceUpdateConfigurationProcedure:
+			configurationServiceUpdateConfigurationHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -401,6 +500,18 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 
 // UnimplementedConfigurationServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedConfigurationServiceHandler struct{}
+
+func (UnimplementedConfigurationServiceHandler) GetLocalConfiguration(context.Context, *connect.Request[v1.GetLocalConfigurationRequest]) (*connect.Response[v1.GetLocalConfigurationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.GetLocalConfiguration is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) ResolvePassthrough(context.Context, *connect.Request[v1.ResolvePassthroughRequest]) (*connect.Response[v1.ResolvePassthroughResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.ResolvePassthrough is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) ResolveClientCommand(context.Context, *connect.Request[v1.ResolveClientCommandRequest]) (*connect.Response[v1.ResolveClientCommandResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.ResolveClientCommand is not implemented"))
+}
 
 func (UnimplementedConfigurationServiceHandler) Validate(context.Context, *connect.Request[v1.ValidateRequest]) (*connect.Response[v1.ValidateResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.Validate is not implemented"))
@@ -430,12 +541,12 @@ func (UnimplementedConfigurationServiceHandler) ReadFile(context.Context, *conne
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.ReadFile is not implemented"))
 }
 
-func (UnimplementedConfigurationServiceHandler) PlanChanges(context.Context, *connect.Request[v1.PlanChangesRequest]) (*connect.Response[v1.PlanChangesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.PlanChanges is not implemented"))
+func (UnimplementedConfigurationServiceHandler) WriteResourceFile(context.Context, *connect.Request[v1.WriteResourceFileRequest]) (*connect.Response[v1.WriteResourceFileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.WriteResourceFile is not implemented"))
 }
 
-func (UnimplementedConfigurationServiceHandler) ApplyChanges(context.Context, *connect.Request[v1.ApplyChangesRequest]) (*connect.Response[v1.ApplyChangesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.ApplyChanges is not implemented"))
+func (UnimplementedConfigurationServiceHandler) UpdateConfiguration(context.Context, *connect.Request[v1.UpdateConfigurationRequest]) (*connect.Response[v1.UpdateConfigurationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ConfigurationService.UpdateConfiguration is not implemented"))
 }
 
 // PackageServiceClient is a client for the agx.v1.PackageService service.
@@ -628,6 +739,8 @@ func (UnimplementedPackageServiceHandler) InspectSource(context.Context, *connec
 
 // LaunchServiceClient is a client for the agx.v1.LaunchService service.
 type LaunchServiceClient interface {
+	// Management-authorized, idempotent history reporting, independent of active leases.
+	RecordLaunch(context.Context, *connect.Request[v1.RecordLaunchRequest]) (*connect.Response[v1.RecordLaunchResponse], error)
 	PrepareLaunch(context.Context, *connect.Request[v1.PrepareLaunchRequest]) (*connect.Response[v1.PrepareLaunchResponse], error)
 	RenewLaunch(context.Context, *connect.Request[v1.RenewLaunchRequest]) (*connect.Response[v1.RenewLaunchResponse], error)
 	FinishLaunch(context.Context, *connect.Request[v1.FinishLaunchRequest]) (*connect.Response[v1.FinishLaunchResponse], error)
@@ -654,6 +767,12 @@ func NewLaunchServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 	baseURL = strings.TrimRight(baseURL, "/")
 	launchServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("LaunchService").Methods()
 	return &launchServiceClient{
+		recordLaunch: connect.NewClient[v1.RecordLaunchRequest, v1.RecordLaunchResponse](
+			httpClient,
+			baseURL+LaunchServiceRecordLaunchProcedure,
+			connect.WithSchema(launchServiceMethods.ByName("RecordLaunch")),
+			connect.WithClientOptions(opts...),
+		),
 		prepareLaunch: connect.NewClient[v1.PrepareLaunchRequest, v1.PrepareLaunchResponse](
 			httpClient,
 			baseURL+LaunchServicePrepareLaunchProcedure,
@@ -701,6 +820,7 @@ func NewLaunchServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // launchServiceClient implements LaunchServiceClient.
 type launchServiceClient struct {
+	recordLaunch        *connect.Client[v1.RecordLaunchRequest, v1.RecordLaunchResponse]
 	prepareLaunch       *connect.Client[v1.PrepareLaunchRequest, v1.PrepareLaunchResponse]
 	renewLaunch         *connect.Client[v1.RenewLaunchRequest, v1.RenewLaunchResponse]
 	finishLaunch        *connect.Client[v1.FinishLaunchRequest, v1.FinishLaunchResponse]
@@ -708,6 +828,11 @@ type launchServiceClient struct {
 	resolveThread       *connect.Client[v1.ResolveThreadRequest, v1.ResolveThreadResponse]
 	prepareThreadLaunch *connect.Client[v1.PrepareThreadLaunchRequest, v1.PrepareThreadLaunchResponse]
 	attachLaunch        *connect.Client[v1.AttachLaunchRequest, v1.AttachLaunchResponse]
+}
+
+// RecordLaunch calls agx.v1.LaunchService.RecordLaunch.
+func (c *launchServiceClient) RecordLaunch(ctx context.Context, req *connect.Request[v1.RecordLaunchRequest]) (*connect.Response[v1.RecordLaunchResponse], error) {
+	return c.recordLaunch.CallUnary(ctx, req)
 }
 
 // PrepareLaunch calls agx.v1.LaunchService.PrepareLaunch.
@@ -747,6 +872,8 @@ func (c *launchServiceClient) AttachLaunch(ctx context.Context, req *connect.Req
 
 // LaunchServiceHandler is an implementation of the agx.v1.LaunchService service.
 type LaunchServiceHandler interface {
+	// Management-authorized, idempotent history reporting, independent of active leases.
+	RecordLaunch(context.Context, *connect.Request[v1.RecordLaunchRequest]) (*connect.Response[v1.RecordLaunchResponse], error)
 	PrepareLaunch(context.Context, *connect.Request[v1.PrepareLaunchRequest]) (*connect.Response[v1.PrepareLaunchResponse], error)
 	RenewLaunch(context.Context, *connect.Request[v1.RenewLaunchRequest]) (*connect.Response[v1.RenewLaunchResponse], error)
 	FinishLaunch(context.Context, *connect.Request[v1.FinishLaunchRequest]) (*connect.Response[v1.FinishLaunchResponse], error)
@@ -769,6 +896,12 @@ type LaunchServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewLaunchServiceHandler(svc LaunchServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	launchServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("LaunchService").Methods()
+	launchServiceRecordLaunchHandler := connect.NewUnaryHandler(
+		LaunchServiceRecordLaunchProcedure,
+		svc.RecordLaunch,
+		connect.WithSchema(launchServiceMethods.ByName("RecordLaunch")),
+		connect.WithHandlerOptions(opts...),
+	)
 	launchServicePrepareLaunchHandler := connect.NewUnaryHandler(
 		LaunchServicePrepareLaunchProcedure,
 		svc.PrepareLaunch,
@@ -813,6 +946,8 @@ func NewLaunchServiceHandler(svc LaunchServiceHandler, opts ...connect.HandlerOp
 	)
 	return "/agx.v1.LaunchService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case LaunchServiceRecordLaunchProcedure:
+			launchServiceRecordLaunchHandler.ServeHTTP(w, r)
 		case LaunchServicePrepareLaunchProcedure:
 			launchServicePrepareLaunchHandler.ServeHTTP(w, r)
 		case LaunchServiceRenewLaunchProcedure:
@@ -835,6 +970,10 @@ func NewLaunchServiceHandler(svc LaunchServiceHandler, opts ...connect.HandlerOp
 
 // UnimplementedLaunchServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedLaunchServiceHandler struct{}
+
+func (UnimplementedLaunchServiceHandler) RecordLaunch(context.Context, *connect.Request[v1.RecordLaunchRequest]) (*connect.Response[v1.RecordLaunchResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.RecordLaunch is not implemented"))
+}
 
 func (UnimplementedLaunchServiceHandler) PrepareLaunch(context.Context, *connect.Request[v1.PrepareLaunchRequest]) (*connect.Response[v1.PrepareLaunchResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.PrepareLaunch is not implemented"))
@@ -864,12 +1003,239 @@ func (UnimplementedLaunchServiceHandler) AttachLaunch(context.Context, *connect.
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.LaunchService.AttachLaunch is not implemented"))
 }
 
+// ResourceServiceClient is a client for the agx.v1.ResourceService service.
+type ResourceServiceClient interface {
+	ResolveResources(context.Context, *connect.Request[v1.ResolveResourcesRequest]) (*connect.Response[v1.ResolveResourcesResponse], error)
+	PrepareResources(context.Context, *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error)
+	// Streams what a resource lease provides as the daemon keeps it on its directory's current
+	// configuration: first its current resources, then each change. Authorized by the lease's
+	// lifecycle token.
+	WatchResources(context.Context, *connect.Request[v1.WatchResourcesRequest]) (*connect.ServerStreamForClient[v1.WatchResourcesResponse], error)
+}
+
+// NewResourceServiceClient constructs a client for the agx.v1.ResourceService service. By default,
+// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
+// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
+// or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewResourceServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ResourceServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	resourceServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("ResourceService").Methods()
+	return &resourceServiceClient{
+		resolveResources: connect.NewClient[v1.ResolveResourcesRequest, v1.ResolveResourcesResponse](
+			httpClient,
+			baseURL+ResourceServiceResolveResourcesProcedure,
+			connect.WithSchema(resourceServiceMethods.ByName("ResolveResources")),
+			connect.WithClientOptions(opts...),
+		),
+		prepareResources: connect.NewClient[v1.PrepareResourcesRequest, v1.PrepareResourcesResponse](
+			httpClient,
+			baseURL+ResourceServicePrepareResourcesProcedure,
+			connect.WithSchema(resourceServiceMethods.ByName("PrepareResources")),
+			connect.WithClientOptions(opts...),
+		),
+		watchResources: connect.NewClient[v1.WatchResourcesRequest, v1.WatchResourcesResponse](
+			httpClient,
+			baseURL+ResourceServiceWatchResourcesProcedure,
+			connect.WithSchema(resourceServiceMethods.ByName("WatchResources")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// resourceServiceClient implements ResourceServiceClient.
+type resourceServiceClient struct {
+	resolveResources *connect.Client[v1.ResolveResourcesRequest, v1.ResolveResourcesResponse]
+	prepareResources *connect.Client[v1.PrepareResourcesRequest, v1.PrepareResourcesResponse]
+	watchResources   *connect.Client[v1.WatchResourcesRequest, v1.WatchResourcesResponse]
+}
+
+// ResolveResources calls agx.v1.ResourceService.ResolveResources.
+func (c *resourceServiceClient) ResolveResources(ctx context.Context, req *connect.Request[v1.ResolveResourcesRequest]) (*connect.Response[v1.ResolveResourcesResponse], error) {
+	return c.resolveResources.CallUnary(ctx, req)
+}
+
+// PrepareResources calls agx.v1.ResourceService.PrepareResources.
+func (c *resourceServiceClient) PrepareResources(ctx context.Context, req *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error) {
+	return c.prepareResources.CallUnary(ctx, req)
+}
+
+// WatchResources calls agx.v1.ResourceService.WatchResources.
+func (c *resourceServiceClient) WatchResources(ctx context.Context, req *connect.Request[v1.WatchResourcesRequest]) (*connect.ServerStreamForClient[v1.WatchResourcesResponse], error) {
+	return c.watchResources.CallServerStream(ctx, req)
+}
+
+// ResourceServiceHandler is an implementation of the agx.v1.ResourceService service.
+type ResourceServiceHandler interface {
+	ResolveResources(context.Context, *connect.Request[v1.ResolveResourcesRequest]) (*connect.Response[v1.ResolveResourcesResponse], error)
+	PrepareResources(context.Context, *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error)
+	// Streams what a resource lease provides as the daemon keeps it on its directory's current
+	// configuration: first its current resources, then each change. Authorized by the lease's
+	// lifecycle token.
+	WatchResources(context.Context, *connect.Request[v1.WatchResourcesRequest], *connect.ServerStream[v1.WatchResourcesResponse]) error
+}
+
+// NewResourceServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewResourceServiceHandler(svc ResourceServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	resourceServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("ResourceService").Methods()
+	resourceServiceResolveResourcesHandler := connect.NewUnaryHandler(
+		ResourceServiceResolveResourcesProcedure,
+		svc.ResolveResources,
+		connect.WithSchema(resourceServiceMethods.ByName("ResolveResources")),
+		connect.WithHandlerOptions(opts...),
+	)
+	resourceServicePrepareResourcesHandler := connect.NewUnaryHandler(
+		ResourceServicePrepareResourcesProcedure,
+		svc.PrepareResources,
+		connect.WithSchema(resourceServiceMethods.ByName("PrepareResources")),
+		connect.WithHandlerOptions(opts...),
+	)
+	resourceServiceWatchResourcesHandler := connect.NewServerStreamHandler(
+		ResourceServiceWatchResourcesProcedure,
+		svc.WatchResources,
+		connect.WithSchema(resourceServiceMethods.ByName("WatchResources")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/agx.v1.ResourceService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case ResourceServiceResolveResourcesProcedure:
+			resourceServiceResolveResourcesHandler.ServeHTTP(w, r)
+		case ResourceServicePrepareResourcesProcedure:
+			resourceServicePrepareResourcesHandler.ServeHTTP(w, r)
+		case ResourceServiceWatchResourcesProcedure:
+			resourceServiceWatchResourcesHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedResourceServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedResourceServiceHandler struct{}
+
+func (UnimplementedResourceServiceHandler) ResolveResources(context.Context, *connect.Request[v1.ResolveResourcesRequest]) (*connect.Response[v1.ResolveResourcesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ResourceService.ResolveResources is not implemented"))
+}
+
+func (UnimplementedResourceServiceHandler) PrepareResources(context.Context, *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ResourceService.PrepareResources is not implemented"))
+}
+
+func (UnimplementedResourceServiceHandler) WatchResources(context.Context, *connect.Request[v1.WatchResourcesRequest], *connect.ServerStream[v1.WatchResourcesResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.ResourceService.WatchResources is not implemented"))
+}
+
+// SessionProviderServiceClient is a client for the agx.v1.SessionProviderService service.
+type SessionProviderServiceClient interface {
+	PublishSessions(context.Context, *connect.Request[v1.PublishSessionsRequest]) (*connect.Response[v1.PublishSessionsResponse], error)
+	// Registers a publisher while this connection remains open; its first frame confirms readiness.
+	ConnectSessionSource(context.Context, *connect.Request[v1.ConnectSessionSourceRequest]) (*connect.ServerStreamForClient[v1.ConnectSessionSourceResponse], error)
+}
+
+// NewSessionProviderServiceClient constructs a client for the agx.v1.SessionProviderService
+// service. By default, it uses the Connect protocol with the binary Protobuf Codec, asks for
+// gzipped responses, and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply
+// the connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewSessionProviderServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) SessionProviderServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	sessionProviderServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("SessionProviderService").Methods()
+	return &sessionProviderServiceClient{
+		publishSessions: connect.NewClient[v1.PublishSessionsRequest, v1.PublishSessionsResponse](
+			httpClient,
+			baseURL+SessionProviderServicePublishSessionsProcedure,
+			connect.WithSchema(sessionProviderServiceMethods.ByName("PublishSessions")),
+			connect.WithClientOptions(opts...),
+		),
+		connectSessionSource: connect.NewClient[v1.ConnectSessionSourceRequest, v1.ConnectSessionSourceResponse](
+			httpClient,
+			baseURL+SessionProviderServiceConnectSessionSourceProcedure,
+			connect.WithSchema(sessionProviderServiceMethods.ByName("ConnectSessionSource")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// sessionProviderServiceClient implements SessionProviderServiceClient.
+type sessionProviderServiceClient struct {
+	publishSessions      *connect.Client[v1.PublishSessionsRequest, v1.PublishSessionsResponse]
+	connectSessionSource *connect.Client[v1.ConnectSessionSourceRequest, v1.ConnectSessionSourceResponse]
+}
+
+// PublishSessions calls agx.v1.SessionProviderService.PublishSessions.
+func (c *sessionProviderServiceClient) PublishSessions(ctx context.Context, req *connect.Request[v1.PublishSessionsRequest]) (*connect.Response[v1.PublishSessionsResponse], error) {
+	return c.publishSessions.CallUnary(ctx, req)
+}
+
+// ConnectSessionSource calls agx.v1.SessionProviderService.ConnectSessionSource.
+func (c *sessionProviderServiceClient) ConnectSessionSource(ctx context.Context, req *connect.Request[v1.ConnectSessionSourceRequest]) (*connect.ServerStreamForClient[v1.ConnectSessionSourceResponse], error) {
+	return c.connectSessionSource.CallServerStream(ctx, req)
+}
+
+// SessionProviderServiceHandler is an implementation of the agx.v1.SessionProviderService service.
+type SessionProviderServiceHandler interface {
+	PublishSessions(context.Context, *connect.Request[v1.PublishSessionsRequest]) (*connect.Response[v1.PublishSessionsResponse], error)
+	// Registers a publisher while this connection remains open; its first frame confirms readiness.
+	ConnectSessionSource(context.Context, *connect.Request[v1.ConnectSessionSourceRequest], *connect.ServerStream[v1.ConnectSessionSourceResponse]) error
+}
+
+// NewSessionProviderServiceHandler builds an HTTP handler from the service implementation. It
+// returns the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewSessionProviderServiceHandler(svc SessionProviderServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	sessionProviderServiceMethods := v1.File_agx_v1_agx_proto.Services().ByName("SessionProviderService").Methods()
+	sessionProviderServicePublishSessionsHandler := connect.NewUnaryHandler(
+		SessionProviderServicePublishSessionsProcedure,
+		svc.PublishSessions,
+		connect.WithSchema(sessionProviderServiceMethods.ByName("PublishSessions")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionProviderServiceConnectSessionSourceHandler := connect.NewServerStreamHandler(
+		SessionProviderServiceConnectSessionSourceProcedure,
+		svc.ConnectSessionSource,
+		connect.WithSchema(sessionProviderServiceMethods.ByName("ConnectSessionSource")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/agx.v1.SessionProviderService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case SessionProviderServicePublishSessionsProcedure:
+			sessionProviderServicePublishSessionsHandler.ServeHTTP(w, r)
+		case SessionProviderServiceConnectSessionSourceProcedure:
+			sessionProviderServiceConnectSessionSourceHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedSessionProviderServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedSessionProviderServiceHandler struct{}
+
+func (UnimplementedSessionProviderServiceHandler) PublishSessions(context.Context, *connect.Request[v1.PublishSessionsRequest]) (*connect.Response[v1.PublishSessionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.SessionProviderService.PublishSessions is not implemented"))
+}
+
+func (UnimplementedSessionProviderServiceHandler) ConnectSessionSource(context.Context, *connect.Request[v1.ConnectSessionSourceRequest], *connect.ServerStream[v1.ConnectSessionSourceResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.SessionProviderService.ConnectSessionSource is not implemented"))
+}
+
 // RuntimeServiceClient is a client for the agx.v1.RuntimeService service.
 type RuntimeServiceClient interface {
 	GetRuntime(context.Context, *connect.Request[v1.GetRuntimeRequest]) (*connect.Response[v1.GetRuntimeResponse], error)
 	WatchRuntime(context.Context, *connect.Request[v1.WatchRuntimeRequest]) (*connect.ServerStreamForClient[v1.WatchRuntimeResponse], error)
-	// Connects to one MCP server outside any launch and lists its tools.
-	TestMcpServer(context.Context, *connect.Request[v1.TestMcpServerRequest]) (*connect.Response[v1.TestMcpServerResponse], error)
+	// Returns a cached session listing when available, then a freshly scanned listing.
+	// Store roots are resolved by the caller, whose environment may differ from the daemon's.
+	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.ServerStreamForClient[v1.ListSessionsResponse], error)
 	// Lists the tools of the MCP servers in a call scope. Takes a launch grant for a launch's
 	// scope, or management authorization.
 	ListTools(context.Context, *connect.Request[v1.ListToolsRequest]) (*connect.Response[v1.ListToolsResponse], error)
@@ -910,10 +1276,10 @@ func NewRuntimeServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(runtimeServiceMethods.ByName("WatchRuntime")),
 			connect.WithClientOptions(opts...),
 		),
-		testMcpServer: connect.NewClient[v1.TestMcpServerRequest, v1.TestMcpServerResponse](
+		listSessions: connect.NewClient[v1.ListSessionsRequest, v1.ListSessionsResponse](
 			httpClient,
-			baseURL+RuntimeServiceTestMcpServerProcedure,
-			connect.WithSchema(runtimeServiceMethods.ByName("TestMcpServer")),
+			baseURL+RuntimeServiceListSessionsProcedure,
+			connect.WithSchema(runtimeServiceMethods.ByName("ListSessions")),
 			connect.WithClientOptions(opts...),
 		),
 		listTools: connect.NewClient[v1.ListToolsRequest, v1.ListToolsResponse](
@@ -953,7 +1319,7 @@ func NewRuntimeServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 type runtimeServiceClient struct {
 	getRuntime       *connect.Client[v1.GetRuntimeRequest, v1.GetRuntimeResponse]
 	watchRuntime     *connect.Client[v1.WatchRuntimeRequest, v1.WatchRuntimeResponse]
-	testMcpServer    *connect.Client[v1.TestMcpServerRequest, v1.TestMcpServerResponse]
+	listSessions     *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
 	listTools        *connect.Client[v1.ListToolsRequest, v1.ListToolsResponse]
 	callTool         *connect.Client[v1.CallToolRequest, v1.CallToolResponse]
 	listMcpProcesses *connect.Client[v1.ListMcpProcessesRequest, v1.ListMcpProcessesResponse]
@@ -971,9 +1337,9 @@ func (c *runtimeServiceClient) WatchRuntime(ctx context.Context, req *connect.Re
 	return c.watchRuntime.CallServerStream(ctx, req)
 }
 
-// TestMcpServer calls agx.v1.RuntimeService.TestMcpServer.
-func (c *runtimeServiceClient) TestMcpServer(ctx context.Context, req *connect.Request[v1.TestMcpServerRequest]) (*connect.Response[v1.TestMcpServerResponse], error) {
-	return c.testMcpServer.CallUnary(ctx, req)
+// ListSessions calls agx.v1.RuntimeService.ListSessions.
+func (c *runtimeServiceClient) ListSessions(ctx context.Context, req *connect.Request[v1.ListSessionsRequest]) (*connect.ServerStreamForClient[v1.ListSessionsResponse], error) {
+	return c.listSessions.CallServerStream(ctx, req)
 }
 
 // ListTools calls agx.v1.RuntimeService.ListTools.
@@ -1005,8 +1371,9 @@ func (c *runtimeServiceClient) Stop(ctx context.Context, req *connect.Request[v1
 type RuntimeServiceHandler interface {
 	GetRuntime(context.Context, *connect.Request[v1.GetRuntimeRequest]) (*connect.Response[v1.GetRuntimeResponse], error)
 	WatchRuntime(context.Context, *connect.Request[v1.WatchRuntimeRequest], *connect.ServerStream[v1.WatchRuntimeResponse]) error
-	// Connects to one MCP server outside any launch and lists its tools.
-	TestMcpServer(context.Context, *connect.Request[v1.TestMcpServerRequest]) (*connect.Response[v1.TestMcpServerResponse], error)
+	// Returns a cached session listing when available, then a freshly scanned listing.
+	// Store roots are resolved by the caller, whose environment may differ from the daemon's.
+	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest], *connect.ServerStream[v1.ListSessionsResponse]) error
 	// Lists the tools of the MCP servers in a call scope. Takes a launch grant for a launch's
 	// scope, or management authorization.
 	ListTools(context.Context, *connect.Request[v1.ListToolsRequest]) (*connect.Response[v1.ListToolsResponse], error)
@@ -1043,10 +1410,10 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 		connect.WithSchema(runtimeServiceMethods.ByName("WatchRuntime")),
 		connect.WithHandlerOptions(opts...),
 	)
-	runtimeServiceTestMcpServerHandler := connect.NewUnaryHandler(
-		RuntimeServiceTestMcpServerProcedure,
-		svc.TestMcpServer,
-		connect.WithSchema(runtimeServiceMethods.ByName("TestMcpServer")),
+	runtimeServiceListSessionsHandler := connect.NewServerStreamHandler(
+		RuntimeServiceListSessionsProcedure,
+		svc.ListSessions,
+		connect.WithSchema(runtimeServiceMethods.ByName("ListSessions")),
 		connect.WithHandlerOptions(opts...),
 	)
 	runtimeServiceListToolsHandler := connect.NewUnaryHandler(
@@ -1085,8 +1452,8 @@ func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.Handler
 			runtimeServiceGetRuntimeHandler.ServeHTTP(w, r)
 		case RuntimeServiceWatchRuntimeProcedure:
 			runtimeServiceWatchRuntimeHandler.ServeHTTP(w, r)
-		case RuntimeServiceTestMcpServerProcedure:
-			runtimeServiceTestMcpServerHandler.ServeHTTP(w, r)
+		case RuntimeServiceListSessionsProcedure:
+			runtimeServiceListSessionsHandler.ServeHTTP(w, r)
 		case RuntimeServiceListToolsProcedure:
 			runtimeServiceListToolsHandler.ServeHTTP(w, r)
 		case RuntimeServiceCallToolProcedure:
@@ -1114,8 +1481,8 @@ func (UnimplementedRuntimeServiceHandler) WatchRuntime(context.Context, *connect
 	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.WatchRuntime is not implemented"))
 }
 
-func (UnimplementedRuntimeServiceHandler) TestMcpServer(context.Context, *connect.Request[v1.TestMcpServerRequest]) (*connect.Response[v1.TestMcpServerResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.TestMcpServer is not implemented"))
+func (UnimplementedRuntimeServiceHandler) ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest], *connect.ServerStream[v1.ListSessionsResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("agx.v1.RuntimeService.ListSessions is not implemented"))
 }
 
 func (UnimplementedRuntimeServiceHandler) ListTools(context.Context, *connect.Request[v1.ListToolsRequest]) (*connect.Response[v1.ListToolsResponse], error) {
@@ -1210,17 +1577,16 @@ func (UnimplementedUIServiceHandler) CreateLoginCode(context.Context, *connect.R
 
 // SecretServiceClient is a client for the agx.v1.SecretService service.
 type SecretServiceClient interface {
-	// Starts an OAuth login, or joins the one pending for the secret, and reports it until it
-	// finishes. Ending the stream early withdraws this caller; the attempt is cancelled once no
-	// caller waits for it.
+	// Starts an OAuth login, cancelling the previous attempt for the secret, and reports it
+	// until it finishes. Ending the stream early cancels the attempt.
 	Login(context.Context, *connect.Request[v1.LoginRequest]) (*connect.ServerStreamForClient[v1.LoginResponse], error)
 	SetSecret(context.Context, *connect.Request[v1.SetSecretRequest]) (*connect.Response[v1.SetSecretResponse], error)
 	GetSecretStatus(context.Context, *connect.Request[v1.GetSecretStatusRequest]) (*connect.Response[v1.GetSecretStatusResponse], error)
 	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error)
 	// Renews an OAuth secret's access token with its refresh token now, whether or not it
 	// expired. A missing login, or a refresh token the authorization server refuses, fails with
-	// REASON_NEEDS_LOGIN; an authorization server that cannot be reached or fails with
-	// REASON_NETWORK.
+	// Unauthenticated; an authorization server that cannot be reached or fails with
+	// Unavailable.
 	RotateSecret(context.Context, *connect.Request[v1.RotateSecretRequest]) (*connect.Response[v1.RotateSecretResponse], error)
 }
 
@@ -1304,17 +1670,16 @@ func (c *secretServiceClient) RotateSecret(ctx context.Context, req *connect.Req
 
 // SecretServiceHandler is an implementation of the agx.v1.SecretService service.
 type SecretServiceHandler interface {
-	// Starts an OAuth login, or joins the one pending for the secret, and reports it until it
-	// finishes. Ending the stream early withdraws this caller; the attempt is cancelled once no
-	// caller waits for it.
+	// Starts an OAuth login, cancelling the previous attempt for the secret, and reports it
+	// until it finishes. Ending the stream early cancels the attempt.
 	Login(context.Context, *connect.Request[v1.LoginRequest], *connect.ServerStream[v1.LoginResponse]) error
 	SetSecret(context.Context, *connect.Request[v1.SetSecretRequest]) (*connect.Response[v1.SetSecretResponse], error)
 	GetSecretStatus(context.Context, *connect.Request[v1.GetSecretStatusRequest]) (*connect.Response[v1.GetSecretStatusResponse], error)
 	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error)
 	// Renews an OAuth secret's access token with its refresh token now, whether or not it
 	// expired. A missing login, or a refresh token the authorization server refuses, fails with
-	// REASON_NEEDS_LOGIN; an authorization server that cannot be reached or fails with
-	// REASON_NETWORK.
+	// Unauthenticated; an authorization server that cannot be reached or fails with
+	// Unavailable.
 	RotateSecret(context.Context, *connect.Request[v1.RotateSecretRequest]) (*connect.Response[v1.RotateSecretResponse], error)
 }
 

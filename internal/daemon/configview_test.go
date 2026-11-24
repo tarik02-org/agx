@@ -71,21 +71,3 @@ func TestCompleteDirectory(t *testing.T) {
 		t.Errorf("files = %v, directories = %v", withFiles.Msg.Files, withFiles.Msg.Directories)
 	}
 }
-
-func TestConfigurationFileReadOnly(t *testing.T) {
-	dir := t.TempDir()
-	plain := filepath.Join(dir, "agx.yaml")
-	if err := os.WriteFile(plain, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	link := filepath.Join(dir, "10-nix.yaml")
-	if err := os.Symlink(plain, link); err != nil {
-		t.Skip("symlinks unavailable")
-	}
-	if f := configurationFile(plain); f.ReadOnly {
-		t.Errorf("plain file read-only: %+v", f)
-	}
-	if f := configurationFile(link); !f.ReadOnly || f.LinkTarget != plain {
-		t.Errorf("link = %+v", f)
-	}
-}

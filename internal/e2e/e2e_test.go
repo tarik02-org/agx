@@ -18,17 +18,20 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/storage"
 )
 
 const (
-	version    = "0.0.0-e2e"
-	oldVersion = "0.0.0-e2e-old"
+	version    = "0.0.0+nightly.2.e2e"
+	oldVersion = "0.0.0+nightly.1.e2e"
 	token      = "e2e-secret-token"
 	sealed     = "e2e-sops-value"
 )
 
 // binaries holds the executables TestMain builds; tools is the directory of those found on PATH.
-var binaries struct{ agx, oldAgx, harness, mcp, tools string }
+var binaries struct{ agx, oldAgx, daemon, oldDaemon, harness, mcp, tools string }
 
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "agx-e2e-bin-")
@@ -42,7 +45,28 @@ func TestMain(m *testing.M) {
 		}
 		return filepath.Join(dir, name)
 	}
-	binaries.agx, binaries.oldAgx = exe("agx"), exe("agx-old")
+	binaries.agx, binaries.oldAgx = filepath.Join(
+		dir,
+		"current",
+		filepath.Base(exe("agx")),
+	), filepath.Join(
+		dir,
+		"old",
+		filepath.Base(exe("agx")),
+	)
+	binaries.daemon, binaries.oldDaemon = filepath.Join(
+		filepath.Dir(binaries.agx),
+		filepath.Base(exe("agxd")),
+	), filepath.Join(
+		filepath.Dir(binaries.oldAgx),
+		filepath.Base(exe("agxd")),
+	)
+	for _, bin := range []string{binaries.agx, binaries.oldAgx} {
+		if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
 	binaries.harness, binaries.mcp = exe("fakeharness"), exe("fakemcp")
 	binaries.tools = filepath.Join(dir, "tools")
 	sops := filepath.Join(binaries.tools, filepath.Base(exe("sops")))
@@ -50,10 +74,12 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	const versionFlag = "-ldflags=-X github.com/tarik02-org/agx/internal/daemon.Version="
+	const versionFlag = "-ldflags=-X github.com/tarik02-org/agx/internal/control.Version="
 	for _, b := range [][]string{
 		{binaries.agx, versionFlag + version, "github.com/tarik02-org/agx/cmd/agx"},
 		{binaries.oldAgx, versionFlag + oldVersion, "github.com/tarik02-org/agx/cmd/agx"},
+		{binaries.daemon, versionFlag + version, "github.com/tarik02-org/agx/cmd/agxd"},
+		{binaries.oldDaemon, versionFlag + oldVersion, "github.com/tarik02-org/agx/cmd/agxd"},
 		{binaries.harness, "./testdata/fakeharness"},
 		{binaries.mcp, "./testdata/fakemcp"},
 		{sops, "../auth/testdata/fakesops"},
@@ -93,6 +119,7 @@ func newEnv(t *testing.T) *env {
 		"XDG_CACHE_HOME":      filepath.Join(home, "cache"),
 		"XDG_STATE_HOME":      filepath.Join(home, "state"),
 		"XDG_DATA_HOME":       filepath.Join(home, "data"),
+		"LOCALAPPDATA":        filepath.Join(home, "AppData", "Local"),
 		"CODEX_HOME":          filepath.Join(home, "codex"),
 		"CLAUDE_CONFIG_DIR":   filepath.Join(home, "claude"),
 		"PI_CODING_AGENT_DIR": filepath.Join(home, "pi"),
@@ -260,7 +287,7 @@ func (e *env) stopDaemon(force bool) {
 		}
 		e.t.Fatalf("daemon stop exited %d: %s", r.code, r.stderr)
 	}
-	runtimeDir := filepath.Join(e.dir, "cache", "runtime")
+	runtimeDir := e.runtimeDir()
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		_, err := os.Stat(filepath.Join(runtimeDir, "daemon.json"))
@@ -276,9 +303,17 @@ func (e *env) stopDaemon(force bool) {
 	e.t.Fatal("daemon did not exit")
 }
 
+func (e *env) runtimeDir() string {
+	paths := platform.Paths{Config: filepath.Join(e.dir, "config", "agx.yaml"), Cache: filepath.Join(e.dir, "cache")}
+	if err := paths.Derive(); err != nil {
+		e.t.Fatal(err)
+	}
+	return paths.Runtime
+}
+
 // daemonRunning reports whether a daemon published its discovery file.
 func (e *env) daemonRunning() bool {
-	_, err := os.Stat(filepath.Join(e.dir, "cache", "runtime", "daemon.json"))
+	_, err := os.Stat(filepath.Join(e.runtimeDir(), "daemon.json"))
 	return err == nil
 }
 
@@ -301,10 +336,7 @@ func (e *env) daemonVersion() string {
 type envelope struct {
 	Version int             `json:"version"`
 	Data    json.RawMessage `json:"data"`
-	Error   *struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	} `json:"error"`
+	Message string          `json:"message"`
 }
 
 // jsonRun runs agx with --json and checks that stdout is exactly one versioned document, with
@@ -313,10 +345,11 @@ func (e *env) jsonRun(args ...string) (int, envelope) {
 	e.t.Helper()
 	r := e.agx(nil, append(args, "--json")...)
 	var doc envelope
-	if strings.Count(r.stdout, "\n") != 1 || json.Unmarshal([]byte(r.stdout), &doc) != nil || doc.Version != 1 {
+	if strings.Count(r.stdout, "\n") != 1 || json.Unmarshal([]byte(r.stdout), &doc) != nil {
 		e.t.Fatalf("agx %q --json printed %q (stderr %q)", args, r.stdout, r.stderr)
 	}
-	if (r.code == 0) != (doc.Data != nil) || (r.code == 0) == (doc.Error != nil) {
+	if (r.code == 0) != (doc.Data != nil) || (r.code == 0) == (doc.Message != "") || r.code == 0 && doc.Version != 1 ||
+		r.code != 0 && doc.Version != 0 {
 		e.t.Fatalf("agx %q --json exited %d with %s", args, r.code, r.stdout)
 	}
 	return r.code, doc
@@ -326,7 +359,7 @@ func (e *env) jsonRun(args ...string) (int, envelope) {
 func (e *env) jsonOK(into any, args ...string) {
 	e.t.Helper()
 	if code, doc := e.jsonRun(args...); code != 0 {
-		e.t.Fatalf("agx %q --json exited %d: %+v", args, code, doc.Error)
+		e.t.Fatalf("agx %q --json exited %d: %+v", args, code, doc.Message)
 	} else if into == nil {
 		return
 	} else if err := json.Unmarshal(doc.Data, into); err != nil {
@@ -334,23 +367,25 @@ func (e *env) jsonOK(into any, args ...string) {
 	}
 }
 
-// jsonFail runs agx with --json and requires exit status 1 with the error code given.
-func (e *env) jsonFail(code string, args ...string) {
+// jsonFail requires exit status 1 and a nonempty error message.
+func (e *env) jsonFail(args ...string) {
 	e.t.Helper()
-	if got, doc := e.jsonRun(args...); got != 1 || doc.Error.Code != code {
-		e.t.Fatalf("agx %q --json exited %d with %+v, want error %s", args, got, doc.Error, code)
+	if got, doc := e.jsonRun(args...); got != 1 || doc.Message == "" {
+		e.t.Fatalf("agx %q --json exited %d with %+v", args, got, doc)
 	}
 }
 
 func TestEndToEnd(t *testing.T) {
 	e := newEnv(t)
+	t.Cleanup(func() { e.stopDaemon(true) })
 
 	if r := e.ok("--version"); !strings.Contains(r.stdout, version) {
 		t.Fatalf("--version printed %q", r.stdout)
 	}
 	e.ok("config", "validate")
+	e.stopDaemon(true)
 
-	t.Run("passthrough without a daemon", func(t *testing.T) {
+	t.Run("passthrough starts daemon without managed resources", func(t *testing.T) {
 		d, r := e.harness("claude-e2e", "--version")
 		if r.code != 0 || !strings.Contains(r.stdout, "fakeharness 1") {
 			t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
@@ -363,6 +398,9 @@ func TestEndToEnd(t *testing.T) {
 		}
 		if _, ok := d.Env["AGX_MCP_GRANT"]; ok {
 			t.Error("passthrough received a grant")
+		}
+		if !e.daemonRunning() {
+			t.Fatal("passthrough did not start a daemon to resolve its environment")
 		}
 	})
 
@@ -407,6 +445,7 @@ func TestEndToEnd(t *testing.T) {
 		}
 
 		// A managed launch through a link starts the daemon as agx, not as the link's harness.
+		e.stopDaemon(true)
 		r := e.run(filepath.Join(links, "claude-e2e"), []string{path}, "-p", "hi")
 		if r.code != 0 || !e.daemonRunning() {
 			t.Fatalf("managed launch through a link: exit %d, stderr %q", r.code, r.stderr)
@@ -414,12 +453,12 @@ func TestEndToEnd(t *testing.T) {
 		e.stopDaemon(true)
 	})
 
-	if e.daemonRunning() {
-		t.Fatal("a passthrough command started the daemon")
-	}
-	r := e.agx([]string{"AGX_NO_AUTOSTART=1"}, "claude", "-p", "hi")
-	if r.code != 1 || !strings.Contains(r.stderr, "agx daemon start") || e.daemonRunning() {
-		t.Fatalf("a managed launch with autostart disabled: exit %d, %q", r.code, r.stderr)
+	e.stopDaemon(true)
+	for _, args := range [][]string{{"claude", "--help"}, {"claude", "-p", "hi"}} {
+		r := e.agx([]string{"AGX_NO_AUTOSTART=1"}, args...)
+		if r.code != 1 || !strings.Contains(r.stderr, "agx daemon start") || e.daemonRunning() {
+			t.Fatalf("%v with autostart disabled: exit %d, %q", args, r.code, r.stderr)
+		}
 	}
 	if r := e.agx(nil, "daemon", "status"); r.code != 0 || !strings.Contains(r.stdout, "not running") ||
 		e.daemonRunning() {
@@ -427,7 +466,6 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	e.ok("daemon", "start")
-	t.Cleanup(func() { e.stopDaemon(true) })
 	if r := e.ok("daemon", "status", "--json"); !strings.Contains(r.stdout, version) {
 		t.Fatalf("daemon status = %s", r.stdout)
 	}
@@ -445,20 +483,16 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("args = %q, want the definition's group, then the session ID, before the native arguments", d.Args)
 		}
 		// The launch records the session it started, so it never claims another by time.
-		var records struct {
-			Records []struct {
-				Sessions []string `json:"sessions"`
-				Exact    bool     `json:"exact"`
-			} `json:"records"`
+		db, err := storage.Open(context.Background(), storage.State(filepath.Join(e.dir, "state")))
+		if err != nil {
+			t.Fatal(err)
 		}
-		b, err := os.ReadFile(filepath.Join(e.dir, "state", "launch-records.json"))
-		if err == nil {
-			err = json.Unmarshal(b, &records)
-		}
-		last := len(records.Records) - 1
-		if err != nil || last < 0 || !records.Records[last].Exact ||
-			!slices.Equal(records.Records[last].Sessions, []string{d.Args[n-3]}) {
-			t.Errorf("launch records = %s, %v", b, err)
+		var exact bool
+		err = db.QueryRowContext(context.Background(), `SELECT l.exact FROM launches l
+ JOIN launch_sessions s ON s.launch = l.id WHERE s.session = ?`, d.Args[n-3]).Scan(&exact)
+		_ = db.Close()
+		if err != nil || !exact {
+			t.Errorf("named launch = %v, %v", exact, err)
 		}
 		work, err := filepath.EvalSymlinks(e.work)
 		if err != nil {
@@ -551,22 +585,8 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("launches = %+v", view.Launches)
 		}
 		e.jsonOK(nil, "launch", "revoke", view.Launches[0].ID)
-		e.jsonFail("not_found", "launch", "revoke", "missing")
-		e.jsonFail("not_found", "launch", "show", "missing")
-
-		var tested struct {
-			ServerName string `json:"server_name"`
-			Tools      []struct {
-				Name        string `json:"name"`
-				Description string `json:"description"`
-			} `json:"tool_details"`
-		}
-		e.jsonOK(&tested, "mcp", "test", "echo")
-		if tested.ServerName != "fakemcp" ||
-			len(tested.Tools) != 5 || tested.Tools[0].Name != "echo" || tested.Tools[0].Description != "Echo text." {
-			t.Fatalf("mcp test = %+v", tested)
-		}
-		e.jsonFail("not_found", "mcp", "test", "missing")
+		e.jsonFail("launch", "revoke", "missing")
+		e.jsonFail("launch", "show", "missing")
 
 		var secrets struct {
 			Secrets []struct {
@@ -578,7 +598,7 @@ func TestEndToEnd(t *testing.T) {
 		if len(secrets.Secrets) != 1 || secrets.Secrets[0].ID == "" || secrets.Secrets[0].State == "" {
 			t.Fatalf("secret status = %+v", secrets)
 		}
-		e.jsonFail("failed_precondition", "secret", "set", "sealed")
+		e.jsonFail("secret", "set", "sealed")
 	})
 
 	t.Run("agent sdk initialize", func(t *testing.T) {
@@ -732,14 +752,14 @@ func TestAutostart(t *testing.T) {
 		}
 	})
 
-	t.Run("idle daemon of another build is replaced", func(t *testing.T) {
+	t.Run("idle daemon of an older agx is replaced", func(t *testing.T) {
 		e := newEnv(t)
 		t.Cleanup(func() { e.stopDaemon(true) })
 		if r := e.run(binaries.oldAgx, nil, "daemon", "start"); r.code != 0 {
 			t.Fatalf("old daemon start: exit %d: %s", r.code, r.stderr)
 		}
-		if r := e.agx(nil, "daemon", "status"); r.code != 0 || !strings.Contains(r.stderr, "runs agx "+oldVersion) {
-			t.Fatalf("status of another build: exit %d, %q", r.code, r.stderr)
+		if got := e.daemonVersion(); got != oldVersion {
+			t.Fatalf("daemon status version = %s, want %s", got, oldVersion)
 		}
 		_, r := e.harness("claude", "-p", "hello")
 		if r.code != 0 {
@@ -839,7 +859,7 @@ func TestDoctor(t *testing.T) {
 
 	human := e.agx(nil, "doctor", "--all")
 	if human.code != 1 || !strings.Contains(human.stdout, "CHECK") || !strings.Contains(human.stdout, "mcp broken") ||
-		!strings.Contains(human.stdout, "agx mcp test broken") {
+		!strings.Contains(human.stdout, "agx mcp tools broken") {
 		t.Fatalf("doctor --all printed (exit %d):\n%s", human.code, human.stdout)
 	}
 }

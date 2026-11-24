@@ -94,8 +94,8 @@ skills:
           #!/bin/sh
           set -eu
           make deploy
-      references/checklist.md: {path: ./docs/release-checklist.md}   # copied file
-      assets/: {path: ./deploy-assets/}                              # copied directory
+      references/checklist.md: { path: ./docs/release-checklist.md } # copied file
+      assets/: { path: ./deploy-assets/ } # copied directory
 ```
 
 For an inline skill, `description` is required and `content` is the body of
@@ -152,7 +152,7 @@ bundles:
     skills: [review]
     instructions: [standards]
 packages:
-  shared:                      # a dependency, named team/shared
+  shared: # a dependency, named team/shared
     git: https://github.com/example/shared.git
 ```
 
@@ -172,10 +172,20 @@ agx update team        # just one
 ```
 
 - `install` fetches packages and Git skills and instructions, then records the
-  exact commit or content hash in `agx.lock.json` next to the configuration
-  file that declares them. Commit lockfiles along with the configuration.
-- Launching never fetches or updates anything. A missing package makes the
-  launch fail with a hint to run `agx install`.
+  exact commit or content hash in the local configuration database for
+  CLI/UI-managed sources, or in `agx.lock.json` next to the YAML overlay that
+  declares them. Commit portable lockfiles along with YAML configuration.
+- `install` hashes what it copies into the cache, and other commands trust an
+  installed package without reading it again. `agx doctor` hashes installed
+  packages again and names any cache entry that changed since.
+- Claude Code and Pi launches read the selected skills and instructions from a
+  copy in the cache, made once per distinct content and shared by every
+  directory that selects the same; Codex gets skills from its native plugins
+  and copies only instructions. The daemon deletes copies no launch used for 7
+  days.
+- Launching never fetches or updates anything. A missing package produces a
+  warning with a hint to run `agx install`; the launch continues without that
+  package's resources.
 - `update` is the only command that moves a package to a newer commit. A Git
   skill or instructions file updates by kind and ID: `agx update
   skill:strict-review`.
@@ -190,10 +200,10 @@ A source that names an exact version needs no lock entry:
 packages:
   team:
     git: https://github.com/example/agent-resources.git
-    ref: 3f2c9e1a8b7d6c5e4f3a2b1c0d9e8f7a6b5c4d3e   # a full commit
+    ref: 3f2c9e1a8b7d6c5e4f3a2b1c0d9e8f7a6b5c4d3e # a full commit
   vendored:
     path: ./vendor/resources
-    hash: 2610e87326d59c6c9d74031fc4e5bbec8f87d9cf0f63cf89ee7373113a1cc88d  # from the lockfile
+    hash: 2610e87326d59c6c9d74031fc4e5bbec8f87d9cf0f63cf89ee7373113a1cc88d # from the lockfile
 ```
 
 A `path` inside `/nix/store` is pinned too, which suits configuration generated

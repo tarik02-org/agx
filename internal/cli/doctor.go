@@ -9,6 +9,8 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"net/netip"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,7 +28,7 @@ import (
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/daemon"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/shims"
 )
@@ -76,7 +78,7 @@ type doctorReport struct {
 	} `json:"summary"`
 }
 
-func doctorCommand(paths *platform.Paths, registry adapters.Registry, builtins *config.Builtins) *cobra.Command {
+func doctorCommand(a *app) *cobra.Command {
 	all := false
 	command := &cobra.Command{
 		Use:     "doctor [directory]",
@@ -91,14 +93,14 @@ func doctorCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 			if info, err := os.Stat(directory); err != nil {
 				return statError("directory", directory, err)
 			} else if !info.IsDir() {
-				return codedf(codeInvalidRequest, "not a directory: %s", directory)
+				return fmt.Errorf("not a directory: %s", directory)
 			}
 			// The report spells every path as configuration and launches do, symbolic links resolved.
-			directory, err := config.Canonical(directory)
+			directory, err := platform.Canonical(directory)
 			if err != nil {
 				return err
 			}
-			report := runDoctor(cmd.Context(), *paths, registry, *builtins, directory, all)
+			report := a.runDoctor(cmd.Context(), directory, all)
 			if err := emit(report, func() error { return printDoctor(report) }); err != nil {
 				return err
 			}
@@ -112,18 +114,15 @@ func doctorCommand(paths *platform.Paths, registry adapters.Registry, builtins *
 	return command
 }
 
-func runDoctor(
+func (a *app) runDoctor(
 	ctx context.Context,
-	paths platform.Paths,
-	registry adapters.Registry,
-	builtins config.Builtins,
 	directory string,
 	all bool,
 ) doctorReport {
-	report := doctorReport{Directory: directory, Root: paths.Config, Files: []string{}}
+	report := doctorReport{Directory: directory, Root: a.paths.Config, Files: []string{}}
 	add := func(checks ...check) { report.Checks = append(report.Checks, checks...) }
 
-	c, loaded, checks := configChecks(paths, builtins)
+	c, loaded, checks := a.configChecks()
 	add(checks...)
 	if c.Root != "" {
 		report.Root = c.Root
@@ -133,19 +132,29 @@ func runDoctor(
 	}
 
 	executables := map[string]string{}
-	harnessRows := make([]check, len(registry.Names()))
+	harnessRows := make([]check, len(a.registry.Launchers()))
 	var wg sync.WaitGroup
-	for i, name := range registry.Names() {
-		adapter, _ := registry.Adapter(name)
+	for i, name := range a.registry.Launchers() {
+		adapter, _ := a.registry.Launcher(name)
 		configured := ""
+		used := false
 		if h, err := c.Harness(name); err == nil {
 			configured = h.Executable
+			used = h.Enabled
 		}
 		defined := false
 		for definition := range c.Harnesses {
-			if h, err := c.Harness(definition); err == nil && h.Builtin == name {
+			if h, err := c.Harness(definition); err == nil && h.Builtin == name && h.Enabled {
 				defined = true
 			}
+		}
+		// A disabled built-in that no enabled definition runs need not be installed.
+		if !used && !defined {
+			continue
+		}
+		if _, err := adapter.Executable(""); errors.Is(err, adapters.ErrNoExecutable) {
+			// A base without an executable of its own; definitionExecutables checks what runs.
+			continue
 		}
 		executable, findErr := adapter.Executable(configured)
 		if findErr == nil {
@@ -165,22 +174,30 @@ func runDoctor(
 		})
 	}
 	wg.Wait()
-	add(harnessRows...)
+	for _, row := range harnessRows {
+		if row.Name != "" {
+			add(row)
+		}
+	}
+	add(definitionExecutables(c, a.registry)...)
 
-	if loaded && len(c.Skills) > 0 {
-		add(definitionChecks(ctx, c, registry, paths.Cache)...)
+	if loaded {
+		add(definitionChecks(ctx, c, a.registry, a.paths.Cache)...)
 	}
 
-	client, daemonRow := connectDaemon(ctx, paths, c)
+	client, daemonRow := connectDaemon(ctx, a.paths, a.autostart())
 	add(daemonRow)
 	if client != nil && loaded {
 		add(mcpChecks(ctx, client, c, directory, all)...)
+	}
+	if loaded {
+		add(cleartextChecks(c)...)
 	}
 	if client != nil {
 		add(secretChecks(ctx, client)...)
 	}
 	add(sopsChecks(c, exec.LookPath)...)
-	add(shimChecks(c, registry)...)
+	add(shimChecks(c, a.registry)...)
 
 	for _, ch := range report.Checks {
 		switch ch.Status {
@@ -197,10 +214,10 @@ func runDoctor(
 
 // configChecks loads the configuration. When it does not load, the fragments alone, or else
 // only the built-ins, still let the other checks run; loaded reports a complete load.
-func configChecks(paths platform.Paths, builtins config.Builtins) (*config.Config, bool, []check) {
-	read, readErr := config.Load(paths.Config, config.Options{Builtins: builtins})
+func (a *app) configChecks() (*config.Config, bool, []check) {
+	read, readErr := a.fragmentConfig()
 	if readErr != nil {
-		return config.Bare(builtins), false, []check{{
+		return config.Bare(a.builtins), false, []check{{
 			Group:  "config",
 			Name:   "configuration",
 			Status: checkFail,
@@ -208,8 +225,21 @@ func configChecks(paths platform.Paths, builtins config.Builtins) (*config.Confi
 			Hint:   "fix the reported fragment; agx config validate shows the error",
 		}}
 	}
-	c, loadErr := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
-	return packageChecks(read, c, loadErr, filesDetail(read))
+	c, loadErr := a.config()
+	c, loaded, checks := packageChecks(read, c, loadErr, filesDetail(read))
+	// Loading trusts installed content; a damaged cache entry stays until it is removed.
+	if loaded {
+		if err := c.VerifyPackages(a.paths.Cache); err != nil {
+			checks[len(checks)-1] = check{
+				Group:  "config",
+				Name:   "packages",
+				Status: checkFail,
+				Detail: err.Error(),
+				Hint:   "delete that cache entry and run agx install",
+			}
+		}
+	}
+	return c, loaded, checks
 }
 
 // filesDetail describes the files configuration was read from. A root file that does not exist
@@ -254,8 +284,7 @@ func packageChecks(read, c *config.Config, loadErr error, files string) (*config
 		}
 		return c, true, []check{configRow, {Group: "config", Name: "packages", Status: checkPass, Detail: detail}}
 	case strings.Contains(loadErr.Error(), "run agx install") ||
-		strings.Contains(loadErr.Error(), "stale dependency lock") ||
-		strings.Contains(loadErr.Error(), "cache content does not match"):
+		strings.Contains(loadErr.Error(), "stale dependency lock"):
 		return read, false, []check{configRow, {
 			Group:  "config",
 			Name:   "packages",
@@ -337,6 +366,38 @@ func harnessCheck(
 	return row
 }
 
+// definitionExecutables checks the executables of definitions whose base has none of its own.
+func definitionExecutables(c *config.Config, registry adapters.Registry) []check {
+	rows := []check{}
+	for _, name := range slices.Sorted(maps.Keys(c.Harnesses)) {
+		h, err := c.Harness(name)
+		if err != nil || !h.Enabled {
+			continue
+		}
+		adapter, ok := registry.Launcher(h.Builtin)
+		if !ok {
+			continue
+		}
+		if _, err := adapter.Executable(""); !errors.Is(err, adapters.ErrNoExecutable) {
+			continue
+		}
+		row := check{Group: "harness", Name: name, Status: checkPass}
+		executable, err := adapter.Executable(h.Executable)
+		switch {
+		case errors.Is(err, adapters.ErrNoExecutable):
+			row.Status, row.Detail = checkFail, "no executable configured"
+			row.Hint = fmt.Sprintf("set harnesses.%s.executable to the agent's absolute path", name)
+		case err != nil:
+			row.Status, row.Detail = checkFail, err.Error()
+			row.Hint = fmt.Sprintf("fix harnesses.%s.executable", name)
+		default:
+			row.Detail = fmt.Sprintf("%s (%s)", shownPath(executable), h.Builtin)
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
 // definitionChecks runs the checks of the adapters that have their own, for every harness
 // definition based on them.
 func definitionChecks(ctx context.Context, c *config.Config, registry adapters.Registry, cache string) []check {
@@ -350,10 +411,10 @@ func definitionChecks(ctx context.Context, c *config.Config, registry adapters.R
 	rows := []check{}
 	for _, name := range names {
 		h, err := c.Harness(name)
-		if err != nil {
+		if err != nil || !h.Enabled {
 			continue
 		}
-		adapter, _ := registry.Adapter(h.Builtin)
+		adapter, _ := registry.Launcher(h.Builtin)
 		doctor, ok := adapter.(adapters.Doctor)
 		if !ok {
 			continue
@@ -374,42 +435,34 @@ func definitionChecks(ctx context.Context, c *config.Config, registry adapters.R
 	return rows
 }
 
-// connectDaemon reaches a daemon of this build, starting it as other commands do, and reports
+// connectDaemon reaches a daemon this agx can use, starting it as other commands do, and reports
 // what it found.
-func connectDaemon(ctx context.Context, paths platform.Paths, c *config.Config) (*client, check) {
+func connectDaemon(ctx context.Context, paths platform.Paths, enabled bool) (*client, check) {
 	row := check{Group: "daemon", Name: "daemon"}
-	before, discoveryErr := daemon.ReadDiscovery(paths)
-	if !autostart(c) {
+	before, _ := control.ReadDiscovery(paths)
+	if !enabled {
 		client, err := newClient(paths)
 		if err != nil {
 			row.Status, row.Detail = checkWarn, "not running; automatic startup is off"
 			row.Hint = "run agx daemon start to test MCP servers and secrets"
 			return nil, row
 		}
-		return daemonClientCheck(ctx, paths, client, before, discoveryErr, false)
+		return daemonClientCheck(ctx, paths, client, before, false)
 	}
 	client, err := daemonClient(ctx, paths, true)
 	if err != nil {
 		row.Status, row.Detail = checkFail, errorMessage(err)
-		switch {
-		case errors.Is(err, daemon.ErrVersionMismatch) && strings.Contains(err.Error(), "--force"):
-			row.Hint = "run agx daemon stop --force, then agx doctor again"
-		case errors.Is(err, daemon.ErrVersionMismatch):
-			row.Hint = "run agx daemon stop, then agx doctor again"
-		default:
-			row.Hint = "inspect " + shownPath(filepath.Join(paths.Runtime, "daemon.log"))
-		}
+		row.Hint = "inspect " + shownPath(filepath.Join(paths.Runtime, "daemon.log"))
 		return nil, row
 	}
-	return daemonClientCheck(ctx, paths, client, before, discoveryErr, true)
+	return daemonClientCheck(ctx, paths, client, before, true)
 }
 
 func daemonClientCheck(
 	ctx context.Context,
 	paths platform.Paths,
 	c *client,
-	before daemon.Discovery,
-	discoveryErr error,
+	before control.Discovery,
 	started bool,
 ) (*client, check) {
 	row := check{Group: "daemon", Name: "daemon"}
@@ -421,34 +474,25 @@ func daemonClientCheck(
 	}
 	return c, daemonCheck(daemonFacts{
 		version:        c.discovery.Version,
-		config:         c.discovery.Config,
-		wantConfig:     paths.Config,
 		instance:       c.discovery.InstanceID,
 		previous:       before.InstanceID,
-		otherBuild:     errors.Is(discoveryErr, daemon.ErrVersionMismatch),
 		mayHaveStarted: started,
 		launches:       len(view.Msg.GetRuntime().GetLaunches()),
 	})
 }
 
 type daemonFacts struct {
-	version, config, wantConfig string
-	instance, previous          string
-	otherBuild, mayHaveStarted  bool
-	launches                    int
+	version            string
+	instance, previous string
+	mayHaveStarted     bool
+	launches           int
 }
 
 func daemonCheck(f daemonFacts) check {
 	row := check{Group: "daemon", Name: "daemon", Status: checkPass}
-	if f.config != f.wantConfig {
-		row.Status = checkFail
-		row.Detail = "serves configuration " + f.config
-		row.Hint = "run agx daemon stop, then agx --config " + shellQuote(f.wantConfig) + " daemon start"
-		return row
-	}
 	switch {
-	case f.mayHaveStarted && f.instance != f.previous && f.otherBuild:
-		row.Detail = "replaced another build; now version " + f.version
+	case f.mayHaveStarted && f.instance != f.previous && f.previous != "":
+		row.Detail = "replaced daemon; now version " + f.version
 	case f.mayHaveStarted && f.instance != f.previous:
 		row.Detail = "started, version " + f.version
 	default:
@@ -487,24 +531,20 @@ func mcpChecks(ctx context.Context, c *client, cfg *config.Config, directory str
 	rows := make([]check, len(ids))
 	var wg sync.WaitGroup
 	for i, id := range ids {
-		snapshot := &config.Snapshot{Config: cfg, Resources: []config.Resource{{Kind: "mcp", ID: id}}}
-		inputs := map[string]string{}
-		for _, name := range snapshot.MCPEnvironment() {
-			if value, ok := os.LookupEnv(name); ok {
-				inputs[name] = value
-			}
-		}
+		inputs := environmentInputs(mcpEnvironment(cfg, id))
 		wg.Go(func() {
 			call, cancel := context.WithTimeout(ctx, doctorMCPTimeout)
 			defer cancel()
-			response, err := c.runtime.TestMcpServer(call, connect.NewRequest(&v1.TestMcpServerRequest{
-				McpId:             string(id),
-				Directory:         directory,
-				EnvironmentInputs: inputs,
+			response, err := c.runtime.ListTools(call, connect.NewRequest(&v1.ListToolsRequest{
+				McpId: string(id),
+				Scope: &v1.McpCallScope{Directory: directory, All: true, EnvironmentInputs: inputs},
 			}))
-			var msg *v1.TestMcpServerResponse
-			if err == nil {
-				msg = response.Msg
+			var msg *v1.McpTools
+			switch {
+			case err == nil && len(response.Msg.Servers) == 0:
+				err = errors.New("the daemon listed no tools for the server")
+			case err == nil:
+				msg = response.Msg.Servers[0]
 			}
 			rows[i] = mcpCheck(id, cfg.MCP[id], msg, err)
 		})
@@ -513,7 +553,39 @@ func mcpChecks(ctx context.Context, c *client, cfg *config.Config, directory str
 	return rows
 }
 
-func mcpCheck(id config.ID, server config.MCPServer, response *v1.TestMcpServerResponse, err error) check {
+// cleartextChecks warn about remote MCP servers whose credentials cross a network unencrypted.
+// Such servers exist on purpose, on a home network or a tailnet, so this is no error.
+func cleartextChecks(c *config.Config) []check {
+	rows := []check{}
+	for _, id := range slices.Sorted(maps.Keys(c.MCP)) {
+		server := c.MCP[id]
+		u, err := url.Parse(server.URL)
+		if err != nil || u.Scheme != "http" {
+			continue
+		}
+		if ip, err := netip.ParseAddr(u.Hostname()); u.Hostname() == "localhost" || err == nil && ip.IsLoopback() {
+			continue
+		}
+		injected := func(v config.Value) bool { return v.Env != "" || v.File != "" || v.Secret != "" }
+		// On-demand OAuth holds no credential until the server asks for a login.
+		credentials := injected(server.Auth.Value) || server.Auth.Inline != nil && !server.Auth.Inline.Implicit
+		for _, header := range server.Headers {
+			credentials = credentials || injected(header)
+		}
+		if credentials {
+			rows = append(rows, check{
+				Group:  "mcp",
+				Name:   string(id),
+				Status: checkWarn,
+				Detail: "sends its credentials to " + u.Host + " unencrypted",
+				Hint:   "use an https URL unless the network between is trusted",
+			})
+		}
+	}
+	return rows
+}
+
+func mcpCheck(id config.ID, server config.MCPServer, response *v1.McpTools, err error) check {
 	row := check{Group: "mcp", Name: string(id)}
 	if err == nil {
 		row.Status = checkPass
@@ -528,19 +600,19 @@ func mcpCheck(id config.ID, server config.MCPServer, response *v1.TestMcpServerR
 	if errors.As(err, &rpc) {
 		message = rpc.Message()
 	}
-	switch errorCode(err) {
-	case codeNeedsLogin:
+	switch connect.CodeOf(err) {
+	case connect.CodeUnauthenticated:
 		row.Status, row.Detail = checkWarn, "needs authorization: "+message
 		row.Hint = "run agx secret login " + string(cmp.Or(server.Auth.Secret, id))
 		if server.Auth.Env != "" || server.Auth.File != "" {
 			row.Hint = "check " + server.Auth.String()
 		}
-	case codeTimeout:
+	case connect.CodeDeadlineExceeded:
 		row.Status, row.Detail = checkFail, fmt.Sprintf("no answer within %s", doctorMCPTimeout)
-		row.Hint = "run agx mcp test " + string(id) + " for details"
+		row.Hint = "run agx mcp tools " + string(id) + " --all for details"
 	default:
 		row.Status, row.Detail = checkFail, message
-		row.Hint = "run agx mcp test " + string(id) + " for details"
+		row.Hint = "run agx mcp tools " + string(id) + " --all for details"
 	}
 	return row
 }
@@ -633,7 +705,7 @@ func sopsChecks(c *config.Config, lookPath func(string) (string, error)) []check
 // whether the directory is on PATH, and which other executables share their names.
 func shimChecks(c *config.Config, registry adapters.Registry) []check {
 	names := []string{}
-	for _, name := range c.HarnessNames() {
+	for _, name := range registry.Launchable(c) {
 		if _, builtin := registry.Adapter(name); !builtin {
 			names = append(names, name)
 		}
@@ -645,24 +717,11 @@ func shimChecks(c *config.Config, registry adapters.Registry) []check {
 	if err != nil {
 		return []check{{Group: "shims", Name: "shims", Status: checkWarn, Detail: err.Error()}}
 	}
-	linked, names := linkedOnPath(names)
-	if len(names) == 0 {
-		return []check{{
-			Group:  "shims",
-			Name:   "links",
-			Status: checkPass,
-			Detail: plural(len(linked), "definition") + " run agx through links on PATH",
-		}}
-	}
 	target, err := shims.Target(os.Args[0])
 	if err != nil {
 		return []check{{Group: "shims", Name: "shims", Status: checkWarn, Detail: err.Error()}}
 	}
-	entries, err := shims.List(dir, target, names)
-	if err != nil {
-		return []check{{Group: "shims", Name: "shims", Status: checkWarn, Detail: err.Error()}}
-	}
-	return shimRows(dir, entries, shims.OnPath(dir), shims.Collisions(dir, target, names))
+	return shimFindings(dir, target, names)
 }
 
 // linkedOnPath splits names into those PATH already runs as agx, through links outside the shim
@@ -781,7 +840,7 @@ func printDoctor(report doctorReport) error {
 // shownPath spells path in a report as configuration and launches do, symbolic links resolved;
 // the files themselves are still reached by the path given.
 func shownPath(path string) string {
-	if canonical, err := config.Canonical(path); err == nil {
+	if canonical, err := platform.Canonical(path); err == nil {
 		return canonical
 	}
 	return path

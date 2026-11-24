@@ -1,6 +1,9 @@
 # Edit configuration from the CLI
 
-Status: accepted.
+Status: superseded by [ADR 0029](0029-local-configuration.md).
+
+The command features remain; the YAML editing engine, diff previews and fragment
+placement described below have been removed.
 
 Configuration stays hand-written YAML; commands edit it for the common cases.
 
@@ -8,7 +11,7 @@ Configuration stays hand-written YAML; commands edit it for the common cases.
 agx mcp add github https://api.githubcopilot.com/mcp
 agx mcp add fs -- npx -y @modelcontextprotocol/server-filesystem .
 agx mcp add docs https://docs.example/mcp --header 'X-Key=!secret docs' --auth none
-agx mcp list | remove <id> | login <id> | test <id>
+agx mcp list | remove <id> | login <id> | tools <id>
 
 agx skill add ./skills/deploy
 agx skill add anthropics/skills                   # several skills: pick interactively
@@ -38,10 +41,11 @@ another rule added it, appends it to `remove`.
 
 ## Interaction
 
-On a terminal, missing arguments become prompts, and each command shows the
-change as a diff before writing. Without a terminal, missing arguments are errors
-and `--yes` is implied. After `mcp add` of an HTTP server, agx probes it; when it
-asks for OAuth, agx offers to log in now with the blocking `secret login` flow.
+On a terminal, missing arguments become prompts; without one, they are errors.
+Commands save without asking: an edit only changes the daemon's database, and
+`agx unuse` or `remove` undoes it. After `mcp add` of an HTTP server, agx probes
+it; when it asks for OAuth, agx offers to log in now with the blocking
+`secret login` flow.
 `skill add` accepts a path, a Git URL, or GitHub's `owner/repo[@ref][/path]`. It
 fetches the source, finds every `SKILL.md`, and offers a multi-select picker
 unless `--skill` or `--all` decides; the selection becomes a locked package whose
@@ -70,7 +74,7 @@ reason.
   are passed to the loader as an in-memory overlay; nothing is written unless
   the whole configuration loads. New definitions go to a fragment the root
   lists ([ADR 0027](0027-root-file-and-fragments.md)). Writes keep the file's mode, land at a symlink's target,
-  and replace the file atomically; lockfiles are written private.
+  and replace the file atomically; lockfiles are written the same way.
 - **Placement.** Matching rules in files that cannot be written are skipped, so a
   read-only or generated fragment does not block enabling elsewhere; only the
   chosen target is refused. `use`/`unuse` create a missing rule in the target
@@ -80,8 +84,8 @@ reason.
 - **Login and test.** The probe is the unauthenticated request on-demand OAuth
   already uses: a 401 that leads to protected resource metadata. Logging in
   needs the daemon, which owns credentials; without it agx names the commands to
-  run later. `mcp test` is a daemon RPC (`TestMcpServer`) serving the server
-  through a launch-less endpoint on a private loopback listener, so credentials,
+  run later. `mcp tools <server>` uses the daemon RPC `ListTools` serving the server
+  through a launch-less endpoint over in-memory connections, so credentials,
   tags, and diagnostics behave as in a launch and no value leaves the daemon.
 - **Skills from Git.** The source becomes a package, not anonymous Git skills,
   so one checkout and one lock entry serve every chosen skill. A package root

@@ -13,9 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/cli/launcher"
 	"github.com/tarik02-org/agx/internal/cli/ui"
@@ -24,7 +27,7 @@ import (
 	"github.com/tarik02-org/agx/internal/sessions"
 )
 
-func sessionsCommand(paths *platform.Paths, registry adapters.Registry, harnesses *harnessConfig) *cobra.Command {
+func sessionsCommand(a *app) *cobra.Command {
 	all := false
 	cmd := &cobra.Command{
 		Use:     "sessions [query]",
@@ -35,7 +38,7 @@ func sessionsCommand(paths *platform.Paths, registry adapters.Registry, harnesse
 			if err != nil {
 				return err
 			}
-			listing, err := listSessions(cmd.Context(), *paths, registry, *harnesses)
+			listing, err := listSessions(cmd.Context(), a.paths, a.registry, a.harnesses, nil)
 			if err != nil {
 				return err
 			}
@@ -70,7 +73,7 @@ func workingDirectory() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return config.Canonical(cwd)
+	return platform.Canonical(cwd)
 }
 
 // listSessions lists every store and resumes recorded sessions with their definition while it
@@ -80,18 +83,96 @@ func listSessions(
 	paths platform.Paths,
 	registry adapters.Registry,
 	harnesses harnessConfig,
+	publish func(sessions.Listing, bool) error,
 ) (sessions.Listing, error) {
-	listing, err := sessions.List(ctx, registry, paths.Cache, paths.State)
+	var localErr *localConfigError
+	if errors.As(harnesses.err, &localErr) {
+		return sessions.Listing{}, harnesses.err
+	}
+	directory, err := os.Getwd()
 	if err != nil {
 		return sessions.Listing{}, err
 	}
-	for i := range listing.Entries {
-		e := &listing.Entries[i]
-		if h, err := harnesses.config.Harness(e.Harness); err != nil || h.Builtin != e.Builtin {
-			e.Harness = e.Builtin
+	stores, problems := sessions.Stores(registry, directory, os.Getenv)
+	var last sessions.Listing
+	deliver := func(listing sessions.Listing, fresh bool) error {
+		if listing.Errors == nil {
+			listing.Errors = map[string]error{}
 		}
+		maps.Copy(listing.Errors, problems)
+		for i := range listing.Entries {
+			entry := &listing.Entries[i]
+			if entry.SourceID != "" {
+				continue
+			}
+			if h, err := harnesses.config.Harness(entry.Harness); err != nil || h.Builtin != entry.Builtin {
+				entry.Harness = entry.Builtin
+			}
+		}
+		last = listing
+		if publish != nil {
+			return publish(listing, fresh)
+		}
+		return nil
 	}
-	return listing, nil
+	client, err := daemonClient(ctx, paths, autostart(harnesses.config))
+	if err != nil {
+		return sessions.Listing{}, err
+	}
+	stream, err := client.runtime.ListSessions(
+		ctx,
+		connect.NewRequest(&v1.ListSessionsRequest{Stores: stores, FreshOnly: publish == nil}),
+	)
+	if err != nil {
+		return sessions.Listing{}, err
+	}
+	defer func() { _ = stream.Close() }()
+	fresh := false
+	for stream.Receive() {
+		message := stream.Msg()
+		listing := sessions.Listing{
+			Entries: []sessions.Entry{},
+			Errors:  map[string]error{},
+			Stats: sessions.Stats{
+				Parsed:    int(message.Parsed),
+				Cached:    int(message.Cached),
+				Malformed: int(message.Malformed),
+			},
+		}
+		for name, problem := range message.Errors {
+			listing.Errors[name] = errors.New(problem)
+		}
+		for _, entry := range message.Sessions {
+			listing.Entries = append(
+				listing.Entries,
+				sessions.Entry{
+					Session: adapters.Session{
+						ID:        entry.Id,
+						Directory: entry.Directory,
+						Title:     entry.Title,
+						Message:   entry.Message,
+						Started:   entry.StartedAt.AsTime(),
+						Updated:   entry.UpdatedAt.AsTime(),
+					},
+					Builtin:  entry.Builtin,
+					Harness:  entry.Harness,
+					Recorded: entry.Recorded,
+					SourceID: entry.SourceId, ScopeID: entry.ScopeId, Online: entry.Online,
+				},
+			)
+		}
+		if err := deliver(listing, message.Fresh); err != nil {
+			return sessions.Listing{}, err
+		}
+		fresh = message.Fresh
+	}
+	if err := stream.Err(); err != nil {
+		return sessions.Listing{}, err
+	}
+	if !fresh {
+		return sessions.Listing{}, errors.New("session listing ended without a fresh result")
+	}
+	return last, nil
 }
 
 func reportListing(listing sessions.Listing) {
@@ -132,11 +213,20 @@ func printSessions(entries []sessions.Entry, directory string, all, searched boo
 	rows := [][]string{}
 	fixed := []int{len(headers[0]), len(headers[1]), len(headers[2]), len(headers[3])}
 	for _, e := range entries {
-		row := []string{e.Harness, ui.Ago(e.Updated, now), e.ID, ui.ShortPath(e.Directory, directory)}
+		row := []string{
+			e.Harness,
+			humanize.RelTime(e.Updated, now, "ago", "from now"),
+			e.ID,
+			ui.ShortPath(e.Directory, directory),
+		}
 		for i, cell := range row {
 			fixed[i] = max(fixed[i], ansi.StringWidth(cell))
 		}
-		rows = append(rows, append(row, cmp.Or(e.Title, e.Message)))
+		title := cmp.Or(e.Title, e.Message)
+		if e.SourceID != "" && !e.Online {
+			title = "(offline) " + title
+		}
+		rows = append(rows, append(row, title))
 	}
 	// On a terminal the title takes what the other columns leave; identifiers are never cut.
 	if width := out.Width(); width > 0 {
@@ -161,26 +251,47 @@ func printSessions(entries []sessions.Entry, directory string, all, searched boo
 
 // runLauncher opens the launcher and then starts or resumes the chosen harness. The launcher has
 // released the terminal by the time the harness starts.
-func runLauncher(ctx context.Context, paths platform.Paths, registry adapters.Registry, harnesses harnessConfig) error {
+func runLauncher(ctx context.Context, a *app) error {
 	directory, err := workingDirectory()
 	if err != nil {
 		return err
 	}
-	listing, err := listSessions(ctx, paths, registry, harnesses)
-	if err != nil {
-		return err
-	}
+	loaded := make(chan harnessConfig, 1)
 	opts := launcher.Options{
-		Sessions:  listing.Entries,
-		Directory: directory,
-		Profile:   ui.Stdout.Profile(),
-		Notes:     listingNotes(listing),
-	}
-	if harnesses.err != nil {
-		opts.Notes = append(opts.Notes, fmt.Sprintf("Only built-ins: configuration did not load: %v", harnesses.err))
-	}
-	if opts.Harnesses, err = launcherHarnesses(harnesses.config); err != nil {
-		return err
+		Directory: directory, Profile: ui.Stdout.Profile(),
+		LoadSessions: func(ctx context.Context, publish func(launcher.SessionUpdate) error) error {
+			loader := &app{paths: a.paths, registry: a.registry, builtins: a.builtins}
+			_, _ = loader.localConfigContext(ctx)
+			harnesses := loader.fragments()
+			loaded <- harnesses
+			notes := []string{}
+			if harnesses.err != nil {
+				notes = append(notes, fmt.Sprintf("Only built-ins: configuration did not load: %v", harnesses.err))
+			}
+			names, err := launcherHarnesses(harnesses.config, a.registry)
+			if err != nil {
+				return err
+			}
+			if err := publish(launcher.SessionUpdate{Harnesses: names, Notes: notes, Loading: true}); err != nil {
+				return err
+			}
+			_, err = listSessions(
+				ctx,
+				a.paths,
+				a.registry,
+				harnesses,
+				func(listing sessions.Listing, fresh bool) error {
+					return publish(
+						launcher.SessionUpdate{
+							Entries: listing.Entries,
+							Notes:   append(slices.Clone(notes), listingNotes(listing)...),
+							Loading: !fresh,
+						},
+					)
+				},
+			)
+			return err
+		},
 	}
 	choice, err := launcher.Run(ctx, opts)
 	if err != nil {
@@ -192,26 +303,32 @@ func runLauncher(ctx context.Context, paths platform.Paths, registry adapters.Re
 	case launcher.Interrupt:
 		return &ExitError{Code: 130}
 	case launcher.Start:
-		return runHarness(ctx, paths, registry, harnesses, choice.Harness, nil, "")
+		return runHarness(ctx, a.paths, a.registry, <-loaded, choice.Harness, nil, "")
 	case launcher.Resume:
-		return resumeSession(ctx, paths, registry, harnesses, choice.Session, choice.Harness)
+		return resumeSession(ctx, a.paths, a.registry, <-loaded, choice.Session, choice.Harness)
 	}
 	return nil
 }
 
 // launcherHarnesses lists the harnesses the launcher offers: built-ins first, then definitions,
-// each in name order. Hidden ones still run by name.
-func launcherHarnesses(c *config.Config) ([]launcher.Harness, error) {
+// each in name order. Hidden ones still run by name, and so do protocol servers such as ACP
+// agents, which a terminal cannot drive; disabled ones are not launchable.
+func launcherHarnesses(c *config.Config, registry adapters.Registry) ([]launcher.Harness, error) {
 	out := []launcher.Harness{}
-	names := c.HarnessNames()
+	names := registry.Launchable(c)
 	for _, builtin := range []bool{true, false} {
 		for _, name := range names {
 			h, err := c.Harness(name)
 			if err != nil {
 				return nil, err
 			}
+			if adapter, ok := registry.Adapter(h.Builtin); ok {
+				if t, ok := adapter.(adapters.Threads); ok && t.ThreadServer(h, nil) {
+					continue
+				}
+			}
 			if (h.Builtin == name) == builtin && !h.Hidden {
-				out = append(out, launcher.Harness{Name: name, Builtin: h.Builtin})
+				out = append(out, launcher.Harness{Name: name, Builtin: h.Builtin, DisplayName: h.DisplayName})
 			}
 		}
 	}
@@ -228,12 +345,28 @@ func resumeSession(
 	session sessions.Entry,
 	name string,
 ) error {
+	if session.SourceID != "" {
+		h, err := harnesses.config.Harness(name)
+		if err != nil {
+			return fmt.Errorf("cannot resume session with harness %s: %w", name, err)
+		}
+		if h.Builtin != session.Builtin {
+			return fmt.Errorf("session harness %s now uses %s instead of %s", name, h.Builtin, session.Builtin)
+		}
+	}
 	adapter, ok := registry.Adapter(session.Builtin)
 	if !ok {
 		return fmt.Errorf("no adapter for harness %s", session.Builtin)
 	}
+	resumer, ok := adapter.(adapters.Resumer)
+	if !ok {
+		return fmt.Errorf("harness %s cannot resume native sessions", session.Builtin)
+	}
 	info, err := os.Stat(session.Directory)
-	if errors.Is(err, fs.ErrNotExist) || err == nil && !info.IsDir() {
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("session directory %s no longer exists: %w", session.Directory, err)
+	}
+	if err == nil && !info.IsDir() {
 		return fmt.Errorf("session directory %s no longer exists", session.Directory)
 	}
 	if err != nil {
@@ -242,5 +375,5 @@ func resumeSession(
 	if err := os.Chdir(session.Directory); err != nil {
 		return err
 	}
-	return runHarness(ctx, paths, registry, harnesses, name, adapter.Resume(session.Session), session.ID)
+	return runHarness(ctx, paths, registry, harnesses, name, resumer.Resume(session.Session), session.ID)
 }

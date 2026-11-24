@@ -8,33 +8,55 @@ The Go module path is `github.com/tarik02-org/agx`.
 
 ## Services
 
+- `ResourceService`: resolve configuration in an explicit scope namespace and
+  prepare a resource lease independently of process launching. Content is portable:
+  instruction text and skill trees with relative paths, bytes, executable flags,
+  empty directories and content digests. No producer filesystem paths or native
+  installation are required.
+
 - `ConfigurationService`: validate the daemon's configured root and resolve a
   directory for an optional harness, including provenance and required
-  environment names.
-- `PackageService`: install packages, streaming progress and then the result.
-  The CLI installs in-process instead; both paths share the installer lock.
+  environment names. `GetLocalConfiguration` supplies managed definitions and typed
+  package locks for CLI previews, without exposing a database connection. Its web-UI APIs browse configuration, definitions, skill
+  files and directories. `UpdateConfiguration` validates and commits semantic
+  local edits at an expected revision; `WriteResourceFile` separately replaces
+  a configured resource file. YAML configuration editing is removed.
+- `PackageService`: web-UI APIs to install packages, streaming progress and then
+  the result, and to preview and inspect Git sources, read preview files, and
+  list source refs. CLI install/update use the same RPC, including selected updates
+  and update-all. `packages_only` lets the CLI perform native plugin installation
+  with its own PATH and harness environment after the daemon saves package locks.
 - `LaunchService`: prepare, renew, finish, and administratively revoke a launch;
   resolve and prepare thread launches of a process serving many threads; attach
   a launch, with its thread launches, to a daemon that does not hold it.
-- `RuntimeService`: inspect/watch redacted daemon, launch, and MCP server state;
-  `TestMcpServer`, which connects to one MCP server outside any launch and
-  lists its tools with their descriptions (`agx mcp test`), accepting only the
-  environment variables the server's values name and reporting failures with the
-  endpoint's diagnostics; and `ListTools` and `CallTool`, which list and call the
+  `RecordLaunch` saves idempotent start/completion history independently of leases
+  and configuration loading, so a replacement can record a finished wrapper.
+- `RuntimeService`: inspect redacted daemon, launch, and MCP server state, with
+  `WatchRuntime` supplying live views for a UI;
+  `ListSessions` supplying cached and refreshed session history for the caller's
+  explicit store roots;
+  `ListTools` and `CallTool`, which list and call the
   tools of the MCP servers in a call scope (`agx mcp tools`, `agx mcp call`, and
-  the client of `agx mcp types`); and `Stop`, which stops the daemon.
+  the client of `agx mcp types`); list and stop MCP server processes; and `Stop`,
+  which stops the daemon.
 - `SecretService`: log in with OAuth, set a keychain secret, inspect secret
-  state, and log out.
+  state, rotate a credential, and log out.
+
+`ResolvePassthrough` accepts a harness, native arguments classified as passthrough,
+and only the environment inputs that definition references. It returns configured
+arguments and environment to the wrapper; no launch, lease, or MCP endpoints are
+created. This response is sensitive, like `PrepareLaunch`'s spawn environment.
+OAuth secrets remain restricted to HTTP MCP authentication.
 
 There is deliberately no client-facing `GetCredential` RPC. Upstream
-credentials and tool execution remain inside the daemon: `CallTool` returns only
+MCP credentials and tool execution remain inside the daemon: `CallTool` returns only
 the tool's result ([ADR 0022](../adr/0022-on-demand-mcp-calls.md)).
 
 ## Tool calls
 
 `ListTools` and `CallTool` take an `McpCallScope`. With `launch_id`, the request
 carries that launch's grant (`AGX_MCP_GRANT`) or management authorization and
-reaches the servers of the launch's snapshot, native and on-demand, through the
+reaches the servers of the launch's snapshot plus temporary attachments, native and on-demand, through the
 endpoints the launch holds, with its own values and environment inputs. Without
 it, the request carries management authorization and reaches the servers
 selected for `directory`, or every configured server with `all`; only the
@@ -48,8 +70,8 @@ text. `CallTool` returns the result's content items as a JSON array, binary data
 in base64, and its structured content as JSON. An unknown server is `NotFound`,
 one outside the scope `NotFound` naming the scope; an unknown tool, or arguments
 the server rejects as invalid params, `InvalidArgument` with the closest tool
-names; a server needing a login `REASON_NEEDS_LOGIN` with the `agx secret login`
-command; and other failures of the server `REASON_MCP_FAILED`. A request without
+names; a server needing a login `Unauthenticated` with the `agx secret login`
+command; and other failures of the server `FailedPrecondition`. A request without
 a deadline gets one: 45 seconds for listing, 10 minutes for a call.
 
 The daemon keeps one client session per launch, or per CLI scope, and server
@@ -58,7 +80,72 @@ else can reach it. Sessions close after five idle minutes, when their launch
 ends, and when the daemon stops; a call whose session broke, as after a login
 reset the endpoint, opens a new one once.
 
+## Local configuration
+
+`GetConfiguration` returns YAML overlay paths and the local configuration
+revision. `GetLocalConfiguration` returns the editable local document, revision,
+and typed package locks, including data hidden by YAML overlays. SQL access and
+migrations stay in daemon processes; CLI previews combine this data with YAML
+without a state directory, and commits use `UpdateConfiguration`.
+`ListDefinitions` marks YAML/package definitions read-only; local
+ones include their editable `google.protobuf.Value`, with `source.local` set.
+Injected-value fields use `{"$env":"NAME"}`, `{"$file":"PATH"}`, or
+`{"$secret":"ID"}`; literals remain strings. Definitions may use supported
+scalar shorthand as well as objects. Native settings support only the `$file`
+marker; skill frontmatter stays literal, including marker-shaped objects.
+
+`UpdateConfiguration` accepts an ordered batch and `expected_revision`.
+Validation or a stale revision leaves every local change unwritten. A successful
+response reports the new revision. There are no YAML strings, fragment targets,
+file plans, SHA comparisons, or diff RPCs. Adding a package can populate the
+content cache before commit; cache contents are not part of the configuration
+transaction. Overlay package locks must already be current (`agx install`).
+
+`ReadFile` and `WriteResourceFile` only expose configured skill/instructions
+contents. Package/cache contents are readable but read-only; YAML configuration
+files cannot be read or written through these methods. `Logout` with `all`
+clears stored credentials, including orphans, without deleting local config.
+
 ## Launch flow
+
+### Configuration consumers
+
+An integration in an already-running harness uses `ResolveResources` with a
+directory in the configuration's scope namespace and an optional registered
+consumer/harness name. The directory is cleaned but is not checked against the
+daemon's filesystem. The integration is responsible for mapping and validating its
+workspace. Process arguments, executable and environment settings are not applied;
+native settings are returned as leaves for the integration to interpret. Required
+environment names include only those used by the selected MCP resources.
+
+`PrepareResources` takes the expected snapshot ID and those environment inputs.
+It returns the resource content, native MCP endpoints, an MCP grant, a separate
+lifecycle credential and the renewal interval. Preparation writes no harness
+artifacts, starts no harness process and inspects no native session files.
+Each skill's digest identifies its exact returned tree, independently of its
+package-lock source identity. Files use relative slash-separated paths; consumers
+may register text directly or deploy the tree in their execution environment.
+
+When selected MCP servers inherit cwd or share per directory/repository,
+`mcp_directory` must identify an existing directory on the daemon's host. It is
+separate from the scope directory. Explicit server working directories and global
+sharing retain their existing behavior. The response returns its canonical value;
+keep it for attachment. MCP processes still execute on the daemon's host, and
+endpoint URLs still use loopback: this interface does not add remote transport.
+
+The returned `Launch` has kind `RESOURCES` and starts running immediately. Renew
+it using its lifecycle credential; no PID or session ID is required. Release it
+with `FinishLaunch.resources_released`. After daemon replacement, `AttachLaunch`
+takes that launch, its credentials, original environment inputs and `mcp_directory`,
+with no executable, native arguments or thread launches. A changed snapshot leaves
+MCP unavailable until fresh preparation, as for process launches.
+
+Local integrations can run `agx --json daemon connect` to locate the private
+discovery file through the CLI's normal startup/version handling. Its JSON contains
+the absolute `discovery` path, never the management credential. Read and validate
+that file and reread it on reconnect; retain credentials in integration state.
+
+### Native process launches
 
 Resolve the working directory locally or through the daemon. The wrapper
 resolves the native executable on its own `PATH`, or takes the configured absolute
@@ -84,7 +171,8 @@ dies before spawning. Spawn failure is an explicit finish outcome.
 A harness process serving many threads (stdio `codex app-server`) has a launch
 without snapshot resources. For each thread, the wrapper calls `ResolveThread`
 with the parent launch and directory, which returns the snapshot, its required
-environment names, and the native plugins the thread keeps disabled, then
+environment names, and the native plugins the thread keeps disabled
+(`snapshot_only` leaves those out), then
 `PrepareThreadLaunch` with the snapshot ID and declared inputs. That returns a
 thread launch with its own MCP endpoints and grant, and a `ThreadPlan`: native
 configuration overrides as JSON (sensitive, since the grant travels in MCP
@@ -96,7 +184,7 @@ with its parent however the parent ends.
 Launches outlive the daemon that prepared them
 ([ADR 0016](../adr/0016-launches-survive-daemon-restarts.md)). When renewal fails,
 the wrapper rereads discovery and renews with the daemon it names, whatever its
-build. When that daemon does not hold the launch, or let it expire, the wrapper
+version. When that daemon does not hold the launch, or let it expire, the wrapper
 sends `AttachLaunch` with management authorization: the launch, its grant and
 lifecycle token, the environment inputs, native arguments, and executable it was
 prepared with, and its active thread launches with their grants
@@ -111,8 +199,23 @@ signaling the harness process.
 
 ## Watches and failures
 
+`ListSessions` requires management authorization and accepts absolute store roots
+keyed by built-in harness name. The caller resolves its environment and Pi
+settings before sending them; the daemon never substitutes its own store paths.
+The stream sends an existing cached listing, when available, followed by the
+result of a new scan marked `fresh`, then ends. `fresh_only` omits the interim
+cached response, as used by `agx sessions`. Failed stores are named in `errors`
+and retain their last known entries. Cancelling a caller stops its wait without
+cancelling a refresh shared with other callers. Nothing is indexed at daemon
+startup or periodically while the picker is closed.
+
+`GetRuntime` with `probe_only` answers reachability checks with an empty response
+without constructing a runtime view.
+
 Runtime watches start with a complete redacted view and send replacement views
-when state changes. Clients reconnect by requesting a fresh view; v1 does not
+when state changes, at most one per 250 ms. A renewal that only extends a lease
+sends none, so a launch's `expires_at` in a watched view may lag; `GetRuntime`
+reports it current. Clients reconnect by requesting a fresh view; v1 does not
 promise durable event replay. Slow observers must not block MCP traffic.
 `Install` streams progress through a terminal outcome. Losing the caller does not
 cancel the installation. Daemon restart may abort it; atomic cache/lock writes
@@ -123,9 +226,9 @@ MCP server with inline or on-demand OAuth. Its first message, `started`, carries
 the authorization URL, its expiry, and the MCP server whose URL is authorized;
 its last, `finished`, reports success, failure with a redacted reason, or expiry.
 Clients open the URL and keep the stream open; the daemon receives the callback.
-Concurrent logins for the same secret share one attempt. Ending the stream early
-withdraws the caller, and the daemon cancels the attempt once no caller waits,
-freeing its state; a later callback gets an error page and changes nothing. A
+A new login for the same secret cancels the previous attempt. Ending the stream
+early cancels its attempt, freeing its state; a later callback gets an error
+page and changes nothing. A
 stopping daemon ends the stream with `Unavailable`. Like `WatchRuntime`, it
 requires management authorization. Redact authorization URLs from logs.
 
@@ -140,3 +243,30 @@ Generated messages are boundary data. Decode them into validated internal IDs,
 paths, and variants; reject unspecified enums and unset `oneof` fields. Status
 and explanation messages must never include secret values or raw native prompts.
 MCP clients receive native MCP/HTTP errors rather than Connect envelopes.
+
+## Built-in session MCP server
+
+`/launch/<id>/mcp/agx` is an SDK Streamable HTTP MCP endpoint authenticated with
+that launch's grant. Adapters inject it as native server `agx`; the parent of a
+multi-thread harness gets no endpoint, while each thread launch gets its own.
+It is separate from the ordinary MCP endpoint map, so tool search cannot recurse
+into itself. Its SDK handler is created only when first requested. Requests have
+a 4 MiB body limit and are refused while draining; launch cancellation ends work
+and closes SDK sessions.
+
+The tools and examples are documented in [MCP servers](../mcp.md#the-built-in-agx-server).
+Configuration changes reuse `UpdateConfiguration` validation and revision checks.
+Search and calls reuse the endpoint client pool; searches run at most four server
+discoveries concurrently, with a 45-second deadline. Calls have a 10-minute deadline.
+No upstream discovery runs at launch or attachment time.
+
+Temporary attachments are rows of `launch_attachments`, one per server, outside
+the configuration tables, so they never take part in configuration loading or
+export. Each row seals the server and secret definitions and the environment
+inputs under the launch grant hash, with configuration, launch and server as
+authenticated context. The daemon restores them through `AttachLaunch`; a normal
+daemon shutdown or lease expiry retains them. Finish and revocation delete them.
+Durable launch completion also deletes them if the finishing daemon no longer
+holds the launch. An abruptly abandoned wrapper can leave them behind, just as it
+can leave an unfinished launch record; recovery does not depend on a time-based
+purge.

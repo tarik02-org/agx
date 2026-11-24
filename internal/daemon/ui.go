@@ -85,12 +85,16 @@ func (u *uiSessions) valid(token string, now time.Time) bool {
 // page's own storage rather than a cookie, because browsers send a host's cookies to all of its
 // ports, so any other local server would receive it.
 func (s *Server) managed(h http.Header) bool {
+	return managed(h, s.discovery.Token, s.ui)
+}
+
+func managed(h http.Header, token string, sessions *uiSessions) bool {
 	authorization := h.Get("Authorization")
-	if equalBearer(authorization, s.discovery.Token) {
+	if equalBearer(authorization, token) {
 		return true
 	}
 	session, ok := strings.CutPrefix(authorization, "Bearer ")
-	return ok && s.ui.valid(session, time.Now())
+	return ok && sessions != nil && sessions.valid(session, time.Now())
 }
 
 // CreateLoginCode takes the management token only, so a UI session cannot mint new sessions and

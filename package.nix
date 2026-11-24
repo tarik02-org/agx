@@ -4,14 +4,19 @@
   lib,
   stdenv,
   web,
-  # The flake passes its commit.
+  # The flake passes its commit and when it was made.
   rev ? null,
+  lastModified ? null,
 }:
 
 buildGoModule (finalAttrs: {
   pname = "agx";
-  # Until the first tag.
-  version = "0.0.0-dev" + lib.optionalString (rev != null) "+${rev}";
+  # Until the first tag. The commit's time orders builds, so that a command replaces the daemon
+  # an earlier generation left running; the commit alone would tell them apart without an order.
+  version =
+    "0.0.0-dev"
+    + lib.optionalString (lastModified != null) ".${lastModified}"
+    + lib.optionalString (rev != null) "+${rev}";
 
   src = lib.fileset.toSource {
     root = ./.;
@@ -24,9 +29,12 @@ buildGoModule (finalAttrs: {
     ];
   };
 
-  vendorHash = "sha256-LeILHQ9c57X8Db0D30LIWgsWnIN7Zl5s4TTTxkPpk6s=";
+  vendorHash = "sha256-Q8VwW/Ih+EuUhOM16D357oMykKzLpwkvh4oywhq0Db0=";
 
-  subPackages = [ "cmd/agx" ];
+  subPackages = [
+    "cmd/agx"
+    "cmd/agxd"
+  ];
 
   # The binary embeds the web UI from internal/ui/dist.
   preBuild = ''
@@ -46,13 +54,14 @@ buildGoModule (finalAttrs: {
   ldflags = [
     "-s"
     "-w"
-    "-X github.com/tarik02-org/agx/internal/daemon.Version=${finalAttrs.version}"
+    "-X github.com/tarik02-org/agx/internal/control.Version=${finalAttrs.version}"
   ];
 
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
     "$out/bin/agx" --version >/dev/null
+    "$out/bin/agxd" --version >/dev/null
     runHook postInstallCheck
   '';
 

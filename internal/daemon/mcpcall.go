@@ -93,10 +93,11 @@ func (s *Server) callScope(ctx context.Context, header http.Header, msg *v1.McpC
 	}
 	scope.inputs = map[string]string{}
 	for name, value := range msg.EnvironmentInputs {
-		if !allowed[name] {
-			return nil, rpcError(connect.CodeInvalidArgument, "undeclared environment input "+name)
+		// A caller also sends what a server outside this scope reads, before it learns from the
+		// refusal of that server that it is outside.
+		if allowed[name] {
+			scope.inputs[name] = value
 		}
-		scope.inputs[name] = value
 	}
 	return scope, nil
 }
@@ -118,23 +119,16 @@ func (s *Server) launchScope(authorization string, management bool, id string) (
 		s.mu.Unlock()
 		return nil, rpcError(connect.CodeUnauthenticated, "invalid or expired launch grant")
 	}
-	endpoints, snapshot, unavailable := l.endpoints, l.snapshot, l.unavailable
-	s.mu.Unlock()
-	if unavailable != "" {
-		return nil, rpcError(connect.CodeFailedPrecondition, unavailable)
-	}
 	scope := &callScope{
 		launch:    l,
-		endpoints: endpoints,
-		servers:   map[config.ID]config.MCPServer{},
+		endpoints: maps.Clone(l.allEndpoints()),
+		servers:   l.servers(),
 		outside:   "not selected for this launch; --all reaches every configured server",
 	}
-	if snapshot != nil {
-		scope.config = snapshot.Config
-		for id := range endpoints {
-			scope.servers[id] = snapshot.Config.MCP[id]
-		}
+	if l.snapshot != nil {
+		scope.config = l.snapshot.Config
 	}
+	s.mu.Unlock()
 	return scope, nil
 }
 
@@ -233,11 +227,18 @@ func (s *Server) withSession(
 			return mcpFailure(ctx, id, definition, c.endpoint, err)
 		}
 		s.clients.discard(c)
-		if ctx.Err() != nil || attempt > 0 {
+		var sent requestSent
+		if ctx.Err() != nil || attempt > 0 || errors.As(err, &sent) {
 			return mcpFailure(ctx, id, definition, c.endpoint, err)
 		}
 	}
 }
+
+// requestSent marks the failure of a request the server may have acted on, which must not be
+// sent again: a tool that creates something would create it twice.
+type requestSent struct{ error }
+
+func (e requestSent) Unwrap() error { return e.error }
 
 // mcpFailure classifies a failed exchange with server id, preferring the endpoint's own
 // diagnosis, which names the cause without values.
@@ -260,7 +261,7 @@ func mcpFailure(
 		if definition.Auth.Secret != "" {
 			message += "; run agx secret login " + string(definition.Auth.Secret)
 		}
-		return reasonError(connect.CodeFailedPrecondition, v1.ErrorDetail_REASON_NEEDS_LOGIN, message)
+		return rpcError(connect.CodeUnauthenticated, message)
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		return rpcError(connect.CodeDeadlineExceeded, fmt.Sprintf("MCP server %s did not answer in time", id))
 	case errors.Is(ctx.Err(), context.Canceled):
@@ -268,23 +269,11 @@ func mcpFailure(
 	case answered && errors.As(err, &wire) && wire.Code == jsonrpc.CodeInvalidParams:
 		return rpcError(connect.CodeInvalidArgument, fmt.Sprintf("MCP server %s: %s", id, wire.Message))
 	case answered && errors.As(err, &wire):
-		return reasonError(
-			connect.CodeFailedPrecondition,
-			v1.ErrorDetail_REASON_MCP_FAILED,
-			fmt.Sprintf("MCP server %s: %s", id, wire.Message),
-		)
+		return rpcError(connect.CodeFailedPrecondition, fmt.Sprintf("MCP server %s: %s", id, wire.Message))
 	case problem != "":
-		return reasonError(
-			connect.CodeFailedPrecondition,
-			v1.ErrorDetail_REASON_MCP_FAILED,
-			fmt.Sprintf("MCP server %s: %s", id, problem),
-		)
+		return rpcError(connect.CodeFailedPrecondition, fmt.Sprintf("MCP server %s: %s", id, problem))
 	}
-	return reasonError(
-		connect.CodeFailedPrecondition,
-		v1.ErrorDetail_REASON_MCP_FAILED,
-		fmt.Sprintf("MCP server %s: %v", id, err),
-	)
+	return rpcError(connect.CodeFailedPrecondition, fmt.Sprintf("MCP server %s: %v", id, err))
 }
 
 // serverAnswered reports whether err is a JSON-RPC error the server sent, rather than one the
@@ -382,7 +371,7 @@ func (s *Server) listTools(ctx context.Context, scope *callScope, id config.ID) 
 		var rpc *connect.Error
 		if errors.As(err, &rpc) {
 			out.Message = rpc.Message()
-			if connectReason(rpc) == v1.ErrorDetail_REASON_NEEDS_LOGIN {
+			if rpc.Code() == connect.CodeUnauthenticated {
 				out.State = v1.McpRuntime_STATE_NEEDS_AUTH
 			}
 		} else {
@@ -390,17 +379,6 @@ func (s *Server) listTools(ctx context.Context, scope *callScope, id config.ID) 
 		}
 	}
 	return out, err
-}
-
-func connectReason(err *connect.Error) v1.ErrorDetail_Reason {
-	for _, d := range err.Details() {
-		if value, decodeErr := d.Value(); decodeErr == nil {
-			if detail, ok := value.(*v1.ErrorDetail); ok {
-				return detail.Reason
-			}
-		}
-	}
-	return v1.ErrorDetail_REASON_UNSPECIFIED
 }
 
 func schemaJSON(schema any) string {
@@ -439,28 +417,8 @@ func (s *Server) CallTool(
 	if _, err := scope.server(msg.McpId); err != nil {
 		return nil, err
 	}
-	id := config.ID(msg.McpId)
-	var result *mcp.CallToolResult
-	err = s.withSession(ctx, scope, id, func(session *mcp.ClientSession) error {
-		names := []string{}
-		for tool, err := range session.Tools(ctx, nil) {
-			if err != nil {
-				return err
-			}
-			names = append(names, tool.Name)
-		}
-		if !slices.Contains(names, msg.Tool) {
-			return unknownTool{mcpID: msg.McpId, tool: msg.Tool, names: names}
-		}
-		var err error
-		result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: msg.Tool, Arguments: arguments})
-		return err
-	})
-	var unknown unknownTool
-	switch {
-	case errors.As(err, &unknown):
-		return nil, rpcError(connect.CodeInvalidArgument, unknown.Error())
-	case err != nil:
+	result, err := s.callTool(ctx, scope, config.ID(msg.McpId), msg.Tool, arguments)
+	if err != nil {
 		return nil, err
 	}
 	content, err := json.Marshal(result.Content)
@@ -485,4 +443,40 @@ type unknownTool struct {
 
 func (u unknownTool) Error() string {
 	return fmt.Sprintf("MCP server %s has no tool %s%s", u.mcpID, u.tool, mcptools.Suggest(u.tool, u.names))
+}
+
+func (s *Server) callTool(
+	ctx context.Context,
+	scope *callScope,
+	id config.ID,
+	tool string,
+	arguments json.RawMessage,
+) (*mcp.CallToolResult, error) {
+	var result *mcp.CallToolResult
+	err := s.withSession(ctx, scope, id, func(session *mcp.ClientSession) error {
+		names := []string{}
+		for tool, err := range session.Tools(ctx, nil) {
+			if err != nil {
+				return err
+			}
+			names = append(names, tool.Name)
+		}
+		if !slices.Contains(names, tool) {
+			return unknownTool{mcpID: string(id), tool: tool, names: names}
+		}
+		var err error
+		result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: arguments})
+		if err != nil && !serverAnswered(err) {
+			return requestSent{err}
+		}
+		return err
+	})
+	var unknown unknownTool
+	switch {
+	case errors.As(err, &unknown):
+		return nil, rpcError(connect.CodeInvalidArgument, unknown.Error())
+	case err != nil:
+		return nil, err
+	}
+	return result, nil
 }

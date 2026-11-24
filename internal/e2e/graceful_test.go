@@ -92,7 +92,7 @@ func TestGracefulShutdown(t *testing.T) {
 		}
 		e := restartEnv(t)
 		t.Cleanup(func() { e.stopDaemon(true) })
-		daemon := exec.CommandContext(context.Background(), binaries.agx, "daemon", "start", "--foreground")
+		daemon := exec.CommandContext(context.Background(), binaries.daemon)
 		daemon.Dir = e.work
 		daemon.Env = slices.Clone(e.vars)
 		if err := daemon.Start(); err != nil {

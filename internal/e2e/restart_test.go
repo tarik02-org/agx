@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tarik02-org/agx/internal/storage"
 )
 
 // heldLaunch is a managed launch whose fake harness keeps running after its first tool calls.
@@ -187,21 +189,20 @@ func awaitServing(t *testing.T, endpoint, authorization string) {
 	}
 }
 
-// revoked reports whether the daemon's state file refuses attaching launch id.
+// revoked reports whether durable state refuses reattaching launch id.
 func (e *env) revoked(id string) bool {
 	e.t.Helper()
-	b, err := os.ReadFile(filepath.Join(e.dir, "state", "daemon-state.json"))
+	db, err := storage.Open(context.Background(), storage.State(filepath.Join(e.dir, "state")))
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	var state struct {
-		Revoked map[string]time.Time `json:"revoked"`
-	}
-	if err := json.Unmarshal(b, &state); err != nil {
+	defer func() { _ = db.Close() }()
+	var revoked bool
+	if err := db.QueryRowContext(context.Background(), "SELECT EXISTS(SELECT 1 FROM revocations WHERE launch = ?)", id).
+		Scan(&revoked); err != nil {
 		e.t.Fatal(err)
 	}
-	_, ok := state.Revoked[id]
-	return ok
+	return revoked
 }
 
 // launches returns the state of each launch the daemon lists.
@@ -280,7 +281,41 @@ func TestDaemonRestart(t *testing.T) {
 		}
 	})
 
-	t.Run("another build replaces a busy daemon", func(t *testing.T) {
+	t.Run("configuration changed while no daemon ran", func(t *testing.T) {
+		e := restartEnv(t)
+		t.Cleanup(func() { e.stopDaemon(true) })
+		h := e.hold(binaries.agx)
+		original, err := os.ReadFile(filepath.Join(e.dir, "config", "main.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		restartWith := func(old, replacement string) {
+			e.stopDaemon(false)
+			e.write("config/main.yaml", strings.Replace(string(original), old, replacement, 1))
+			e.ok("secret", "status")
+		}
+
+		// The directory resolves to another snapshot, with the server defined as before.
+		restartWith("E2E instructions.", "Other instructions.")
+		awaitServing(t, h.endpoint(), h.grant())
+		if tools, _ := h.call(); tools["agx-echo"] != want {
+			t.Fatalf("echo after instructions changed = %q\n%s", tools["agx-echo"], h.stderr.String())
+		}
+
+		restartWith("mcp: [echo]", "mcp: []")
+		deadline := time.Now().Add(30 * time.Second)
+		for mcpStatus(t, h.endpoint(), h.grant()) != http.StatusForbidden {
+			if time.Now().After(deadline) {
+				t.Fatalf("a server no longer selected answers HTTP %d", mcpStatus(t, h.endpoint(), h.grant()))
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		restartWith("", "")
+		awaitServing(t, h.endpoint(), h.grant())
+	})
+
+	t.Run("a newer agx replaces a busy daemon", func(t *testing.T) {
 		e := restartEnv(t)
 		t.Cleanup(func() { e.stopDaemon(true) })
 		// The old build starts the daemon, and its wrapper renews with it.
@@ -300,6 +335,14 @@ func TestDaemonRestart(t *testing.T) {
 		if tools["agx-echo"] != want || reinitialized != 1 {
 			t.Fatalf("echo after the upgrade = %q, sessions started again %d\n%s",
 				tools["agx-echo"], reinitialized, h.stderr.String())
+		}
+		// The older agx uses the newer daemon instead of replacing it back.
+		r = e.run(binaries.oldAgx, nil, "secret", "status")
+		if r.code != 0 || strings.Contains(r.stderr, "restarting") {
+			t.Fatalf("older agx: exit %d: %s", r.code, r.stderr)
+		}
+		if got := e.daemonVersion(); got != version {
+			t.Fatalf("daemon version after the older agx = %q, want %q", got, version)
 		}
 	})
 
@@ -327,7 +370,13 @@ func TestDaemonRestart(t *testing.T) {
 		id := launchID(h.endpoint())
 		// The daemon dies without saving, as when the job of the process that started it closes.
 		killDaemon(t, e)
-		if err := os.Remove(filepath.Join(e.dir, "state", "daemon-state.json")); err != nil {
+		db, err := storage.Open(context.Background(), storage.State(filepath.Join(e.dir, "state")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = db.ExecContext(context.Background(), "DELETE FROM daemon_state")
+		_ = db.Close()
+		if err != nil {
 			t.Fatal(err)
 		}
 		// No command runs: the wrapper starts the next daemon, which takes the launch back.
@@ -342,7 +391,7 @@ func TestDaemonRestart(t *testing.T) {
 		if !strings.Contains(h.stderr.String(), "starting a new one") {
 			t.Errorf("the wrapper did not say it replaced the daemon:\n%s", h.stderr.String())
 		}
-		log, err := os.ReadFile(filepath.Join(e.dir, "cache", "runtime", "daemon.log"))
+		log, err := os.ReadFile(filepath.Join(e.runtimeDir(), "daemon.log"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -422,7 +471,7 @@ func (e *env) daemonVersionOf(binary string) string {
 // daemonURL is the address in the daemon's discovery file.
 func daemonURL(t *testing.T, e *env) *url.URL {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(e.dir, "cache", "runtime", "daemon.json"))
+	b, err := os.ReadFile(filepath.Join(e.runtimeDir(), "daemon.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -442,7 +491,7 @@ func daemonURL(t *testing.T, e *env) *url.URL {
 // killDaemon ends the daemon at once, without letting it shut down.
 func killDaemon(t *testing.T, e *env) {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(e.dir, "cache", "runtime", "daemon.json"))
+	b, err := os.ReadFile(filepath.Join(e.runtimeDir(), "daemon.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

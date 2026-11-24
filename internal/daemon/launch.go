@@ -18,6 +18,7 @@ import (
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/mcpruntime"
 	"github.com/tarik02-org/agx/internal/securefs"
 )
@@ -36,7 +37,7 @@ func (s *Server) PrepareLaunch(
 	if msg.Executable != "" && !filepath.IsAbs(msg.Executable) {
 		return nil, rpcError(connect.CodeInvalidArgument, "executable must be absolute")
 	}
-	b, err := s.launchBasis(msg.Directory, msg.Harness, msg.NativeArguments)
+	b, err := s.launchBasis(msg.Directory, msg.Harness, msg.SnapshotId, msg.NativeArguments)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +68,7 @@ func (s *Server) PrepareLaunch(
 	endpoints, nativeEndpoints := map[config.ID]*mcpruntime.Endpoint{}, []adapters.Endpoint{}
 	// A process serving many threads gets its MCP servers per thread launch.
 	if !b.threadServer {
-		endpoints, nativeEndpoints = s.endpoints(launchCtx, id, snapshot, inputs)
+		endpoints, nativeEndpoints = s.endpoints(launchCtx, id, snapshot, inputs, snapshot.Directory)
 	}
 	discard := func() {
 		cancel()
@@ -94,6 +95,7 @@ func (s *Server) PrepareLaunch(
 		return nil, rpcError(connect.CodeFailedPrecondition, err.Error())
 	}
 	view := &v1.Launch{
+		Kind:       v1.Launch_KIND_PROCESS,
 		Id:         id,
 		SnapshotId: snapshot.ID,
 		Directory:  snapshot.Directory,
@@ -105,7 +107,7 @@ func (s *Server) PrepareLaunch(
 		harness,
 		append(slices.Clone(plan.Settings), harnessArgs...),
 		harnessEnv,
-		msg.NativeArguments,
+		plan.Native,
 		lookup,
 	)
 	target.Resolved = msg.Executable
@@ -118,6 +120,7 @@ func (s *Server) PrepareLaunch(
 		endpoints:    endpoints,
 		snapshot:     snapshot,
 		target:       target,
+		inputs:       inputs,
 		created:      time.Now(),
 		lease:        time.Duration(b.config.Daemon.LeaseSeconds) * time.Second,
 		threadServer: b.threadServer,
@@ -136,24 +139,10 @@ func (s *Server) PrepareLaunch(
 		RenewAfterSeconds: uint32(b.config.Daemon.RenewSeconds),
 		Warnings:          plan.Warnings,
 	}
-	s.mu.Lock()
-	// A launch added after a forced stop revoked the others would escape it.
-	if s.stopped {
-		s.mu.Unlock()
+	if err := s.addLaunch(l); err != nil {
 		discard()
-		return nil, refusal()
+		return nil, err
 	}
-	if len(s.launches) >= 10000 {
-		s.mu.Unlock()
-		discard()
-		return nil, rpcError(
-			connect.CodeResourceExhausted,
-			"launch history full; retry after ended launches are pruned",
-		)
-	}
-	s.launches[id] = l
-	s.changed.notify()
-	s.mu.Unlock()
 	return connect.NewResponse(response), nil
 }
 
@@ -161,14 +150,15 @@ func (s *Server) PrepareLaunch(
 type launchBasis struct {
 	config   *config.Config
 	harness  config.ResolvedHarness
-	adapter  adapters.Adapter
+	adapter  adapters.Launcher
 	mode     string
 	snapshot *config.Snapshot
 	// threadServer marks a harness process serving many threads.
 	threadServer bool
 }
 
-func (s *Server) launchBasis(directory, name string, native []string) (launchBasis, error) {
+// launchBasis starts from snapshot id when resolving directory just returned it.
+func (s *Server) launchBasis(directory, name, id string, native []string) (launchBasis, error) {
 	c, err := s.reload()
 	if err != nil {
 		return launchBasis{}, configError(err)
@@ -178,18 +168,24 @@ func (s *Server) launchBasis(directory, name string, native []string) (launchBas
 	if err != nil {
 		return launchBasis{}, rpcError(connect.CodeInvalidArgument, err.Error())
 	}
-	adapter, ok := s.adapters.Adapter(harness.Builtin)
-	if !ok {
-		return launchBasis{}, rpcError(connect.CodeInternal, "no adapter for harness "+harness.Builtin)
+	if !harness.Enabled {
+		return launchBasis{}, rpcError(connect.CodeFailedPrecondition, "harness "+name+" is disabled")
 	}
-	mode := adapter.Classify(native)
+	adapter, ok := s.adapters.Launcher(harness.Builtin)
+	if !ok {
+		return launchBasis{}, rpcError(
+			connect.CodeFailedPrecondition,
+			"harness "+harness.Builtin+" has no process launcher",
+		)
+	}
+	mode := adapter.Classify(harness, native)
 	if mode == config.ModePassthrough {
 		return launchBasis{}, rpcError(
 			connect.CodeInvalidArgument,
 			"non-session command must pass through without launch preparation",
 		)
 	}
-	snapshot, err := c.Resolve(directory, name)
+	snapshot, err := s.takeResolved(c, directory, name, id)
 	if err != nil {
 		return launchBasis{}, rpcError(connect.CodeFailedPrecondition, "directory cannot be resolved")
 	}
@@ -200,8 +196,61 @@ func (s *Server) launchBasis(directory, name string, native []string) (launchBas
 		adapter:      adapter,
 		mode:         mode,
 		snapshot:     snapshot,
-		threadServer: isThreads && threads.ThreadServer(native),
+		threadServer: isThreads && threads.ThreadServer(harness, native),
 	}, nil
+}
+
+// resolveKey is what a snapshot is resolved from.
+type resolveKey struct {
+	config             *config.Config
+	directory, harness string
+}
+
+type resolvedSnapshot struct {
+	snapshot *config.Snapshot
+	at       time.Time
+}
+
+// resolvedTTL bounds how long after resolving a snapshot preparing a launch takes it as resolved.
+const resolvedTTL = 10 * time.Second
+
+// resolve resolves directory for harness with c and keeps the snapshot for preparing the launch
+// a client asks for next.
+func (s *Server) resolve(c *config.Config, directory, harness string) (*config.Snapshot, error) {
+	snapshot, err := c.Resolve(directory, harness)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k, r := range s.resolved {
+		if k.config != c || now.Sub(r.at) > resolvedTTL {
+			delete(s.resolved, k)
+		}
+	}
+	if s.resolved == nil {
+		s.resolved = map[resolveKey]resolvedSnapshot{}
+	}
+	s.resolved[resolveKey{c, directory, harness}] = resolvedSnapshot{snapshot, now}
+	return snapshot, nil
+}
+
+// takeResolved takes snapshot id when resolve kept it for directory and harness with c, the
+// configuration still loaded, and otherwise resolves again.
+func (s *Server) takeResolved(c *config.Config, directory, harness, id string) (*config.Snapshot, error) {
+	k := resolveKey{c, directory, harness}
+	s.mu.Lock()
+	r, ok := s.resolved[k]
+	ok = ok && r.snapshot.ID == id && time.Since(r.at) <= resolvedTTL
+	if ok {
+		delete(s.resolved, k)
+	}
+	s.mu.Unlock()
+	if ok {
+		return r.snapshot, nil
+	}
+	return c.Resolve(directory, harness)
 }
 
 // resolveHarness resolves the harness definition's arguments and environment for a launch with
@@ -266,6 +315,20 @@ func launchInputs(snapshot *config.Snapshot, given map[string]string, forwarded 
 	return inputs, nil
 }
 
+// attachedInputs keeps the environment inputs a wrapper holds that the directory's
+// configuration still reads. The configuration may have changed since the launch started, so
+// nothing here fails the launch: a server reading a variable the wrapper never collected fails
+// alone, when a session starts.
+func attachedInputs(snapshot *config.Snapshot, given map[string]string, forwarded []string) map[string]string {
+	inputs := map[string]string{}
+	for _, name := range append(slices.Clone(snapshot.RequiredEnvironment), forwarded...) {
+		if value, ok := given[name]; ok {
+			inputs[name] = value
+		}
+	}
+	return inputs
+}
+
 // endpoints starts the endpoints of the snapshot's MCP servers for launch id and lists those the
 // harness gets natively; on-demand servers stay reachable only through agx mcp call.
 func (s *Server) endpoints(
@@ -273,37 +336,50 @@ func (s *Server) endpoints(
 	id string,
 	snapshot *config.Snapshot,
 	inputs map[string]string,
+	directory string,
 ) (map[config.ID]*mcpruntime.Endpoint, []adapters.Endpoint) {
 	endpoints := map[config.ID]*mcpruntime.Endpoint{}
 	native := []adapters.Endpoint{}
+	native = append(native, s.nativeEndpoint(id, config.AgxMCP))
 	for _, r := range snapshot.Resources {
 		if r.Kind != "mcp" {
 			continue
 		}
-		definition, root := mcpDefinition(snapshot.Config.MCP[r.ID], snapshot.Directory)
-		// Each server gets only the inputs it reads, so launches that differ in others still
-		// share its process.
-		own := map[string]string{}
-		for _, name := range scopeSnapshot(snapshot.Config, []config.ID{r.ID}).MCPEnvironment() {
-			if value, ok := inputs[name]; ok {
-				own[name] = value
-			}
-		}
+		definition, root, own := endpointBasis(snapshot, r.ID, inputs, directory)
 		endpoints[r.ID] = mcpruntime.New(
 			ctx, r.ID, definition, snapshot.Config.Secrets, own, s.manager, s.shared, root,
 		)
-		if definition.Load == config.LoadOnDemand {
-			continue
+		if definition.Load != config.LoadOnDemand {
+			native = append(native, s.nativeEndpoint(id, r.ID))
 		}
-		native = append(
-			native,
-			adapters.Endpoint{
-				ID:  r.ID,
-				URL: s.discovery.URL + "/launch/" + id + "/mcp/" + url.PathEscape(string(r.ID)),
-			},
-		)
 	}
 	return endpoints, native
+}
+
+// endpointBasis is what MCP server id of snapshot runs with in directory: its definition, share
+// root and the inputs it reads. Each server gets only those inputs, so launches that differ in
+// others still share its process.
+func endpointBasis(
+	snapshot *config.Snapshot,
+	id config.ID,
+	inputs map[string]string,
+	directory string,
+) (config.MCPServer, string, map[string]string) {
+	definition, root := mcpDefinition(snapshot.Config.MCP[id], directory)
+	own := map[string]string{}
+	for _, name := range scopeSnapshot(snapshot.Config, []config.ID{id}).MCPEnvironment() {
+		if value, ok := inputs[name]; ok {
+			own[name] = value
+		}
+	}
+	return definition, root, own
+}
+
+func (s *Server) nativeEndpoint(launchID string, id config.ID) adapters.Endpoint {
+	return adapters.Endpoint{
+		ID:  id,
+		URL: s.discovery.URL + "/launch/" + launchID + "/mcp/" + url.PathEscape(string(id)),
+	}
 }
 
 // mcpDefinition prepares an MCP server's definition for a launch in directory: its working
@@ -371,6 +447,9 @@ func (s *Server) RenewLaunch(
 		s.end(l, v1.Launch_STATE_EXPIRED)
 		return nil, endedError(l.view.State)
 	}
+	// A renewal that only extends the lease wakes no runtime watcher: expires_at in their views
+	// lags until something else changes.
+	state, session := l.view.State, l.view.SessionId
 	if parent := s.launches[l.view.ParentLaunchId]; parent != nil {
 		// A thread launch follows its parent's lease; renewing it reports its thread.
 		if msg.SessionId != "" {
@@ -381,6 +460,10 @@ func (s *Server) RenewLaunch(
 	} else {
 		if msg.HarnessPid != 0 {
 			l.view.State = v1.Launch_STATE_RUNNING
+			l.harnessPID = int(msg.HarnessPid) //nolint:gosec // PIDs fit
+		}
+		if msg.WrapperPid != 0 {
+			l.wrapperPID = int(msg.WrapperPid) //nolint:gosec // PIDs fit
 		}
 		if msg.SessionId != "" {
 			l.view.SessionId = msg.SessionId
@@ -390,15 +473,13 @@ func (s *Server) RenewLaunch(
 			child.extend(l.expires)
 		}
 	}
-	s.changed.notify()
+	if state != l.view.State || session != l.view.SessionId {
+		s.changed.notify()
+	}
 	return connect.NewResponse(&v1.RenewLaunchResponse{
 		ExpiresAt: proto.Clone(l.view.ExpiresAt).(*timestamppb.Timestamp),
 	}), nil
 }
-
-// EndedHeader carries, on a renewal refused because the launch ended, how it ended: revoked,
-// finished, or expired, so the wrapper can tell its user.
-const EndedHeader = "Agx-Launch-Ended"
 
 // endedError refuses renewing a launch that ended in state.
 func endedError(state v1.Launch_State) error {
@@ -413,7 +494,7 @@ func endedError(state v1.Launch_State) error {
 		how, message = "expired", "launch lease expired"
 	}
 	err := connect.NewError(connect.CodeUnauthenticated, errors.New(message))
-	err.Meta().Set(EndedHeader, how)
+	err.Meta().Set(control.EndedHeader, how)
 	return err
 }
 
@@ -423,13 +504,18 @@ func (s *Server) FinishLaunch(
 ) (*connect.Response[v1.FinishLaunchResponse], error) {
 	switch req.Msg.Outcome.(type) {
 	case *v1.FinishLaunchRequest_ExitCode, *v1.FinishLaunchRequest_SignalName, *v1.FinishLaunchRequest_SpawnFailure,
-		*v1.FinishLaunchRequest_ThreadClosed:
+		*v1.FinishLaunchRequest_ThreadClosed, *v1.FinishLaunchRequest_ResourcesReleased:
 	default:
 		return nil, rpcError(connect.CodeInvalidArgument, "finish outcome is required")
 	}
 	s.mu.Lock()
 	l, err := s.lifecycleLaunch(req.Msg.LaunchId, req.Header().Get("Authorization"))
 	if err == nil {
+		_, resourcesReleased := req.Msg.Outcome.(*v1.FinishLaunchRequest_ResourcesReleased)
+		if resourcesReleased != (l.view.Kind == v1.Launch_KIND_RESOURCES) {
+			s.mu.Unlock()
+			return nil, rpcError(connect.CodeInvalidArgument, "finish outcome does not match the launch kind")
+		}
 		s.end(l, v1.Launch_STATE_FINISHED)
 	}
 	s.mu.Unlock()

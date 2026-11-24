@@ -9,6 +9,7 @@ import (
 
 	"github.com/tarik02-org/agx/internal/adapters/codex"
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/platform"
 )
 
 func TestClassify(t *testing.T) {
@@ -37,7 +38,7 @@ func TestClassify(t *testing.T) {
 		{[]string{"-m", "exec"}, "interactive"},
 		{[]string{"--", "exec"}, "interactive"},
 	} {
-		if got := (codex.Adapter{}).Classify(tt.args); got != tt.mode {
+		if got := (codex.Adapter{}).Classify(config.ResolvedHarness{}, tt.args); got != tt.mode {
 			t.Errorf("Classify(%q) = %s, want %s", tt.args, got, tt.mode)
 		}
 	}
@@ -48,7 +49,7 @@ func TestDirectory(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(cwd, "sub", "deeper"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	sub, err := config.Canonical(filepath.Join(cwd, "sub"))
+	sub, err := platform.Canonical(filepath.Join(cwd, "sub"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +71,7 @@ func TestDirectory(t *testing.T) {
 		}
 		want := tt.dir
 		if want == "" {
-			if want, err = config.Canonical(cwd); err != nil {
+			if want, err = platform.Canonical(cwd); err != nil {
 				t.Fatal(err)
 			}
 		}

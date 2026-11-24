@@ -11,12 +11,16 @@ import (
 // SourceError is a configuration problem located in a file; Line is 0 when the problem concerns
 // the whole file.
 type SourceError struct {
-	Path string
-	Line int
-	Err  error
+	Local bool
+	Path  string
+	Line  int
+	Err   error
 }
 
 func (e *SourceError) Error() string {
+	if e.Local {
+		return fmt.Sprintf("local configuration (%s): %v", e.Path, e.Err)
+	}
 	if e.Line > 0 {
 		return fmt.Sprintf("%s:%d: %v", e.Path, e.Line, e.Err)
 	}
@@ -26,7 +30,7 @@ func (e *SourceError) Error() string {
 func (e *SourceError) Unwrap() error { return e.Err }
 
 func errorAt(at Source, format string, args ...any) error {
-	return &SourceError{Path: at.Path, Line: at.Line, Err: fmt.Errorf(format, args...)}
+	return &SourceError{Local: at.Local, Path: at.Path, Line: at.Line, Err: fmt.Errorf(format, args...)}
 }
 
 // nodeError locates a problem decoding node; decoding fills in the file.
@@ -34,7 +38,12 @@ func nodeError(node *yaml.Node, format string, args ...any) error {
 	return &SourceError{Line: node.Line, Err: fmt.Errorf(format, args...)}
 }
 
-func locate(s Source) string { return fmt.Sprintf("%s:%d", s.Path, s.Line) }
+func locate(s Source) string {
+	if s.Local {
+		return "local configuration"
+	}
+	return fmt.Sprintf("%s:%d", s.Path, s.Line)
+}
 
 // yamlError locates an error parsing or decoding file, which data holds.
 func yamlError(file string, data []byte, err error) error {

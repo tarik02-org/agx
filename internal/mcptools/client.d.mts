@@ -39,10 +39,8 @@ export interface CallOptions {
   signal?: AbortSignal;
 }
 
-/** A failed call. code is one of agx's JSON error codes, such as invalid_request, not_found, needs_login, mcp_failed, timeout, or daemon_unavailable. */
-export declare class AgxError extends Error {
-  code: string;
-}
+/** A failed call with a diagnostic message. */
+export declare class AgxError extends Error {}
 
 /** Calls a tool of an MCP server by name. */
 export declare function call(

@@ -19,7 +19,7 @@ touching the user's files.
 
 ```yaml
 harnesses:
-  codex: {hidden: true}
+  codex: { hidden: true }
   codex-cpa:
     base: codex
     environment:
@@ -48,11 +48,11 @@ harnesses:
 user configuration: Codex `config.toml`, Claude Code `settings.json`. agx does
 not know or validate them; the harness does, at launch.
 
-| Harness | Delivery | Native precedence |
-| --- | --- | --- |
-| Codex | one `-c <dotted.path>=<TOML value>` per leaf | above `config.toml` and `--profile`; later `-c` win |
-| Claude Code | a generated file passed as `--settings <file>` | above user, project, and local settings; below managed settings |
-| Pi | not supported; `settings` on a Pi-based definition is a validation error | (see [Pi](#pi)) |
+| Harness     | Delivery                                                                 | Native precedence                                               |
+| ----------- | ------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| Codex       | one `-c <dotted.path>=<TOML value>` per leaf                             | above `config.toml` and `--profile`; later `-c` win             |
+| Claude Code | a generated file passed as `--settings <file>`                           | above user, project, and local settings; below managed settings |
+| Pi          | not supported; `settings` on a Pi-based definition is a validation error | (see [Pi](#pi))                                                 |
 
 ### Codex
 
@@ -159,9 +159,9 @@ The common cases already have flags: `--provider`, `--model` (including
   which come before the definition's `args`, which come before the arguments
   typed at launch: `settings`, agx resources, `args`, typed arguments. For Codex
   later `-c` win, so a definition's `args` and the user's own `-c` override its
-  settings, and agx's `mcp_servers.agx-*`, `developer_instructions`, and plugin
+  settings, and agx's `mcp_servers.agx` and `mcp_servers.agx-*`, `developer_instructions`, and plugin
   switches override a setting of the same path; validation rejects settings
-  under `mcp_servers.agx-*` and `plugins.<name>@agx-managed` since they cannot
+  under `mcp_servers.agx`, `mcp_servers.agx-*` and `plugins.<name>@agx-managed` since they cannot
   take effect. For Claude Code there is one `--settings`; a definition that sets
   `settings` and also passes `--settings` in `args` is a validation error.
 - **Against native configuration**: settings sit where each harness puts
@@ -199,8 +199,7 @@ Settings therefore never hold secrets and can be shown in full anywhere.
   validate the agx side only.
 - **`agx harness list --json`** shows each harness's resolved settings and
   the source of every leaf; **`explain --harness <name>`** shows the resolved map with the
-  source of every leaf and, with `--verbose`, the delivered form (the `-c`
-  arguments, or the path and contents of the Claude settings file).
+  source of every leaf.
   **`resolve`** is about resources and does not show them.
 - **`agx doctor`** reports validation errors (Pi, reserved Codex paths,
   `--settings` in `args`) and, for Codex definitions with settings, runs
@@ -260,9 +259,11 @@ About two and a half days:
 
 ## Open questions
 
-- Whether Claude Code accepts several `--settings` (merging them or keeping the
-  last); if it merges, agx could let a typed `--settings` layer over the
-  definition's instead of rejecting it in `args`. Needs a spike against 2.1.300.
+- Claude Code keeps the last of several `--settings`. A `--settings` typed at
+  launch is therefore taken out of the arguments and merged over the
+  definition's settings into the one file: objects key by key, lists
+  concatenated without duplicates, as Claude Code merges its sources. A
+  definition's `args` could get the same treatment instead of being rejected.
 - How to check Claude settings in `agx doctor`: Claude Code ignores invalid
   settings files in some modes rather than failing.
 - Whether derived definitions should be able to append to inherited lists
@@ -278,5 +279,5 @@ About two and a half days:
   `registerProvider` in the generated extension, filling the fields it
   requires). The first keeps "native schema, harness validates"; the second
   makes agx own part of Pi's schema.
-- Whether OpenCode definitions ([ADR 0023](0023-opencode-plugin.md)) get
+- Whether OpenCode definitions get
   settings through `OPENCODE_CONFIG_CONTENT` under `--standalone`.

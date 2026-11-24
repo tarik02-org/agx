@@ -8,17 +8,17 @@ import (
 	"testing"
 )
 
-func TestWriteIsPrivateAndAtomic(t *testing.T) {
+func TestWritePrivateIsPrivateAndAtomic(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "new", "nested", "state.json")
-	if err := WriteJSON(path, map[string]string{"a": "b"}); err != nil {
+	if err := WritePrivateJSON(path, map[string]string{"a": "b"}); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(path)
 	if err != nil || string(b) != "{\n  \"a\": \"b\"\n}\n" {
 		t.Fatalf("content = %q, %v", b, err)
 	}
-	if err := Write(path, []byte("replaced"), 0o600); err != nil {
+	if err := WritePrivate(path, []byte("replaced")); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := os.ReadDir(filepath.Dir(path))
@@ -40,6 +40,27 @@ func TestWriteIsPrivateAndAtomic(t *testing.T) {
 		if info.Mode().Perm() != want {
 			t.Errorf("%s mode = %v, want %v", p, info.Mode().Perm(), want)
 		}
+	}
+}
+
+func TestWriteKeepsMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agx.yaml")
+	if err := os.WriteFile(path, []byte("{}\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := Write(path, []byte("mcp: {}\n")); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil || string(b) != "mcp: {}\n" {
+		t.Fatalf("content = %q, %v", b, err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o640 {
+		t.Fatalf("mode = %v, want 0640", info.Mode().Perm())
 	}
 }
 

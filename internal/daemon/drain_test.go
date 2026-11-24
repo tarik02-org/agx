@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+
+	"github.com/tarik02-org/agx/internal/control"
 )
 
 func TestDrainWaitsForRequestsInFlight(t *testing.T) {
@@ -98,12 +100,12 @@ func TestDrainEndsEventStreams(t *testing.T) {
 func TestStoppingRefusals(t *testing.T) {
 	var connectErr *connect.Error
 	if err := refusal(); connect.CodeOf(err) != connect.CodeUnavailable ||
-		!errors.As(err, &connectErr) || connectErr.Meta().Get(StoppingHeader) == "" {
+		!errors.As(err, &connectErr) || connectErr.Meta().Get(control.StoppingHeader) == "" {
 		t.Fatalf("refusal = %v", err)
 	}
 	w := httptest.NewRecorder()
 	refuse(w)
-	if w.Code != http.StatusServiceUnavailable || w.Header().Get(StoppingHeader) == "" ||
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get(control.StoppingHeader) == "" ||
 		w.Header().Get("Retry-After") == "" {
 		t.Fatalf("refuse answered %d with %v", w.Code, w.Header())
 	}

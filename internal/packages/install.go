@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -25,7 +26,6 @@ var (
 	ErrFetch     = errors.New("package fetch failed")
 	ErrStaleLock = errors.New("lockfile does not match")
 	ErrUnknown   = errors.New("unknown package")
-	ErrBusy      = errors.New("package installer is busy")
 )
 
 type marked struct {
@@ -42,21 +42,20 @@ func (m marked) Is(target error) bool { return target == m.kind }
 func mark(kind, err error) error { return marked{err: err, kind: kind} }
 
 type Result struct {
-	PackageIDs []config.ID `json:"package_ids"`
-	Lockfiles  []string    `json:"lockfiles"`
+	LocalLock  *config.Lock `json:"-"`
+	PackageIDs []config.ID  `json:"package_ids"`
+	Lockfiles  []string     `json:"lockfiles"`
 	// Locks holds the encoded lockfiles by path when Options.Stage leaves them unwritten.
 	Locks map[string][]byte `json:"-"`
 }
 
 type Options struct {
+	Local *config.Local
 	// Frozen permits no lockfile changes.
 	Frozen bool
 	// Updates advances these packages; UpdateAll advances every one.
 	Updates   []config.ID
 	UpdateAll bool
-	// Overlay replaces configuration fragments and lockfiles, so an edit can be installed
-	// before it is written.
-	Overlay config.Overlay
 	// Stage returns the lockfiles in Result.Locks instead of writing them.
 	Stage bool
 }
@@ -72,15 +71,15 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 		return result, err
 	}
 	lock := flock.New(filepath.Join(cache, "install.lock"))
-	ok, err := lock.TryLockContext(ctx, lockRetry)
+	_, err := lock.TryLockContext(ctx, lockRetry)
 	if err != nil {
 		return result, err
 	}
-	if !ok {
-		return result, mark(ErrBusy, fmt.Errorf("package installer is busy"))
-	}
 	defer func() { _ = lock.Unlock() }()
-	c, err := config.Load(root, config.Options{Builtins: builtins, Overlay: opts.Overlay})
+	c, err := config.Load(
+		root,
+		config.Options{Builtins: builtins, Local: opts.Local},
+	)
 	if err != nil {
 		return result, err
 	}
@@ -106,7 +105,7 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 		pinned := p.Pinned()
 		l, ok := locks[p.Lockfile]
 		if !ok {
-			l, err = config.ReadLock(p.Lockfile, opts.Overlay)
+			l, err = c.PackageLock(p)
 			switch {
 			case err == nil:
 				locks[p.Lockfile] = l
@@ -130,12 +129,14 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 		hash, revision, dest := "", "", ""
 		reuse := func(candidateHash, candidateRevision string) {
 			candidate := filepath.Join(cache, "packages", candidateHash)
-			if config.ValidHash(candidateHash) {
-				if cached, err := config.TreeHash(candidate); err == nil && cached == candidateHash {
-					hash = candidateHash
-					revision = candidateRevision
-					dest = candidate
-				}
+			if !config.ValidHash(candidateHash) {
+				return
+			}
+			// Entries appear only by renaming content hashed under that name into place.
+			if _, err := os.Stat(candidate); err == nil {
+				hash = candidateHash
+				revision = candidateRevision
+				dest = candidate
 			}
 		}
 		pin := config.PinPath(cache, p)
@@ -225,8 +226,9 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 	merged := func(id config.ID, _ config.Package, deps []config.ID) error {
 		f := fetched[id]
 		if !f.pinned {
-			if frozen && config.Digest(deps) != config.Digest(f.previous.Dependencies) {
-				return fmt.Errorf("stale dependencies for %s", id)
+			// Not by digest: a lock read from the database has no list where a lockfile has an empty one.
+			if frozen && !slices.Equal(deps, f.previous.Dependencies) {
+				return mark(ErrStaleLock, fmt.Errorf("stale dependencies for %s", id))
 			}
 			f.lock.Packages[id] = config.LockedPackage{
 				Source: f.source, Revision: f.revision, Hash: f.hash, Dependencies: deps,
@@ -253,12 +255,18 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 				delete(l.Packages, id)
 			}
 		}
-		result.Lockfiles = append(result.Lockfiles, path)
+		if path != "" {
+			result.Lockfiles = append(result.Lockfiles, path)
+		}
 	}
 	switch {
 	case opts.Stage:
 		result.Locks = map[string][]byte{}
 		for path, l := range locks {
+			if path == "" {
+				result.LocalLock = &l
+				continue
+			}
 			b, err := EncodeLock(l)
 			if err != nil {
 				return result, err
@@ -266,6 +274,10 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 			result.Locks[path] = b
 		}
 	case !frozen:
+		if local, ok := locks[""]; ok {
+			result.LocalLock = &local
+			delete(locks, "")
+		}
 		if err := writeLocks(locks); err != nil {
 			return result, err
 		}
@@ -278,10 +290,10 @@ func Install(ctx context.Context, root, cache string, builtins config.Builtins, 
 // writeLocks stages every lockfile before replacing any, so a failure while writing
 // leaves all previous locks in place.
 func writeLocks(locks map[string]config.Lock) error {
-	staged := map[string]string{}
+	staged := map[string]*securefs.Staged{}
 	defer func() {
-		for _, tmp := range staged {
-			_ = os.Remove(tmp)
+		for _, s := range staged {
+			s.Discard()
 		}
 	}()
 	for path, l := range locks {
@@ -289,33 +301,14 @@ func writeLocks(locks map[string]config.Lock) error {
 		if err != nil {
 			return err
 		}
-		if err := securefs.EnsureDir(filepath.Dir(path)); err != nil {
-			return err
-		}
-		f, err := os.CreateTemp(filepath.Dir(path), ".agx-*")
+		s, err := securefs.Stage(path, b)
 		if err != nil {
 			return err
 		}
-		staged[path] = f.Name()
-		if err = f.Chmod(0o600); err == nil {
-			err = securefs.Private(f.Name())
-		}
-		if err == nil {
-			_, err = f.Write(b)
-		}
-		if err == nil {
-			err = f.Sync()
-		}
-		closeErr := f.Close()
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return closeErr
-		}
+		staged[path] = s
 	}
-	for path, tmp := range staged {
-		if err := os.Rename(tmp, path); err != nil {
+	for path, s := range staged {
+		if err := s.Commit(); err != nil {
 			return err
 		}
 		delete(staged, path)
@@ -367,12 +360,29 @@ func checkoutGit(ctx context.Context, dir, url, protocols, ref string) (string, 
 	return revision, nil
 }
 
+var repositoryEnvironment = map[string]bool{
+	"GIT_DIR":                          true,
+	"GIT_WORK_TREE":                    true,
+	"GIT_INDEX_FILE":                   true,
+	"GIT_COMMON_DIR":                   true,
+	"GIT_NAMESPACE":                    true,
+	"GIT_OBJECT_DIRECTORY":             true,
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
+}
+
 // git runs with allowed transports restricted. Isolated invocations shape checked-out
 // content, so they ignore user/system configuration and attributes that would make package
 // hashes depend on the machine; cloning keeps user configuration for credentials and URL rewrites.
 func git(ctx context.Context, protocols string, isolated bool, args ...string) ([]byte, error) {
-	env := append(
-		os.Environ(),
+	// The daemon keeps the environment of whatever started it, such as a Git hook, whose
+	// repository these variables would make every package command act on.
+	env := slices.DeleteFunc(os.Environ(), func(variable string) bool {
+		name, _, _ := strings.Cut(strings.ToUpper(variable), "=")
+		return repositoryEnvironment[name] ||
+			isolated && (name == "GIT_CONFIG_PARAMETERS" || strings.HasPrefix(name, "GIT_CONFIG_"))
+	})
+	env = append(
+		env,
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_ALLOW_PROTOCOL="+protocols,

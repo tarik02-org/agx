@@ -3,23 +3,24 @@ package cli
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/gofrs/flock"
+	"golang.org/x/mod/semver"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/daemon"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/platform"
 )
 
@@ -32,20 +33,13 @@ const (
 // autostart reports whether commands may start the daemon: AGX_NO_AUTOSTART overrides
 // daemon.autostart, which defaults to true.
 func autostart(c *config.Config) bool {
+	if c != nil && c.Daemon.Managed {
+		return false
+	}
 	if value := os.Getenv("AGX_NO_AUTOSTART"); value != "" && value != "0" {
 		return false
 	}
 	return c == nil || c.Daemon.Autostart == nil || *c.Daemon.Autostart
-}
-
-// configuredAutostart reads only configuration fragments, so commands that need no packages
-// stay fast. A configuration that does not load leaves autostart on; the daemon then reports why.
-func configuredAutostart(paths platform.Paths, builtins config.Builtins) bool {
-	c, err := config.Load(paths.Config, config.Options{Builtins: builtins})
-	if err != nil {
-		return autostart(nil)
-	}
-	return autostart(c)
 }
 
 type daemonAction int
@@ -62,67 +56,74 @@ type daemonState struct {
 	discovery error
 	// reachable is whether the discovered daemon answered.
 	reachable bool
-	// sameConfig is whether the discovered daemon serves the command's root configuration.
-	sameConfig bool
-	// activeLaunches counts launches of a reachable daemon that still hold MCP access.
-	activeLaunches int
+	// slow is whether the discovered daemon took the connection but did not answer in time: it
+	// runs, but its launches are unknown.
+	slow bool
+	// newer is whether this agx is ordered strictly after the discovered daemon's version.
+	newer bool
 }
 
-// action decides how to reach a daemon of this build. A daemon of another build is replaced; it
-// keeps its active launches for its successor. A daemon of this build serving another
-// configuration is replaced when it has no active launches; otherwise it stays, and the launch
-// check reports it.
+// action replaces a running daemon only for a strictly newer client. Slow daemons keep
+// their startup lock and are left running.
 func (s daemonState) action() daemonAction {
-	switch {
-	case s.discovery == nil && s.reachable:
-		if !s.sameConfig && s.activeLaunches == 0 {
-			return replaceDaemon
-		}
-		return useDaemon
-	case errors.Is(s.discovery, daemon.ErrVersionMismatch) && s.reachable:
-		return replaceDaemon
-	default:
-		// Missing, invalid, or stale discovery: the startup lock lets a new daemon replace it.
+	if s.discovery != nil || !s.reachable && !s.slow {
 		return startNewDaemon
 	}
+	if s.newer && !s.slow {
+		return replaceDaemon
+	}
+	return useDaemon
 }
 
-// daemonClient connects to a daemon of this build. When none answers and enabled is true, it
+// probeDaemon reads discovery and asks the daemon it names how it is.
+func probeDaemon(ctx context.Context, paths platform.Paths) (control.Discovery, *client, daemonState) {
+	d, err := liveDiscovery(paths)
+	state := daemonState{
+		discovery: err,
+		newer:     newerVersion(control.Version, d.Version),
+	}
+	if err != nil {
+		return d, nil, state
+	}
+	c := dial(d)
+	probe, cancel := context.WithTimeout(ctx, probeTimeout)
+	_, err = c.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{ProbeOnly: true}))
+	cancel()
+	switch {
+	case err == nil:
+		state.reachable = true
+	case connect.CodeOf(err) == connect.CodeDeadlineExceeded:
+		state.slow = true
+	}
+	return d, c, state
+}
+
+// replaceRunning stops the daemon c reaches, which state found replaceable, and waits until it
+// exited.
+func replaceRunning(ctx context.Context, paths platform.Paths, c *client) error {
+	ui.Diagnose(ui.Info, "restarting daemon %s, which runs an older agx", c.discovery.Version)
+	// Another command replacing it at once may have stopped it already.
+	if _, err := stopDaemon(ctx, c, false, 0); err != nil && !daemonGone(err) {
+		return fmt.Errorf("cannot replace daemon %s: %w", c.discovery.Version, err)
+	}
+	return awaitExit(ctx, paths, exitTimeout(0))
+}
+
+// daemonClient connects to a daemon this agx can use. When none answers and enabled is true, it
 // starts one in the background, as agx daemon start does, and waits until it is ready.
 func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*client, error) {
 	if !enabled {
 		return newClient(paths)
 	}
-	d, err := daemon.ReadDiscovery(paths)
-	state := daemonState{discovery: err, sameConfig: d.Config == paths.Config}
-	var current *client
-	if err == nil || errors.Is(err, daemon.ErrVersionMismatch) {
-		current = dial(d)
-		probe, cancel := context.WithTimeout(ctx, probeTimeout)
-		view, probeErr := current.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{}))
-		cancel()
-		if probeErr == nil {
-			state.reachable = true
-			state.activeLaunches = activeLaunches(view.Msg.GetRuntime())
-		}
+	_, current, state := probeDaemon(ctx, paths)
+	if current != nil && current.discovery.Managed {
+		return current, nil
 	}
 	switch state.action() {
 	case useDaemon:
 		return current, nil
 	case replaceDaemon:
-		if err != nil {
-			ui.Diagnose(ui.Info, "restarting daemon %s, which runs another agx build", d.Version)
-		} else {
-			ui.Diagnose(
-				ui.Info,
-				"restarting the daemon, which served configuration %s and had no active launches",
-				d.Config,
-			)
-		}
-		if _, err := stopDaemon(ctx, current, false, 0); err != nil {
-			return nil, fmt.Errorf("cannot replace daemon %s: %w", d.Version, err)
-		}
-		if err := awaitExit(ctx, paths, replaceTimeout); err != nil {
+		if err := replaceRunning(ctx, paths, current); err != nil {
 			return nil, err
 		}
 	case startNewDaemon:
@@ -134,13 +135,42 @@ func daemonClient(ctx context.Context, paths platform.Paths, enabled bool) (*cli
 	return newClient(paths)
 }
 
+// newerVersion uses semantic version ordering, then the commit count of nightlies,
+// which live in build metadata and are therefore ignored by semver.Compare.
+func newerVersion(a, b string) bool {
+	a, b = "v"+strings.TrimPrefix(a, "v"), "v"+strings.TrimPrefix(b, "v")
+	if !semver.IsValid(a) || !semver.IsValid(b) {
+		return false
+	}
+	if order := semver.Compare(a, b); order != 0 {
+		return order > 0
+	}
+	count := func(version string) int {
+		parts := strings.Split(strings.TrimPrefix(semver.Build(version), "+"), ".")
+		if len(parts) != 3 || parts[0] != "nightly" {
+			return 0
+		}
+		value, _ := strconv.Atoi(parts[1])
+		return value
+	}
+	return count(a) > count(b)
+}
+
 // maxDaemonLog is the size past which a starting daemon moves its log aside.
 const maxDaemonLog = 1 << 20
 
-// startDaemon starts a detached daemon and waits until a daemon of this build answers. Concurrent
-// starters each spawn one; the startup lock lets one serve, and the others connect to it.
+// startDaemon starts a detached daemon and waits until a daemon this agx can use answers.
+// Concurrent starters each spawn one; the startup lock lets one serve, and the others connect to
+// it.
 func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
-	executable, err := os.Executable()
+	managed, err := externallyManaged(paths)
+	if err != nil {
+		return "", err
+	}
+	if managed {
+		return "", errManagedDaemon
+	}
+	executable, err := daemonExecutable()
 	if err != nil {
 		return "", err
 	}
@@ -159,14 +189,11 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 	defer func() { _ = log.Close() }()
 	child, err := platform.StartDetached(func() *exec.Cmd {
 		// The daemon must outlive this command, so its process is not tied to the command's cancellation.
-		child := exec.CommandContext(context.WithoutCancel(ctx), executable, "daemon", "start", "--foreground")
-		// On macOS the executable path is the link this command ran through, such as a shim named
-		// after a harness definition; with that name as argv[0] the child would launch the harness,
-		// which starts a daemon again, without end. The daemon always runs as agx.
-		child.Args[0] = "agx"
-		// The paths travel as environment rather than as --config, which must name an existing file:
-		// a root configuration that does not exist yet is an empty one, as it is for the caller.
-		child.Env = append(os.Environ(), "AGX_CONFIG="+paths.Config, "AGX_CACHE="+paths.Cache)
+		child := exec.CommandContext(context.WithoutCancel(ctx), executable)
+		// The daemon always runs under its own name, including test helpers.
+		child.Args[0] = "agxd"
+		// Keep the caller's derived paths, including state relocated by a --cache override.
+		child.Env = append(os.Environ(), "AGX_CONFIG="+paths.Config, "AGX_CACHE="+paths.Cache, "AGX_STATE="+paths.State)
 		// A daemon started from a launch must not hold that project directory open, nor write
 		// into a harness's protocol streams.
 		child.Dir = paths.Runtime
@@ -184,38 +211,34 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 	}()
 	// The log names why the daemon did not come up, for a person; scripts learn only that no
 	// daemon answers.
-	failed := func(code, reason string) error {
+	failed := func(reason string) error {
 		// The daemon's own diagnostics carry the agx: prefix this error is reported under again.
 		if line := strings.TrimPrefix(lastLine(logPath), "agx: "); line != "" {
-			return codedf(code, "daemon %s: %s; inspect %s", reason, line, logPath)
+			return fmt.Errorf("daemon %s: %s; inspect %s", reason, line, logPath)
 		}
-		return codedf(code, "daemon %s; inspect %s", reason, logPath)
+		return fmt.Errorf("daemon %s; inspect %s", reason, logPath)
 	}
 	deadline := time.NewTimer(startupTimeout)
 	defer deadline.Stop()
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
+	delay := 10 * time.Millisecond
+	timer := time.NewTimer(0)
+	defer timer.Stop()
 	childExited := false
-	var lastErr error
 	for {
 		select {
 		case <-ctx.Done():
 			return "", ctx.Err()
 		case <-deadline.C:
-			if errors.Is(lastErr, daemon.ErrVersionMismatch) {
-				return "", lastErr
-			}
-			return "", failed(codeTimeout, "startup timed out")
+			return "", failed("startup timed out")
 		case <-exited:
 			childExited = true
 			exited = nil
-		case <-ticker.C:
+		case <-timer.C:
 		}
 		c, err := newClient(paths)
-		lastErr = err
 		if err == nil {
 			probe, cancel := context.WithTimeout(ctx, time.Second)
-			_, err = c.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{}))
+			_, err = c.runtime.GetRuntime(probe, connect.NewRequest(&v1.GetRuntimeRequest{ProbeOnly: true}))
 			cancel()
 			if err == nil {
 				return logPath, nil
@@ -229,9 +252,11 @@ func startDaemon(ctx context.Context, paths platform.Paths) (string, error) {
 				return "", err
 			}
 			if !held {
-				return "", failed(codeDaemonUnavailable, "startup failed")
+				return "", failed("startup failed")
 			}
 		}
+		timer.Reset(delay)
+		delay = min(delay*2, 100*time.Millisecond)
 	}
 }
 
@@ -248,6 +273,15 @@ func stopDaemon(ctx context.Context, c *client, force bool, grace time.Duration)
 		return 0, err
 	}
 	return int(resp.Msg.KeptLaunches), nil
+}
+
+// exitTimeout bounds waiting for a stopping daemon to exit: it lets requests in flight finish
+// for grace, or its default grace period, and then lets its MCP servers exit.
+func exitTimeout(grace time.Duration) time.Duration {
+	if grace <= 0 {
+		grace = control.ShutdownGrace
+	}
+	return grace + startupTimeout
 }
 
 // awaitExit waits up to timeout until a stopping daemon released the startup lock, so a new one
@@ -276,7 +310,8 @@ func awaitExit(ctx context.Context, paths platform.Paths, timeout time.Duration)
 // lockHeld reports whether a daemon holds the startup lock, running or still starting.
 func lockHeld(paths platform.Paths) (bool, error) {
 	lock := flock.New(filepath.Join(paths.Runtime, "daemon.lock"))
-	ok, err := lock.TryLock()
+	// Shared, so that commands asking at once do not take each other for the daemon.
+	ok, err := lock.TryRLock()
 	if err != nil {
 		return false, err
 	}
@@ -305,15 +340,4 @@ func lastLine(path string) string {
 		}
 	}
 	return last
-}
-
-// activeLaunches counts the launches of view that still hold MCP access.
-func activeLaunches(view *v1.RuntimeView) int {
-	n := 0
-	for _, l := range view.GetLaunches() {
-		if l.State == v1.Launch_STATE_PREPARED || l.State == v1.Launch_STATE_RUNNING {
-			n++
-		}
-	}
-	return n
 }

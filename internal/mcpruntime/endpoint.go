@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -120,9 +119,7 @@ func New(
 	if shared == nil {
 		e.shared = NewShared(ctx, "", nil)
 	}
-	if c.Transport == "stdio" {
-		e.shareKey = shareKey(id, c, root, secrets, inputs)
-	}
+	e.shareKey = shareKey(id, c, root, secrets, inputs)
 	go e.expireIdle()
 	return e
 }
@@ -308,25 +305,8 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if r.Header.Get("Origin") != "" {
-		u, err := url.Parse(r.Header.Get("Origin"))
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "invalid origin", http.StatusForbidden)
-			return
-		}
-	}
 	r.Body = http.MaxBytesReader(w, r.Body, 16*1024*1024)
 	if r.Method == http.MethodPost {
-		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || mediaType != "application/json" {
-			http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
-			return
-		}
-		if !strings.Contains(r.Header.Get("Accept"), "application/json") ||
-			!strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
-			http.Error(w, "Accept must contain application/json and text/event-stream", http.StatusNotAcceptable)
-			return
-		}
 		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(10 * time.Second))
 		defer func() { _ = http.NewResponseController(w).SetReadDeadline(time.Time{}) }()
 	}
@@ -645,7 +625,8 @@ func (e *Endpoint) sessionEnded(id string, s *stdioSession) {
 	if e.sessions[id] == s {
 		delete(e.sessions, id)
 	}
-	if !e.closed {
+	// Sessions that go on serving keep the server connected.
+	if !e.closed && len(e.sessions) == 0 {
 		e.setState("connecting", e.problem)
 	}
 }

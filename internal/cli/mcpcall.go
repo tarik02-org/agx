@@ -19,6 +19,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/dustin/go-humanize"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
@@ -26,7 +27,6 @@ import (
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/mcptools"
-	"github.com/tarik02-org/agx/internal/platform"
 )
 
 // toolTarget is how this invocation reaches MCP servers: inside a launch with its grant, unless
@@ -36,8 +36,25 @@ type toolTarget struct {
 	client *client
 	token  string
 	scope  *v1.McpCallScope
-	// config is loaded outside a launch; inside one it may be nil.
+	// config is set outside a launch; inside one it may be nil.
 	config *config.Config
+}
+
+// launchScoped reports whether tool commands reach the servers of the launch they run in, which
+// its daemon knows without this process loading configuration.
+func launchScoped(all bool) bool {
+	_, _, ok := inLaunch()
+	return ok && !all
+}
+
+// toolConfig loads configuration for tool commands. Inside a launch, which its daemon serves from
+// its own, a configuration that does not load is no error.
+func (a *app) toolConfig(all bool) (*config.Config, error) {
+	c, err := a.config()
+	if err != nil && !launchScoped(all) {
+		return nil, err
+	}
+	return c, nil
 }
 
 // inLaunch reports the launch whose harness environment this process runs in.
@@ -46,27 +63,23 @@ func inLaunch() (id, grant string, ok bool) {
 	return id, grant, id != "" && grant != ""
 }
 
-// newToolTarget connects to the daemon for tool commands. server, when set, is the only server
-// whose environment inputs are forwarded.
-func newToolTarget(
+// newToolTarget connects to the daemon for tool commands with c, as toolConfig loaded it; inside
+// a launch it may be nil. server, when set, is the only server whose environment inputs are
+// forwarded.
+func (a *app) newToolTarget(
 	ctx context.Context,
-	paths platform.Paths,
-	builtins config.Builtins,
+	c *config.Config,
 	all bool,
 	server string,
 ) (*toolTarget, error) {
-	if launchID, grant, ok := inLaunch(); ok && !all {
-		// The launch's daemon runs while its harness does; its configuration is optional here.
-		c, _ := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
-		client, err := newClient(paths)
+	if launchScoped(all) {
+		// The launch's daemon runs while its harness does.
+		launchID, grant, _ := inLaunch()
+		client, err := newClient(a.paths)
 		if err != nil {
 			return nil, err
 		}
 		return &toolTarget{client: client, token: grant, scope: &v1.McpCallScope{LaunchId: launchID}, config: c}, nil
-	}
-	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
-	if err != nil {
-		return nil, coded(codeConfigInvalid, err)
 	}
 	directory, err := os.Getwd()
 	if err != nil {
@@ -89,20 +102,8 @@ func newToolTarget(
 			}
 		}
 	}
-	// Only the variables the servers' values read are forwarded, as for mcp test.
-	snapshot := &config.Snapshot{Config: c}
-	for _, id := range ids {
-		if _, ok := c.MCP[id]; ok {
-			snapshot.Resources = append(snapshot.Resources, config.Resource{Kind: "mcp", ID: id})
-		}
-	}
-	inputs := map[string]string{}
-	for _, name := range snapshot.MCPEnvironment() {
-		if value, ok := os.LookupEnv(name); ok {
-			inputs[name] = value
-		}
-	}
-	client, err := daemonClient(ctx, paths, autostart(c))
+	inputs := environmentInputs(mcpEnvironment(c, ids...))
+	client, err := a.client(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -112,6 +113,26 @@ func newToolTarget(
 		scope:  &v1.McpCallScope{Directory: directory, All: all, EnvironmentInputs: inputs},
 		config: c,
 	}, nil
+}
+
+func mcpEnvironment(c *config.Config, ids ...config.ID) []string {
+	snapshot := &config.Snapshot{Config: c}
+	for _, id := range ids {
+		if _, ok := c.MCP[id]; ok {
+			snapshot.Resources = append(snapshot.Resources, config.Resource{Kind: "mcp", ID: id})
+		}
+	}
+	return snapshot.MCPEnvironment()
+}
+
+func environmentInputs(names []string) map[string]string {
+	inputs := map[string]string{}
+	for _, name := range names {
+		if value, ok := os.LookupEnv(name); ok {
+			inputs[name] = value
+		}
+	}
+	return inputs
 }
 
 func (t *toolTarget) listTools(ctx context.Context, server string) ([]*v1.McpTools, error) {
@@ -125,7 +146,7 @@ func (t *toolTarget) listTools(ctx context.Context, server string) ([]*v1.McpToo
 	return response.Msg.Servers, nil
 }
 
-func mcpToolsCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func mcpToolsCommand(a *app) *cobra.Command {
 	schema, all := false, false
 	cmd := &cobra.Command{
 		Use:   "tools [<server>]",
@@ -140,7 +161,14 @@ func mcpToolsCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 			if len(args) > 0 {
 				server = args[0]
 			}
-			target, err := newToolTarget(cmd.Context(), *paths, *builtins, all, server)
+			var c *config.Config
+			if !launchScoped(all) {
+				var err error
+				if c, err = a.toolConfig(all); err != nil {
+					return err
+				}
+			}
+			target, err := a.newToolTarget(cmd.Context(), c, all, server)
 			if err != nil {
 				return err
 			}
@@ -170,7 +198,7 @@ func mcpToolsCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Co
 
 // mcpError points at the secrets when a server needs a credential the daemon names no login for.
 func mcpError(err error) error {
-	if errorCode(err) == codeNeedsLogin && !strings.Contains(err.Error(), "agx secret login") {
+	if connect.CodeOf(err) == connect.CodeUnauthenticated && !strings.Contains(err.Error(), "agx secret login") {
 		hint("Run agx secret status to see which secret is missing.")
 	}
 	return err
@@ -246,7 +274,7 @@ func printSignatures(s *v1.McpTools, withSchema bool) error {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString(highlightSignature(out, signature(t)) + "\n")
+		b.WriteString(signature(t) + "\n")
 		description := mcptools.FirstLine(t.Description, 160)
 		if description == "" {
 			description = mcptools.FirstLine(t.Title, 160)
@@ -272,7 +300,7 @@ func printSignatures(s *v1.McpTools, withSchema bool) error {
 	return err
 }
 
-func mcpCallCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func mcpCallCommand(a *app) *cobra.Command {
 	var argsJSON, saveDir string
 	raw, all := false, false
 	timeout := 60 * time.Second
@@ -305,23 +333,20 @@ func mcpCallCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 					return &usageError{fmt.Errorf("--args: %w", err)}
 				}
 			}
+			// With one dot, server.tool splits only one way, and the launch's daemon needs no
+			// configuration from here.
 			var c *config.Config
-			if _, _, ok := inLaunch(); !ok || all {
+			if !launchScoped(all) || strings.Count(args[0], ".") > 1 {
 				var err error
-				if c, err = config.Load(
-					paths.Config,
-					config.Options{Builtins: *builtins, Cache: paths.Cache},
-				); err != nil {
-					return coded(codeConfigInvalid, err)
+				if c, err = a.toolConfig(all); err != nil {
+					return err
 				}
-			} else {
-				c, _ = config.Load(paths.Config, config.Options{Builtins: *builtins, Cache: paths.Cache})
 			}
 			server, tool, err := splitTool(c, args[0])
 			if err != nil {
 				return err
 			}
-			target, err := newToolTarget(cmd.Context(), *paths, *builtins, all, server)
+			target, err := a.newToolTarget(cmd.Context(), c, all, server)
 			if err != nil {
 				return err
 			}
@@ -340,7 +365,7 @@ func mcpCallCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 				}
 			}
 			if definition == nil {
-				return codedf(codeInvalidRequest, "MCP server %s has no tool %s%s", server, tool,
+				return fmt.Errorf("MCP server %s has no tool %s%s", server, tool,
 					mcptools.Suggest(tool, names))
 			}
 			schema, err := mcptools.ParseSchema(definition.InputSchemaJson)
@@ -354,7 +379,7 @@ func mcpCallCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 			case errors.As(err, &syntax):
 				return &usageError{err}
 			case errors.As(err, &invalid):
-				return codedf(codeInvalidRequest, "%s.%s: %v; expected %s", server, tool, err, signature(definition))
+				return fmt.Errorf("%s.%s: %w; expected %s", server, tool, err, signature(definition))
 			case err != nil:
 				return err
 			}
@@ -372,10 +397,7 @@ func mcpCallCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Com
 				var rpc *connect.Error
 				if errors.As(err, &rpc) && rpc.Code() == connect.CodeDeadlineExceeded ||
 					errors.Is(err, context.DeadlineExceeded) {
-					return coded(
-						codeTimeout,
-						fmt.Errorf("%s.%s did not finish within %s; raise --timeout", server, tool, timeout),
-					)
+					return fmt.Errorf("%s.%s did not finish within %s; raise --timeout", server, tool, timeout)
 				}
 				return mcpError(err)
 			}
@@ -412,23 +434,6 @@ func splitTool(c *config.Config, text string) (string, string, error) {
 		)}
 	}
 	return server, tool, nil
-}
-
-// wireContent is an MCP content item as the daemon relays it.
-type wireContent struct {
-	Type        string `json:"type"`
-	Text        string `json:"text"`
-	MIMEType    string `json:"mimeType"`
-	Data        []byte `json:"data"`
-	URI         string `json:"uri"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Resource    *struct {
-		URI      string  `json:"uri"`
-		MIMEType string  `json:"mimeType"`
-		Text     *string `json:"text"`
-		Blob     []byte  `json:"blob"`
-	} `json:"resource"`
 }
 
 // contentFiles writes binary content into a directory created on first use.
@@ -472,33 +477,27 @@ func (f *contentFiles) write(data []byte, mimeType, uri string) (string, error) 
 	return filepath.Abs(file.Name())
 }
 
-var mimeExtensions = map[string]string{
-	"image/png":        ".png",
-	"image/jpeg":       ".jpg",
-	"image/gif":        ".gif",
-	"image/webp":       ".webp",
-	"image/svg+xml":    ".svg",
-	"audio/mpeg":       ".mp3",
-	"audio/wav":        ".wav",
-	"audio/x-wav":      ".wav",
-	"audio/ogg":        ".ogg",
-	"application/pdf":  ".pdf",
-	"application/json": ".json",
-	"application/zip":  ".zip",
-	"text/plain":       ".txt",
-}
-
 func extension(mimeType, uri string) string {
 	base, _, _ := strings.Cut(strings.ToLower(mimeType), ";")
-	if ext, ok := mimeExtensions[strings.TrimSpace(base)]; ok {
-		return ext
-	}
-	if ext := path.Ext(uri); ext != "" && len(ext) <= 8 && !strings.ContainsAny(ext, "/?#\\") {
-		return ext
+	base = strings.TrimSpace(base)
+	switch base {
+	case "image/jpeg":
+		return ".jpg"
+	case "audio/mpeg":
+		return ".mp3"
+	case "audio/wav", "audio/x-wav":
+		return ".wav"
+	case "audio/ogg":
+		return ".ogg"
+	case "text/plain":
+		return ".txt"
 	}
 	if exts, err := mime.ExtensionsByType(base); err == nil && len(exts) > 0 {
 		slices.Sort(exts)
 		return exts[0]
+	}
+	if ext := path.Ext(uri); ext != "" && len(ext) <= 8 && !strings.ContainsAny(ext, "/?#\\") {
+		return ext
 	}
 	return ".bin"
 }
@@ -507,8 +506,10 @@ func extension(mimeType, uri string) string {
 // items name by path and size in place of their data.
 func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir string) error {
 	var raws []json.RawMessage
+	var result mcp.CallToolResult
 	if msg.ContentJson != "" {
-		if err := json.Unmarshal([]byte(msg.ContentJson), &raws); err != nil {
+		if err := errors.Join(json.Unmarshal([]byte(msg.ContentJson), &raws),
+			json.Unmarshal([]byte(`{"content":`+msg.ContentJson+`}`), &result)); err != nil {
 			return fmt.Errorf("unreadable content from %s.%s: %w", server, tool, err)
 		}
 	}
@@ -522,28 +523,39 @@ func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir stri
 			human.WriteString("\n")
 		}
 	}
-	for _, raw := range raws {
-		var item wireContent
+	writeBinary := func(data []byte, mimeType string, fields map[string]any) error {
+		path, err := files.write(data, mimeType, "")
+		if err != nil {
+			return err
+		}
+		delete(fields, "data")
+		fields["path"], fields["size"] = path, len(data)
+		line(out.Muted(fmt.Sprintf("[%s, %s]", mimeType, humanize.IBytes(uint64(len(data))))) + " " + out.Path(path))
+		return nil
+	}
+	for i, raw := range raws {
 		var fields map[string]any
-		if err := errors.Join(json.Unmarshal(raw, &item), json.Unmarshal(raw, &fields)); err != nil {
+		if err := json.Unmarshal(raw, &fields); err != nil {
 			return fmt.Errorf("unreadable content from %s.%s: %w", server, tool, err)
 		}
 		content = append(content, fields)
-		switch item.Type {
-		case "text":
-			line(highlightJSON(out, item.Text))
-		case "image", "audio":
-			path, err := files.write(item.Data, item.MIMEType, "")
-			if err != nil {
+		switch item := result.Content[i].(type) {
+		case *mcp.TextContent:
+			var indented bytes.Buffer
+			if err := json.Indent(&indented, []byte(item.Text), "", "  "); err == nil {
+				line(indented.String())
+			} else {
+				line(item.Text)
+			}
+		case *mcp.ImageContent:
+			if err := writeBinary(item.Data, item.MIMEType, fields); err != nil {
 				return err
 			}
-			size := int64(len(item.Data))
-			delete(fields, "data")
-			fields["path"], fields["size"] = path, size
-			line(
-				out.Muted(fmt.Sprintf("[%s, %s]", item.MIMEType, humanize.IBytes(uint64(size)))) + " " + out.Path(path),
-			)
-		case "resource_link":
+		case *mcp.AudioContent:
+			if err := writeBinary(item.Data, item.MIMEType, fields); err != nil {
+				return err
+			}
+		case *mcp.ResourceLink:
 			text := out.Muted("[link]") + " " + item.URI
 			if item.Name != "" {
 				text += "  " + item.Name
@@ -552,13 +564,13 @@ func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir stri
 				text += ": " + item.Description
 			}
 			line(text)
-		case "resource":
+		case *mcp.EmbeddedResource:
 			r := item.Resource
 			if r == nil {
 				continue
 			}
-			if r.Text != nil {
-				line(out.Muted("[resource "+r.URI+"]") + "\n" + *r.Text)
+			if r.Blob == nil {
+				line(out.Muted("[resource "+r.URI+"]") + "\n" + r.Text)
 				continue
 			}
 			path, err := files.write(r.Blob, r.MIMEType, r.URI)
@@ -579,7 +591,7 @@ func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir stri
 				),
 			)
 		default:
-			line(out.Muted("[" + item.Type + "]"))
+			line(out.Muted(fmt.Sprintf("[%v]", fields["type"])))
 		}
 	}
 	if len(raws) == 0 && msg.StructuredContentJson != "" {
@@ -587,7 +599,7 @@ func printCallResult(server, tool string, msg *v1.CallToolResponse, saveDir stri
 		if err := json.Indent(&indented, []byte(msg.StructuredContentJson), "", "  "); err != nil {
 			indented.WriteString(msg.StructuredContentJson)
 		}
-		line(highlightJSON(out, indented.String()))
+		line(indented.String())
 	}
 	var structured json.RawMessage
 	if msg.StructuredContentJson != "" {

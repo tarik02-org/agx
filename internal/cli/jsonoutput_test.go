@@ -71,11 +71,10 @@ func shape(value any) string {
 	return fmt.Sprintf("%T", value)
 }
 
-// TestJSONShapes pins the document of each command that runs without a daemon: renaming,
+// TestJSONShapes pins command result documents: renaming,
 // dropping, or retyping a field changes its shape.
 func TestJSONShapes(t *testing.T) {
 	isolate(t, shapeConfig)
-	t.Setenv("AGX_NO_AUTOSTART", "1")
 	t.Chdir(t.TempDir())
 	source := "{column:number,line:number,path:string}"
 	for _, test := range []struct {
@@ -101,7 +100,8 @@ func TestJSONShapes(t *testing.T) {
 		{[]string{"instructions", "list"}, "{conventions:{source:" + source + ",text:string}}"},
 		{
 			[]string{"harness", "list"},
-			"[{args:null,builtin:string,chain:[string],environment:{},executable:string,hidden:bool,name:string," +
+			"[{args:null,builtin:string,chain:[string],display_name:string,enabled:bool,environment:{}," +
+				"executable:string,hidden:bool,name:string," +
 				"setting_sources:null,settings:{}}]",
 		},
 		{
@@ -112,7 +112,7 @@ func TestJSONShapes(t *testing.T) {
 		{[]string{"daemon", "stop"}, "{kept_launches:number,running:bool}"},
 		{
 			[]string{"use", "fs"},
-			"{defined:null,disabled:null,enabled:[{id:string,kind:string}],files:null,removed:null," +
+			"{defined:null,disabled:null,enabled:[{id:string,kind:string}],removed:null,revision:number," +
 				"scope:{directory:string,harnesses:null}}",
 		},
 	} {
@@ -139,13 +139,15 @@ func TestJSONShapes(t *testing.T) {
 		}
 	}
 
+	okJSON(t, nil, "daemon", "stop", "--force")
+	t.Setenv("AGX_NO_AUTOSTART", "1")
 	var out bytes.Buffer
 	run([]string{"agx", "launch", "list", "--json"}, &out)
 	var document map[string]any
 	if err := json.Unmarshal(out.Bytes(), &document); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := shape(document), "{error:{code:string,message:string},version:number}"; got != want {
+	if got, want := shape(document), "{message:string}"; got != want {
 		t.Errorf("error document:\n got %s\nwant %s", got, want)
 	}
 }
@@ -171,11 +173,10 @@ harnesses:
     environment:
       OPENAI_API_KEY: literal-harness-token
 `)
-	t.Setenv("AGX_NO_AUTOSTART", "1")
 	for _, args := range [][]string{{"mcp", "list"}, {"harness", "list"}} {
 		_, docs := runJSON(t, append([]string{"--json"}, args...)...)
 		if len(docs) != 1 || docs[0].Data == nil {
-			t.Fatalf("agx %q: %+v", args, docs[0].Error)
+			t.Fatalf("agx %q: %+v", args, docs[0].Message)
 		}
 		if data := string(docs[0].Data); strings.Contains(data, "literal-") {
 			t.Errorf("agx %q --json shows a literal value: %s", args, data)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -17,7 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zalando/go-keyring"
 	"golang.org/x/oauth2"
 
 	"github.com/tarik02-org/agx/internal/config"
@@ -25,24 +25,57 @@ import (
 )
 
 type Manager struct {
-	mu sync.Mutex
-	// pending maps OAuth state to attempts; begins holds in-flight discovery per secret ID.
+	resetMu sync.RWMutex
+	mu      sync.Mutex
+	// pending maps OAuth state to the current attempts.
 	pending map[string]*Attempt
-	begins  map[config.ID]*beginCall
 	// locks serialize refresh, login storage and logout per credential key.
 	locks map[string]*sync.Mutex
-	// unpersisted holds refreshed credentials the OS keychain refused to store.
-	unpersisted map[string]credential
-	generation  map[string]uint64
 	// required marks credential keys whose server asked for login; hints maps a normalized
 	// server URL to the protected resource metadata URL its 401 challenge named.
 	required map[string]bool
 	hints    map[string]string
-	// refused maps credential keys whose refresh token the authorization server refused to the
-	// reason, until a new login or logout; refreshing again could not succeed.
-	refused  map[string]string
+	// refused maps credential keys whose refresh token the authorization server refused, also
+	// when retried with the credential read again from the store, to that refusal. Renewals on
+	// use send the same refresh token again only after its backoff.
+	refused map[string]refusal
+	// unsaved holds refreshed credentials the store failed to take, by key. The server already
+	// invalidated the stored refresh token, so they are used and written again on every use and
+	// at Close until the store takes them.
+	unsaved map[string]credential
+	// unsavedRetry is when a use next writes an unsaved credential again, by key.
+	unsavedRetry map[string]time.Time
+	// renewals counts refreshes in flight, so Close can wait until they are stored; closed
+	// refuses new ones.
+	renewals sync.WaitGroup
+	closed   bool
+	// helpers keeps command secrets' values by credential key for helperTTL, since every launch
+	// and MCP server start resolves them.
+	helpers  map[string]helperValue
 	callback string
-	store    *Store
+	store    Store
+}
+
+// helperTTL is how long a command secret's value is reused before its command runs again.
+const helperTTL = time.Minute
+
+type refusal struct {
+	reason string
+	// token is the refused refresh token; a different stored one is tried at once.
+	token   string
+	retry   time.Time
+	backoff time.Duration
+}
+
+// A refused refresh is retried on use after refusalBackoff, doubling up to maxRefusalBackoff.
+const (
+	refusalBackoff    = time.Minute
+	maxRefusalBackoff = 30 * time.Minute
+)
+
+type helperValue struct {
+	value   string
+	expires time.Time
 }
 
 var (
@@ -58,7 +91,6 @@ type credential struct {
 	Endpoint oauth2.Endpoint `json:"endpoint"`
 	ClientID string          `json:"client_id"`
 	Origin   string          `json:"origin"`
-	Resource string          `json:"resource"`
 }
 
 type Status struct {
@@ -75,18 +107,18 @@ type Status struct {
 
 // New returns a manager whose OAuth logins return to callback and whose stored secrets live in
 // store.
-func New(callback string, store *Store) *Manager {
+func New(callback string, store Store) *Manager {
 	return &Manager{
-		store:       store,
-		pending:     map[string]*Attempt{},
-		begins:      map[config.ID]*beginCall{},
-		locks:       map[string]*sync.Mutex{},
-		unpersisted: map[string]credential{},
-		generation:  map[string]uint64{},
-		required:    map[string]bool{},
-		hints:       map[string]string{},
-		refused:     map[string]string{},
-		callback:    callback,
+		store:        store,
+		pending:      map[string]*Attempt{},
+		locks:        map[string]*sync.Mutex{},
+		required:     map[string]bool{},
+		hints:        map[string]string{},
+		refused:      map[string]refusal{},
+		unsaved:      map[string]credential{},
+		unsavedRetry: map[string]time.Time{},
+		helpers:      map[string]helperValue{},
+		callback:     callback,
 	}
 }
 
@@ -137,8 +169,41 @@ func (m *Manager) Value(
 		return sopsValue(ctx, id, s, env, func(ref config.ID) (string, error) {
 			return m.Value(ctx, ref, secrets[ref], secrets, inputs, "")
 		})
+	case "command":
+		return m.helperValue(ctx, id, s)
 	}
 	return LocalValue(ctx, m.store, id, s, secrets, env)
+}
+
+func (m *Manager) helperValue(ctx context.Context, id config.ID, s config.Secret) (string, error) {
+	k := key(id, s)
+	m.mu.Lock()
+	cached, ok := m.helpers[k]
+	m.mu.Unlock()
+	if ok && time.Now().Before(cached.expires) {
+		return cached.value, nil
+	}
+	value, err := runHelper(ctx, id, s.Command)
+	if err != nil {
+		return "", err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := time.Now()
+	for k, v := range m.helpers {
+		if !now.Before(v.expires) {
+			delete(m.helpers, k)
+		}
+	}
+	m.helpers[k] = helperValue{value: value, expires: now.Add(helperTTL)}
+	return value, nil
+}
+
+// ForgetHelpers drops the command secrets' values, so that their commands run again.
+func (m *Manager) ForgetHelpers() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	clear(m.helpers)
 }
 
 // LocalValue resolves secrets that need no daemon state, for commands that run without the
@@ -146,7 +211,7 @@ func (m *Manager) Value(
 // the caller's environment.
 func LocalValue(
 	ctx context.Context,
-	store *Store,
+	store Store,
 	id config.ID,
 	s config.Secret,
 	secrets map[config.ID]config.Secret,
@@ -161,7 +226,7 @@ func LocalValue(
 		})
 	case "keychain":
 		value, err := store.Get(key(id, s))
-		if errors.Is(err, errNotStored) {
+		if errors.Is(err, ErrNotStored) {
 			return "", fmt.Errorf("keychain secret %s is not stored; store it with agx secret set %s", id, id)
 		} else if err != nil {
 			return "", fmt.Errorf("keychain secret %s: %w", id, err)
@@ -275,6 +340,8 @@ func (m *Manager) oauthToken(
 	origin, rejected string,
 ) (string, error) {
 	k := key(id, a)
+	m.resetMu.RLock()
+	defer m.resetMu.RUnlock()
 	lock := m.credentialLock(k)
 	lock.Lock()
 	defer lock.Unlock()
@@ -295,8 +362,8 @@ func (m *Manager) oauthToken(
 	m.mu.Lock()
 	refused, wasRefused := m.refused[k]
 	m.mu.Unlock()
-	if wasRefused {
-		return "", fmt.Errorf("secret %s cannot be refreshed: %s; run agx secret login %s", id, refused, id)
+	if wasRefused && refused.token == saved.Token.RefreshToken && time.Now().Before(refused.retry) {
+		return "", fmt.Errorf("secret %s cannot be refreshed: %s; run agx secret login %s", id, refused.reason, id)
 	}
 	token, err := m.renew(ctx, k, id, saved)
 	if err != nil {
@@ -313,6 +380,8 @@ func (m *Manager) Rotate(ctx context.Context, id config.ID, a config.Secret) (ti
 		return time.Time{}, fmt.Errorf("secret %s uses %s; only OAuth logins can be rotated", id, a.Kind)
 	}
 	k := key(id, a)
+	m.resetMu.RLock()
+	defer m.resetMu.RUnlock()
 	lock := m.credentialLock(k)
 	lock.Lock()
 	defer lock.Unlock()
@@ -331,17 +400,27 @@ func (m *Manager) Rotate(ctx context.Context, id config.ID, a config.Secret) (ti
 	return token.Expiry, nil
 }
 
-// stored returns the OAuth credential under key k, a refreshed one the keychain refused first;
-// callers hold the credential's lock.
+// stored reads the OAuth credential under key k, preferring one the store failed to take and
+// writing it again; callers hold its lock.
 func (m *Manager) stored(k string, id config.ID) (credential, error) {
 	m.mu.Lock()
-	saved, cached := m.unpersisted[k]
-	m.mu.Unlock()
-	if cached {
-		return saved, nil
+	pending, ok := m.unsaved[k]
+	retry := ok && !time.Now().Before(m.unsavedRetry[k])
+	if retry {
+		m.unsavedRetry[k] = time.Now().Add(unsavedRetryInterval)
 	}
+	m.mu.Unlock()
+	if ok {
+		// Every request through the credential reads it, so a store that keeps failing is
+		// asked once in a while, not each time.
+		if retry {
+			_ = m.persist(k, pending, 1)
+		}
+		return pending, nil
+	}
+	var saved credential
 	data, err := m.store.Get(k)
-	if errors.Is(err, errNotStored) {
+	if errors.Is(err, ErrNotStored) {
 		return credential{}, fmt.Errorf("secret %s needs login; run agx secret login %s: %w", id, id, ErrNoCredential)
 	}
 	if err != nil {
@@ -353,145 +432,190 @@ func (m *Manager) stored(k string, id config.ID) (credential, error) {
 	return saved, nil
 }
 
-// refreshTimeout bounds an OAuth refresh, which no caller can cancel.
-const refreshTimeout = 30 * time.Second
+// unsavedRetryInterval spaces the writes, on use, of a credential the store failed to take.
+const unsavedRetryInterval = 30 * time.Second
+
+// RefreshTimeout bounds an OAuth refresh, which no caller can cancel.
+const RefreshTimeout = 30 * time.Second
 
 // renew refreshes saved and stores the result under key k; callers hold the credential's lock.
-// A refused refresh is recorded, so renewals on use stop sending the refresh token.
+// A refused refresh is recorded, so renewals on use back off before sending it again.
 func (m *Manager) renew(ctx context.Context, k string, id config.ID, saved credential) (*oauth2.Token, error) {
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return nil, fmt.Errorf("secret %s: %w: the daemon is stopping", id, ErrRefreshFailed)
+	}
+	m.renewals.Add(1)
+	m.mu.Unlock()
+	defer m.renewals.Done()
 	// Authorization servers that rotate refresh tokens invalidate the one sent as soon as they
 	// answer, so a refresh cut off by its caller, such as a harness cancelling its MCP request,
 	// would lose the only valid refresh token. It finishes and is stored whatever the caller does.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), RefreshTimeout)
 	defer cancel()
-	token, refusal, err := m.refresh(ctx, saved)
-	if err != nil && refusal {
-		// Another agx daemon, such as one of another build that ran meanwhile, may have refreshed
-		// with the same token and stored the one the server rotated to.
-		if current, readErr := m.stored(
-			k,
-			id,
-		); readErr == nil &&
-			current.Token.RefreshToken != saved.Token.RefreshToken {
-			slog.Info("OAuth refresh token was rotated elsewhere; using the stored one", "secret", id)
-			token, refusal, err = m.refresh(ctx, current)
-			saved = current
+	// Daemons of other configurations share the store. Two sending one refresh token would
+	// leave the slower without a login, and a server that detects reuse revokes both.
+	if shared, ok := m.store.(Locker); ok {
+		if unlock, err := shared.Lock(k); err != nil {
+			slog.Warn("cannot lock an OAuth credential for its refresh", "secret", id, "error", err)
+		} else {
+			defer unlock()
+			if fresh, err := m.stored(k, id); err == nil && fresh.Token.RefreshToken != saved.Token.RefreshToken {
+				if fresh.Token.Valid() {
+					return fresh.Token, nil
+				}
+				if fresh.Token.RefreshToken != "" {
+					saved = fresh
+				}
+			}
+		}
+	}
+	token, refused, err := m.refresh(ctx, id, saved)
+	if refused {
+		// Another path may have renewed the credential meanwhile; only a refusal of the stored
+		// one means the login is gone.
+		if fresh, readErr := m.stored(k, id); readErr == nil && fresh.Token.RefreshToken != "" {
+			saved = fresh
+			token, refused, err = m.refresh(ctx, id, saved)
 		}
 	}
 	if err != nil {
-		slog.Warn("OAuth refresh failed", "secret", id, "refused", refusal, "error", err)
-		if refusal {
-			m.mu.Lock()
-			m.refused[k] = err.Error()
-			m.mu.Unlock()
-			return nil, fmt.Errorf("secret %s cannot be refreshed: %w; run agx secret login %s", id, err, id)
+		if !refused {
+			return nil, fmt.Errorf("secret %s: %w: %w", id, ErrRefreshFailed, err)
 		}
-		return nil, fmt.Errorf("secret %s: %w: %w", id, ErrRefreshFailed, err)
+		m.mu.Lock()
+		backoff := refusalBackoff
+		if previous, ok := m.refused[k]; ok && previous.token == saved.Token.RefreshToken {
+			backoff = min(2*previous.backoff, maxRefusalBackoff)
+		}
+		m.refused[k] = refusal{
+			reason:  err.Error(),
+			token:   saved.Token.RefreshToken,
+			retry:   time.Now().Add(backoff),
+			backoff: backoff,
+		}
+		m.mu.Unlock()
+		slog.Warn("OAuth login needs renewal", "secret", id, "error", err, "retry_in", backoff)
+		return nil, fmt.Errorf("secret %s cannot be refreshed: %w; run agx secret login %s", id, err, id)
 	}
 	saved.Token = token
-	data, err := json.Marshal(saved)
-	if err != nil {
-		return nil, err
-	}
 	m.mu.Lock()
 	delete(m.refused, k)
 	m.mu.Unlock()
-	if err := m.store.Set(k, string(data)); err != nil {
-		// The refresh token may have rotated; dropping it would force a new login.
-		m.mu.Lock()
-		m.unpersisted[k] = saved
-		m.mu.Unlock()
-		slog.Warn(
-			"cannot persist refreshed OAuth credential; keeping it in memory until the daemon stops",
-			"secret",
-			id,
-			"error",
-			err,
-		)
-		return token, nil
-	}
-	m.mu.Lock()
-	delete(m.unpersisted, k)
-	m.mu.Unlock()
+	// A failed write keeps the credential in unsaved; the token is usable meanwhile.
+	_ = m.persist(k, saved, 3)
 	return token, nil
 }
 
-// refresh is done by hand because oauth2.TokenSource cannot send the RFC 8707
-// resource parameter. refused reports that the authorization server rejected the refresh token
-// or the client (RFC 6749 section 5.2), so only a new login helps; other failures may pass.
-func (m *Manager) refresh(ctx context.Context, saved credential) (token *oauth2.Token, refused bool, err error) {
+// persist stores c under key k, trying up to attempts times; when the store does not take it, c
+// stays in unsaved, so it is written again later.
+func (m *Manager) persist(k string, c credential, attempts int) error {
+	data, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+	for attempt := range attempts {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
+		}
+		if err = m.store.Set(k, string(data)); err == nil {
+			break
+		}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err != nil {
+		m.unsaved[k] = c
+		slog.Error("cannot store a refreshed OAuth credential; keeping it in memory", "key", k, "error", err)
+		return err
+	}
+	delete(m.unsaved, k)
+	delete(m.unsavedRetry, k)
+	return nil
+}
+
+// Close refuses new refreshes, waits until those in flight are stored, and writes the
+// credentials the store failed to take, until ctx ends.
+func (m *Manager) Close(ctx context.Context) error {
+	m.mu.Lock()
+	m.closed = true
+	m.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		m.renewals.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return errors.New("OAuth refreshes still in flight; their credentials may be lost")
+	}
+	m.mu.Lock()
+	keys := slices.Collect(maps.Keys(m.unsaved))
+	m.mu.Unlock()
+	var errs []error
+	for _, k := range keys {
+		lock := m.credentialLock(k)
+		lock.Lock()
+		m.mu.Lock()
+		c, ok := m.unsaved[k]
+		m.mu.Unlock()
+		if ok {
+			if err := m.persist(k, c, 3); err != nil {
+				errs = append(errs, fmt.Errorf("a refreshed OAuth credential was not stored: %w", err))
+			}
+		}
+		lock.Unlock()
+	}
+	return errors.Join(errs...)
+}
+
+// refresh reports whether the server refused the refresh token, as opposed to failing in a way
+// a retry may outlast. It logs failures with what explains them, never a token.
+func (m *Manager) refresh(ctx context.Context, id config.ID, saved credential) (*oauth2.Token, bool, error) {
 	if err := secureURL(saved.Endpoint.TokenURL); err != nil {
 		return nil, true, err
 	}
-	form := url.Values{
-		"grant_type":    {"refresh_token"},
-		"refresh_token": {saved.Token.RefreshToken},
-		"client_id":     {saved.ClientID},
+	started := time.Now()
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, client)
+	cfg := oauth2.Config{ClientID: saved.ClientID, Endpoint: saved.Endpoint}
+	// Rotate and early server rejection force a refresh even before the saved expiry.
+	token := *saved.Token
+	token.Expiry = time.Now().Add(-time.Hour)
+	refreshed, err := cfg.TokenSource(ctx, &token).Token()
+	elapsed := time.Since(started)
+	if err == nil {
+		slog.Info("OAuth token refreshed", "secret", id, "elapsed", elapsed, "expires", refreshed.Expiry)
+		return refreshed, false, nil
 	}
-	if saved.Resource != "" {
-		form.Set("resource", saved.Resource)
+	var failure *oauth2.RetrieveError
+	if errors.As(err, &failure) {
+		status := failure.Response.StatusCode
+		slog.Warn(
+			"OAuth refresh failed",
+			"secret", id,
+			"token_endpoint", saved.Endpoint.TokenURL,
+			"status", status,
+			"error_code", failure.ErrorCode,
+			"error_description", failure.ErrorDescription,
+			"elapsed", elapsed,
+		)
+		message := fmt.Sprintf("token endpoint returned HTTP %d", status)
+		if failure.ErrorCode != "" {
+			message += fmt.Sprintf(" (%q)", failure.ErrorCode)
+		}
+		return nil, status == http.StatusBadRequest || status == http.StatusUnauthorized, errors.New(message)
 	}
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		saved.Endpoint.TokenURL,
-		strings.NewReader(form.Encode()),
+	// The server may have rotated the refresh token before the answer was lost.
+	slog.Warn(
+		"OAuth refresh got no answer",
+		"secret", id,
+		"token_endpoint", saved.Endpoint.TokenURL,
+		"elapsed", elapsed,
+		"error", err,
 	)
-	if err != nil {
-		return nil, true, err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, false, fmt.Errorf("cannot reach the token endpoint: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		// Only the error code is kept: the description is free text from the server.
-		var failure struct {
-			Error string `json:"error"`
-		}
-		_ = json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&failure)
-		err := fmt.Errorf("token endpoint returned HTTP %d", resp.StatusCode)
-		if code := failure.Error; code != "" && isErrorCode(code) {
-			err = fmt.Errorf("token endpoint returned HTTP %d (%s)", resp.StatusCode, code)
-		}
-		refused := resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnauthorized
-		return nil, refused, err
-	}
-	var body struct {
-		AccessToken  string `json:"access_token"`
-		TokenType    string `json:"token_type"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresIn    int64  `json:"expires_in"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1024*1024)).
-		Decode(&body); err != nil ||
-		body.AccessToken == "" {
-		return nil, false, fmt.Errorf("invalid token response")
-	}
-	token = &oauth2.Token{AccessToken: body.AccessToken, TokenType: body.TokenType, RefreshToken: body.RefreshToken}
-	if token.RefreshToken == "" {
-		token.RefreshToken = saved.Token.RefreshToken
-	}
-	if body.ExpiresIn > 0 {
-		token.Expiry = time.Now().Add(time.Duration(body.ExpiresIn) * time.Second)
-	}
-	return token, false, nil
-}
-
-// isErrorCode reports whether code has the RFC 6749 error code syntax, so it is safe to show.
-func isErrorCode(code string) bool {
-	if len(code) > 64 {
-		return false
-	}
-	for _, c := range code {
-		if c < 0x20 || c > 0x7e || c == '"' || c == '\\' {
-			return false
-		}
-	}
-	return true
+	return nil, false, fmt.Errorf("cannot reach the token endpoint: %w", err)
 }
 
 func (m *Manager) Set(id config.ID, a config.Secret, secret []byte) error {
@@ -509,6 +633,8 @@ func (m *Manager) Set(id config.ID, a config.Secret, secret []byte) error {
 		return fmt.Errorf("secret must not be empty")
 	}
 	k := key(id, a)
+	m.resetMu.RLock()
+	defer m.resetMu.RUnlock()
 	lock := m.credentialLock(k)
 	lock.Lock()
 	defer lock.Unlock()
@@ -523,13 +649,14 @@ func (m *Manager) Logout(id config.ID, a config.Secret) error {
 		return fmt.Errorf("secret %s uses %s and has no stored credential to remove", id, a.Kind)
 	}
 	k := key(id, a)
+	m.resetMu.RLock()
+	defer m.resetMu.RUnlock()
 	lock := m.credentialLock(k)
 	lock.Lock()
 	defer lock.Unlock()
 	m.mu.Lock()
-	m.generation[k]++
-	delete(m.unpersisted, k)
 	delete(m.refused, k)
+	delete(m.unsaved, k)
 	for _, p := range m.pending {
 		if p.SecretID == id {
 			m.finishLocked(p, errors.New("logged out while authorizing"))
@@ -540,6 +667,21 @@ func (m *Manager) Logout(id config.ID, a config.Secret) error {
 		return fmt.Errorf("secret %s was not removed: %w", id, err)
 	}
 	return nil
+}
+
+// Reset logs out all stored credentials, including definitions no longer configured.
+func (m *Manager) Reset() error {
+	m.resetMu.Lock()
+	defer m.resetMu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range m.pending {
+		m.finishLocked(p, errors.New("logged out while authorizing"))
+	}
+	clear(m.refused)
+	clear(m.unsaved)
+	clear(m.required)
+	return m.store.Reset()
 }
 
 // Status reports whether secret a, named id, is usable; secrets resolves the !secret reference
@@ -563,7 +705,6 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 		return s
 	}
 	required := m.required[k]
-	memory, inMemory := m.unpersisted[k]
 	refused, wasRefused := m.refused[k]
 	m.mu.Unlock()
 	switch a.Kind {
@@ -585,22 +726,11 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 			s.State = "ready"
 		}
 	case "keychain", "oauth":
-		if wasRefused {
-			s.State = "needs_login"
-			s.Problem = "secret " + string(id) + " cannot be refreshed: " + refused
-			break
-		}
-		if inMemory {
-			s.State = "ready"
-			s.Expires = memory.Token.Expiry
-			s.Refreshable = memory.Token.RefreshToken != ""
-			break
-		}
 		data, err := m.store.Get(k)
 		switch {
-		case errors.Is(err, errNotStored) && a.Implicit && !required:
+		case errors.Is(err, ErrNotStored) && a.Implicit && !required:
 			// On-demand OAuth needs no login until its server asks for one.
-		case errors.Is(err, errNotStored):
+		case errors.Is(err, ErrNotStored):
 			s.State = "needs_login"
 		case err != nil:
 			s.State = "unavailable"
@@ -616,6 +746,12 @@ func (m *Manager) Status(id config.ID, a config.Secret, secrets map[config.ID]co
 					s.Refreshable = c.Token.RefreshToken != ""
 					if !c.Token.Valid() && c.Token.RefreshToken == "" {
 						s.State = "needs_login"
+					}
+					// A refresh token stored since the refusal, by a login or another daemon, is not
+					// the refused one.
+					if wasRefused && c.Token.RefreshToken == refused.token {
+						s.State = "needs_login"
+						s.Problem = "secret " + string(id) + " cannot be refreshed: " + refused.reason
 					}
 				}
 			}
@@ -681,50 +817,4 @@ func SystemEnvironment() []string {
 		}
 	}
 	return env
-}
-
-// keychainTimeout bounds an OS keychain call, which blocks while the keychain is locked or shows
-// an access prompt, so callers get an explanation before their own deadline instead of a timeout.
-var keychainTimeout = 10 * time.Second
-
-// keychainAdvice tells how to proceed after an OS keychain failure.
-const keychainAdvice = "unlock the OS keychain (or start its secret service) and retry, " +
-	"or use a secret of kind command or sops instead"
-
-func keychainGet(k string) (string, error) {
-	return keychainCall(func() (string, error) { return keyring.Get("agx", k) })
-}
-
-func keychainSet(k, value string) error {
-	_, err := keychainCall(func() (struct{}, error) { return struct{}{}, keyring.Set("agx", k, value) })
-	return err
-}
-
-// keychainCall runs op with keychainTimeout. A call that times out keeps running in the
-// background, as keychain APIs cannot be cancelled; its result is discarded.
-func keychainCall[T any](op func() (T, error)) (T, error) {
-	type result struct {
-		value T
-		err   error
-	}
-	done := make(chan result, 1)
-	go func() {
-		value, err := op()
-		done <- result{value, err}
-	}()
-	timer := time.NewTimer(keychainTimeout)
-	defer timer.Stop()
-	select {
-	case r := <-done:
-		if r.err != nil && !errors.Is(r.err, keyring.ErrNotFound) {
-			return r.value, fmt.Errorf("cannot use the OS keychain: %w; %s", r.err, keychainAdvice)
-		}
-		return r.value, r.err
-	case <-timer.C:
-		var zero T
-		return zero, fmt.Errorf(
-			"the OS keychain did not answer within %s; it may be locked or waiting for an access prompt: %s",
-			keychainTimeout, keychainAdvice,
-		)
-	}
 }

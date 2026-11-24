@@ -9,6 +9,7 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/configstore"
 	"github.com/tarik02-org/agx/internal/packages"
 )
 
@@ -20,7 +21,6 @@ func (s *Server) Install(
 	req *connect.Request[v1.InstallRequest],
 	stream *connect.ServerStream[v1.InstallResponse],
 ) error {
-	frozen := req.Msg.Frozen
 	done := make(chan *v1.InstallResponse, 1)
 	s.mu.Lock()
 	if s.installsClosed {
@@ -28,7 +28,7 @@ func (s *Server) Install(
 		return refusal()
 	}
 	s.installs.Go(func() {
-		done <- s.install(frozen)
+		done <- s.install(req.Msg)
 	})
 	s.mu.Unlock()
 	if err := stream.Send(&v1.InstallResponse{
@@ -44,20 +44,42 @@ func (s *Server) Install(
 	}
 }
 
-func (s *Server) install(frozen bool) *v1.InstallResponse {
+func (s *Server) install(request *v1.InstallRequest) *v1.InstallResponse {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	local, err := configstore.Read(s.ctx, s.paths.State, s.paths.Config)
+	if err != nil {
+		return &v1.InstallResponse{
+			State: &v1.InstallResponse_Failure{Failure: diagnostic("install_failed", installFailure(err))},
+		}
+	}
+	frozen := request.Frozen
+	updates := make([]config.ID, len(request.Updates))
+	for i, id := range request.Updates {
+		updates[i] = config.ID(id)
+	}
 	result, err := packages.Install(
 		s.ctx,
 		s.paths.Config,
 		s.paths.Cache,
 		s.builtins,
-		packages.Options{Frozen: frozen},
+		packages.Options{Frozen: frozen, Local: local, Updates: updates, UpdateAll: request.UpdateAll},
 	)
-	if err == nil && !frozen {
+	if err == nil && result.LocalLock != nil {
+		local.Lock = *result.LocalLock
+		_, err = configstore.Write(s.ctx, s.paths.State, s.paths.Config, local)
+		s.edited.notify()
+	}
+	warnings := []string{}
+	if err == nil && !frozen && !request.PackagesOnly {
 		var c *config.Config
-		c, err = config.Load(s.paths.Config, config.Options{Builtins: s.builtins, Cache: s.paths.Cache})
+		c, err = configstore.Load(
+			s.paths.Config, s.paths.State,
+			config.Options{Builtins: s.builtins, Cache: s.paths.Cache},
+		)
 		if err == nil {
 			// Skipped installations need no action from the requester; launches warn about them.
-			_, err = s.adapters.Install(s.ctx, c, s.paths.Cache, os.LookupEnv)
+			warnings, err = s.adapters.Install(s.ctx, c, s.paths.Cache, os.LookupEnv)
 		}
 	}
 	if err != nil {
@@ -70,7 +92,7 @@ func (s *Server) install(frozen bool) *v1.InstallResponse {
 		names = append(names, string(id))
 	}
 	return &v1.InstallResponse{State: &v1.InstallResponse_Result{
-		Result: &v1.PackageResult{PackageIds: names, Lockfiles: result.Lockfiles},
+		Result: &v1.PackageResult{PackageIds: names, Lockfiles: result.Lockfiles, Warnings: warnings},
 	}}
 }
 
@@ -78,7 +100,8 @@ func (s *Server) install(frozen bool) *v1.InstallResponse {
 // git's errors may repeat.
 var urlCredentials = regexp.MustCompile(`(://)[^/@\s]+@`)
 
-// installFailure says why an installation failed, without credentials a URL in it carries.
-func installFailure(err error) string {
-	return "Package installation failed: " + urlCredentials.ReplaceAllString(err.Error(), "${1}***@")
-}
+// redacted is err's message without the credentials a URL in it carries.
+func redacted(err error) string { return urlCredentials.ReplaceAllString(err.Error(), "${1}***@") }
+
+// installFailure says why an installation failed.
+func installFailure(err error) string { return "Package installation failed: " + redacted(err) }

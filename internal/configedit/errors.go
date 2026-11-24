@@ -1,13 +1,10 @@
-// Package configedit makes configuration edits: it changes fragments through their YAML trees,
-// validates the configuration they produce, and writes them. It knows nothing of the CLI, so
-// anything else that edits configuration can share it and write identical YAML.
 package configedit
 
 import (
 	"fmt"
 )
 
-// Code classifies an edit error. The values are the codes of the CLI's JSON error documents.
+// Code classifies failures for RPC status codes.
 type Code string
 
 const (
@@ -21,17 +18,12 @@ const (
 	NotFound Code = "not_found"
 	// InvalidRequest: the edit is malformed or names something it may not.
 	InvalidRequest Code = "invalid_request"
-	// ChooseFile: new definitions or rules could go to several fragments, listed in Files, and
-	// the edit names none.
-	ChooseFile Code = "choose_file"
 )
 
 // Error is an edit error with its classification.
 type Error struct {
 	Code Code
 	Err  error
-	// Files lists the fragments to choose from, with ChooseFile.
-	Files []string
 }
 
 func (e *Error) Error() string { return e.Err.Error() }

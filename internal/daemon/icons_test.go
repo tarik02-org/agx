@@ -28,7 +28,7 @@ func TestMCPIcons(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	path := filepath.Join(t.TempDir(), "mcp-icons.json")
+	path := filepath.Join(t.TempDir(), "cache.db")
 	icons := &mcpIcons{path: path, client: server.Client()}
 	inline := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("png"))
 	wantSVG := "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString(svg)
@@ -52,6 +52,7 @@ func TestMCPIcons(t *testing.T) {
 	// What is not an image, or not HTTPS, is not drawn; a server declaring none forgets its icon.
 	for _, declared := range [][]mcp.Icon{
 		{{Source: server.URL + "/page"}},
+		{{Source: server.URL + "/page", MIMEType: "image/png"}},
 		{{Source: "http://example.com/icon.png"}},
 		{{Source: "data:text/html;base64,PGh0bWw+"}},
 		nil,

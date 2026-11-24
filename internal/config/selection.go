@@ -108,7 +108,13 @@ func (m *merger) selection(spec SelectionSpec) (Selection, error) {
 	return out, nil
 }
 
-func (m *merger) itemAt(i item) Source { return Source{Path: m.path, Line: i.line, Column: i.column} }
+func (m *merger) itemAt(i item) Source {
+	at := Source{Path: m.path, Line: i.line, Column: i.column, Local: m.at.at().Local}
+	if at.Local {
+		at.Line, at.Column = 0, 0
+	}
+	return at
+}
 
 func (m *merger) skillItem(entry SkillItem) (ID, error) {
 	if !entry.item.inline && !IsPath(entry.item.scalar) {

@@ -11,13 +11,22 @@ import (
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/adapters/claude"
 	"github.com/tarik02-org/agx/internal/sessions"
+	"github.com/tarik02-org/agx/internal/sessionstore"
 )
 
 func list(t *testing.T, home string) (map[string]adapters.Session, sessions.Stats) {
 	t.Helper()
 	t.Setenv("CLAUDE_CONFIG_DIR", home)
-	index := sessions.OpenIndex(filepath.Join(t.TempDir(), "index.json"))
-	found, err := (claude.Adapter{}).Sessions(context.Background(), index)
+	index, err := sessionstore.OpenIndex(t.Context(), filepath.Join(t.TempDir(), "cache.db"), "claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = index.Close() })
+	root, err := (claude.Adapter{}).SessionRoot(".", os.Getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found, err := (claude.Adapter{}).Sessions(context.Background(), index, root)
 	if err != nil {
 		t.Fatal(err)
 	}

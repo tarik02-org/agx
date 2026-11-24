@@ -3,24 +3,30 @@ package cli
 import (
 	"context"
 	"os"
+	"sync"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"connectrpc.com/connect"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/cli/ui"
-	"github.com/tarik02-org/agx/internal/sessions"
 )
 
 // threadHost prepares the thread launches of a harness process serving many threads, under
 // the process's launch, and records each for resumption.
 type threadHost struct {
+	mu      sync.Mutex
 	lease   *lease
 	parent  string
 	harness string
 	builtin string
-	records sessions.Records
+	store   string
+	records map[string]*v1.RecordLaunchRequest
 }
 
 func (h *threadHost) Prepare(ctx context.Context, directory string) (adapters.ThreadLaunch, error) {
@@ -66,7 +72,9 @@ func (h *threadHost) prepare(ctx context.Context, c *client, directory string) (
 	defer cancel()
 	resolved, err := c.launches.ResolveThread(
 		resolveCtx,
-		connect.NewRequest(&v1.ResolveThreadRequest{ParentLaunchId: h.parent, Directory: directory}),
+		connect.NewRequest(
+			&v1.ResolveThreadRequest{ParentLaunchId: h.parent, Directory: directory, SnapshotOnly: true},
+		),
 	)
 	if err != nil {
 		return adapters.ThreadLaunch{}, err
@@ -129,20 +137,39 @@ func (h *threadHost) Bind(ctx context.Context, launch adapters.ThreadLaunch, thr
 		return err
 	}
 	h.lease.bindThread(launch.ID, thread)
-	return h.records.Start(sessions.Record{
-		Launch:    launch.ID,
-		Harness:   h.harness,
-		Builtin:   h.builtin,
-		Directory: launch.Directory,
-		Started:   time.Now(),
-		Sessions:  []string{thread},
-		Exact:     true,
-	})
+	if h.store == "" {
+		return nil
+	}
+	record := &v1.RecordLaunchRequest{
+		Id:         launch.ID,
+		Harness:    h.harness,
+		Builtin:    h.builtin,
+		Store:      h.store,
+		Directory:  launch.Directory,
+		StartedAt:  timestamppb.Now(),
+		SessionIds: []string{thread},
+		Exact:      true,
+	}
+	h.mu.Lock()
+	if h.records == nil {
+		h.records = map[string]*v1.RecordLaunchRequest{}
+	}
+	h.records[launch.ID] = proto.Clone(record).(*v1.RecordLaunchRequest)
+	h.mu.Unlock()
+	return h.lease.record(ctx, record)
 }
 
 func (h *threadHost) Finish(ctx context.Context, launch adapters.ThreadLaunch) error {
 	// A thread that never bound has no record; finishing one is a no-op.
-	recordErr := h.records.Finish(launch.ID, time.Now())
+	var recordErr error
+	h.mu.Lock()
+	record := h.records[launch.ID]
+	delete(h.records, launch.ID)
+	h.mu.Unlock()
+	if record != nil {
+		record.FinishedAt = timestamppb.Now()
+		recordErr = h.lease.record(ctx, record)
+	}
 	h.lease.forget(launch.ID)
 	err := h.lease.call(func(c *client) error {
 		_, err := c.launches.FinishLaunch(

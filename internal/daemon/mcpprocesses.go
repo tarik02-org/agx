@@ -37,7 +37,7 @@ func (s *Server) ListMcpProcesses(
 	}
 	s.mu.Lock()
 	for _, l := range s.launches {
-		for _, endpoint := range l.endpoints {
+		for _, endpoint := range l.allEndpoints() {
 			for _, pid := range endpoint.Processes() {
 				if e := byPID[pid]; e != nil && !slices.Contains(e.launches, l.view.Id) {
 					e.launches = append(e.launches, l.view.Id)

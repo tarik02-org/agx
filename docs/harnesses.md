@@ -1,8 +1,21 @@
 # Harnesses
 
-A harness is a coding agent agx launches. agx knows three: **Codex**
+A harness is a coding agent that consumes agx configuration. agx can launch **Codex**
 (`codex`), **Claude Code** (`claude`), and **Pi** (`pi`). You can define your
 own variants of them with extra arguments, environment, and resources.
+
+**OpenCode 2** (`opencode`) consumes configuration through a
+[native Effect plugin](../packages/opencode/README.md). OpenCode starts its own
+server and owns its conversations. `agx opencode` starts its native client; the
+plugin supplies resources and publishes sessions for the launcher. Harness
+definitions can set the native client's executable, arguments and environment;
+set the plugin's `harness` option to the same definition name so its sessions
+resume with that configuration.
+
+**ACP agents**: any agent that speaks the
+[Agent Client Protocol](https://agentclientprotocol.com), such as `opencode acp`,
+through a definition based on `acp`. Each session the client starts gets the
+resources of its own directory. See [ACP agents](#acp-agents).
 
 ## Launching
 
@@ -10,6 +23,7 @@ own variants of them with extra arguments, environment, and resources.
 agx codex
 agx claude --print 'Review the current change'
 agx pi --mode rpc
+agx opencode                    # requires the native AGX plugin
 agx codex-work                   # a harness definition of yours
 agx run codex-work -- --help     # the same, by name
 ```
@@ -29,16 +43,18 @@ Each launch gets the resources selected for the current directory:
 - **Skills** appear under their names: `agx-managed:<name>` in Claude Code,
   `<name>` in Pi, and as a plugin per skill in Codex.
 - **MCP servers** appear as `agx-<id>`, for example `agx-github`. The harness
-  talks to them through the agx daemon, which holds their credentials.
+  talks to them through the agx daemon, which holds their credentials. Every
+  managed launch also gets the built-in [`agx` server](mcp.md#the-built-in-agx-server)
+  for resource discovery, configuration edits and temporary MCP attachments.
 
 Codex's `-C`/`--cd` changes the directory agx resolves resources for.
 
-### Commands that skip agx
+### Commands without managed resources
 
 Help, version, login, and other management commands of the harness (for
 example `agx codex --version`, `agx claude mcp list`, `agx codex login`) run
-the harness directly without the daemon or any resources. Only the harness
-definition's `environment` and its arguments for the `passthrough` mode apply,
+the harness directly without managed resources. The daemon resolves the harness
+definition's `environment` and its arguments for the `passthrough` mode,
 so the environment's `!env` and `!secret` values must resolve for these
 commands too.
 
@@ -65,7 +81,7 @@ based on one:
 harnesses:
   claude:
     add:
-      skills: [review]            # every Claude launch, in every directory
+      skills: [review] # every Claude launch, in every directory
 
   codex-work:
     base: codex
@@ -87,30 +103,34 @@ the command line with:
 agx harness add codex-work --base codex --env 'OPENAI_API_KEY=!env WORK_OPENAI_KEY' -- --profile work
 ```
 
-| Field | Meaning |
-| --- | --- |
-| `base` | the harness this one extends: a built-in or another definition |
-| `executable` | absolute path of the binary; default: found on `PATH` |
-| `args` | arguments placed before the ones you type |
-| `environment` | environment variables for the harness |
-| `settings` | the harness's own settings, see [Settings](#settings) |
-| `add`, `remove` | resources for every launch of this harness, applied after directory rules |
-| `hidden` | `true` leaves the harness out of the [launcher](sessions.md)'s new-session list |
+| Field           | Meaning                                                                                    |
+| --------------- | ------------------------------------------------------------------------------------------ |
+| `base`          | the harness this one extends: a built-in or another definition                             |
+| `executable`    | absolute path of the binary; default: found on `PATH`                                      |
+| `args`          | arguments placed before the ones you type                                                  |
+| `environment`   | environment variables for the harness                                                      |
+| `settings`      | the harness's own settings, see [Settings](#settings)                                      |
+| `add`, `remove` | resources for every launch of this harness, applied after directory rules                  |
+| `hidden`        | `true` leaves the harness out of the [launcher](sessions.md)'s new-session list            |
+| `display_name`  | the name shown to people in place of the harness name; default: the name                   |
+| `enabled`       | `false` keeps the definition but stops it launching, see [Disabling](#disabling-harnesses) |
 
 A definition inherits from its base: arguments add up (base first),
-`environment` and `settings` merge key by key, and `executable` is replaced; `hidden` is not
-inherited. Names cannot clash with agx commands such as `install`.
+`environment` and `settings` merge key by key, and `executable` is replaced; `hidden`,
+`display_name` and `enabled` are not inherited. Names cannot clash with agx commands such as
+`install`.
 
 ### Arguments per mode
 
 agx sorts every launch into a mode, so arguments can apply only where they make
 sense:
 
-| Harness | Modes |
-| --- | --- |
-| codex | `interactive`, `exec`, `resume`, `app-server`, `passthrough` |
-| claude | `interactive`, `print`, `resume`, `passthrough` |
-| pi | `interactive`, `print`, `rpc`, `resume`, `passthrough` |
+| Harness | Modes                                                        |
+| ------- | ------------------------------------------------------------ |
+| codex   | `interactive`, `exec`, `resume`, `app-server`, `passthrough` |
+| claude  | `interactive`, `print`, `resume`, `passthrough`              |
+| pi      | `interactive`, `print`, `rpc`, `resume`, `passthrough`       |
+| acp     | `acp`, `passthrough`                                         |
 
 For example, `codex exec …` is `exec`, `claude -p …` is `print`, and `claude
 --resume …` is `resume`; help, version, and login commands are `passthrough`.
@@ -123,9 +143,9 @@ harnesses:
   codex-cpa:
     base: codex
     args:
-      - values: [--search]                       # every mode except passthrough
+      - values: [--search] # every mode except passthrough
       - values: [--profile, cpa]
-        modes: [interactive, exec, resume]       # only these modes
+        modes: [interactive, exec, resume] # only these modes
 ```
 
 ### Settings
@@ -147,7 +167,7 @@ harnesses:
         cpa:
           name: CPA
           base_url: http://127.0.0.1:8317/v1
-          env_key: CPA_API_KEY          # Codex reads the key from this variable
+          env_key: CPA_API_KEY # Codex reads the key from this variable
           wire_api: responses
 
   claude-work:
@@ -163,11 +183,16 @@ harnesses:
   overrides and the definition's `args`. A setting merges with the table your
   `config.toml` has at that path, so `model_providers.cpa` above keeps any
   other keys you set there. Your own `-c` and the definition's `args` win
-  over a setting of the same key.
+  over a setting of the same key. The native MCP server names `agx` and
+  `agx-*`, and skill plugins under `@agx-managed`, are reserved; definitions
+  cannot put settings at those paths.
 - **Claude Code** gets the settings as a file passed with `--settings`, which
   applies above your user and project settings for that session only. Lists
   such as `permissions.allow` add to the ones in your files. Use `settings`
-  or `--settings` in `args`, not both.
+  or `--settings` in `args`, not both. A `--settings` typed at launch, such
+  as an Agent SDK host's, merges over the definition's settings the same way
+  Claude Code merges its own files, since Claude Code keeps only the last
+  `--settings` it is given.
 - **Pi** has no way to take settings per launch; use flags such as
   `--provider`, `--model`, and `--thinking` in `args`.
 
@@ -189,9 +214,9 @@ as process arguments that other processes can read: put the secret in
 ```yaml
 environment:
   REGION: eu
-  API_KEY: !secret cpa-key       # a configured secret
-  TOKEN: !env WORK_TOKEN         # from the shell you launch from
-  PROMPT: !file ./prompt.txt     # a file's contents
+  API_KEY: !secret cpa-key # a configured secret
+  TOKEN: !env WORK_TOKEN # from the shell you launch from
+  PROMPT: !file ./prompt.txt # a file's contents
 ```
 
 `args` accept literal strings and `!file`. Put secrets and environment
@@ -209,14 +234,46 @@ gateway, hide the built-in so the launcher offers just the definitions:
 
 ```yaml
 harnesses:
-  codex: {hidden: true}
+  codex: { hidden: true }
   codex-cpa:
     base: codex
-    settings: {model_provider: cpa}
+    settings: { model_provider: cpa }
 ```
 
 A hidden harness still runs by name (`agx codex`, or a `codex` link), and its
 sessions still appear in the launcher and resume with it.
+
+### Disabling harnesses
+
+A configuration shared between machines can define a harness that one of them
+should not offer. `enabled: false`, set in a fragment only that machine loads,
+keeps the definition and stops it launching:
+
+```yaml
+harnesses:
+  codex-cpa: { enabled: false }
+```
+
+A disabled harness has no `agx <name>` command, no shim and no launcher entry,
+and launching it by name fails. `agx install` and `agx doctor` skip it. Its
+sessions stay listed but do not resume until it is enabled again. Definitions
+based on it are not disabled with it, so disabling a built-in leaves its
+variants launchable.
+
+### Display names
+
+`display_name` gives a harness a name for people: the launcher shows it beside
+the harness name, and `agx harness list --json` reports it as `display_name`
+for tools that list harnesses, such as an editor's provider picker. Without
+one it is the harness name. Commands, shims and scope rules keep using the
+name.
+
+```yaml
+harnesses:
+  codex-cpa:
+    base: codex
+    display_name: Codex CPA
+```
 
 ## Shims
 
@@ -270,13 +327,62 @@ agx updates.
 Claude Code driven by the Agent SDK (`--input-format stream-json`) still gets
 agx's instructions, combined with the host's own system prompt additions.
 
+### ACP agents
+
+`acp` is a base for agents that speak the Agent Client Protocol on standard
+input and output. ACP agents share no executable name, so a definition names
+the agent's absolute `executable`. When the executable is also a terminal
+agent, `settings.serve` lists the leading arguments that start its ACP server:
+launches that begin with them are relayed, and any other launch runs the agent
+unchanged, without agx resources. Without `serve`, every launch is relayed.
+
+```yaml
+harnesses:
+  agy:
+    base: acp
+    executable: ~/.local/share/mise/shims/agy
+    settings:
+      serve: [acp]
+```
+
+A client (an editor, T3 Code) then runs `agx agy acp`, or the `agy`
+[shim](#shims) with `acp`, as the agent's command, and `agy` in a terminal
+still opens the agent itself. With `serve`, the definition's `args` follow the
+serve arguments, where the server takes its own flags: `args: [--disable-telemetry]`
+runs `agy acp --disable-telemetry …`, and a terminal `agy` gets none of them.
+Clients that run the agent without arguments need a definition whose `args`
+start the server instead, such as `args: [acp]` without `serve`. agx relays the
+protocol
+and, for every session the client creates, forks, loads, or resumes, resolves
+the resources of the session's `cwd`:
+
+- **MCP servers** are added to the session's own as HTTP servers when the
+  agent advertises HTTP MCP support, and otherwise as stdio servers that run
+  agx's bridge to them (`agx mcp bridge`), which every version 1 agent accepts.
+  A server the client names the same way stays the client's.
+- **Instructions** are appended to the session's system prompt when the agent
+  advertises a client system prompt, or to the text Antigravity appends to its
+  system prompt through its `_meta.antigravity.systemPrompt` extension;
+  otherwise they are placed before the first prompt of a new session. Forked, loaded, and resumed sessions already have
+  them in their history. An agent that refuses the system prompt it
+  advertises, such as one built on an earlier draft of it, is treated as having
+  none, with a warning.
+- **Skills** have no place in ACP and are not applied; agx warns when a
+  session's directory selects some.
+
+Closing or deleting a session, or the agent exiting, ends its MCP access. ACP
+protocol versions 1 and 2 are supported; a session of another version runs
+without agx resources, with a warning. The launcher does not offer ACP
+definitions without `serve`, and their sessions belong to the client, not
+`agx sessions`.
+
 ### Supported versions
 
-| Harness | Minimum | Tested with |
-| --- | --- | --- |
-| Codex | 0.160 | 0.162.1 |
-| Claude Code | 2.1.29x | 2.1.300 |
-| Pi | 0.99.0 | 1.2.0 |
+| Harness     | Minimum | Tested with |
+| ----------- | ------- | ----------- |
+| Codex       | 0.160   | 0.162.1     |
+| Claude Code | 2.1.29x | 2.1.300     |
+| Pi          | 0.99.0  | 1.2.0       |
 
 Older versions may start but lose skills, instructions, or MCP servers.
 `agx doctor` checks the installed versions.

@@ -12,11 +12,9 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/cli/ui"
-	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/platform"
 )
 
-func uiCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command {
+func uiCommand(a *app) *cobra.Command {
 	print := false
 	cmd := &cobra.Command{
 		Use:     "ui",
@@ -28,7 +26,7 @@ func uiCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command 
 			"scoped to the current directory.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			c, err := daemonClient(cmd.Context(), *paths, configuredAutostart(*paths, *builtins))
+			c, err := a.client(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -52,7 +50,7 @@ func uiCommand(paths *platform.Paths, builtins *config.Builtins) *cobra.Command 
 				_, err := fmt.Fprintln(ui.Stdout, link)
 				return err
 			}
-			openBrowser(cmd.Context(), link)
+			openBrowser(link)
 			ui.Note("Opened " + c.discovery.URL + "/ui/ in your browser.")
 			return nil
 		},

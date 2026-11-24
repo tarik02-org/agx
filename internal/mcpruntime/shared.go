@@ -84,9 +84,9 @@ func (sh *Shared) Servers() int {
 }
 
 // Reset stops the shared servers using secret id, so their clients reconnect with the
-// current credential.
+// current credential. An empty ID resets all servers, including removed definitions.
 func (sh *Shared) Reset(id config.ID) {
-	for _, s := range sh.take(func(s *sharedServer) bool { return slices.Contains(s.secrets, id) }) {
+	for _, s := range sh.take(func(s *sharedServer) bool { return id == "" || slices.Contains(s.secrets, id) }) {
 		s.stop()
 	}
 }
@@ -151,6 +151,10 @@ func (sh *Shared) Processes() []Process {
 // StopProcess stops the shared process with this process ID; its client sessions end. It
 // reports whether one ran.
 func (sh *Shared) StopProcess(pid int) bool {
+	// A server still starting has no process ID yet.
+	if pid <= 0 {
+		return false
+	}
 	taken := sh.take(func(s *sharedServer) bool { return s.pid() == pid })
 	for _, s := range taken {
 		s.stop()
@@ -183,6 +187,21 @@ func (sh *Shared) forget(s *sharedServer) {
 		delete(sh.servers, s.key)
 	}
 }
+
+// Basis identifies what an endpoint of server id runs: its definition, share root, secret
+// definitions and inputs. An endpoint whose basis is unchanged can keep serving a launch.
+func Basis(
+	id config.ID,
+	definition config.MCPServer,
+	root string,
+	secrets map[config.ID]config.Secret,
+	inputs map[string]string,
+) string {
+	return shareKey(id, definition, root, secrets, inputs)
+}
+
+// Basis is the basis the endpoint was started with.
+func (e *Endpoint) Basis() string { return e.shareKey }
 
 // shareKey identifies the process a definition may share: the same server, root, command,
 // environment, secret definitions, and environment inputs. Sources and descriptions are left

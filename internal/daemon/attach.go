@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -12,10 +13,6 @@ import (
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
 )
-
-// staleSnapshot is why the MCP servers of an attached launch are not served when its directory
-// no longer resolves to the snapshot it started with: a launch keeps its definitions.
-const staleSnapshot = "configuration changed since this launch started; relaunch for MCP access"
 
 // AttachLaunch takes a launch from its wrapper when this daemon does not hold it, or let it
 // expire: after a restart, an upgrade, or a crash. The launch keeps its ID, grant, and lifecycle
@@ -27,8 +24,12 @@ func (s *Server) AttachLaunch(
 ) (*connect.Response[v1.AttachLaunchResponse], error) {
 	msg := req.Msg
 	view := msg.GetLaunch()
+	// Running wrappers from before resource leases omit this field during daemon upgrades.
+	if view != nil && view.Kind == v1.Launch_KIND_UNSPECIFIED {
+		view.Kind = v1.Launch_KIND_PROCESS
+	}
 	switch {
-	case view.GetId() == "" || view.Harness == "" || !filepath.IsAbs(view.Directory) || view.SnapshotId == "":
+	case !validLaunchID(view.GetId()) || !filepath.IsAbs(view.Directory) || view.SnapshotId == "":
 		return nil, rpcError(connect.CodeInvalidArgument, "launch is incomplete")
 	case view.ParentLaunchId != "":
 		return nil, rpcError(connect.CodeInvalidArgument, "thread launches attach with their process's launch")
@@ -36,6 +37,10 @@ func (s *Server) AttachLaunch(
 		return nil, rpcError(connect.CodeInvalidArgument, "attaching needs the launch's grant and lifecycle token")
 	case msg.Executable != "" && !filepath.IsAbs(msg.Executable):
 		return nil, rpcError(connect.CodeInvalidArgument, "executable must be absolute")
+	case view.Kind != v1.Launch_KIND_PROCESS && view.Kind != v1.Launch_KIND_RESOURCES:
+		return nil, rpcError(connect.CodeInvalidArgument, "launch kind is required")
+	case view.Kind == v1.Launch_KIND_PROCESS && view.Harness == "":
+		return nil, rpcError(connect.CodeInvalidArgument, "process launch harness is required")
 	}
 	// Attaching one launch at a time keeps a wrapper's concurrent attempts from building it twice.
 	s.attachMu.Lock()
@@ -91,6 +96,12 @@ func (s *Server) AttachLaunch(
 	return connect.NewResponse(&v1.AttachLaunchResponse{ExpiresAt: expires}), nil
 }
 
+// validLaunchID reports whether an ID a wrapper sent names one entry of the launch cache, whose
+// files end with the launch.
+func validLaunchID(id string) bool {
+	return id != "" && id != "." && id != ".." && !strings.ContainsAny(id, `/\`)
+}
+
 // attachable checks a launch's credentials and returns it when the daemon holds it active; nil
 // means it must be built anew. s.mu must be held.
 func (s *Server) attachable(id, grant, lifecycle string) (*launch, error) {
@@ -115,27 +126,24 @@ func (s *Server) attachable(id, grant, lifecycle string) (*launch, error) {
 
 // attachProcess builds a launch of the harness process from what its wrapper keeps; the caller
 // adds it. A process serving threads gets its harness definition again, which its thread
-// launches need.
+// launches need. The launch gets the MCP servers its directory selects now, which the
+// configuration may have changed since it started.
 func (s *Server) attachProcess(ctx context.Context, msg *v1.AttachLaunchRequest) (*launch, error) {
 	view := msg.Launch
-	b, err := s.launchBasis(view.Directory, view.Harness, msg.NativeArguments)
+	if view.Kind == v1.Launch_KIND_RESOURCES {
+		return s.attachResources(ctx, msg)
+	}
+	b, err := s.launchBasis(view.Directory, view.Harness, "", msg.NativeArguments)
 	if err != nil {
 		return nil, err
 	}
 	if b.mode != view.Mode {
 		return nil, rpcError(connect.CodeInvalidArgument, "native arguments differ from the launch's")
 	}
-	stale := b.snapshot.ID != view.SnapshotId
 	l := s.newLaunch(view, b, msg.Grant, msg.LifecycleToken, nil)
-	inputs := map[string]string{}
-	if !stale || b.threadServer {
-		if inputs, err = launchInputs(b.snapshot, msg.EnvironmentInputs, adapters.Forwarded(b.adapter)); err != nil {
-			l.cancel()
-			return nil, err
-		}
-	}
-	switch {
-	case b.threadServer:
+	inputs := attachedInputs(b.snapshot, msg.EnvironmentInputs, adapters.Forwarded(b.adapter))
+	l.inputs = inputs
+	if b.threadServer {
 		args, env, lookup, err := s.resolveHarness(ctx, b, inputs)
 		if err != nil {
 			l.cancel()
@@ -143,10 +151,13 @@ func (s *Server) attachProcess(ctx context.Context, msg *v1.AttachLaunchRequest)
 		}
 		l.target = adapters.NewTarget(b.harness, args, env, msg.NativeArguments, lookup)
 		l.target.Resolved = msg.Executable
-	case stale:
-		l.unavailable = staleSnapshot
-	default:
-		l.endpoints, _ = s.endpoints(l.ctx, view.Id, b.snapshot, inputs)
+	} else {
+		l.endpoints, _ = s.endpoints(l.ctx, view.Id, b.snapshot, inputs, b.snapshot.Directory)
+	}
+	if err := s.restoreAttachments(ctx, l); err != nil {
+		l.cancel()
+		closeEndpoints(l.endpoints)
+		return nil, err
 	}
 	return l, nil
 }
@@ -156,11 +167,19 @@ func (s *Server) attachProcess(ctx context.Context, msg *v1.AttachLaunchRequest)
 // its thread goes without MCP servers until resumed.
 func (s *Server) attachThread(parent *launch, thread *v1.AttachedThread) bool {
 	view := thread.GetLaunch()
+	if view != nil && view.Kind == v1.Launch_KIND_UNSPECIFIED {
+		view.Kind = v1.Launch_KIND_PROCESS
+	}
+	if view.GetKind() != v1.Launch_KIND_PROCESS {
+		return false
+	}
 	s.mu.Lock()
 	_, revoked := s.revoked[view.GetId()]
 	held := s.launches[view.GetId()]
-	skip := view.GetId() == "" || view.ParentLaunchId != parent.view.Id || revoked ||
-		held != nil && held.view.ParentLaunchId == parent.view.Id && active(held.view.State)
+	// Another launch's ID stays that launch's, and an empty grant would match a bare bearer.
+	skip := !validLaunchID(view.GetId()) || !filepath.IsAbs(view.Directory) || thread.Grant == "" ||
+		view.ParentLaunchId != parent.view.Id || revoked ||
+		held != nil && (held.view.ParentLaunchId != parent.view.Id || active(held.view.State))
 	s.mu.Unlock()
 	if skip {
 		return false
@@ -180,13 +199,13 @@ func (s *Server) attachThread(parent *launch, thread *v1.AttachedThread) bool {
 	s.mu.Lock()
 	l := s.newLaunch(view, launchBasis{snapshot: snapshot}, thread.Grant, "", parent)
 	s.mu.Unlock()
-	if snapshot.ID != view.SnapshotId {
-		l.unavailable = staleSnapshot
-	} else if inputs, err := launchInputs(snapshot, thread.EnvironmentInputs, nil); err != nil {
+	inputs := attachedInputs(snapshot, thread.EnvironmentInputs, nil)
+	l.inputs = inputs
+	l.endpoints, _ = s.endpoints(l.ctx, view.Id, snapshot, inputs, snapshot.Directory)
+	if err := s.restoreAttachments(parent.ctx, l); err != nil {
 		l.cancel()
+		closeEndpoints(l.endpoints)
 		return fail(err)
-	} else {
-		l.endpoints, _ = s.endpoints(l.ctx, view.Id, snapshot, inputs)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -209,6 +228,7 @@ func (s *Server) newLaunch(view *v1.Launch, b launchBasis, grant, lifecycle stri
 	ctx, cancel := context.WithCancel(parentCtx)
 	l := &launch{
 		view: &v1.Launch{
+			Kind:           view.Kind,
 			Id:             view.Id,
 			SnapshotId:     view.SnapshotId,
 			Directory:      view.Directory,

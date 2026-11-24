@@ -5,10 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 
+	"github.com/gofrs/flock"
+
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/securefs"
 )
 
 // SkillNames names the snapshot's skills inside the shared artifacts by their native names, which
@@ -34,15 +36,65 @@ func SkillNames(s *config.Snapshot) map[config.ID]string {
 	return names
 }
 
-func artifacts(s *config.Snapshot, cache string) (string, error) {
-	parent := filepath.Join(cache, "artifacts")
-	if err := securefs.EnsureDir(parent); err != nil {
+// layout names the format of artifact directories; v3 keys them by content.
+const layout = "v3"
+
+const (
+	// unusedArtifacts is how long an artifact directory no launch uses is kept, for launches
+	// that select the same content again.
+	unusedArtifacts = 7 * 24 * time.Hour
+	// abandonedBuild is the age past which a staged artifact directory was left by an interrupted
+	// build.
+	abandonedBuild = time.Hour
+)
+
+// Materialize deploys resources for an adapter that requires local plugin files.
+func (l Launch) Materialize() (string, error) {
+	s := l.Snapshot
+	type skill struct {
+		Name, Hash string
+		id         config.ID
+	}
+	selected := []skill{}
+	text, err := s.InstructionsContent()
+	if err != nil {
 		return "", err
 	}
-	// v2 names skill directories by native name instead of by ID.
-	dest := filepath.Join(parent, "v2-"+s.ID)
+	names := SkillNames(s)
+	for _, r := range s.Resources {
+		if r.Kind == "skill" {
+			selected = append(selected, skill{names[r.ID], s.SkillHashes[r.ID], r.ID})
+		}
+	}
+	name := layout + "-" + config.Digest(struct {
+		Skills       []skill
+		Instructions string
+	}{selected, string(text)})
+	parent := filepath.Join(l.Cache, "artifacts")
+	dest := filepath.Join(parent, name)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return "", err
+	}
+	lock := flock.New(filepath.Join(l.Cache, "artifacts.lock"))
+	if err := lock.Lock(); err != nil {
+		return "", err
+	}
+	defer func() { _ = lock.Unlock() }()
+	if l.ID != "" {
+		if err := os.MkdirAll(l.LaunchDirectory(), 0o700); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(filepath.Join(l.LaunchDirectory(), "artifacts"), []byte(name), 0o600); err != nil {
+			return "", err
+		}
+	}
 	if _, err := os.Stat(dest); err == nil {
+		now := time.Now()
+		_ = os.Chtimes(dest, now, now)
 		return dest, nil
+	}
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return "", err
 	}
 	tmp, err := os.MkdirTemp(parent, ".build-*")
 	if err != nil {
@@ -50,44 +102,28 @@ func artifacts(s *config.Snapshot, cache string) (string, error) {
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
 	plugin := filepath.Join(tmp, "plugin")
-	if err := os.MkdirAll(plugin, 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(plugin, ".claude-plugin"), 0o700); err != nil {
 		return "", err
 	}
-	if err := securefs.WriteJSON(
+	if err := os.WriteFile(
 		filepath.Join(plugin, ".claude-plugin", "plugin.json"),
-		map[string]string{"name": "agx-managed", "version": "1.0.0"},
+		[]byte(`{"name": "agx-managed", "version": "1.0.0"}`+"\n"),
+		0o600,
 	); err != nil {
 		return "", err
 	}
-	var text strings.Builder
-	skills := SkillNames(s)
-	for _, r := range s.Resources {
-		switch r.Kind {
-		case "skill":
-			if err := s.Config.Skills[r.ID].Materialize(
-				filepath.Join(plugin, "skills", skills[r.ID]),
-			); err != nil {
-				return "", err
-			}
-		case "instructions":
-			b, err := s.Config.Instructions[r.ID].Read()
-			if err != nil {
-				return "", err
-			}
-			text.Write(b)
-			text.WriteString("\n\n")
+	for _, skill := range selected {
+		hash, err := MaterializeSkill(s.Config.Skills[skill.id], filepath.Join(plugin, "skills", skill.Name))
+		if err != nil {
+			return "", err
+		}
+		// The directory's name must describe its content.
+		if hash != skill.Hash {
+			return "", fmt.Errorf("skill %s changed while preparing launch; retry", skill.id)
 		}
 	}
-	if err := securefs.Write(filepath.Join(tmp, "instructions.md"), []byte(text.String()), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(tmp, "instructions.md"), text, 0o600); err != nil {
 		return "", err
-	}
-	// Detect edits during compilation instead of caching content under the wrong snapshot ID.
-	check, err := s.Config.Resolve(s.Directory, s.Harness)
-	if err != nil {
-		return "", err
-	}
-	if check.ID != s.ID {
-		return "", fmt.Errorf("resources changed while preparing launch; retry")
 	}
 	if err := os.Rename(tmp, dest); err != nil {
 		if _, statErr := os.Stat(dest); statErr != nil {
@@ -95,6 +131,59 @@ func artifacts(s *config.Snapshot, cache string) (string, error) {
 		}
 	}
 	return dest, nil
+}
+
+// RemoveUnusedArtifacts follows only actual filesystem artifact references. Consumers that
+// use content directly hold no such reference and do not prevent cleanup.
+func RemoveUnusedArtifacts(cache string, now time.Time) {
+	lock := flock.New(filepath.Join(cache, "artifacts.lock"))
+	if ok, err := lock.TryLock(); err != nil || !ok {
+		return
+	}
+	trash := []string{}
+	defer func() {
+		for _, dir := range trash {
+			_ = os.RemoveAll(dir)
+		}
+	}()
+	defer func() { _ = lock.Unlock() }()
+	used := map[string]bool{}
+	launches := filepath.Join(cache, "launches")
+	if entries, err := os.ReadDir(launches); err == nil {
+		for _, entry := range entries {
+			if b, err := os.ReadFile(filepath.Join(launches, entry.Name(), "artifacts")); err == nil {
+				used[string(b)] = true
+			}
+		}
+	}
+	parent := filepath.Join(cache, "artifacts")
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		dir := filepath.Join(parent, entry.Name())
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		age := now.Sub(info.ModTime())
+		switch {
+		case strings.HasPrefix(entry.Name(), ".build-") || strings.HasPrefix(entry.Name(), ".remove-"):
+			if age > abandonedBuild {
+				trash = append(trash, dir)
+			}
+		case used[entry.Name()]:
+			_ = os.Chtimes(dir, now, now)
+		case age > unusedArtifacts &&
+			strings.HasPrefix(entry.Name(), layout+"-"):
+			// Renaming is quick, so launches wait for no removal.
+			removed := filepath.Join(parent, ".remove-"+entry.Name())
+			if os.Rename(dir, removed) == nil {
+				trash = append(trash, removed)
+			}
+		}
+	}
 }
 
 // maxServerName keeps harness tool names such as mcp__<server>__<tool> within model tool-name limits.
@@ -106,6 +195,11 @@ func ServerNames(endpoints []Endpoint) map[config.ID]string {
 	candidates := map[config.ID]string{}
 	count := map[string]int{}
 	for _, endpoint := range endpoints {
+		if endpoint.ID == config.AgxMCP {
+			candidates[endpoint.ID] = "agx"
+			count["agx"]++
+			continue
+		}
 		var name strings.Builder
 		name.WriteString("agx-")
 		for _, r := range string(endpoint.ID) {

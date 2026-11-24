@@ -150,21 +150,8 @@ harnesses:
 	}
 }
 
-func TestConfigHintIsQuoted(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX quoting")
-	}
-	row := daemonCheck(daemonFacts{config: "/c", wantConfig: "/home/me/my config/it's.yaml"})
-	if want := `agx --config '/home/me/my config/it'\''s.yaml' daemon start`; !strings.Contains(row.Hint, want) {
-		t.Errorf("hint = %s, want %s", row.Hint, want)
-	}
-	if got := shellQuote("/plain/agx.yaml"); got != "/plain/agx.yaml" {
-		t.Errorf("plain path quoted as %s", got)
-	}
-}
-
 func TestDaemonCheck(t *testing.T) {
-	base := daemonFacts{version: "1", config: "/c", wantConfig: "/c", instance: "a", previous: "a"}
+	base := daemonFacts{version: "1", instance: "a", previous: "a"}
 	if got := daemonCheck(base); got.Status != checkPass || !strings.Contains(got.Detail, "running") {
 		t.Errorf("running = %+v", got)
 	}
@@ -174,24 +161,24 @@ func TestDaemonCheck(t *testing.T) {
 		t.Errorf("started = %+v", got)
 	}
 	replaced := base
-	replaced.mayHaveStarted, replaced.previous, replaced.otherBuild = true, "old", true
+	replaced.mayHaveStarted, replaced.previous = true, "old"
 	if got := daemonCheck(replaced); !strings.HasPrefix(got.Detail, "replaced") {
 		t.Errorf("replaced = %+v", got)
-	}
-	other := base
-	other.config = "/other"
-	if got := daemonCheck(other); got.Status != checkFail || !strings.Contains(got.Hint, "daemon stop") {
-		t.Errorf("other configuration = %+v", got)
 	}
 }
 
 func TestMCPCheck(t *testing.T) {
 	server := config.MCPServer{Auth: config.MCPAuth{Value: config.Value{Secret: "github"}}}
-	got := mcpCheck("docs", server, &v1.TestMcpServerResponse{Tools: []string{"a", "b"}, ServerName: "docs"}, nil)
+	got := mcpCheck(
+		"docs",
+		server,
+		&v1.McpTools{Tools: []*v1.McpTool{{Name: "a"}, {Name: "b"}}, ServerName: "docs"},
+		nil,
+	)
 	if got.Status != checkPass || got.Detail != "2 tools from docs" {
 		t.Errorf("ready = %+v", got)
 	}
-	needsAuth := reasonError(t, connect.CodeFailedPrecondition, v1.ErrorDetail_REASON_NEEDS_LOGIN)
+	needsAuth := connect.NewError(connect.CodeUnauthenticated, errors.New("x"))
 	got = mcpCheck("github", server, nil, needsAuth)
 	if got.Status != checkWarn || got.Hint != "run agx secret login github" || got.Detail != "needs authorization: x" {
 		t.Errorf("needs auth = %+v", got)
@@ -354,5 +341,32 @@ func TestPackageChecksWarnAboutMissingPackages(t *testing.T) {
 	if !ok || len(rows) != 2 || rows[1].Status != checkWarn || rows[1].Hint != "run agx install" ||
 		rows[1].Detail != "package team is not installed; run agx install" {
 		t.Errorf("missing package = %v %+v", ok, rows)
+	}
+}
+
+func TestCleartextChecks(t *testing.T) {
+	key := config.Value{Secret: "key"}
+	rows := cleartextChecks(&config.Config{MCP: map[config.ID]config.MCPServer{
+		"lan":   {URL: "http://nas.lan:8080/mcp", Headers: map[string]config.Value{"X-Api-Key": key}},
+		"login": {URL: "http://nas.lan/mcp", Auth: config.MCPAuth{Inline: &config.Secret{Kind: "oauth"}}},
+		"open":  {URL: "http://nas.lan/mcp", Auth: config.MCPAuth{None: true}},
+		"ondemand": {
+			URL:  "http://nas.lan/mcp",
+			Auth: config.MCPAuth{Inline: &config.Secret{Kind: "oauth", Implicit: true}},
+		},
+		"literal": {URL: "http://nas.lan/mcp", Headers: map[string]config.Value{"X-Team": {Literal: "a"}}},
+		"local":   {URL: "http://127.0.0.1:8080/mcp", Auth: config.MCPAuth{Value: key}},
+		"secure":  {URL: "https://example.com/mcp", Auth: config.MCPAuth{Value: key}},
+		"stdio":   {Command: []string{"server"}},
+	}})
+	names := []string{}
+	for _, row := range rows {
+		names = append(names, row.Name)
+		if row.Status != checkWarn || !strings.Contains(row.Detail, "nas.lan") {
+			t.Errorf("row = %+v", row)
+		}
+	}
+	if !slices.Equal(names, []string{"lan", "login"}) {
+		t.Fatalf("warned about %q", names)
 	}
 }

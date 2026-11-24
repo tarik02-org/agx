@@ -6,26 +6,31 @@ option go_package = "github.com/tarik02-org/agx/gen/agx/v1;agxv1";
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
 
 // Control interface. Native MCP traffic uses separate HTTP endpoints.
 service ConfigurationService {
+  // Managed definitions and package locks for local YAML validation and edit previews.
+  rpc GetLocalConfiguration(GetLocalConfigurationRequest) returns (GetLocalConfigurationResponse);
+  // Resolve native passthrough arguments and environment without creating a managed launch.
+  rpc ResolvePassthrough(ResolvePassthroughRequest) returns (ResolvePassthroughResponse);
+  // Resolve client harness arguments and environment; resource delivery belongs to its plugin.
+  rpc ResolveClientCommand(ResolveClientCommandRequest) returns (ResolveClientCommandResponse);
   rpc Validate(ValidateRequest) returns (ValidateResponse);
   rpc Resolve(ResolveRequest) returns (ResolveResponse);
   // The configuration as loaded, for browsing it: harnesses, scope directories, and files.
   rpc GetConfiguration(GetConfigurationRequest) returns (GetConfigurationResponse);
   // Directories whose path starts with a prefix, for directory pickers.
   rpc CompleteDirectory(CompleteDirectoryRequest) returns (CompleteDirectoryResponse);
-  // Every definition as configured, with the YAML that defines it.
+  // Every configured definition, including mutable local values.
   rpc ListDefinitions(ListDefinitionsRequest) returns (ListDefinitionsResponse);
   // A skill's files, for browsing and editing a local one.
   rpc GetSkill(GetSkillRequest) returns (GetSkillResponse);
-  // One file of a configured skill or instructions definition, or of a configuration fragment.
+  // Read or replace the contents of a configured resource file.
   rpc ReadFile(ReadFileRequest) returns (ReadFileResponse);
-  // Validates a set of changes against the configuration they would produce and returns their
-  // diff; writes nothing.
-  rpc PlanChanges(PlanChangesRequest) returns (PlanChangesResponse);
-  // Writes a planned set of changes atomically, when no file changed since the plan.
-  rpc ApplyChanges(ApplyChangesRequest) returns (ApplyChangesResponse);
+  rpc WriteResourceFile(WriteResourceFileRequest) returns (WriteResourceFileResponse);
+  // Validate and commit semantic local changes in one transaction.
+  rpc UpdateConfiguration(UpdateConfigurationRequest) returns (UpdateConfigurationResponse);
 }
 
 service PackageService {
@@ -44,6 +49,8 @@ service PackageService {
 }
 
 service LaunchService {
+  // Management-authorized, idempotent history reporting, independent of active leases.
+  rpc RecordLaunch(RecordLaunchRequest) returns (RecordLaunchResponse);
   rpc PrepareLaunch(PrepareLaunchRequest) returns (PrepareLaunchResponse);
   rpc RenewLaunch(RenewLaunchRequest) returns (RenewLaunchResponse);
   rpc FinishLaunch(FinishLaunchRequest) returns (FinishLaunchResponse);
@@ -59,11 +66,29 @@ service LaunchService {
   rpc AttachLaunch(AttachLaunchRequest) returns (AttachLaunchResponse);
 }
 
+// Configuration consumption does not require a process launched by agx or a shared filesystem.
+service ResourceService {
+  rpc ResolveResources(ResolveResourcesRequest) returns (ResolveResourcesResponse);
+  rpc PrepareResources(PrepareResourcesRequest) returns (PrepareResourcesResponse);
+  // Streams what a resource lease provides as the daemon keeps it on its directory's current
+  // configuration: first its current resources, then each change. Authorized by the lease's
+  // lifecycle token.
+  rpc WatchResources(WatchResourcesRequest) returns (stream WatchResourcesResponse);
+}
+
+// Integrations publish session summaries bound to configured harnesses.
+service SessionProviderService {
+  rpc PublishSessions(PublishSessionsRequest) returns (PublishSessionsResponse);
+  // Registers a publisher while this connection remains open; its first frame confirms readiness.
+  rpc ConnectSessionSource(ConnectSessionSourceRequest) returns (stream ConnectSessionSourceResponse);
+}
+
 service RuntimeService {
   rpc GetRuntime(GetRuntimeRequest) returns (GetRuntimeResponse);
   rpc WatchRuntime(WatchRuntimeRequest) returns (stream WatchRuntimeResponse);
-  // Connects to one MCP server outside any launch and lists its tools.
-  rpc TestMcpServer(TestMcpServerRequest) returns (TestMcpServerResponse);
+  // Returns a cached session listing when available, then a freshly scanned listing.
+  // Store roots are resolved by the caller, whose environment may differ from the daemon's.
+  rpc ListSessions(ListSessionsRequest) returns (stream ListSessionsResponse);
   // Lists the tools of the MCP servers in a call scope. Takes a launch grant for a launch's
   // scope, or management authorization.
   rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
@@ -88,17 +113,16 @@ service UIService {
 }
 
 service SecretService {
-  // Starts an OAuth login, or joins the one pending for the secret, and reports it until it
-  // finishes. Ending the stream early withdraws this caller; the attempt is cancelled once no
-  // caller waits for it.
+  // Starts an OAuth login, cancelling the previous attempt for the secret, and reports it
+  // until it finishes. Ending the stream early cancels the attempt.
   rpc Login(LoginRequest) returns (stream LoginResponse);
   rpc SetSecret(SetSecretRequest) returns (SetSecretResponse);
   rpc GetSecretStatus(GetSecretStatusRequest) returns (GetSecretStatusResponse);
   rpc Logout(LogoutRequest) returns (LogoutResponse);
   // Renews an OAuth secret's access token with its refresh token now, whether or not it
   // expired. A missing login, or a refresh token the authorization server refuses, fails with
-  // REASON_NEEDS_LOGIN; an authorization server that cannot be reached or fails with
-  // REASON_NETWORK.
+  // Unauthenticated; an authorization server that cannot be reached or fails with
+  // Unavailable.
   rpc RotateSecret(RotateSecretRequest) returns (RotateSecretResponse);
 }
 
@@ -114,6 +138,7 @@ message SourceLocation {
   string path = 1;
   uint32 line = 2;
   uint32 column = 3;
+  bool local = 4;
 }
 
 message Diagnostic {
@@ -128,43 +153,11 @@ message Diagnostic {
   SourceLocation source = 4;
 }
 
-// Detail every daemon error carries, so clients branch on a closed set of reasons instead of the
-// Connect code or the message. A client treats a reason it does not know as unclassified.
+// Configuration diagnostics for clients that offer editing.
 message ErrorDetail {
-  enum Reason {
-    REASON_UNSPECIFIED = 0;
-    // The request is malformed or names something it may not.
-    REASON_INVALID_REQUEST = 1;
-    REASON_NOT_FOUND = 2;
-    // The target exists, changed, or is busy; retrying later or resolving again may succeed.
-    REASON_CONFLICT = 3;
-    // The target does not support the operation in its current state.
-    REASON_FAILED_PRECONDITION = 4;
-    // The operation needs an OAuth login first.
-    REASON_NEEDS_LOGIN = 5;
-    // The daemon's configuration does not load.
-    REASON_CONFIG_INVALID = 6;
-    // The daemon is stopping or cannot serve the request yet.
-    REASON_UNAVAILABLE = 7;
-    // The caller lacks this daemon's credential, as when another daemon replaced the one it knew.
-    REASON_UNAUTHENTICATED = 8;
-    // The daemon or an upstream did not answer in time.
-    REASON_TIMEOUT = 9;
-    // A defect.
-    REASON_INTERNAL = 10;
-    // An MCP server failed the request, or could not be reached or started.
-    REASON_MCP_FAILED = 11;
-    // A service the daemon depends on, such as an OAuth authorization server, could not be
-    // reached or failed; retrying later may succeed.
-    REASON_NETWORK = 12;
-    // Configuration changes could go to several fragments; the request must name one.
-    REASON_CHOOSE_FILE = 13;
-  }
-  Reason reason = 1;
   // Where a configuration that does not load has the problem, when known.
   SourceLocation source = 2;
-  // With REASON_CHOOSE_FILE, the writable fragments to choose from.
-  repeated string files = 3;
+
 }
 
 message Snapshot {
@@ -225,7 +218,8 @@ message GetConfigurationResponse {
   repeated ConfiguredHarness harnesses = 2;
   // Directories scope rules name, sorted, without duplicates.
   repeated string scope_directories = 3;
-  repeated ConfigurationFile files = 4;
+  repeated string overlays = 4;
+  int64 revision = 6;
   // The daemon user's home directory, for showing paths as ~/….
   string home = 5;
 }
@@ -235,15 +229,11 @@ message ConfiguredHarness {
   // Empty for built-in harnesses.
   string base = 3;
   bool hidden = 4;
+  // The harness name unless the definition sets one.
+  string display_name = 5;
+  // Defined but unable to launch.
+  bool disabled = 6;
 }
-message ConfigurationFile {
-  string path = 1;
-  // A symlink, such as one Nix or Home Manager links from /nix/store, or a file agx cannot write.
-  bool read_only = 2;
-  // Where a symlink points; empty otherwise.
-  string link_target = 3;
-}
-
 message CompleteDirectoryRequest {
   // An absolute path or one starting with ~/; the last segment is a name prefix.
   string prefix = 1;
@@ -259,6 +249,10 @@ message CompleteDirectoryResponse {
 
 message InstallRequest {
   bool frozen = 1;
+  repeated string updates = 2;
+  bool update_all = 3;
+  // The caller performs native installation with its own PATH and harness environment.
+  bool packages_only = 4;
 }
 message InstallResponse {
   oneof state {
@@ -273,6 +267,7 @@ message PackageProgress {
   uint32 total = 3;
 }
 message PackageResult {
+  repeated string warnings = 3;
   repeated string package_ids = 1;
   repeated string lockfiles = 2;
 }
@@ -290,6 +285,93 @@ message PrepareLaunchRequest {
   // Absolute path of the native executable the wrapper found on its own PATH, or the configured
   // one. The wrapper runs it; the daemon runs it only for native installation on its behalf.
   string executable = 6;
+}
+
+message ResolveResourcesRequest {
+  // Absolute directory in the configuration's scope namespace. The consumer maps its workspace
+  // into this namespace; this directory need not exist on the daemon's host.
+  string directory = 1;
+  // Optional registered consumer or harness definition. Process settings are not applied.
+  string harness = 2;
+}
+message ResolveResourcesResponse {
+  Snapshot snapshot = 1;
+  repeated ResourceTrace traces = 2;
+  repeated Diagnostic diagnostics = 3;
+  repeated HarnessSetting settings = 4;
+}
+message PrepareResourcesRequest {
+  string directory = 1;
+  string harness = 2;
+  // Sensitive: values for the resource environment names ResolveResources declared. Names the
+  // configuration no longer reads are dropped.
+  map<string, string> environment_inputs = 3;
+  // Optional execution directory on the daemon's host, separate from the consumer's scope
+  // directory. Required for MCP servers that inherit cwd or share per directory/repository.
+  string mcp_directory = 4;
+}
+message PrepareResourcesResponse {
+  // A running resource lease, renewed, synchronized, finished and reattached by its lifecycle
+  // token.
+  Launch launch = 1;
+  LeaseResources resources = 2;
+  // Sensitive: authorizes only this lease's MCP access.
+  string grant = 3;
+  // Sensitive: held by the integration for renewal, synchronization and release.
+  string lifecycle_token = 4;
+  uint32 renew_after_seconds = 5;
+  // Canonical daemon-side directory, retained for AttachLaunch; empty when unnecessary.
+  string mcp_directory = 6;
+}
+// What a resource lease provides under its directory's current configuration.
+message LeaseResources {
+  // Its required_environment names the inputs the selection reads. An integration holding values
+  // for names it has not sent opens a new watch with them.
+  Snapshot snapshot = 1;
+  ResourceContent content = 2;
+  repeated McpEndpoint mcp = 3;
+  // Changes when an endpoint is added, removed, or restarted behind its URL.
+  string mcp_revision = 4;
+  repeated HarnessSetting settings = 5;
+}
+message WatchResourcesRequest {
+  string launch_id = 1;
+  // Sensitive: replaces the lease's environment inputs for this watch. Names the configuration
+  // does not read are dropped.
+  map<string, string> environment_inputs = 2;
+}
+// The configuration could not be resolved; the lease keeps its last resources until it can.
+message ResourceWatchInvalid {
+  repeated Diagnostic diagnostics = 1;
+}
+message WatchResourcesResponse {
+  oneof state {
+    LeaseResources resources = 1;
+    ResourceWatchInvalid invalid = 2;
+  }
+}
+message ResourceContent {
+  repeated SkillContent skills = 1;
+  string instructions = 2;
+}
+message SkillContent {
+  string id = 1;
+  string name = 2;
+  // Identifies the exact file content, relative paths and executable permissions.
+  string digest = 3;
+  repeated ResourceFile files = 4;
+  // Relative slash-separated paths, including empty directories.
+  repeated string directories = 5;
+}
+message ResourceFile {
+  // Relative slash-separated path within the skill; never a daemon filesystem path.
+  string path = 1;
+  bytes content = 2;
+  bool executable = 3;
+}
+message McpEndpoint {
+  string id = 1;
+  string url = 2;
 }
 message PrepareLaunchResponse {
   Launch launch = 1;
@@ -313,6 +395,11 @@ message SpawnPlan {
 }
 
 message Launch {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_PROCESS = 1;
+    KIND_RESOURCES = 2;
+  }
   enum State {
     STATE_UNSPECIFIED = 0;
     STATE_PREPARED = 1;
@@ -333,11 +420,15 @@ message Launch {
   string parent_launch_id = 8;
   // Native session the launch serves, once the wrapper reports it; a thread launch's thread.
   string session_id = 9;
+  Kind kind = 10;
 }
 
 message ResolveThreadRequest {
   string parent_launch_id = 1;
   string directory = 2;
+  // Leaves disabled_plugins out, for a caller preparing the thread launch next, whose plan
+  // carries them.
+  bool snapshot_only = 3;
 }
 message ResolveThreadResponse {
   Snapshot snapshot = 1;
@@ -376,6 +467,8 @@ message RenewLaunchRequest {
   // Native session the launch serves, once known; renewing a thread launch with it marks the
   // thread running. Thread launches otherwise follow their parent's lease.
   string session_id = 3;
+  // PID of the wrapper renewing the launch, so the daemon can tell why a lease ran out.
+  uint64 wrapper_pid = 4;
 }
 message RenewLaunchResponse {
   google.protobuf.Timestamp expires_at = 1;
@@ -397,6 +490,8 @@ message AttachLaunchRequest {
   string executable = 6;
   // For a process serving threads, its active thread launches.
   repeated AttachedThread threads = 7;
+  // Daemon-side execution directory used when preparing a resource lease.
+  string mcp_directory = 8;
 }
 message AttachedThread {
   // The thread launch as PrepareThreadLaunch returned it, with the thread it serves once bound.
@@ -418,6 +513,8 @@ message FinishLaunchRequest {
     string spawn_failure = 4;
     // The harness closed the thread a thread launch served.
     bool thread_closed = 5;
+    // The integration released its configuration resources without a process exit.
+    bool resources_released = 6;
   }
 }
 message FinishLaunchResponse {}
@@ -449,7 +546,75 @@ message RuntimeView {
   repeated Diagnostic diagnostics = 5;
 }
 
-message GetRuntimeRequest {}
+message GetRuntimeRequest {
+  // Answers a reachability check without constructing the runtime view.
+  bool probe_only = 1;
+}
+
+message ListSessionsRequest {
+  // Built-in harness name to its absolute session store root.
+  map<string, string> stores = 1;
+  // Omit the interim cached listing for callers that only need the fresh result.
+  bool fresh_only = 2;
+}
+
+message StoredSession {
+  string id = 1;
+  string directory = 2;
+  string title = 3;
+  string message = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  string builtin = 7;
+  string harness = 8;
+  bool recorded = 9;
+  // Empty for native file stores; otherwise identifies the integration-owned catalog.
+  string source_id = 10;
+  string scope_id = 11;
+  bool online = 12;
+}
+
+message SessionSource {
+  // Stable identity of a native server/profile, independent of its port or current process.
+  string source_id = 1;
+  // Stable publication scope, such as one native location within that source.
+  string scope_id = 2;
+  // Publisher instance; stale publishers cannot overwrite a newer active scope.
+  string epoch = 3;
+  string builtin = 4;
+  string harness = 5;
+}
+message ProviderSession {
+  string id = 1;
+  // Scope namespace, not a filesystem root on the daemon's machine.
+  string directory = 2;
+  string title = 3;
+  string message = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+message PublishSessionsRequest {
+  SessionSource source = 1;
+  repeated ProviderSession sessions = 2;
+  repeated string deleted_ids = 3;
+  // Replace only this source/scope's catalog; other locations remain intact.
+  bool replace = 4;
+}
+message PublishSessionsResponse {}
+message ConnectSessionSourceRequest {
+  SessionSource source = 1;
+}
+message ConnectSessionSourceResponse {}
+
+message ListSessionsResponse {
+  repeated StoredSession sessions = 1;
+  uint32 parsed = 2;
+  uint32 cached = 3;
+  uint32 malformed = 4;
+  map<string, string> errors = 5;
+  // False for the cached listing sent while a refresh is in progress.
+  bool fresh = 6;
+}
 message GetRuntimeResponse {
   RuntimeView runtime = 1;
 }
@@ -457,27 +622,6 @@ message WatchRuntimeRequest {}
 message WatchRuntimeResponse {
   RuntimeView runtime = 1;
 }
-message TestMcpServerRequest {
-  string mcp_id = 1;
-  // Directory a stdio server without cwd runs in.
-  string directory = 2;
-  // Sensitive: only names the server's injected values need are accepted.
-  map<string, string> environment_inputs = 3;
-}
-message TestMcpServerResponse {
-  string server_name = 1;
-  string server_version = 2;
-  // Names of the tools the server lists.
-  repeated string tools = 3;
-  // The tools the server lists, in its order, with their descriptions.
-  repeated Tool tool_details = 4;
-
-  message Tool {
-    string name = 1;
-    string description = 2;
-  }
-}
-
 // The MCP servers a ListTools or CallTool caller reaches. With launch_id, the request carries
 // that launch's grant, or management authorization, and reaches the servers of the launch's
 // snapshot through its endpoints, native and on-demand alike. Without it, the request carries
@@ -531,6 +675,9 @@ message StopRequest {
   bool force = 1;
   // How long requests in flight may finish; unset for the daemon's default.
   google.protobuf.Duration grace = 2;
+  // Exit with code 75 after draining, so an external manager restarts the daemon.
+  // Only supported by a daemon started with daemon.managed enabled.
+  bool restart = 3;
 }
 message StopResponse {
   // Active launches whose wrappers attach them to the next daemon.
@@ -661,6 +808,8 @@ message SecretStatus {
 
 message LogoutRequest {
   string secret_id = 1;
+  // Remove every credential, including those of deleted definitions.
+  bool all = 2;
 }
 message LogoutResponse {}
 
@@ -685,11 +834,11 @@ message Definition {
   string kind = 1;
   string id = 2;
   SourceLocation source = 3;
-  // The definition's value as written in its file; empty for one a package defines.
-  string yaml = 4;
+  // The local definition's editable value; absent for declarative overlays and packages.
+  google.protobuf.Value value = 4;
   // The package that defines it; empty for configuration fragments.
   string package = 5;
-  // Its file is a symlink or not writable, or a package defines it.
+  // A YAML overlay or package owns the definition.
   bool read_only = 6;
   // What it offers: a skill's or MCP server's description.
   string description = 7;
@@ -719,7 +868,7 @@ message GetSkillResponse {
 }
 
 message ReadFileRequest {
-  // A configuration fragment, or a file of a configured skill or instructions definition.
+  // A file of a configured skill or instructions definition.
   string path = 1;
 }
 message ReadFileResponse {
@@ -730,27 +879,23 @@ message ReadFileResponse {
   bool read_only = 4;
 }
 
-// One change the editor stages; PlanChanges and ApplyChanges take them in order.
+// One semantic local change; applied in order within a transaction.
 message ConfigChange {
   oneof change {
     DefineChange define = 1;
     UndefineChange undefine = 2;
     SelectionChange enable = 3;
     SelectionChange disable = 4;
-    FileWrite write_file = 5;
     PackageSource add_package = 6;
   }
 }
-// Creates or replaces a definition with the given YAML value, in the file that defines it now,
-// or in the request's target fragment for a new one.
+// Creates or replaces a local definition. YAML-owned definitions cannot be changed.
 message DefineChange {
-  reserved 4;
-  reserved "file";
   string kind = 1;
   string id = 2;
-  string yaml = 3;
+  google.protobuf.Value value = 3;
 }
-// Removes a definition and every reference to it.
+// Removes a local definition and its selection references. Change secret injections first.
 message UndefineChange {
   string kind = 1;
   string id = 2;
@@ -764,10 +909,11 @@ message SelectionChange {
   repeated string harnesses = 4;
 }
 // Replaces a file of a local skill or instructions definition.
-message FileWrite {
+message WriteResourceFileRequest {
   string path = 1;
   string content = 2;
 }
+message WriteResourceFileResponse {}
 // Declares a Git package, installs it into the cache, and locks it.
 message PackageSource {
   string id = 1;
@@ -776,33 +922,13 @@ message PackageSource {
   string subdir = 4;
 }
 
-message PlanChangesRequest {
+message UpdateConfigurationRequest {
   repeated ConfigChange changes = 1;
-  // The fragment new definitions, rules, and packages go to: a writable fragment the root
-  // lists, or a new file its globs match. Empty chooses the only writable fragment, or
-  // agx.d/main.yaml when there is none; with several, the plan fails with
-  // REASON_CHOOSE_FILE listing them in ErrorDetail.files.
-  string file = 2;
+  // The revision returned by GetConfiguration. A stale revision aborts the whole change.
+  int64 expected_revision = 2;
 }
-message PlannedFile {
-  string path = 1;
-  // A unified diff from the file's current content.
-  string diff = 2;
-  // SHA-256 of the current content, hex; empty for a new file.
-  string before_sha256 = 3;
-}
-message PlanChangesResponse {
-  repeated PlannedFile files = 1;
-}
-message ApplyChangesRequest {
-  repeated ConfigChange changes = 1;
-  // The files of the plan with the hashes it saw; a file that changed since fails the apply.
-  repeated PlannedFile expected = 2;
-  // The target fragment the plan was made with.
-  string file = 3;
-}
-message ApplyChangesResponse {
-  repeated string written = 1;
+message UpdateConfigurationResponse {
+  int64 revision = 1;
 }
 
 message ListSourceRefsRequest {
@@ -868,3 +994,54 @@ message ReadPreviewFileResponse {
   // A file larger than 1 MiB or not UTF-8 text is not returned.
   bool binary = 2;
 }
+
+message GetLocalConfigurationRequest {}
+message GetLocalConfigurationResponse {
+  google.protobuf.Struct document = 1;
+  int64 revision = 2;
+  map<string, LocalPackageLock> packages = 3;
+}
+message LocalPackageLock {
+  string path = 1;
+  string git = 2;
+  string ref = 3;
+  string source_hash = 4;
+  string subdir = 5;
+  string revision = 6;
+  string hash = 7;
+  repeated string dependencies = 8;
+}
+message ResolvePassthroughRequest {
+  string harness = 1;
+  repeated string native_arguments = 2;
+  // Sensitive: only variables referenced by this harness are accepted.
+  map<string, string> environment_inputs = 3;
+}
+message ResolvePassthroughResponse {
+  repeated string arguments = 1;
+  // Sensitive: resolved configuration environment, including stored credentials.
+  map<string, string> environment = 2;
+}
+message ResolveClientCommandRequest {
+  string harness = 1;
+  repeated string native_arguments = 2;
+  // Sensitive: only variables referenced by this harness are accepted.
+  map<string, string> environment_inputs = 3;
+}
+message ResolveClientCommandResponse {
+  repeated string arguments = 1;
+  // Sensitive: resolved configuration environment, including stored credentials.
+  map<string, string> environment = 2;
+}
+message RecordLaunchRequest {
+  string id = 1;
+  string harness = 2;
+  string builtin = 3;
+  string store = 4;
+  string directory = 5;
+  google.protobuf.Timestamp started_at = 6;
+  google.protobuf.Timestamp finished_at = 7;
+  repeated string session_ids = 8;
+  bool exact = 9;
+}
+message RecordLaunchResponse {}

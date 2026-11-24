@@ -5,8 +5,14 @@ harness runs.
 
 ## Language
 
-**Fragment**: An importable portion of configuration, such as personal, work,
-or machine-local settings.
+**Local configuration**: Definitions and scope rules managed through agx commands
+for one root configuration.
+
+**Overlay**: Declarative configuration that takes precedence over local
+configuration; a same-name definition replaces the local definition as a whole.
+
+**Fragment**: A portion of declarative configuration listed by the root, such as
+personal, work, or machine-specific settings.
 
 **Scope**: A rule that adds resources to, or removes resources from, the
 configuration inherited by a directory and its descendants; a scope without a
@@ -28,7 +34,7 @@ selection list rather than its top-level section; its ID shares the top-level
 ID space and cannot be redefined.
 
 **Generated skill**: A skill written in configuration with `content` and
-optional `files`, materialized as a skill directory for each launch.
+optional supporting files.
 
 **Anonymous package**: The Git source of a skill or instructions definition,
 fetched and locked like a package under the resource's kind and ID.
@@ -43,22 +49,36 @@ _Avoid_: Connection
 
 **On-demand MCP server**: An MCP server with `load: on_demand`: launches select
 it as usual, but harnesses do not get it in their tool list; agents reach it
-with `agx mcp call`. The opposite is a native server.
+through the built-in agx server or with `agx mcp call`. The opposite is a native server.
 _Avoid_: Lazy server
+
+**Built-in agx server**: The MCP server offered to each launch for browsing
+resources, saving configuration and using temporary attachments.
+
+**Temporary attachment**: An MCP server added to one running launch, available
+until that launch ends, without changing its saved configuration.
 
 **Call scope**: The MCP servers `agx mcp tools` and `agx mcp call` reach: a
 launch's, through its grant, or the servers selected for a directory, or every
 configured server with `--all`.
 
-**Snapshot**: The resolved selection of resources and settings for a working
-directory at launch time.
+**Snapshot**: The resolved selection of resources and settings for a directory
+and harness at a point in time.
 
-**Launch**: One running harness instance associated with a snapshot.
+**Launch**: A leased use of a directory's configuration, associated with a harness
+process or held by a configuration consumer independently of a process. Its MCP
+servers follow the current configuration; a process launch keeps the snapshot its
+harness loaded for everything else.
 
-**Launch grant**: Authorization to use the selected MCP servers during a launch.
+**Resource lease**: A launch that grants configuration resources to a consumer
+without starting or managing a harness process. Its content follows the
+directory's current configuration too.
 
-**Lifecycle credential**: Authorization held by the wrapper to renew or finish
-one launch, separate from the harness's launch grant.
+**Launch grant**: Authorization to use a launch's MCP servers and manage resources
+through its built-in agx server until the launch ends.
+
+**Lifecycle credential**: Authorization held by a wrapper or integration to
+renew or finish one launch, separate from its launch grant.
 
 **Secret**: A definition of how a credential is obtained: under `secrets`, shared
 through `!secret`, or inline in an MCP server's `auth`, where it belongs to that
@@ -71,13 +91,11 @@ needs a login only once the server answers with an authorization challenge.
 **Injected value**: A configuration value written with `!env`, `!file`, or
 `!secret` and resolved at launch; snapshots and explanations keep only the tag.
 
-**Harness**: A coding agent agx launches. Built-ins (Codex, Claude Code, Pi) have
-native adapters; a harness definition extends one with arguments, environment,
-and resource selection.
+**Harness**: A coding agent that consumes agx configuration. A harness definition
+extends a built-in with resource selection and optional process settings.
 
-**Adapter**: The package that integrates one built-in harness: it classifies
-invocations into modes and turns a snapshot into that harness's native
-arguments, files, and plugins.
+**Adapter**: An integration with a built-in harness, which can provide native
+resource delivery, process launching or access to native sessions.
 
 **Session**: A conversation stored by a harness in its own store, which the
 launcher lists and resumes; agx records which harness definition started it.

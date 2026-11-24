@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/adapters/builtin"
@@ -71,6 +72,11 @@ harnesses:
   codex: {executable: `+executable+`}
   claude: {executable: `+executable+`}
   pi: {executable: `+executable+`}
+  agy:
+    base: acp
+    executable: `+executable+`
+    settings: {serve: [acp]}
+  acp-only: {base: acp, executable: `+executable+`}
 `)
 	c, err := config.Load(
 		filepath.Join(dir, "agx.yaml"),
@@ -101,7 +107,7 @@ func (f fixture) build(t *testing.T, harness string, native ...string) (adapters
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, _ := builtin.Registry().Adapter(h.Builtin)
+	a, _ := builtin.Registry().Launcher(h.Builtin)
 	plan, err := adapters.Build(
 		t.Context(),
 		a,
@@ -115,8 +121,14 @@ func (f fixture) build(t *testing.T, harness string, native ...string) (adapters
 	return plan, s, err
 }
 
-func artifacts(f fixture, s *config.Snapshot) string {
-	return filepath.Join(f.cache, "artifacts", "v2-"+s.ID)
+// artifacts is the fixture's one artifact directory.
+func artifacts(t *testing.T, f fixture) string {
+	t.Helper()
+	dirs, err := filepath.Glob(filepath.Join(f.cache, "artifacts", "v3-*"))
+	if err != nil || len(dirs) != 1 {
+		t.Fatalf("artifact directories = %q, %v", dirs, err)
+	}
+	return dirs[0]
 }
 
 func checkPlan(t *testing.T, f fixture, plan adapters.Plan, s *config.Snapshot, want []string) {
@@ -140,12 +152,22 @@ func checkPlan(t *testing.T, f fixture, plan adapters.Plan, s *config.Snapshot, 
 	if want := []string{"AGX_MANAGEMENT_TOKEN", "AGX_LIFECYCLE_TOKEN", "MCP_ONLY"}; !slices.Equal(plan.Unset, want) {
 		t.Errorf("unset = %v, want %v", plan.Unset, want)
 	}
-	text, err := os.ReadFile(filepath.Join(artifacts(f, s), "instructions.md"))
+	if s.Harness == "codex" {
+		paths, err := filepath.Glob(filepath.Join(f.cache, "artifacts", "v3-*"))
+		if err != nil || len(paths) != 0 {
+			t.Fatalf("Codex created unnecessary resource artifacts: %v, %v", paths, err)
+		}
+		return
+	}
+	text, err := os.ReadFile(filepath.Join(artifacts(t, f), "instructions.md"))
 	if err != nil || string(text) != "first\n\nsecond\n\n" {
 		t.Errorf("instructions.md = %q, %v", text, err)
 	}
-	skill := filepath.Join(artifacts(f, s), "plugin", "skills", "review", "SKILL.md")
-	if b, err := os.ReadFile(skill); err != nil || !strings.Contains(string(b), "Review.") {
+	// Codex gets skills from its native installation.
+	skill := filepath.Join(artifacts(t, f), "plugin", "skills", "review", "SKILL.md")
+	if b, err := os.ReadFile(skill); s.Harness == "codex" && !os.IsNotExist(err) {
+		t.Errorf("materialized skill for codex: %v", err)
+	} else if s.Harness != "codex" && (err != nil || !strings.Contains(string(b), "Review.")) {
 		t.Errorf("materialized skill = %q, %v", b, err)
 	}
 }
@@ -168,14 +190,15 @@ func TestBuildClaude(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := artifacts(f, s)
+	dir := artifacts(t, f)
 	mcp := `{"mcpServers":{` +
 		`"agx-team-remote":{"headers":{"Authorization":"Bearer ${AGX_MCP_GRANT}"},"type":"http","url":"http://127.0.0.1:9/launch/L/mcp/team%2Fremote"},` +
 		`"agx-up":{"headers":{"Authorization":"Bearer ${AGX_MCP_GRANT}"},"type":"http","url":"http://127.0.0.1:9/launch/L/mcp/up"}}}`
 	checkPlan(t, f, plan, s, []string{
+		// A value of --mcp-config never comes last: the flag takes every value up to the next flag.
+		"--mcp-config", mcp,
 		"--plugin-dir", filepath.Join(dir, "plugin"),
 		"--append-system-prompt-file", filepath.Join(dir, "instructions.md"),
-		"--mcp-config", mcp,
 		"--definition", "-p", "hi",
 	})
 	if _, err := os.Stat(filepath.Join(dir, "plugin", ".claude-plugin", "plugin.json")); err != nil {
@@ -212,7 +235,7 @@ func TestBuildPi(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := artifacts(f, s)
+	dir := artifacts(t, f)
 	extension := filepath.Join(f.cache, "launches", "L", "mcp-extension.mjs")
 	checkPlan(t, f, plan, s, []string{
 		"--skill", filepath.Join(dir, "plugin", "skills", "review"),
@@ -231,9 +254,29 @@ func TestBuildPi(t *testing.T) {
 	}
 }
 
+func TestBuildACPDefinitionArgumentsFollowServe(t *testing.T) {
+	f := newFixture(t)
+	for _, tt := range []struct {
+		harness string
+		native  []string
+		want    []string
+	}{
+		{"agy", []string{"acp", "--gemini-dir", "/g"}, []string{"acp", "--definition", "--gemini-dir", "/g"}},
+		{"acp-only", []string{"--stdio"}, []string{"--definition", "--stdio"}},
+	} {
+		plan, _, err := f.build(t, tt.harness, tt.native...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(plan.Arguments, tt.want) {
+			t.Errorf("%s %q: arguments = %q, want %q", tt.harness, tt.native, plan.Arguments, tt.want)
+		}
+	}
+}
+
 func TestBuildCodex(t *testing.T) {
 	f := newFixture(t)
-	hash, err := f.config.Skills["review"].TreeHash()
+	hash, err := f.config.Skills["review"].ContentHash()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +324,7 @@ func TestBuildCodex(t *testing.T) {
 
 func TestBuildCodexAppServer(t *testing.T) {
 	f := newFixture(t)
-	hash, err := f.config.Skills["review"].TreeHash()
+	hash, err := f.config.Skills["review"].ContentHash()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +345,7 @@ func TestBuildCodexAppServer(t *testing.T) {
 		t.Errorf("websocket app-server arguments = %q, %v", plan.Arguments, err)
 	}
 
-	a, _ := builtin.Registry().Adapter("codex")
+	a, _ := builtin.Registry().Launcher("codex")
 	threads := a.(adapters.Threads)
 	for _, tt := range []struct {
 		args []string
@@ -316,7 +359,7 @@ func TestBuildCodexAppServer(t *testing.T) {
 		{[]string{"app-server", "generate-ts"}, false},
 		{[]string{"exec", "hi"}, false},
 	} {
-		if got := threads.ThreadServer(tt.args); got != tt.want {
+		if got := threads.ThreadServer(config.ResolvedHarness{}, tt.args); got != tt.want {
 			t.Errorf("ThreadServer(%q) = %v", tt.args, got)
 		}
 	}
@@ -441,5 +484,120 @@ func TestServerNames(t *testing.T) {
 		if len(name) > 32 {
 			t.Errorf("%s: %q is longer than 32 characters", id, name)
 		}
+	}
+}
+
+func TestArtifactsFollowContent(t *testing.T) {
+	f := newFixture(t)
+	pluginDir := func(directory string) string {
+		t.Helper()
+		s, err := f.config.Resolve(directory, "claude")
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, err := f.config.Harness("claude")
+		if err != nil {
+			t.Fatal(err)
+		}
+		a, _ := builtin.Registry().Launcher("claude")
+		plan, err := adapters.Build(
+			t.Context(),
+			a,
+			adapters.Launch{Snapshot: s, Cache: f.cache, ID: "L"},
+			h,
+			nil,
+			nil,
+			"",
+			nil,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return plan.Arguments[slices.Index(plan.Arguments, "--plugin-dir")+1]
+	}
+	first := pluginDir(f.work)
+	nested := filepath.Join(f.work, "nested")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Another directory selecting the same content shares the directory.
+	if got := pluginDir(nested); got != first {
+		t.Errorf("nested directory artifacts = %s, want %s", got, first)
+	}
+	// The launch directory names the artifacts its launch uses.
+	if b, err := os.ReadFile(filepath.Join(f.cache, "launches", "L", "artifacts")); err != nil ||
+		string(b) != filepath.Base(filepath.Dir(first)) {
+		t.Errorf("launch's artifacts = %q, %v", b, err)
+	}
+	// A skill edited after resolution is not cached under the hash resolution found.
+	s, err := f.config.Resolve(nested, "pi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(
+		t,
+		filepath.Join(filepath.Dir(f.work), "skills", "review", "SKILL.md"),
+		"---\nname: review\ndescription: r\n---\nChanged.\n",
+	)
+	h, _ := f.config.Harness("pi")
+	a, _ := builtin.Registry().Launcher("pi")
+	if _, err := adapters.Build(
+		t.Context(),
+		a,
+		adapters.Launch{Snapshot: s, Cache: t.TempDir()},
+		h,
+		nil,
+		nil,
+		"",
+		nil,
+	); err == nil ||
+		!strings.Contains(err.Error(), "changed while preparing launch") {
+		t.Errorf("building artifacts of an edited skill: %v", err)
+	}
+	changed := pluginDir(f.work)
+	if changed == first {
+		t.Fatal("a changed skill kept its artifacts")
+	}
+	if b, err := os.ReadFile(filepath.Join(changed, "skills", "review", "SKILL.md")); err != nil ||
+		!strings.Contains(string(b), "Changed.") {
+		t.Errorf("changed skill = %q, %v", b, err)
+	}
+}
+
+func TestRemoveUnusedArtifacts(t *testing.T) {
+	cache := t.TempDir()
+	now := time.Now()
+	old := now.Add(-8 * 24 * time.Hour)
+	dir := func(name string, at time.Time) string {
+		t.Helper()
+		path := filepath.Join(cache, "artifacts", name)
+		write(t, filepath.Join(path, "instructions.md"), "")
+		if err := os.Chtimes(path, at, at); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	used := dir("v3-used", old)
+	unused := dir("v3-unused", old)
+	recent := dir("v3-recent", now.Add(-time.Hour))
+	build := dir(".build-1", now.Add(-2*time.Hour))
+	building := dir(".build-2", now)
+	write(t, filepath.Join(cache, "launches", "A", "artifacts"), "v3-used")
+	exists := func(path string) bool {
+		_, err := os.Stat(path)
+		return err == nil
+	}
+
+	adapters.RemoveUnusedArtifacts(cache, now)
+	for path, want := range map[string]bool{
+		used: true, unused: false, recent: true, build: false, building: true,
+	} {
+		if exists(path) != want {
+			t.Errorf("%s exists = %v, want %v", filepath.Base(path), !want, want)
+		}
+	}
+	// Use is recorded, so the directory outlives the launch by the grace period.
+	if info, err := os.Stat(used); err != nil || info.ModTime().Before(now.Add(-time.Minute)) {
+		t.Errorf("used artifacts = %v, %v", info, err)
 	}
 }

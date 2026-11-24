@@ -19,6 +19,8 @@ import (
 
 type ID string
 
+const AgxMCP ID = "agx"
+
 // Kind is a kind of definition, named by its top-level section; the selection kinds are also
 // the keys of selection lists.
 type Kind string
@@ -67,6 +69,7 @@ func JoinKinds(kinds []Kind) string {
 }
 
 type Source struct {
+	Local  bool   `json:"local,omitempty"`
 	Path   string `json:"path"`
 	Line   int    `json:"line"`
 	Column int    `json:"column"`
@@ -79,6 +82,7 @@ type Package struct {
 	Hash     string `yaml:"hash"     json:"hash,omitempty"   jsonschema_description:"Content hash verified at install; pins the source without a lock entry."`
 	Subdir   string `yaml:"subdir"   json:"subdir,omitempty" jsonschema_description:"Package root within the source."`
 	Override bool   `yaml:"override" json:"-"                jsonschema_description:"Replace an existing definition."`
+	Local    bool   `yaml:"-"        json:"-"`
 	Lockfile string `yaml:"-"        json:"-"`
 	Source   Source `yaml:"-"        json:"-"`
 	// Manifest marks definitions from package manifests rather than configuration fragments.
@@ -135,6 +139,9 @@ type Skill struct {
 	// Inline marks definitions written in a selection list, whose IDs may not be reused.
 	Inline bool   `yaml:"-" json:"-"`
 	Source Source `yaml:"-" json:"source"`
+	// installed is the content hash of a skill inside an installed package, which follows from
+	// the package's content hash without reading the files.
+	installed string
 }
 
 // Instructions is guidance text: a file, a file from a Git source, or text in configuration.
@@ -280,6 +287,7 @@ type Daemon struct {
 	LeaseSeconds int   `yaml:"lease_seconds" json:"lease_seconds"       jsonschema:"minimum=3" jsonschema_description:"Launch lease length; defaults to 60."`
 	RenewSeconds int   `yaml:"renew_seconds" json:"renew_seconds"       jsonschema:"minimum=1" jsonschema_description:"Lease renewal interval, shorter than the lease; defaults to 20."`
 	Autostart    *bool `yaml:"autostart"     json:"autostart,omitempty"                        jsonschema_description:"Start the daemon in the background when a command needs it; defaults to true. AGX_NO_AUTOSTART=1 overrides it."`
+	Managed      bool  `yaml:"managed"       json:"managed,omitempty"                          jsonschema_description:"An external service manager owns daemon startup and recovery. Commands never spawn a daemon; restart requests exit code 75 and waits for the manager."`
 }
 
 // RootFile is the root configuration file: the fragments it lists and machine-level settings.
@@ -301,6 +309,7 @@ type Document struct {
 }
 
 type Config struct {
+	Local         *Local                       `json:"-"`
 	Root          string                       `json:"root"`
 	Packages      map[ID]Package               `json:"packages"`
 	Skills        map[ID]Skill                 `json:"skills"`
@@ -320,9 +329,7 @@ type Config struct {
 	// rootDefinitions maps definitions from configuration fragments to their override flag,
 	// so package manifests merged later cannot replace them.
 	rootDefinitions map[string]bool
-	// fragments holds the root's fragment entries, resolved: absolute paths and glob patterns.
-	fragments []string
-	builtins  Builtins
+	builtins        Builtins
 }
 
 // MissingPackage is a package that is not installed. Root is the declared package the warning
@@ -407,36 +414,10 @@ type Snapshot struct {
 	Missing []ID `json:"missing,omitempty"`
 	// Injections lists tagged values the launch resolves, as configured; never their values.
 	Injections []Injection `json:"injections,omitempty"`
-	Config     *Config     `json:"-"`
-}
-
-func Canonical(path string) (string, error) {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	// Resolve the existing prefix as scopes may name directories not created yet, or
-	// ones this process may not read, such as a home directory seen from a build sandbox.
-	suffix := []string{}
-	for {
-		real, err := filepath.EvalSymlinks(abs)
-		if err == nil {
-			real = platform.ActualCase(real)
-			for i := len(suffix) - 1; i >= 0; i-- {
-				real = filepath.Join(real, suffix[i])
-			}
-			return filepath.Clean(real), nil
-		}
-		if !os.IsNotExist(err) && !os.IsPermission(err) {
-			return "", err
-		}
-		parent := filepath.Dir(abs)
-		if parent == abs {
-			return "", err
-		}
-		suffix = append(suffix, filepath.Base(abs))
-		abs = parent
-	}
+	// SkillHashes holds the content hash of each selected skill as resolution found it.
+	SkillHashes       map[ID]string `json:"-"`
+	InstructionHashes map[ID]string `json:"-"`
+	Config            *Config       `json:"-"`
 }
 
 func Digest(v any) string {
@@ -451,7 +432,7 @@ func Digest(v any) string {
 // Resolve selects resources for a directory and harness. An empty harness applies only rules
 // without a harness filter and no harness's own add/remove.
 func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
-	dir, err := Canonical(directory)
+	dir, err := platform.Canonical(directory)
 	if err != nil {
 		return nil, err
 	}
@@ -462,6 +443,17 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("not a directory: %s", dir)
 	}
+	return c.ResolveContext(dir, harness)
+}
+
+// ResolveContext evaluates a directory in the configuration's scope namespace. The caller
+// maps and validates its execution environment; the directory need not exist on this host.
+func (c *Config) ResolveContext(dir, harness string) (*Snapshot, error) {
+	if !filepath.IsAbs(dir) {
+		return nil, fmt.Errorf("absolute scope directory required")
+	}
+	dir = filepath.Clean(dir)
+	var err error
 	var h ResolvedHarness
 	if harness != "" {
 		h, err = c.Harness(harness)
@@ -594,20 +586,25 @@ func (c *Config) Resolve(directory, harness string) (*Snapshot, error) {
 	}{c.withoutPositions(), dir, harness, runtime.GOOS + "/" + runtime.GOARCH})
 	// Local resources are content inputs too, even when no package is declared.
 	content := []string{s.ID}
+	s.SkillHashes = map[ID]string{}
+	s.InstructionHashes = map[ID]string{}
 	for _, r := range s.Resources {
 		switch r.Kind {
 		case "skill":
-			h, err := c.Skills[r.ID].TreeHash()
+			h, err := c.Skills[r.ID].ContentHash()
 			if err != nil {
 				return nil, fmt.Errorf("skill %s: %w", r.ID, err)
 			}
+			s.SkillHashes[r.ID] = h
 			content = append(content, h)
 		case "instructions":
 			b, err := c.Instructions[r.ID].Read()
 			if err != nil {
 				return nil, fmt.Errorf("instructions %s: %w", r.ID, err)
 			}
-			content = append(content, Digest(string(b)))
+			hash := Digest(string(b))
+			s.InstructionHashes[r.ID] = hash
+			content = append(content, hash)
 		}
 	}
 	s.ID = Digest(content)

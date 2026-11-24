@@ -76,7 +76,7 @@ harnesses:
 		if len(listed.MCP) != 3 {
 			t.Fatalf("tools --all = %+v", listed)
 		}
-		e.jsonFail("not_found", "mcp", "tools", "elsewhere")
+		e.jsonFail("mcp", "tools", "elsewhere")
 		human := e.ok("mcp", "tools", "echo")
 		if !strings.Contains(
 			human.stdout,
@@ -120,7 +120,10 @@ harnesses:
 			t.Fatalf("structured content = %s, want %s", called.StructuredContent, want)
 		}
 		r := e.runInput(binaries.agx, nil, `{"query":"stdin"}`, "mcp", "call", "echo.shape", "--args", "-")
-		if r.code != 0 || r.stdout != `{"query":"stdin"}`+"\n" {
+		var echoed struct {
+			Query string `json:"query"`
+		}
+		if r.code != 0 || json.Unmarshal([]byte(r.stdout), &echoed) != nil || echoed.Query != "stdin" {
 			t.Fatalf("--args - exited %d: %q %q", r.code, r.stdout, r.stderr)
 		}
 		e.jsonOK(&called, "mcp", "call", "tracker.echo", "text=on-demand")
@@ -129,12 +132,12 @@ harnesses:
 		}
 		e.jsonOK(&called, "mcp", "call", "elsewhere.echo", "text=x", "--all")
 
-		e.jsonFail("not_found", "mcp", "call", "elsewhere.echo")
-		e.jsonFail("not_found", "mcp", "call", "missing.echo")
-		e.jsonFail("invalid_request", "mcp", "call", "echo.shap")
-		e.jsonFail("invalid_request", "mcp", "call", "echo.shape", "query=q", "status=bogus")
-		e.jsonFail("invalid_request", "mcp", "call", "echo.shape", "limit=1")
-		e.jsonFail("mcp_failed", "mcp", "call", "echo.explode")
+		e.jsonFail("mcp", "call", "elsewhere.echo")
+		e.jsonFail("mcp", "call", "missing.echo")
+		e.jsonFail("mcp", "call", "echo.shap")
+		e.jsonFail("mcp", "call", "echo.shape", "query=q", "status=bogus")
+		e.jsonFail("mcp", "call", "echo.shape", "limit=1")
+		e.jsonFail("mcp", "call", "echo.explode")
 		if r := e.agx(nil, "mcp", "call", "echo.shape", "query"); r.code != 2 {
 			t.Fatalf("malformed argument exited %d", r.code)
 		}
@@ -250,8 +253,8 @@ harnesses:
 			t.Fatalf("on-demand call in the launch exited %d: %s", d.Exec[1].Code, d.Exec[1].Stdout)
 		}
 		decode(2)
-		if d.Exec[2].Code != 1 || doc.Error == nil || doc.Error.Code != "not_found" ||
-			!strings.Contains(doc.Error.Message, "not selected for this launch") {
+		if d.Exec[2].Code != 1 || doc.Message == "" ||
+			!strings.Contains(doc.Message, "not selected for this launch") {
 			t.Fatalf("out-of-launch call exited %d: %s", d.Exec[2].Code, d.Exec[2].Stdout)
 		}
 		decode(3)

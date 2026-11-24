@@ -139,7 +139,7 @@ servers whose state is the same for every client".
   old server drains as its launches end, since launches keep their snapshots.
   `Reset` after a secret change or login stops the shared servers using that
   secret; their clients reconnect as they do today.
-- When the process crashes, in-flight requests fail (`mcp_failed` for
+- When the process crashes, in-flight requests fail (a diagnostic message and nonzero exit status for
   `agx mcp call`, an internal error response for harnesses), client sessions are
   ended so harnesses reinitialize, and the next session starts a new process.
 - Daemon shutdown closes shared servers with the launches. Attached launches

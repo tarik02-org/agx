@@ -3,6 +3,7 @@
 package platform
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -21,7 +22,31 @@ func StartDetached(build func() *exec.Cmd) (*exec.Cmd, error) {
 	return cmd, cmd.Start()
 }
 
+// StartTied starts cmd; untie does nothing. A host that kills agx with SIGKILL leaves cmd running:
+// Linux's parent death signal fires when the thread that started the child exits, which the Go
+// runtime may do while the child runs, and other systems have none. cmd shares the host's terminal or pipes, so it usually
+// ends once the host closes them.
+func StartTied(cmd *exec.Cmd) (untie func(), err error) {
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	return func() {}, nil
+}
+
+// Alive reports whether process pid runs; one whose PID was reused since reads as running.
+func Alive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
 func Interrupts() []os.Signal { return []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP} }
+
+// Forwarded are the signals a wrapper passes on to its harness. Ctrl-\ is among them: uncaught, it
+// would end the wrapper with a stack dump and leave its launch unfinished.
+func Forwarded() []os.Signal { return append(Interrupts(), syscall.SIGQUIT) }
 
 // StopSignals are the signals that stop the daemon gracefully. A daemon attached to a terminal
 // also stops when it hangs up; a detached one ignores SIGHUP, which it gets only by accident.
@@ -58,9 +83,9 @@ func SurviveBrokenPipes() { signal.Notify(make(chan os.Signal, 1), syscall.SIGPI
 
 // TerminalDelivered reports whether a terminal-generated sig already reached pid because pid is in the
 // terminal's foreground process group. Signals sent with kill to the wrapper alone cannot be told apart
-// there, so a foreground child relies on the terminal for SIGINT and SIGHUP.
+// there, so a foreground child relies on the terminal for SIGINT, SIGQUIT and SIGHUP.
 func TerminalDelivered(pid int, s os.Signal) bool {
-	if s != os.Interrupt && s != syscall.SIGHUP {
+	if s != os.Interrupt && s != syscall.SIGHUP && s != syscall.SIGQUIT {
 		return false
 	}
 	group, err := syscall.Getpgid(pid)

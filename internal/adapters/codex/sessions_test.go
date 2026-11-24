@@ -2,13 +2,14 @@ package codex_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/adapters/codex"
-	"github.com/tarik02-org/agx/internal/sessions"
+	"github.com/tarik02-org/agx/internal/sessionstore"
 )
 
 func TestSessions(t *testing.T) {
@@ -17,8 +18,16 @@ func TestSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("CODEX_HOME", home)
-	index := sessions.OpenIndex(filepath.Join(t.TempDir(), "index.json"))
-	found, err := (codex.Adapter{}).Sessions(context.Background(), index)
+	index, err := sessionstore.OpenIndex(t.Context(), filepath.Join(t.TempDir(), "cache.db"), "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = index.Close() })
+	root, err := (codex.Adapter{}).SessionRoot(".", os.Getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found, err := (codex.Adapter{}).Sessions(context.Background(), index, root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,10 +69,16 @@ func TestSessions(t *testing.T) {
 
 func TestSessionsWithoutStore(t *testing.T) {
 	t.Setenv("CODEX_HOME", filepath.Join(t.TempDir(), "missing"))
-	found, err := (codex.Adapter{}).Sessions(
-		context.Background(),
-		sessions.OpenIndex(filepath.Join(t.TempDir(), "index.json")),
-	)
+	root, err := (codex.Adapter{}).SessionRoot(".", os.Getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := sessionstore.OpenIndex(t.Context(), filepath.Join(t.TempDir(), "cache.db"), "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = index.Close() })
+	found, err := (codex.Adapter{}).Sessions(context.Background(), index, root)
 	if err != nil || len(found) != 0 {
 		t.Fatalf("missing store: %v, %v", found, err)
 	}

@@ -5,7 +5,7 @@ request on Linux, macOS, and Windows (`.github/workflows/ci.yml`):
 
 ```sh
 go test ./...                          # unit tests; -race on Linux in CI
-go test -tags e2e ./internal/e2e/...   # end to end, against the built binary
+go test -tags e2e ./internal/e2e/...   # end to end, against built client/daemon pairs
 ```
 
 Tests run in temporary directories with `HOME`, `USERPROFILE`, the `AGX_*`
@@ -14,7 +14,10 @@ paths, the XDG directories, and the harness stores (`CODEX_HOME`,
 network and never touch the user's keychain: OAuth and keychain tests use the
 keyring library's in-memory provider. CI also lints for Linux and Windows,
 checks that `buf generate` and `go generate` leave no diff, and builds the Nix
-package on Linux and macOS.
+package and Home Manager integration on Linux and macOS. The end-to-end suite
+checks sibling daemon lookup, installed shims (including Windows copies), missing
+helper errors, daemon replacement and launch reattachment. A dependency test
+keeps SQL storage and daemon implementation out of the client binary.
 
 ## Exercised manually
 
@@ -32,6 +35,30 @@ skill disabled in `skills/list`; resuming and forking a thread by ID alone kept
 its directory's resources. Claude Code 2.1.300 driven by the Agent SDK that T3
 Code ships, with its own system prompt append, received agx instructions and
 the SDK's append once each, also on resume.
+ACP agents from the ACP registry ran through `acp` definitions in a bubblewrap
+sandbox (ACP version 1). From a scoped directory, claude-agent-acp 0.106.0 and
+codex-acp 2.6.0 (HTTP MCP servers and a client system prompt) called a managed
+MCP tool and followed the directory's instructions, which reached them only
+through the system prompt; from an unscoped directory they did not follow them.
+fx 0.0.16 (`fx acp`) refuses that system prompt, since it implements an earlier
+draft; agx sent the session again without it, and fx called the tool and
+followed the instructions from the first prompt.
+Every agent in the ACP registry (46, on 2026-11-13) then ran through agx in the
+same sandbox, once from a scoped directory, where agx added MCP servers and
+instructions, and once from an unscoped one: each initialized and answered
+`session/new` the same way in both (a session, or the same sign-in or setup
+error), except fast-agent and minion-code, whose packages fail to start. Of the
+agents that run a prompt without signing in, opencode and opencode-v2 called
+the managed tool and followed the scoped instructions.
+Pointed at an OpenAI-compatible endpoint, goose 1.59.0 and Qwen Code 0.27.3
+called the tool and followed the scoped instructions. Mistral Vibe 3.1.1, which
+takes no HTTP MCP servers, called it through `agx mcp bridge` and followed
+them; deepagents 0.1.7 followed them but ignores every MCP server a session
+names.
+opencode 2.2.6 (`opencode acp`, HTTP MCP servers, no system prompt) called the
+tool, and pi-acp 0.0.34 (neither) followed the instructions, both from the
+first prompt. kilo 7.8.27 accepted sessions with agx resources; Gemini CLI
+0.68.0 and Qwen Code 0.27.3 initialized but were not signed in.
 These depend on installed harnesses, terminals, or keychains, so they are not
 part of the automated suite.
 
@@ -62,14 +89,19 @@ Claude Code recovers for tool calls in recent releases; Codex bundling rmcp
 older than 1.2 does not re-initialize and needs a new thread or `thread/resume`;
 Pi was not checked.
 
+ACP version 2 follows the draft schema `2.0.0-alpha.15` and is tested only with
+scripted messages, since no agent speaking it was available. Instructions reach
+an ACP agent without client system prompt support only through a new session's
+first prompt, so a session loaded or resumed from outside agx goes without them.
+
 The daemon reloads configuration on demand (resolution, launches, status) and
 skips the load while every file, glob, lockfile, and package cache entry it read
 keeps its modification time and size; it publishes only valid configurations.
 An invalid reload blocks new preparations while existing launches retain their
 snapshots. Ended launches and package operations are pruned after an hour; idle
-MCP sessions after 30 minutes. Package caches and generated artifacts are
-retained; automatic garbage collection, registries, a UI, and automatic native
-binary updates are deferred.
+MCP sessions after 30 minutes. Package caches are retained, and generated
+artifacts until no launch used them for 7 days; package garbage collection,
+registries, a UI, and automatic native binary updates are deferred.
 
 Managed instructions use Codex's `developer_instructions` override (a thread's
 `developerInstructions` under `app-server`), Claude's

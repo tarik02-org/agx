@@ -55,12 +55,16 @@ func (s *Server) secret(id string) (config.Secret, error) {
 // resetUsers ends the sessions of active MCP servers using a secret, so they reconnect with
 // the current credential.
 func (s *Server) resetUsers(id config.ID) {
+	if id == "" {
+		s.clients.reset()
+	}
 	s.shared.Reset(id)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, l := range s.launches {
-		for serverID, e := range l.endpoints {
-			if slices.Contains(l.snapshot.Config.MCP[serverID].Secrets(), id) {
+		servers := l.servers()
+		for serverID, e := range l.allEndpoints() {
+			if id == "" || slices.Contains(servers[serverID].Secrets(), id) {
 				go e.Reset()
 			}
 		}
@@ -136,6 +140,16 @@ func (s *Server) Logout(
 	ctx context.Context,
 	req *connect.Request[v1.LogoutRequest],
 ) (*connect.Response[v1.LogoutResponse], error) {
+	if req.Msg.All {
+		if req.Msg.SecretId != "" {
+			return nil, rpcError(connect.CodeInvalidArgument, "give a secret ID or all, not both")
+		}
+		if err := s.manager.Reset(); err != nil {
+			return nil, rpcError(connect.CodeFailedPrecondition, err.Error())
+		}
+		s.resetUsers("")
+		return connect.NewResponse(&v1.LogoutResponse{}), nil
+	}
 	secret, err := s.secret(req.Msg.SecretId)
 	if err != nil {
 		return nil, err
@@ -165,10 +179,10 @@ func (s *Server) RotateSecret(
 	expires, err := s.manager.Rotate(ctx, config.ID(req.Msg.SecretId), secret)
 	switch {
 	case errors.Is(err, auth.ErrRefreshFailed):
-		return nil, reasonError(connect.CodeUnavailable, v1.ErrorDetail_REASON_NETWORK, err.Error())
+		return nil, rpcError(connect.CodeUnavailable, err.Error())
 	case err != nil:
 		// Without a login, or with a refresh token the server refused, only a new login helps.
-		return nil, reasonError(connect.CodeFailedPrecondition, v1.ErrorDetail_REASON_NEEDS_LOGIN, err.Error())
+		return nil, rpcError(connect.CodeUnauthenticated, err.Error())
 	}
 	out := &v1.RotateSecretResponse{}
 	if !expires.IsZero() {
@@ -182,10 +196,6 @@ func (s *Server) Login(
 	req *connect.Request[v1.LoginRequest],
 	stream *connect.ServerStream[v1.LoginResponse],
 ) error {
-	// Streaming handlers bypass the unary management interceptor.
-	if !s.managed(req.Header()) {
-		return rpcError(connect.CodeUnauthenticated, "management credential required")
-	}
 	if s.drain.draining() {
 		return refusal()
 	}
@@ -237,7 +247,7 @@ func (s *Server) Login(
 		}
 		return rpcError(connect.CodeFailedPrecondition, err.Error())
 	}
-	defer s.manager.Release(attempt)
+	defer s.manager.Cancel(attempt)
 	err = stream.Send(&v1.LoginResponse{Event: &v1.LoginResponse_Started{Started: &v1.LoginStarted{
 		AuthorizationUrl: attempt.URL,
 		ExpiresAt:        timestamppb.New(attempt.Expires),

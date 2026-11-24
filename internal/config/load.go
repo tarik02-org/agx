@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"io/fs"
 	"maps"
@@ -19,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tarik02-org/agx/internal/platform"
 	"github.com/tarik02-org/agx/internal/securefs"
 )
 
@@ -41,67 +43,36 @@ type Lock struct {
 // DefaultConfig is used when the root configuration file does not exist.
 const DefaultConfig = "fragments: [agx.d/*.yaml]\n"
 
+// ReadRoot reads only bootstrap settings, before a daemon can supply managed configuration.
+func ReadRoot(root string, builtins Builtins) (RootFile, error) {
+	b, err := os.ReadFile(root)
+	if errors.Is(err, fs.ErrNotExist) {
+		b, err = []byte(DefaultConfig), nil
+	}
+	if err != nil {
+		return RootFile{}, err
+	}
+	r, _, err := decode[RootFile](root, b, RootSchema, builtins)
+	return r, err
+}
+
 // Options configures Load.
 type Options struct {
 	Builtins Builtins
+	Local    *Local
 	// Cache is the package cache. Without it, Load reads only configuration fragments, without
 	// loading packages or validating the result.
 	Cache string
-	// Overlay replaces fragments and lockfiles while loading.
-	Overlay Overlay
 	// Inputs, when set, records the files loading read, including after a failure, so callers
 	// can skip reloading until one of them changes.
 	Inputs *Inputs
 }
 
-// Overlay maps canonical paths to contents that replace those files while loading, so an edit
-// can be validated before anything is written.
-type Overlay map[string][]byte
-
-func (o Overlay) readFile(path string) ([]byte, error) {
-	if b, ok := o[path]; ok {
-		return b, nil
-	}
-	return os.ReadFile(path)
-}
-
-func (o Overlay) exists(path string) (bool, error) {
-	if _, ok := o[path]; ok {
-		return true, nil
-	}
-	_, err := os.Stat(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	}
-	return err == nil, err
-}
-
-// glob adds overlay files matching pattern, such as a new drop-in fragment, to the files on disk.
-func (o Overlay) glob(pattern string) ([]string, error) {
-	files, err := globFiles(pattern)
-	if err != nil {
-		return nil, err
-	}
-	for path := range o {
-		if matched, _ := filepath.Match(pattern, path); matched && !slices.Contains(files, path) {
-			files = append(files, path)
-		}
-	}
-	slices.Sort(files)
-	return files, nil
-}
-
-func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Config, error) {
-	dir, err := RootDir(root)
-	if err != nil {
-		return nil, err
-	}
-	root, err = Canonical(root)
-	if err != nil {
-		return nil, err
-	}
+// ParseLocal decodes and merges a supplied document without reading YAML overlays.
+func ParseLocal(root string, local *Local, builtins Builtins) (*Config, error) {
 	c := &Config{
 		Root:          root,
+		Local:         local,
 		Packages:      map[ID]Package{},
 		Skills:        map[ID]Skill{},
 		Instructions:  map[ID]Instructions{},
@@ -112,8 +83,33 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 		PackageHashes: map[ID]string{},
 		builtins:      builtins,
 	}
+	if local != nil && len(local.Document) > 0 {
+		d, at, err := local.decode(root, builtins)
+		if err != nil {
+			return nil, err
+		}
+		if err := c.merge(d, at, root, "", false); err != nil {
+			return nil, err
+		}
+	}
+	return c, nil
+}
+
+func read(root string, builtins Builtins, inputs *Inputs, local *Local) (*Config, error) {
+	dir, err := RootDir(root)
+	if err != nil {
+		return nil, err
+	}
+	root, err = platform.CanonicalFile(root)
+	if err != nil {
+		return nil, err
+	}
+	c, err := ParseLocal(root, local, builtins)
+	if err != nil {
+		return nil, err
+	}
 	inputs.file(root)
-	b, err := overlay.readFile(root)
+	b, err := os.ReadFile(root)
 	if errors.Is(err, fs.ErrNotExist) {
 		b, err = []byte(DefaultConfig), nil
 	}
@@ -128,6 +124,7 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 		LeaseSeconds: cmp.Or(r.Daemon.LeaseSeconds, 60),
 		RenewSeconds: cmp.Or(r.Daemon.RenewSeconds, 20),
 		Autostart:    r.Daemon.Autostart,
+		Managed:      r.Daemon.Managed,
 	}
 	// A glob matching the root, or two entries matching one fragment, load it once.
 	seen := map[string]bool{root: true}
@@ -138,26 +135,28 @@ func read(root string, builtins Builtins, inputs *Inputs, overlay Overlay) (*Con
 			return nil, errorAt(at, "fragment %w", err)
 		}
 		p = relative(dir, p)
-		c.fragments = append(c.fragments, p)
 		files := []string{p}
 		if isGlob(entry) {
-			if files, err = overlay.glob(p); err != nil {
+			if files, err = globFiles(p); err != nil {
 				return nil, errorAt(at, "fragment %s: %w", entry, err)
 			}
 			inputs.glob(p, files)
-		} else if found, err := overlay.exists(p); err == nil && !found {
+		} else if _, err := os.Stat(p); errors.Is(err, fs.ErrNotExist) {
+			inputs.file(p)
 			return nil, errorAt(at, "fragment %s: %s does not exist", entry, p)
 		}
-		for _, path := range files {
-			if path, err = Canonical(path); err != nil {
+		for _, listed := range files {
+			path, err := platform.Canonical(listed)
+			if err != nil {
 				return nil, err
 			}
 			if seen[path] {
 				continue
 			}
 			seen[path] = true
-			inputs.file(path)
-			b, err := overlay.readFile(path)
+			// As listed: a link pointed elsewhere is a change, whatever the files it named hold.
+			inputs.file(listed)
+			b, err := os.ReadFile(path)
 			if err != nil {
 				return nil, err
 			}
@@ -186,16 +185,7 @@ func RootDir(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return Canonical(filepath.Dir(abs))
-}
-
-// Lists reports whether the root lists path: one of its fragment paths, or a match of one of
-// its globs.
-func (c *Config) Lists(path string) bool {
-	return slices.ContainsFunc(c.fragments, func(pattern string) bool {
-		matched, _ := filepath.Match(pattern, path)
-		return pattern == path || matched
-	})
+	return platform.Canonical(filepath.Dir(abs))
 }
 
 // isGlob reports whether a fragment entry is a pattern rather than a literal path.
@@ -204,8 +194,12 @@ func isGlob(path string) bool { return strings.ContainsAny(path, "*?[") }
 // Load reads the configuration fragments from root and, given a cache, the installed packages
 // they declare, and validates the result.
 func Load(root string, opts Options) (*Config, error) {
-	inputs, overlay, cache := cmp.Or(opts.Inputs, &Inputs{}), opts.Overlay, opts.Cache
-	c, err := read(root, opts.Builtins, inputs, overlay)
+	inputs, cache := cmp.Or(opts.Inputs, &Inputs{}), opts.Cache
+	local := opts.Local
+	if local == nil {
+		local = EmptyLocal()
+	}
+	c, err := read(root, opts.Builtins, inputs, local)
 	if err != nil || cache == "" {
 		return c, err
 	}
@@ -234,8 +228,10 @@ func Load(root string, opts Options) (*Config, error) {
 				return "", fmt.Errorf("package %s: %w", id, err)
 			}
 		case !p.Pinned():
-			inputs.file(p.Lockfile)
-			lock, err := ReadLock(p.Lockfile, overlay)
+			if !p.Local {
+				inputs.file(p.Lockfile)
+			}
+			lock, err := c.PackageLock(p)
 			var newer *securefs.NewerFormatError
 			switch {
 			case errors.As(err, &newer):
@@ -264,13 +260,7 @@ func Load(root string, opts Options) (*Config, error) {
 		} else if err != nil {
 			return "", fmt.Errorf("package %s cache: %w", id, err)
 		}
-		cached, err := TreeHash(dir)
-		if err != nil {
-			return "", fmt.Errorf("package %s cache: %w", id, err)
-		}
-		if cached != hash {
-			return "", fmt.Errorf("package %s cache content does not match its lock", id)
-		}
+		// Installation renames a hashed copy into place, so an entry that exists is complete.
 		c.PackageHashes[id] = hash
 		return dir, nil
 	}
@@ -287,6 +277,15 @@ func Load(root string, opts Options) (*Config, error) {
 	for name, s := range c.Skills {
 		if _, ok := c.Missing[s.Package]; ok && s.Package != "" {
 			delete(c.Skills, name)
+			continue
+		}
+		for _, hash := range c.PackageHashes {
+			rel, err := filepath.Rel(filepath.Join(cache, "packages", hash), s.Path)
+			if !s.Generated() && err == nil && filepath.IsLocal(rel) {
+				s.installed = Digest([]string{hash, filepath.ToSlash(rel)})
+				c.Skills[name] = s
+				break
+			}
 		}
 	}
 	for name, i := range c.Instructions {
@@ -472,6 +471,7 @@ func (c *Config) dependencies(id ID, d Document) []ID {
 		// Configuration overrides of a dependency keep their own lockfile.
 		if value := c.Packages[qualified]; value.Manifest {
 			value.Lockfile = lockfile
+			value.Local = c.Packages[id].Local
 			c.Packages[qualified] = value
 		}
 		deps = append(deps, qualified)
@@ -479,6 +479,7 @@ func (c *Config) dependencies(id ID, d Document) []ID {
 	for name, p := range c.Packages {
 		if p.Anonymous && p.Parent == id {
 			p.Lockfile = lockfile
+			p.Local = c.Packages[id].Local
 			c.Packages[name] = p
 			deps = append(deps, name)
 		}
@@ -521,7 +522,7 @@ func ReadPin(path string) (string, error) {
 }
 
 func WritePin(path, hash string) error {
-	return securefs.WriteJSON(path, pin{Version: pinVersion, Hash: hash})
+	return securefs.WriteCacheJSON(path, pin{Version: pinVersion, Hash: hash})
 }
 
 // merger merges one file: a configuration fragment, or a package manifest under its namespace.
@@ -670,7 +671,7 @@ func ScopeDirectory(file, written string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return Canonical(relative(filepath.Dir(file), directory))
+	return platform.Canonical(relative(filepath.Dir(file), directory))
 }
 
 // conflict decides whether a definition applies. Configuration fragments merge before package
@@ -697,6 +698,9 @@ func (m *merger) conflict(kind Kind, id ID, p prior, override, inline bool, at S
 			id,
 			locate(p.source),
 		)
+	}
+	if p.exists && p.source.Local && !at.Local && !m.manifest {
+		override = true
 	}
 	if p.exists && !override {
 		return false, errorAt(
@@ -759,6 +763,10 @@ func (m *merger) expand(path string) (string, error) {
 // package files must stay inside the package, as resource paths do.
 func (m *merger) place(v Value) (Value, error) {
 	v.Source.Path = m.path
+	v.Source.Local = m.at.at().Local
+	if v.Source.Local {
+		v.Source.Line, v.Source.Column = 0, 0
+	}
 	if v.Secret != "" {
 		v.Secret = qualify(m.ns, v.Secret)
 	}
@@ -777,13 +785,17 @@ func (m *merger) placePackage(name ID, p *Package, at Source) error {
 	p.Manifest = m.manifest
 	// The lockfile beside a fragment records the unpinned packages it declares.
 	p.Lockfile = filepath.Join(m.base, "agx.lock.json")
+	p.Local = at.Local
+	if p.Local {
+		p.Lockfile = ""
+	}
 	if p.Path != "" {
 		var err error
 		p.Path, err = m.file(p.Path)
 		if err != nil {
 			return errorAt(at, "package %s: %w", name, err)
 		}
-		p.LockPath = slashRel(filepath.Dir(p.Lockfile), p.Path)
+		p.LockPath = slashRel(m.base, p.Path)
 	}
 	if filepath.IsAbs(p.Subdir) || strings.HasPrefix(filepath.Clean(p.Subdir), "..") {
 		return errorAt(at, "invalid subdir for %s", name)
@@ -802,7 +814,7 @@ func (m *merger) placePackage(name ID, p *Package, at Source) error {
 				return errorAt(at, "package %s: %w", name, err)
 			}
 			p.Git = relative(m.base, git)
-			p.LockPath = slashRel(filepath.Dir(p.Lockfile), p.Git)
+			p.LockPath = slashRel(m.base, p.Git)
 		}
 	}
 	return nil
@@ -938,6 +950,9 @@ func (m *merger) addInstructions(id ID, i Instructions, at Source, inline bool) 
 func (m *merger) addMCP(id ID, server MCPServer, at Source, inline bool) error {
 	c := m.c
 	name := qualify(m.ns, id)
+	if name == AgxMCP {
+		return errorAt(at, "MCP server agx is reserved for session management")
+	}
 	existing, exists := c.MCP[name]
 	if apply, err := m.conflict(
 		KindMCPServers,
@@ -1035,9 +1050,12 @@ func (c *Config) Validate() error {
 	}
 	for _, id := range sortedKeys(c.Skills) {
 		r := c.Skills[id]
-		// Apply the same symlink rules as hashing and copying, so a valid skill can always be launched.
-		if _, err := r.TreeHash(); err != nil {
-			return errorAt(r.Source, "skill %s: %w", id, err)
+		// Apply the same symlink rules as hashing and copying, so a valid skill can always be
+		// launched. Installation applied them to package content already.
+		if r.installed == "" {
+			if err := r.tree(func(string, int64, fs.FileMode, io.Reader) error { return nil }); err != nil {
+				return errorAt(r.Source, "skill %s: %w", id, err)
+			}
 		}
 		if !r.Generated() {
 			if _, err := os.ReadFile(filepath.Join(r.Path, "SKILL.md")); err != nil {
@@ -1293,10 +1311,10 @@ func relative(base, path string) string {
 	return filepath.Join(base, path)
 }
 
-// ReadLock reads a lockfile, or its replacement in overlay.
-func ReadLock(path string, overlay Overlay) (Lock, error) {
+// ReadLock reads a portable package lockfile.
+func ReadLock(path string) (Lock, error) {
 	var lock Lock
-	b, err := overlay.readFile(path)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return lock, err
 	}
@@ -1321,21 +1339,49 @@ func ReadLock(path string, overlay Overlay) (Lock, error) {
 // identically. Executable bits are excluded because Windows checkouts and umasks cannot
 // reproduce them.
 func TreeHash(src string) (string, error) {
-	h := sha256.New()
+	h := newTreeHash()
 	err := securefs.Walk(src, func(rel string, info fs.FileInfo, content io.Reader) error {
-		if content == nil {
-			// Directory sizes vary across filesystems; only file bytes matter.
-			_, _ = fmt.Fprintf(h, "%s\x00dir\x000\x00", rel)
-			return nil
-		}
-		_, _ = fmt.Fprintf(h, "%s\x00file\x00%d\x00", rel, info.Size())
-		_, err := io.Copy(h, content)
-		return err
+		return h.add(rel, info.Size(), content)
 	})
 	if err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return h.sum(), nil
+}
+
+type treeHash struct{ hash.Hash }
+
+func newTreeHash() treeHash { return treeHash{sha256.New()} }
+
+// add hashes one entry of a walk; content is nil for a directory.
+func (h treeHash) add(rel string, size int64, content io.Reader) error {
+	if content == nil {
+		// Directory sizes vary across filesystems; only file bytes matter.
+		_, _ = fmt.Fprintf(h, "%s\x00dir\x000\x00", rel)
+		return nil
+	}
+	_, _ = fmt.Fprintf(h, "%s\x00file\x00%d\x00", rel, size)
+	_, err := io.Copy(h, content)
+	return err
+}
+
+func (h treeHash) sum() string { return hex.EncodeToString(h.Sum(nil)) }
+
+// VerifyPackages hashes the installed content of every loaded package again. Loading trusts the
+// cache, whose entries installation creates from content it hashed.
+func (c *Config) VerifyPackages(cache string) error {
+	for _, id := range sortedKeys(c.PackageHashes) {
+		hash := c.PackageHashes[id]
+		dir := filepath.Join(cache, "packages", hash)
+		cached, err := TreeHash(dir)
+		if err != nil {
+			return fmt.Errorf("package %s cache: %w", id, err)
+		}
+		if cached != hash {
+			return fmt.Errorf("package %s: cache entry %s does not match its content hash", id, dir)
+		}
+	}
+	return nil
 }
 
 var contentHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)

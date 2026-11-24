@@ -3,15 +3,17 @@ package adapters
 import (
 	"context"
 	"io"
+
+	"github.com/tarik02-org/agx/internal/config"
 )
 
 // Threads is implemented by adapters whose harness can serve many threads from one process,
 // each in its own directory. agx then prepares every thread as a launch of its own and relays
 // the process's protocol to hand each thread its resources.
 type Threads interface {
-	// ThreadServer reports whether native args start such a process. Its own launch carries no
-	// snapshot resources; Arguments receives the same args in Launch.Native.
-	ThreadServer(args []string) bool
+	// ThreadServer reports whether native args start such a process of h. Its own launch carries
+	// no snapshot resources; Arguments receives the same args in Launch.Native.
+	ThreadServer(h config.ResolvedHarness, args []string) bool
 	// ThreadPlan returns what a thread launch adds to the thread's native requests. Its MCP
 	// servers carry grant directly, since one process cannot hold a variable per thread.
 	ThreadPlan(l Launch, grant string) (ThreadPlan, error)
@@ -65,11 +67,16 @@ type ThreadHost interface {
 
 // BuildThread composes a thread launch's plan, filling in the launch's artifacts and running the
 // adapter's installation when the launch finds it missing.
-func BuildThread(ctx context.Context, a Adapter, t Threads, l Launch, grant string) (ThreadPlan, error) {
+func BuildThread(ctx context.Context, a Launcher, t Threads, l Launch, grant string) (ThreadPlan, error) {
+	var err error
+	l.Instructions, err = l.Snapshot.InstructionsContent()
+	if err != nil {
+		return ThreadPlan{}, err
+	}
 	var collected Plan
 	l.plan = &collected
 	var plan ThreadPlan
-	err := withArtifacts(ctx, a, l, func(l Launch) (err error) {
+	err = withInstallation(ctx, a, l, func(l Launch) (err error) {
 		plan, err = t.ThreadPlan(l, grant)
 		return err
 	})

@@ -11,12 +11,21 @@ import (
 	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/adapters/pi"
 	"github.com/tarik02-org/agx/internal/sessions"
+	"github.com/tarik02-org/agx/internal/sessionstore"
 )
 
 func list(t *testing.T) (map[string]adapters.Session, sessions.Stats) {
 	t.Helper()
-	index := sessions.OpenIndex(filepath.Join(t.TempDir(), "index.json"))
-	found, err := (pi.Adapter{}).Sessions(context.Background(), index)
+	index, err := sessionstore.OpenIndex(t.Context(), filepath.Join(t.TempDir(), "cache.db"), "pi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = index.Close() })
+	root, err := (pi.Adapter{}).SessionRoot(".", os.Getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found, err := (pi.Adapter{}).Sessions(context.Background(), index, root)
 	if err != nil {
 		t.Fatal(err)
 	}

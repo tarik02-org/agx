@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"errors"
 	"io/fs"
 	"os"
@@ -11,14 +12,22 @@ import (
 	"connectrpc.com/connect"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/internal/adapters"
+	"github.com/tarik02-org/agx/internal/config"
+	"github.com/tarik02-org/agx/internal/control"
 	"github.com/tarik02-org/agx/internal/platform"
+	"github.com/tarik02-org/agx/internal/storage"
 )
 
 func stateServer(t *testing.T) *Server {
 	t.Helper()
 	dir := t.TempDir()
 	return &Server{
-		paths:    platform.Paths{Cache: dir, State: filepath.Join(dir, "state")},
+		paths: platform.Paths{
+			Runtime: filepath.Join(dir, "runtime"),
+			Cache:   dir,
+			State:   filepath.Join(dir, "state"),
+		},
 		launches: map[string]*launch{},
 		revoked:  map[string]time.Time{},
 		port:     4242,
@@ -32,17 +41,17 @@ func TestStateKeepsRecentRevocations(t *testing.T) {
 	s.revoked["old"] = now.Add(-revokedRetention - time.Minute)
 	s.revoked["new"] = now.Add(-time.Minute)
 	s.saveState()
-	state, err := loadState(StatePath(s.paths), now)
+	state, err := loadState(s.paths, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := state.Revoked["new"]; state.Port != 4242 || len(state.Revoked) != 1 || !ok {
 		t.Fatalf("state = %+v", state)
 	}
-	if err := os.WriteFile(StatePath(s.paths), []byte("{"), 0o600); err != nil {
+	if err := os.WriteFile(storage.State(s.paths.State), bytes.Repeat([]byte("invalid"), 1024), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if state, err := loadState(StatePath(s.paths), now); err == nil || state.Revoked == nil {
+	if state, err := loadState(s.paths, now); err == nil || state.Revoked == nil {
 		t.Fatalf("invalid state = %+v, %v", state, err)
 	}
 }
@@ -73,21 +82,87 @@ func TestAttachable(t *testing.T) {
 	}
 	for id, how := range map[string]string{"finished": "finished", "revoked": "revoked"} {
 		var e *connect.Error
-		if _, err := s.attachable(id, "grant", "lifecycle"); !errors.As(err, &e) || e.Meta().Get(EndedHeader) != how {
+		if _, err := s.attachable(
+			id,
+			"grant",
+			"lifecycle",
+		); !errors.As(err, &e) ||
+			e.Meta().Get(control.EndedHeader) != how {
 			t.Errorf("%s launch: %v", id, err)
 		}
 	}
+}
+
+func TestRevokingExpiredLaunchRefusesAttaching(t *testing.T) {
+	s := stateServer(t)
+	expired := func(id, parent string) {
+		s.launches[id] = &launch{
+			view:      &v1.Launch{Id: id, ParentLaunchId: parent, State: v1.Launch_STATE_EXPIRED},
+			grant:     verifier("grant"),
+			lifecycle: verifier("lifecycle"),
+		}
+	}
+	expired("process", "")
+	expired("thread", "process")
+	if _, err := s.RevokeLaunch(
+		t.Context(),
+		connect.NewRequest(&v1.RevokeLaunchRequest{LaunchId: "process"}),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var e *connect.Error
+	if _, err := s.attachable("process", "grant", "lifecycle"); !errors.As(err, &e) ||
+		e.Meta().Get(control.EndedHeader) != "revoked" {
+		t.Errorf("attaching the revoked launch: %v", err)
+	}
+	if _, ok := s.revoked["thread"]; !ok || s.launches["thread"].view.State != v1.Launch_STATE_REVOKED {
+		t.Errorf("thread launch = %v, revoked %v", s.launches["thread"].view.State, ok)
+	}
+	state, err := loadState(s.paths, time.Now())
+	if _, ok := state.Revoked["process"]; err != nil || !ok {
+		t.Errorf("saved state = %+v, %v", state, err)
+	}
+}
+
+func TestExpiredLaunchKeepsItsFilesUntilRevoked(t *testing.T) {
+	s := stateServer(t)
+	s.clients = newClientPool()
+	dir := filepath.Join(s.paths.Cache, "launches", "held")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	l := &launch{view: &v1.Launch{Id: "held", State: v1.Launch_STATE_RUNNING}, cancel: func() {}}
+	s.launches["held"] = l
+	s.mu.Lock()
+	s.end(l, v1.Launch_STATE_EXPIRED)
+	s.mu.Unlock()
+	// The wrapper may attach the launch again, whose harness still reads these files.
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("expiry removed the launch files: %v", err)
+	}
+	s.mu.Lock()
+	s.end(l, v1.Launch_STATE_REVOKED)
+	s.mu.Unlock()
+	eventually(t, "launch files removed", func() bool {
+		_, err := os.Stat(dir)
+		return errors.Is(err, fs.ErrNotExist)
+	})
 }
 
 func TestSweepKeepsHeldAndNewLaunchFiles(t *testing.T) {
 	s := stateServer(t)
 	s.launches["held"] = &launch{view: &v1.Launch{Id: "held"}}
 	old := time.Now().Add(-time.Hour)
-	for _, id := range []string{"held", "gone", "new"} {
+	for _, id := range []string{"held", "gone", "new", "other"} {
 		dir := filepath.Join(s.paths.Cache, "launches", id)
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
+		owner := s.paths.Config
+		if id == "other" {
+			owner += "/other"
+		}
+		writeFile(t, filepath.Join(dir, "configuration"), owner)
 		if id != "new" {
 			if err := os.Chtimes(dir, old, old); err != nil {
 				t.Fatal(err)
@@ -95,7 +170,7 @@ func TestSweepKeepsHeldAndNewLaunchFiles(t *testing.T) {
 		}
 	}
 	s.sweep(time.Now().Add(-time.Minute))
-	for id, kept := range map[string]bool{"held": true, "gone": false, "new": true} {
+	for id, kept := range map[string]bool{"held": true, "gone": false, "new": true, "other": true} {
 		_, err := os.Stat(filepath.Join(s.paths.Cache, "launches", id))
 		if (err == nil) != kept {
 			t.Errorf("%s: kept %v, want %v", id, err == nil, kept)
@@ -129,5 +204,22 @@ func TestRemoveAbandonedTemporaries(t *testing.T) {
 		if gone := errors.Is(err, fs.ErrNotExist); gone != (name == ".agx-123") {
 			t.Errorf("%s: removed %v", name, gone)
 		}
+	}
+}
+
+func TestServeRejectsCorruptState(t *testing.T) {
+	s := stateServer(t)
+	s.paths.Config = filepath.Join(t.TempDir(), "agx.yaml")
+	if err := os.MkdirAll(s.paths.State, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(storage.State(s.paths.State), bytes.Repeat([]byte("invalid"), 1024), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	close(stop)
+	err := Serve(t.Context(), stop, s.paths, adapters.NewRegistry(), config.Builtins{})
+	if err == nil {
+		t.Fatalf("corrupt state was accepted: %v", err)
 	}
 }

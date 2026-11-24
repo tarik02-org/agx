@@ -10,6 +10,7 @@
         "x86_64-linux"
         "aarch64-linux"
         "aarch64-darwin"
+        "x86_64-darwin"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in
@@ -19,6 +20,7 @@
         agx = pkgs.callPackage ./package.nix {
           inherit web;
           rev = self.shortRev or self.dirtyShortRev or null;
+          lastModified = self.lastModifiedDate or null;
         };
         default = agx;
       });
@@ -38,7 +40,7 @@
             pkgs.golangci-lint
             pkgs.gopls
             pkgs.nodejs_24
-            pkgs.pnpm_12
+            pkgs.pnpm
           ];
         };
       });

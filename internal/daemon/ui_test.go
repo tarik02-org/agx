@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+	"github.com/tarik02-org/agx/internal/control"
 )
 
 func TestUILoginCodes(t *testing.T) {
@@ -41,7 +42,7 @@ func TestUILoginCodes(t *testing.T) {
 }
 
 func TestUILogin(t *testing.T) {
-	s := &Server{ui: newUISessions(), discovery: Discovery{Token: "management"}}
+	s := &Server{ui: newUISessions(), discovery: control.Discovery{Token: "management"}}
 	code, _ := s.ui.code(time.Now())
 	w := httptest.NewRecorder()
 	s.serveUILogin(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/ui/login?code="+code, nil))

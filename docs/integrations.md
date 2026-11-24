@@ -1,5 +1,10 @@
 # Integrations
 
+OpenCode 2 connects its server directly to the daemon through the
+[native AGX plugin](../packages/opencode/README.md). It resolves resources per
+location, without launching OpenCode through a shim. See the plugin guide for
+installation, directory mapping and recovery behavior.
+
 Tools that start a coding agent for you (desktop apps, editors, orchestrators)
 usually let you set the path of the agent's binary. Point that path at an agx
 [shim](harnesses.md#shims) and every session the tool starts gets the skills,
@@ -12,7 +17,7 @@ Built-in harnesses get no shim, so define a harness for the tool:
 harnesses:
   codex-app:
     base: codex
-    hidden: true      # keep it out of the launcher
+    hidden: true # keep it out of the launcher
   claude-app:
     base: claude
     hidden: true
@@ -84,3 +89,22 @@ harnesses:
 ```
 
 Changes to agx configuration apply to the next session T3 Code starts.
+
+## ACP clients
+
+Editors and other clients that start agents over the
+[Agent Client Protocol](https://agentclientprotocol.com) take the agent's
+command. Define the agent on the `acp` base (see
+[ACP agents](harnesses.md#acp-agents)) and give the client `agx <definition>`,
+or the definition's shim, as that command:
+
+```yaml
+harnesses:
+  opencode-acp:
+    base: acp
+    executable: ~/.local/bin/opencode
+    args: [acp]
+```
+
+Each session the client opens gets the MCP servers and instructions of its own
+working directory, whatever directory the client started the agent in.

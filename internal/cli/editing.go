@@ -2,24 +2,27 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 
+	"connectrpc.com/connect"
+
+	"google.golang.org/protobuf/types/known/structpb"
+
+	v1 "github.com/tarik02-org/agx/gen/agx/v1"
+
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
-
-	"go.yaml.in/yaml/v4"
 
 	"github.com/tarik02-org/agx/internal/cli/prompt"
 	"github.com/tarik02-org/agx/internal/cli/ui"
 	"github.com/tarik02-org/agx/internal/config"
-	"github.com/tarik02-org/agx/internal/config/edit"
 	"github.com/tarik02-org/agx/internal/configedit"
 	"github.com/tarik02-org/agx/internal/platform"
 )
@@ -31,29 +34,16 @@ func interactive() bool { return term.IsTerminal(os.Stdin.Fd()) && ui.Stderr.Ter
 type editFlags struct {
 	scope      string
 	harnesses  []string
-	file       string
 	defineOnly bool
-	yes        bool
 }
 
 func (f *editFlags) register(cmd *cobra.Command, defines bool) {
 	cmd.Flags().StringVar(&f.scope, "scope", "user",
 		"where to enable: user (everywhere), here (this directory), or a directory")
 	cmd.Flags().StringSliceVar(&f.harnesses, "harness", nil, "enable only for these harnesses (repeatable)")
-	f.registerFile(cmd)
 	if defines {
 		cmd.Flags().BoolVar(&f.defineOnly, "define-only", false, "define without enabling")
 	}
-	f.registerYes(cmd)
-}
-
-func (f *editFlags) registerFile(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.file, "file", "",
-		"fragment for new definitions and rules, relative to the root configuration's directory")
-}
-
-func (f *editFlags) registerYes(cmd *cobra.Command) {
-	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "write without confirming (implied without a terminal)")
 }
 
 // scope is where an edit enables or disables a resource: a directory, or everywhere.
@@ -78,7 +68,7 @@ func (f *editFlags) target() (scope, error) {
 	if err != nil {
 		return scope{}, err
 	}
-	directory, err := config.Canonical(abs)
+	directory, err := platform.Canonical(abs)
 	if err != nil {
 		return scope{}, err
 	}
@@ -96,27 +86,25 @@ func (f *editFlags) enableTarget() (scope, error) {
 	if info, err := os.Stat(target.Directory); err != nil {
 		return scope{}, statError("scope directory", target.Directory, err)
 	} else if !info.IsDir() {
-		return scope{}, codedf(codeInvalidRequest, "scope is not a directory: %s", target.Directory)
+		return scope{}, fmt.Errorf("scope is not a directory: %s", target.Directory)
 	}
 	return target, nil
 }
 
-// session gathers one command's edits across fragments and lockfiles, then validates the result,
-// previews it as a diff, and writes it.
+// session gathers one command's edits and sends them to the daemon, which validates and saves them.
 type session struct {
 	*configedit.Session
 	ctx         context.Context
-	yes         bool
+	client      *client
+	changes     []*v1.ConfigChange
 	interactive bool
-	// written lists the files the commit wrote.
-	written []string
 	// result records what the command did, for its JSON document.
 	result edits
 }
 
 // edits is the document of a command that edits configuration.
 type edits struct {
-	Files    []fileChange   `json:"files"`
+	Revision int64          `json:"revision"`
 	Defined  []definitionID `json:"defined"`
 	Enabled  []definitionID `json:"enabled"`
 	Disabled []definitionID `json:"disabled"`
@@ -127,191 +115,113 @@ type edits struct {
 	NeedsLogin *bool `json:"needs_login,omitempty"`
 }
 
-type fileChange struct {
-	Path string `json:"path"`
-	Diff string `json:"diff"`
-}
-
 // definitionID names a definition by its configuration section, such as mcp or harnesses.
 type definitionID struct {
 	Kind config.Kind `json:"kind"`
 	ID   string      `json:"id"`
 }
 
-func newSession(ctx context.Context, paths platform.Paths, builtins config.Builtins, yes bool) (*session, error) {
-	c, err := config.Load(paths.Config, config.Options{Builtins: builtins, Cache: paths.Cache})
+func (a *app) newSession(ctx context.Context) (*session, error) {
+	c, err := a.config()
 	if err != nil {
-		return nil, codedf(codeConfigInvalid, "configuration is invalid; fix it before editing: %w", err)
+		// Local definitions exist only in the daemon's database, so only an edit can repair them;
+		// the daemon saves one that changes what is wrong.
+		invalid := err
+		local, err := a.localConfig()
+		if err != nil {
+			return nil, err
+		}
+		c, err = config.Load(a.paths.Config, config.Options{Builtins: a.builtins, Local: local})
+		if err != nil {
+			return nil, fmt.Errorf("configuration is invalid; fix it before editing: %w", invalid)
+		}
+		ui.Diagnose(ui.Warn, "configuration is invalid; only an edit that repairs this is saved: %v", invalid)
 	}
-	edits, err := configedit.New(paths, builtins, c)
+	client, err := a.client(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// JSON mode implies --yes and never prompts.
-	tty := interactive() && !scripting.enabled
+	// Previews cannot persist; only the daemon receives the semantic changes.
+	previewPaths := a.paths
+	previewPaths.State = ""
+	edits, err := configedit.New(previewPaths, a.builtins, c)
+	if err != nil {
+		return nil, err
+	}
+
+	// JSON mode never prompts.
 	s := &session{
 		Session:     edits,
+		client:      client,
 		ctx:         ctx,
-		yes:         yes || !tty,
-		interactive: tty,
-	}
-	if tty {
-		edits.Choose = s.chooseFile
+		interactive: interactive() && !scripting.enabled,
 	}
 	return s, nil
 }
 
-// useFile makes --file, relative to the root configuration's directory, the fragment new
-// definitions and rules go to.
-func (s *session) useFile(flag string) error {
-	if flag == "" {
-		return nil
-	}
-	expanded, err := config.ExpandHome(flag)
-	if err != nil {
-		return &usageError{fmt.Errorf("--file: %w", err)}
-	}
-	if !filepath.IsAbs(expanded) {
-		expanded = filepath.Join(s.Dir, expanded)
-	}
-	s.File = expanded
-	return nil
-}
-
-// chooseFile asks which writable fragment new definitions go to, or for a new one in agx.d.
-func (s *session) chooseFile(candidates []string) (string, error) {
-	labels := []string{}
-	for _, path := range candidates {
-		labels = append(labels, ui.ShortPath(path, ""))
-	}
-	i, err := prompt.Choose(s.ctx, "Write to:", append(labels, "new file…"))
-	if err != nil {
-		return "", promptError(err)
-	}
-	if i < len(candidates) {
-		return candidates[i], nil
-	}
-	name, err := prompt.Input(s.ctx, "File name in agx.d:", "main", func(name string) error {
-		if name == "" || strings.ContainsAny(name, `/\`) {
-			return errors.New("a file name without directories")
-		}
-		return nil
-	})
-	if err != nil {
-		return "", promptError(err)
-	}
-	return filepath.Join(s.Dir, "agx.d", strings.TrimSuffix(name, ".yaml")+".yaml"), nil
-}
-
 // report prints the session's JSON document in JSON mode; a person saw the diff.
 func (s *session) report() error {
+	s.result.Revision = s.Local.Revision
 	return emit(s.result, func() error { return nil })
-}
-
-// definitionFile is where new definitions go: --file, or the fragment Target chooses.
-func (s *session) definitionFile(flag string) (string, error) {
-	if err := s.useFile(flag); err != nil {
-		return "", err
-	}
-	return s.Target()
 }
 
 // enable selects id in the first rule matching target, or in a new rule in the target fragment.
 func (s *session) enable(kind config.Kind, id string, target scope) (bool, error) {
 	s.result.Enabled = append(s.result.Enabled, definitionID{Kind: kind, ID: id})
 	s.result.Scope = &target
-	return s.Enable(kind, id, target)
+	changed, err := s.Enable(kind, id, target)
+	if err == nil && changed {
+		s.changes = append(
+			s.changes,
+			&v1.ConfigChange{Change: &v1.ConfigChange_Enable{Enable: selectionRequest(kind, id, target)}},
+		)
+	}
+	return changed, err
 }
 
 // disable takes id out of the target scope.
 func (s *session) disable(kind config.Kind, id string, target scope) (bool, error) {
 	s.result.Disabled = append(s.result.Disabled, definitionID{Kind: kind, ID: id})
 	s.result.Scope = &target
-	return s.Disable(kind, id, target)
+	changed, err := s.Disable(kind, id, target)
+	if err == nil && changed {
+		s.changes = append(
+			s.changes,
+			&v1.ConfigChange{Change: &v1.ConfigChange_Disable{Disable: selectionRequest(kind, id, target)}},
+		)
+	}
+	return changed, err
 }
 
-var errDeclined = errors.New("nothing was written")
-
-// commit validates the edited configuration in memory, shows the change, and writes it. It
-// returns false when there was nothing to write.
+// commit has the daemon validate and save the session's changes.
 func (s *session) commit() (bool, error) {
-	plan, err := s.Plan()
-	if err != nil {
-		return false, err
-	}
-	if len(plan.Files) == 0 {
+	if !s.Changed() {
 		hint("Nothing to change.")
 		return false, nil
 	}
-	if !scripting.enabled {
-		var preview strings.Builder
-		for _, p := range plan.Files {
-			if p.Kind != configedit.Lockfile {
-				preview.WriteString(styleDiff(ui.Stdout, p.Diff()))
-			}
-		}
-		if _, err := io.WriteString(ui.Stdout, preview.String()); err != nil {
-			return false, err
-		}
+	response, err := s.client.config.UpdateConfiguration(
+		s.ctx,
+		connect.NewRequest(&v1.UpdateConfigurationRequest{ExpectedRevision: s.Local.Revision, Changes: s.changes}),
+	)
+	changed := err == nil
+	if err == nil {
+		s.Local.Revision = response.Msg.Revision
 	}
-	if !s.yes {
-		ok, err := prompt.Confirm(s.ctx, "Write the change?", true)
-		if err != nil {
-			return false, promptError(err)
-		}
-		if !ok {
-			return false, errDeclined
-		}
-	}
-	written, err := plan.Write()
-	s.written = append(s.written, written...)
 	if err != nil {
 		return false, err
 	}
-	for _, p := range plan.Files {
-		s.result.Files = append(s.result.Files, fileChange{Path: p.Path, Diff: p.Diff()})
+	s.result.Revision = s.Local.Revision
+	if changed {
+		hint("Saved local configuration.")
 	}
-	for _, path := range s.written {
-		_, _ = fmt.Fprintln(ui.Stderr, ui.Stderr.Status(ui.OK, "Wrote "+ui.Stderr.Path(path)+"."))
-	}
-	s.Config = plan.Config
-	return true, nil
+	return changed, nil
 }
 
-// styleDiff colors a unified diff for a styled stream.
-func styleDiff(out *ui.Printer, diff string) string {
-	if !out.Styled() {
-		return diff
-	}
-	var b strings.Builder
-	for _, line := range strings.SplitAfter(diff, "\n") {
-		text := strings.TrimSuffix(line, "\n")
-		switch {
-		case text == "":
-		case strings.HasPrefix(text, "---") || strings.HasPrefix(text, "+++"):
-			text = out.Heading(text)
-		case strings.HasPrefix(text, "@@"):
-			text = out.Muted(text)
-		case strings.HasPrefix(text, "+"):
-			text = out.Badge(ui.OK, text)
-		case strings.HasPrefix(text, "-"):
-			text = out.Badge(ui.Error, text)
-		}
-		b.WriteString(text)
-		if strings.HasSuffix(line, "\n") {
-			b.WriteString("\n")
-		}
-	}
-	return b.String()
-}
-
-// promptError turns Ctrl-C into exit status 130 and Esc into a cancellation.
+// promptError maps an aborted form to exit status 130.
 func promptError(err error) error {
 	switch {
-	case errors.Is(err, prompt.ErrInterrupted):
+	case errors.Is(err, prompt.ErrInterrupted), errors.Is(err, context.Canceled):
 		return &ExitError{Code: 130}
-	case errors.Is(err, prompt.ErrCancelled):
-		return errDeclined
 	}
 	return err
 }
@@ -334,22 +244,32 @@ func (s *session) ask(label, placeholder string, validate func(string) error) (s
 }
 
 // define adds a top-level definition to file, refusing an ID that is already defined.
-func (s *session) define(kind config.Kind, id, file string, value *yaml.Node) error {
+func (s *session) define(kind config.Kind, id string, value any) error {
 	if at, exists := configedit.Lookup(s.Config, kind, id); exists {
-		return codedf(
-			codeConflict,
-			"%s %s is already defined at %s:%d",
+		return fmt.Errorf("%s %s is already defined at %s:%d",
 			kind.Label(),
 			id,
 			at.Source.Path,
 			at.Source.Line,
 		)
 	}
-	f, err := s.Open(file)
+	if err := s.Define(kind, id, value); err != nil {
+		return err
+	}
+	data, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	f.Define(kind, id, value)
+	var encoded structpb.Value
+	if err := encoded.UnmarshalJSON(data); err != nil {
+		return err
+	}
+	s.changes = append(
+		s.changes,
+		&v1.ConfigChange{
+			Change: &v1.ConfigChange_Define{Define: &v1.DefineChange{Kind: string(kind), Id: id, Value: &encoded}},
+		},
+	)
 	s.result.Defined = append(s.result.Defined, definitionID{Kind: kind, ID: id})
 	return nil
 }
@@ -373,29 +293,41 @@ func (s *session) removeDefinition(kind config.Kind, id string, force bool) erro
 	if err := s.RemoveDefinition(kind, id, force); err != nil {
 		return err
 	}
+	s.undefine(kind, id)
 	s.result.Removed = append(s.result.Removed, definitionID{Kind: kind, ID: id})
 	return nil
 }
 
 // value reads a --header or --env value: !secret ID, !env NAME, and !file PATH become tags.
-func value(text string) *yaml.Node {
+func value(text string) any {
 	for _, tag := range []string{"!secret", "!env", "!file"} {
 		if rest, ok := strings.CutPrefix(text, tag+" "); ok {
-			return edit.Tagged(tag, strings.TrimSpace(rest))
+			return map[string]any{"$" + tag[1:]: strings.TrimSpace(rest)}
 		}
 	}
-	return edit.Scalar(text)
+	return text
 }
 
 // pairs parses repeated KEY=VALUE flags into a mapping in the order given.
-func pairs(flag string, values []string) (*yaml.Node, error) {
-	m := edit.Mapping()
+func pairs(flag string, values []string) (map[string]any, error) {
+	m := map[string]any{}
 	for _, pair := range values {
 		key, text, ok := strings.Cut(pair, "=")
 		if !ok || key == "" {
 			return nil, &usageError{fmt.Errorf("--%s %q: expected KEY=VALUE", flag, pair)}
 		}
-		edit.Set(m, key, value(text))
+		m[key] = value(text)
 	}
 	return m, nil
+}
+
+func selectionRequest(kind config.Kind, id string, target scope) *v1.SelectionChange {
+	return &v1.SelectionChange{Kind: string(kind), Id: id, Directory: target.Directory, Harnesses: target.Harnesses}
+}
+
+func (s *session) undefine(kind config.Kind, id string) {
+	s.changes = append(
+		s.changes,
+		&v1.ConfigChange{Change: &v1.ConfigChange_Undefine{Undefine: &v1.UndefineChange{Kind: string(kind), Id: id}}},
+	)
 }

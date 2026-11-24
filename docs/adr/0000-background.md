@@ -35,7 +35,9 @@ installed packages, so several bundles share one copy. Skills keep their whole
 directory so relative scripts and references work.
 
 Lockfiles (JSON) record resolved revisions, dependencies, and content hashes.
-Contents install into a shared immutable cache. Locks change only through
+Contents install into a shared immutable cache. Installation hashes content
+before renaming it into place under its hash, so loading trusts an entry that
+exists and only `agx doctor` hashes it again. Locks change only through
 explicit installation commands; resolution and launches never fetch. Each launch resolves a
 snapshot first, so updates affect later launches, not running ones.
 
@@ -43,9 +45,11 @@ A snapshot ID fingerprints the resolved configuration, lock and package content,
 platform inputs, canonical directory, and harness, including each injected value's
 tag and argument but never the value, a token, or a timestamp. A launch never
 rereads configuration; it keeps its snapshot's definitions, though credential
-refresh and revocation still apply. Only a fully valid reload is published: an
-invalid one leaves active launches on their snapshots and rejects new
-preparations until fixed.
+refresh and revocation still apply, and a launch attached to another daemon
+gets the MCP servers its directory selects then
+([ADR 0016](0016-launches-survive-daemon-restarts.md)). Only a fully valid
+reload is published: an invalid one leaves active launches on their snapshots
+and rejects new preparations until fixed.
 
 [ADR 0011](0011-straightforward-configuration.md) adds anonymous Git packages
 and pinned sources that need no lock entry.
@@ -57,7 +61,7 @@ snapshot into native arguments, configuration, and skill or plugin artifacts in
 agx's cache. agx keeps the harness's protocol, standard streams, exit status,
 and native account state; it does not own a harness home or hide existing global
 skills. Native plugins are an output format, not agx's package model: artifacts
-are generated per snapshot, so removing one resource does not require removing a
+are generated per selected content, so removing one resource does not require removing a
 plugin. Instructions are injected explicitly, because a guidance file inside a
 plugin is not guaranteed to load. Caches and artifacts are written atomically,
 keyed by content and adapter version, and kept while a launch references them;

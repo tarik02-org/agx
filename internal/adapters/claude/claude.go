@@ -29,7 +29,7 @@ func (a Adapter) Executable(configured string) (string, error) {
 	return adapters.FindExecutable(a.Name(), configured)
 }
 
-func (Adapter) Classify(args []string) string {
+func (Adapter) Classify(_ config.ResolvedHarness, args []string) string {
 	if adapters.Probe(args, "-v") {
 		return config.ModePassthrough
 	}
@@ -100,20 +100,28 @@ func (Adapter) Directory(args []string, cwd string) (string, []string, error) {
 }
 
 func (Adapter) Arguments(l adapters.Launch) ([]string, error) {
-	prefix := []string{"--plugin-dir", filepath.Join(l.Artifacts, "plugin")}
-	if len(l.Instructions) > 0 {
-		prefix = append(prefix, "--append-system-prompt-file", l.InstructionsFile())
-		// An Agent SDK initialize request's appendSystemPrompt replaces the file's content.
-		if streamInput(l.Native) {
-			l.PrependInitializePrompt(strings.TrimRight(string(l.Instructions), "\n"))
-		}
+	var err error
+	l.Artifacts, err = l.Materialize()
+	if err != nil {
+		return nil, err
 	}
+	prefix := []string{}
+	// First: --mcp-config takes every value up to the next flag, so a prompt that followed it
+	// would be read as another configuration file.
 	if servers := l.HTTPServers(); len(servers) > 0 {
 		b, err := json.Marshal(map[string]any{"mcpServers": servers})
 		if err != nil {
 			return nil, err
 		}
 		prefix = append(prefix, "--mcp-config", string(b))
+	}
+	prefix = append(prefix, "--plugin-dir", filepath.Join(l.Artifacts, "plugin"))
+	if len(l.Instructions) > 0 {
+		prefix = append(prefix, "--append-system-prompt-file", l.InstructionsFile())
+		// An Agent SDK initialize request's appendSystemPrompt replaces the file's content.
+		if streamInput(l.Native) {
+			l.PrependInitializePrompt(strings.TrimRight(string(l.Instructions), "\n"))
+		}
 	}
 	return prefix, nil
 }

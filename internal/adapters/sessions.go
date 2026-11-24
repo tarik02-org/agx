@@ -11,10 +11,22 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
+
+	"golang.org/x/sync/errgroup"
 )
+
+// SessionStore reads a harness's native files. Consumers backed by a server need not implement it.
+type SessionStore interface {
+	SessionRoot(directory string, lookup func(string) string) (string, error)
+	Sessions(ctx context.Context, files SessionFiles, root string) ([]Session, error)
+}
+
+// Resumer translates a stored session into native process arguments.
+type Resumer interface {
+	Resume(session Session) []string
+}
 
 // Session is one conversation in a harness's own store, reduced to what a listing shows. Title
 // and Message are excerpts; nothing else of the transcript leaves the store.
@@ -47,27 +59,22 @@ const (
 // ParseAll parses paths concurrently and returns the listable sessions.
 func ParseAll(ctx context.Context, files SessionFiles, paths []string, parse ParseFunc) []Session {
 	results := make([]*Session, len(paths))
-	next := make(chan int)
-	var wg sync.WaitGroup
-	for range min(len(paths), runtime.GOMAXPROCS(0)) {
-		wg.Go(func() {
-			for i := range next {
-				if s, ok := files.Parse(paths[i], parse); ok {
-					results[i] = &s
+	var group errgroup.Group
+	group.SetLimit(runtime.GOMAXPROCS(0))
+	for i, path := range paths {
+		if ctx.Err() != nil {
+			break
+		}
+		group.Go(func() error {
+			if ctx.Err() == nil {
+				if session, ok := files.Parse(path, parse); ok {
+					results[i] = &session
 				}
 			}
+			return nil
 		})
 	}
-feed:
-	for i := range paths {
-		select {
-		case next <- i:
-		case <-ctx.Done():
-			break feed
-		}
-	}
-	close(next)
-	wg.Wait()
+	_ = group.Wait()
 	sessions := []Session{}
 	for _, s := range results {
 		if s != nil {
@@ -79,28 +86,46 @@ feed:
 
 // StoreHome is the directory named by the harness's override variable, or dir under the home
 // directory.
-func StoreHome(variable, dir string) (string, error) {
-	if value := os.Getenv(variable); value != "" {
-		return filepath.Abs(value)
+func StoreHome(variable, dir, directory string, lookup func(string) string) (string, error) {
+	if value := lookup(variable); variable != "" && value != "" {
+		return StorePath(directory, value)
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
+	home := lookup("HOME")
+	if runtime.GOOS == "windows" {
+		home = lookup("USERPROFILE")
 	}
-	return filepath.Join(home, dir), nil
+	if home == "" {
+		var err error
+		home, err = os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+	}
+	return StorePath(directory, filepath.Join(home, dir))
+}
+
+func StorePath(directory, path string) (string, error) {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(directory, path)
+	}
+	return filepath.Abs(path)
 }
 
 // FindSessionFiles lists the regular files under root matching pattern, at most depth directories
 // down. A missing root holds no sessions.
-func FindSessionFiles(root string, depth int, pattern string) ([]string, error) {
+func FindSessionFiles(ctx context.Context, root string, depth int, pattern string) ([]string, error) {
 	paths := []string{}
+	problems := []error{}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err != nil {
 			if path == root && errors.Is(err, fs.ErrNotExist) {
 				return fs.SkipAll
 			}
-			// An unreadable subdirectory hides only its own sessions.
 			if d != nil && d.IsDir() && path != root {
+				problems = append(problems, err)
 				return fs.SkipDir
 			}
 			return err
@@ -120,7 +145,7 @@ func FindSessionFiles(root string, depth int, pattern string) ([]string, error) 
 		}
 		return nil
 	})
-	return paths, err
+	return paths, errors.Join(append(problems, err)...)
 }
 
 // ScanHead calls fn for each line within the head of f until fn returns false. A line longer than

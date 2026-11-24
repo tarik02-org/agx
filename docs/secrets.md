@@ -13,27 +13,27 @@ mcp:
   docs:
     url: https://docs.example.com/mcp
     headers:
-      X-Api-Key: !secret docs-key        # a secret defined below
+      X-Api-Key: !secret docs-key # a secret defined below
   db:
     command: [~/bin/db-mcp]
     environment:
-      DB_URL: !env DATABASE_URL          # from the shell you launch from
+      DB_URL: !env DATABASE_URL # from the shell you launch from
 harnesses:
   codex-work:
     base: codex
     environment:
       OPENAI_API_KEY: !secret work-openai
-    args: [--instructions, !file ./prompt.txt]   # a file's contents
+    args: [--instructions, !file ./prompt.txt] # a file's contents
 
 secrets:
-  docs-key: {kind: keychain}
-  work-openai: {kind: command, command: [pass, show, openai/work]}
+  docs-key: { kind: keychain }
+  work-openai: { kind: command, command: [pass, show, openai/work] }
 ```
 
-| Tag | Value |
-| --- | --- |
-| `!secret <id>` | a secret from the `secrets` section |
-| `!env <NAME>` | an environment variable of the shell you launch from; empty counts as unset |
+| Tag            | Value                                                                                        |
+| -------------- | -------------------------------------------------------------------------------------------- |
+| `!secret <id>` | a secret from the `secrets` section                                                          |
+| `!env <NAME>`  | an environment variable of the shell you launch from; empty counts as unset                  |
 | `!file <path>` | a file's contents without trailing newlines, up to 1 MiB; relative to the configuration file |
 
 Tags work in:
@@ -56,18 +56,18 @@ whole shell environment to the daemon.
 
 ```yaml
 secrets:
-  cpa-key:    {kind: command, command: [pass, show, cpa]}
-  docs-key:   {kind: keychain}
-  github:     {kind: sops, file: ./secrets.yaml, key: github.token}
-  team-login: {kind: oauth, scopes: [read]}
+  cpa-key: { kind: command, command: [pass, show, cpa] }
+  docs-key: { kind: keychain }
+  github: { kind: sops, file: ./secrets.yaml, key: github.token }
+  team-login: { kind: oauth, scopes: [read] }
 ```
 
-| Kind | Where the value comes from |
-| --- | --- |
-| `command` | the trimmed output of a command, run with a minimal environment and a time limit |
-| `keychain` | the OS keychain; store it with `agx secret set <id>`, which prompts or reads stdin |
-| `sops` | a value in a [sops](https://getsops.io)-encrypted file; see [below](#sops-encrypted-files) |
-| `oauth` | an OAuth login; only for an MCP server's `auth`, see [MCP servers](mcp.md#logging-in) |
+| Kind       | Where the value comes from                                                                                                                          |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `command`  | the trimmed output of a command, run with a minimal environment and a time limit; the daemon reuses it for a minute, or until configuration changes |
+| `keychain` | the encrypted secret store; store it with `agx secret set <id>`, which prompts or reads stdin                                                       |
+| `sops`     | a value in a [sops](https://getsops.io)-encrypted records; see [below](#sops-encrypted-files)                                                       |
+| `oauth`    | an OAuth login; only for an MCP server's `auth`, see [MCP servers](mcp.md#logging-in)                                                               |
 
 Store a keychain secret by typing it at the prompt, which does not echo it, or
 by piping it in; either way it never appears in your shell history or process
@@ -87,11 +87,11 @@ An MCP server with `auth: keychain` stores its token the same way, under the
 server's ID. That is how the GitHub MCP server is set up, with a personal
 access token: see [MCP servers](mcp.md#github).
 
-agx keeps these values, and OAuth logins, encrypted in `secrets.json` in its
+agx keeps these values, and OAuth logins, encrypted in `state.db` in its
 state directory. The OS keychain holds only the key, so agx asks it once per
 process, whatever the number or size of the secrets. If the keychain loses the
-key, for example after a keychain reset, the file cannot be read: delete it and
-store the secrets again.
+key, for example after a keychain reset, stored credentials cannot be decrypted. Remove them with `agx secret logout --all`,
+then store the values or log in again. Other database state remains intact.
 
 There is no plaintext fallback: when the OS keychain is unavailable, keychain
 and OAuth secrets fail with an error.
@@ -130,12 +130,12 @@ directory, so the whole directory can live in Git:
 secrets:
   github:
     kind: sops
-    file: ./secrets.yaml         # relative to this configuration file
-    key: github.token            # omit to use the whole decrypted file
+    file: ./secrets.yaml # relative to this configuration file
+    key: github.token # omit to use the whole decrypted file
   dotted:
     kind: sops
     file: ./secrets.yaml
-    key: [api.example.com, token]   # a list when a key contains a dot
+    key: [api.example.com, token] # a list when a key contains a dot
 ```
 
 Edit the values with `sops secrets.yaml` as usual; `agx secret set` and `login`
@@ -155,8 +155,8 @@ the OS keychain, so no key file is needed on disk:
 
 ```yaml
 secrets:
-  age: {kind: keychain}
-  github: {kind: sops, file: ./secrets.yaml, key: github.token, age_key: !secret age}
+  age: { kind: keychain }
+  github: { kind: sops, file: ./secrets.yaml, key: github.token, age_key: !secret age }
 ```
 
 ```sh
@@ -169,3 +169,7 @@ have sops run a command for the key instead, leave `age_key` out and set
 
 When decryption fails, `agx secret status` shows the secret as `unavailable`
 with sops's error, and MCP servers using it report `needs-auth`.
+
+A new OAuth login for a secret cancels its previous pending attempt. Refreshes
+use the standard OAuth client without the optional `resource` parameter; an
+issued token is bound to its resource during the authorization-code exchange.

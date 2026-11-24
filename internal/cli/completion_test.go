@@ -42,16 +42,29 @@ func isolate(t *testing.T, configuration string) string {
 	dir := t.TempDir()
 	root, fragment := writeConfig(t, filepath.Join(dir, "config"), configuration)
 	for name, value := range map[string]string{
-		"AGX_CONFIG":      root,
-		"AGX_CACHE":       filepath.Join(dir, "cache"),
-		"AGX_STATE":       filepath.Join(dir, "state"),
-		"HOME":            filepath.Join(dir, "home"),
-		"XDG_CONFIG_HOME": filepath.Join(dir, "home", ".config"),
-		"XDG_CACHE_HOME":  filepath.Join(dir, "home", ".cache"),
-		"XDG_STATE_HOME":  filepath.Join(dir, "home", ".local", "state"),
+		"AGX_CONFIG":          root,
+		"AGX_CACHE":           filepath.Join(dir, "cache"),
+		"AGX_STATE":           filepath.Join(dir, "state"),
+		"HOME":                filepath.Join(dir, "home"),
+		"USERPROFILE":         filepath.Join(dir, "home"),
+		"XDG_CONFIG_HOME":     filepath.Join(dir, "home", ".config"),
+		"XDG_CACHE_HOME":      filepath.Join(dir, "home", ".cache"),
+		"XDG_STATE_HOME":      filepath.Join(dir, "home", ".local", "state"),
+		"XDG_DATA_HOME":       filepath.Join(dir, "home", ".local", "share"),
+		"LOCALAPPDATA":        filepath.Join(dir, "home", "AppData", "Local"),
+		"CODEX_HOME":          filepath.Join(dir, "home", "codex"),
+		"CLAUDE_CONFIG_DIR":   filepath.Join(dir, "home", "claude"),
+		"PI_CODING_AGENT_DIR": filepath.Join(dir, "home", "pi"),
 	} {
 		t.Setenv(name, value)
 	}
+	t.Setenv("AGX_TEST_DAEMON", "1")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AGX_DAEMON", executable)
+	t.Cleanup(func() { stopTestDaemons(t, filepath.Join(dir, "cache")) })
 	return fragment
 }
 
@@ -128,10 +141,8 @@ func TestCompletion(t *testing.T) {
 			cobra.ShellCompDirectiveNoFileComp,
 		},
 		{[]string{"use", "fs", "--scope", "./"}, []string{}, cobra.ShellCompDirectiveFilterDirs},
-		{[]string{"use", "fs", "--file", ""}, []string{"yaml", "yml"}, cobra.ShellCompDirectiveFilterFileExt},
 		{[]string{"skill", "add", ""}, []string{}, cobra.ShellCompDirectiveDefault},
 		{[]string{"sessions", ""}, []string{}, cobra.ShellCompDirectiveNoFileComp},
-		{[]string{"daemon", "re"}, []string{"restart\tStop the daemon and start one of this build"}, cobra.ShellCompDirectiveNoFileComp},
 		{[]string{"daemon", "restart", "--timeout", "1"}, []string{"10s", "1m"}, cobra.ShellCompDirectiveNoFileComp},
 		// No daemon runs, and completion must not start one.
 		{[]string{"launch", "show", ""}, []string{}, cobra.ShellCompDirectiveNoFileComp},
@@ -145,6 +156,17 @@ func TestCompletion(t *testing.T) {
 				t.Errorf("directive = %d, want %d", directive, test.directive)
 			}
 		})
+	}
+}
+
+func TestCompletionDaemonRestart(t *testing.T) {
+	isolate(t, "")
+	got, directive := complete(t, "daemon", "re")
+	for i := range got {
+		got[i], _, _ = strings.Cut(got[i], "\t")
+	}
+	if !slices.Equal(got, []string{"restart"}) || directive != cobra.ShellCompDirectiveNoFileComp {
+		t.Fatalf("daemon restart completion = %q, directive %d", got, directive)
 	}
 }
 

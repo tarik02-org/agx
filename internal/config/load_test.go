@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/securefs"
 )
@@ -34,15 +35,80 @@ func TestFragmentsLoadInOrder(t *testing.T) {
 	if !slices.Equal(c.Files, want) {
 		t.Fatalf("files = %q, want %q", c.Files, want)
 	}
-	for path, listed := range map[string]bool{
-		first:                                   true,
-		filepath.Join(dir, "agx.d", "new.yaml"): true,
-		filepath.Join(dir, "none.d", "x.yaml"):  true,
-		filepath.Join(dir, "other", "x.yaml"):   false,
-	} {
-		if got := c.Lists(canonical(t, path)); got != listed {
-			t.Errorf("Lists(%s) = %v, want %v", path, got, listed)
+}
+
+// A load's inputs stay unchanged until a file changes, also when one directory's name starts
+// another's, which a glob orders differently from a sort of whole paths.
+func TestInputsUnchangedAfterLoad(t *testing.T) {
+	dir := t.TempDir()
+	root := write(t, filepath.Join(dir, "agx.yaml"), "fragments: [fragments/*/fragment.yaml]\n")
+	write(t, filepath.Join(dir, "fragments", "agents", "fragment.yaml"), "instructions:\n  a: {text: a}\n")
+	write(t, filepath.Join(dir, "fragments", "agents-windows", "fragment.yaml"), "instructions:\n  b: {text: b}\n")
+	inputs := &config.Inputs{}
+	if _, err := config.Load(root, config.Options{Builtins: builtins, Inputs: inputs}); err != nil {
+		t.Fatal(err)
+	}
+	if inputs.Changed() {
+		t.Fatal("inputs changed right after the load")
+	}
+	write(t, filepath.Join(dir, "fragments", "more", "fragment.yaml"), "instructions:\n  c: {text: c}\n")
+	if !inputs.Changed() {
+		t.Fatal("a new fragment did not change the inputs")
+	}
+}
+
+// A root linked from elsewhere, as Home Manager links one from the Nix store, loads the fragments
+// beside the link, and a fragment link pointed at another file is a change.
+func TestLinkedRootAndFragments(t *testing.T) {
+	dir, store := t.TempDir(), t.TempDir()
+	root := filepath.Join(dir, "agx.yaml")
+	if err := os.Symlink(
+		write(t, filepath.Join(store, "agx.yaml"), "fragments: ['agx.d/*.yaml']\n"),
+		root,
+	); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	first := write(t, filepath.Join(store, "first.yaml"), "instructions:\n  first: {text: a}\n")
+	second := write(t, filepath.Join(store, "second.yaml"), "instructions:\n  other: {text: b}\n")
+	// As in the Nix store, neither size nor modification time tells the two files apart.
+	for _, file := range []string{first, second} {
+		if err := os.Chtimes(file, time.Unix(1, 0), time.Unix(1, 0)); err != nil {
+			t.Fatal(err)
 		}
+	}
+	link := filepath.Join(dir, "agx.d", "10-linked.yaml")
+	mkdir(t, filepath.Dir(link))
+	if err := os.Symlink(first, link); err != nil {
+		t.Fatal(err)
+	}
+	inputs := &config.Inputs{}
+	c, err := config.Load(root, config.Options{Builtins: builtins, Inputs: inputs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.Instructions["first"]; !ok || c.Root != filepath.Join(canonical(t, dir), "agx.yaml") {
+		t.Fatalf("root %s loaded %v", c.Root, c.Files)
+	}
+	if inputs.Changed() {
+		t.Fatal("inputs changed right after the load")
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(second, link); err != nil {
+		t.Fatal(err)
+	}
+	if !inputs.Changed() {
+		t.Fatal("a fragment link pointed elsewhere did not change the inputs")
+	}
+}
+
+func TestExamplesLoad(t *testing.T) {
+	if _, err := config.Load(
+		filepath.Join("..", "..", "examples", "agx.yaml"),
+		config.Options{Builtins: builtins},
+	); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -106,6 +172,25 @@ func TestLoadErrors(t *testing.T) {
 			name:  "daemon settings in a fragment",
 			files: map[string]string{"agx.yaml": "fragments: [a.yaml]\n", "a.yaml": "daemon: {autostart: false}\n"},
 			want:  []string{"a.yaml:1: daemon belongs in the root configuration"},
+		},
+		{
+			name: "alias containing itself",
+			files: map[string]string{
+				"agx.yaml": "fragments: [a.yaml]\n",
+				"a.yaml":   "bundles:\n  b: &a\n    skills: [*a]\n",
+			},
+			want: []string{"a.yaml:3: alias *a contains itself"},
+		},
+		{
+			name: "aliases multiplying",
+			files: map[string]string{"agx.yaml": "fragments: [a.yaml]\n", "a.yaml": "bundles:\n" +
+				"  a: &a {skills: [x, x, x, x, x, x, x, x, x, x]}\n" +
+				"  b: &b {skills: [*a, *a, *a, *a, *a, *a, *a, *a, *a, *a]}\n" +
+				"  c: &c {skills: [*b, *b, *b, *b, *b, *b, *b, *b, *b, *b]}\n" +
+				"  d: &d {skills: [*c, *c, *c, *c, *c, *c, *c, *c, *c, *c]}\n" +
+				"  e: &e {skills: [*d, *d, *d, *d, *d, *d, *d, *d, *d, *d]}\n" +
+				"  f: {skills: [*e, *e, *e, *e, *e, *e, *e, *e, *e, *e]}\n"},
+			want: []string{"aliases expand to too many values"},
 		},
 		{
 			name:  "duplicate key",
@@ -483,6 +568,64 @@ func TestPinnedSources(t *testing.T) {
 	})
 }
 
+func TestInstalledPackagesAreTrusted(t *testing.T) {
+	dir := t.TempDir()
+	src := mkdir(t, filepath.Join(dir, "src"))
+	skill(t, filepath.Join(src, "review"), "review")
+	hash, err := config.TreeHash(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := fragment(t, dir, "packages:\n  p: {path: ./src, hash: "+hash+"}\n")
+	cache := filepath.Join(dir, "cache")
+	if err := securefs.CopyTree(src, filepath.Join(cache, "packages", hash)); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(cache, "packages", hash, "review", "added.md"), "changed after installation")
+
+	c, err := config.Load(root, config.Options{Builtins: builtins, Cache: cache})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := c.Skills["p/review"].ContentHash(); err != nil || got != config.Digest([]string{hash, "review"}) {
+		t.Fatalf("ContentHash() = %q, %v", got, err)
+	}
+	wantError(t, c.VerifyPackages(cache), "package p: cache entry", "does not match its content hash")
+}
+
+func TestGeneratedSkillHash(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "refs", "z.md"), "z")
+	write(t, filepath.Join(dir, "refs", "deep", "a.md"), "a")
+	write(t, filepath.Join(dir, "one.txt"), "one")
+	root := fragment(t, dir, `skills:
+  g:
+    description: d
+    content: body
+    files:
+      a-b: {content: x, executable: true}
+      a/b: {content: y}
+      -lead: {content: lead}
+      refs/: {path: ./refs/}
+      nested/one.txt: {path: ./one.txt}
+`)
+	s := load(t, root).Skills["g"]
+	written := filepath.Join(t.TempDir(), "g")
+	copied, err := adapters.MaterializeSkill(s, written)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := config.TreeHash(written)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Hashing in memory and while copying matches hashing the written skill.
+	want := config.Digest([]any{tree, []string{"a-b"}})
+	if got, err := s.ContentHash(); err != nil || got != want || copied != want {
+		t.Fatalf("ContentHash() = %q, %v; Materialize() = %q", got, err, copied)
+	}
+}
+
 func TestMissingPackagesAreSkipped(t *testing.T) {
 	dir := t.TempDir()
 	mkdir(t, filepath.Join(dir, "a"))
@@ -649,7 +792,7 @@ func TestFormatVersions(t *testing.T) {
 		wantError(t, err, tt.want)
 	}
 	lock := write(t, filepath.Join(dir, "agx.lock.json"), `{"version":2,"packages":{},"sources":{}}`)
-	_, err := config.ReadLock(lock, nil)
+	_, err := config.ReadLock(lock)
 	wantError(t, err, "uses format version 2, but this agx reads only version 1")
 }
 
@@ -709,5 +852,16 @@ func TestMCPShare(t *testing.T) {
 			!strings.Contains(err.Error(), want) {
 			t.Fatalf("%q: %v", content, err)
 		}
+	}
+}
+
+func TestAgxMCPIDReserved(t *testing.T) {
+	root := fragment(t, t.TempDir(), "mcp:\n  agx: {command: [server]}\n")
+	if _, err := config.Load(
+		root,
+		config.Options{Builtins: builtins},
+	); err == nil ||
+		!strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("reserved MCP ID accepted: %v", err)
 	}
 }
