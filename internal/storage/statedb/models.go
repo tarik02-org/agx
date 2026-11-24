@@ -29,6 +29,13 @@ type Launch struct {
 	Exact     bool
 }
 
+type LaunchAttachment struct {
+	Configuration string
+	Launch        string
+	Mcp           string
+	Sealed        string
+}
+
 type LaunchSession struct {
 	Builtin string
 	Store   string

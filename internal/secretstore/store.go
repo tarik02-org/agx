@@ -49,7 +49,7 @@ func (s *Store) Get(k string) (string, error) {
 		if err != nil {
 			return err
 		}
-		value, err = unseal(key, k, sealed)
+		value, err = Unseal(key, k, sealed)
 		return err
 	})
 	return value, err
@@ -61,7 +61,7 @@ func (s *Store) Set(k, value string) error {
 		if err != nil {
 			return err
 		}
-		sealed, err := seal(key, k, value)
+		sealed, err := Seal(key, k, value)
 		if err != nil {
 			return err
 		}
@@ -155,7 +155,8 @@ func (s *Store) masterKey(tx *sql.Tx) ([]byte, error) {
 	return key, nil
 }
 
-func seal(key []byte, k, value string) (string, error) {
+// Seal encrypts a value with its storage key as authenticated context.
+func Seal(key []byte, k, value string) (string, error) {
 	aead, err := gcm(key)
 	if err != nil {
 		return "", err
@@ -167,7 +168,8 @@ func seal(key []byte, k, value string) (string, error) {
 	return base64.StdEncoding.EncodeToString(aead.Seal(nonce, nonce, []byte(value), []byte(k))), nil
 }
 
-func unseal(key []byte, k, sealed string) (string, error) {
+// Unseal decrypts a value, checking its storage key as authenticated context.
+func Unseal(key []byte, k, sealed string) (string, error) {
 	aead, err := gcm(key)
 	if err != nil {
 		return "", err

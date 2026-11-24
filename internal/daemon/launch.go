@@ -340,6 +340,7 @@ func (s *Server) endpoints(
 ) (map[config.ID]*mcpruntime.Endpoint, []adapters.Endpoint) {
 	endpoints := map[config.ID]*mcpruntime.Endpoint{}
 	native := []adapters.Endpoint{}
+	native = append(native, s.nativeEndpoint(id, config.AgxMCP))
 	for _, r := range snapshot.Resources {
 		if r.Kind != "mcp" {
 			continue

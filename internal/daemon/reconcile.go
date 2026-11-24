@@ -83,12 +83,17 @@ func (s *Server) reconcileLaunch(l *launch) {
 		return
 	}
 	s.mu.Lock()
-	current, inputs := l.endpoints, l.inputs
+	current, inputs, attachments := l.endpoints, l.inputs, l.attachments
 	s.mu.Unlock()
 	endpoints := map[config.ID]*mcpruntime.Endpoint{}
 	stale, fresh := map[config.ID]*mcpruntime.Endpoint{}, map[config.ID]*mcpruntime.Endpoint{}
 	for _, r := range snapshot.Resources {
 		if r.Kind != "mcp" {
+			continue
+		}
+		// A server attached to the launch alone keeps its ID, even once its directory selects one
+		// of the same name.
+		if _, attached := attachments[r.ID]; attached {
 			continue
 		}
 		definition, root, own := endpointBasis(snapshot, r.ID, inputs, directory)

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -190,11 +191,19 @@ harnesses:
 	// An agent without HTTP MCP servers reaches the session's servers through the stdio bridge.
 	result := a.call("session/new", map[string]any{"cwd": e.work, "mcpServers": []any{}})
 	tools, _ := result["tools"].(map[string]any)
-	if got := tools["agx-echo"]; got != "echo:hello:work:extra" || len(tools) != 1 {
+	if got := tools["agx-echo"]; got != "echo:hello:work:extra" {
 		t.Errorf("session tools = %v\n%s", tools, stderr.String())
 	}
 	servers, _ := received(result)["mcpServers"].([]any)
-	if len(servers) != 1 || strings.Contains(fmt.Sprint(servers[0].(map[string]any)["args"]), "Bearer") {
+	names := []string{}
+	for _, server := range servers {
+		entry, _ := server.(map[string]any)
+		names = append(names, fmt.Sprint(entry["name"]))
+		if strings.Contains(fmt.Sprint(entry["args"]), "Bearer") {
+			t.Errorf("session server %v carries a bearer token in its arguments", entry["name"])
+		}
+	}
+	if slices.Sort(names); !slices.Equal(names, []string{"agx", "agx-echo"}) {
 		t.Errorf("session servers = %v", servers)
 	}
 

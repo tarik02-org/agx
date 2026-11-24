@@ -21,6 +21,7 @@ import (
 	"github.com/tarik02-org/agx/internal/secretstore"
 	"github.com/tarik02-org/agx/internal/sessions"
 	"github.com/tarik02-org/agx/internal/sessionstore"
+	"github.com/tarik02-org/agx/internal/storage/statedb"
 )
 
 func TestResolvePassthroughUsesDaemonCredentialsAndCallerEnvironment(t *testing.T) {
@@ -163,10 +164,20 @@ func TestLaunchHistoryReportSurvivesDaemonReplacement(t *testing.T) {
 	if _, err := s.RecordLaunch(t.Context(), connect.NewRequest(request)); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.attachmentsQuery(t.Context(), func(q *statedb.Queries) error {
+		return q.PutLaunchAttachment(t.Context(), statedb.PutLaunchAttachmentParams{
+			Configuration: s.paths.Config, Launch: "launch", Mcp: "temporary", Sealed: "sealed",
+		})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	replacement := &Server{paths: s.paths, adapters: builtin.Registry()}
 	request.FinishedAt = timestamppb.New(now.Add(-time.Minute))
 	if _, err := replacement.RecordLaunch(t.Context(), connect.NewRequest(request)); err != nil {
 		t.Fatal(err)
+	}
+	if saved := savedAttachments(t, s, "launch"); len(saved) != 0 {
+		t.Fatalf("durable completion retained attachments: %v", saved)
 	}
 	request.FinishedAt = nil
 	if _, err := replacement.RecordLaunch(t.Context(), connect.NewRequest(request)); err != nil {

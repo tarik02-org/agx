@@ -64,6 +64,12 @@ type launch struct {
 	cancel    context.CancelFunc
 	endpoints map[config.ID]*mcpruntime.Endpoint
 	snapshot  *config.Snapshot
+	// attachments are MCP servers attached to this launch alone; attachMu serializes changing them.
+	attachments map[config.ID]*attachment
+	attachMu    sync.Mutex
+	// agx is the launch's agx MCP server, made on its first request.
+	agx     http.Handler
+	agxOnce sync.Once
 	// target is the harness process a launch started; its thread launches share it.
 	target  adapters.Target
 	ended   time.Time
@@ -594,11 +600,14 @@ func (s *Server) end(l *launch, state v1.Launch_State) {
 		slog.Info("launch ended", attrs...)
 	}
 	s.clients.closeLaunch(l.view.Id)
+	if (state == v1.Launch_STATE_FINISHED || state == v1.Launch_STATE_REVOKED) && len(l.attachments) > 0 {
+		go s.discardAttachments(l.view.Id)
+	}
 	if state == v1.Launch_STATE_EXPIRED {
 		// Its wrapper may attach the launch again, and its harness still reads the launch files.
-		go closeEndpoints(l.endpoints)
+		go closeEndpoints(l.allEndpoints())
 	} else {
-		go s.release(l.view.Id, l.endpoints)
+		go s.release(l.view.Id, l.allEndpoints())
 	}
 	for _, child := range s.children(l) {
 		s.end(child, state)
@@ -713,7 +722,7 @@ func (s *Server) closeLaunches(launches []*launch) {
 	var cleanup sync.WaitGroup
 	for _, l := range launches {
 		s.mu.Lock()
-		endpoints := l.endpoints
+		endpoints := l.allEndpoints()
 		s.mu.Unlock()
 		// end releases asynchronously; wait here so shutdown does not leave cache dirs.
 		if forced {
@@ -866,12 +875,18 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	// A stopping daemon finishes the sessions it serves but opens none; event streams would
 	// outlast it.
-	if s.drain.draining() && (r.Header.Get("Mcp-Session-Id") == "" || r.Method == http.MethodGet) {
+	if s.drain.draining() &&
+		(parts[1] == string(config.AgxMCP) || r.Header.Get("Mcp-Session-Id") == "" || r.Method == http.MethodGet) {
 		refuse(w)
 		return
 	}
+	if parts[1] == string(config.AgxMCP) {
+		r.Body = http.MaxBytesReader(w, r.Body, 4<<20)
+		s.sessionHandler(l).ServeHTTP(w, r)
+		return
+	}
 	s.mu.Lock()
-	e := l.endpoints[config.ID(parts[1])]
+	e := l.allEndpoints()[config.ID(parts[1])]
 	s.mu.Unlock()
 	if e == nil {
 		http.Error(w, "MCP server not selected for launch", http.StatusForbidden)
@@ -903,7 +918,7 @@ func (s *Server) runtime() *v1.RuntimeView {
 	for _, l := range s.launches {
 		view.Launches = append(view.Launches, proto.Clone(l.view).(*v1.Launch))
 		if active(l.view.State) {
-			for id, e := range l.endpoints {
+			for id, e := range l.allEndpoints() {
 				servers = append(servers, server{launchID: l.view.Id, id: id, endpoint: e})
 			}
 		}

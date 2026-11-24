@@ -53,3 +53,14 @@ INSERT INTO revocations(configuration, launch, revoked_at) VALUES (?, ?, ?)
 ON CONFLICT(configuration, launch) DO UPDATE SET revoked_at = max(revocations.revoked_at, excluded.revoked_at);
 -- name: PruneRevocations :exec
 DELETE FROM revocations WHERE configuration = ? AND revoked_at <= ?;
+-- name: ListLaunchAttachments :many
+SELECT mcp, sealed FROM launch_attachments WHERE configuration = ? AND launch = ? ORDER BY mcp;
+-- name: PutLaunchAttachment :exec
+INSERT INTO launch_attachments(configuration, launch, mcp, sealed) VALUES (?, ?, ?, ?)
+ON CONFLICT(configuration, launch, mcp) DO UPDATE SET sealed = excluded.sealed;
+-- name: DeleteLaunchAttachment :exec
+DELETE FROM launch_attachments WHERE configuration = ? AND launch = ? AND mcp = ?;
+-- name: DeleteLaunchAttachments :exec
+DELETE FROM launch_attachments WHERE configuration = ? AND launch = ?;
+-- name: DeleteFinishedLaunchAttachments :exec
+DELETE FROM launch_attachments WHERE launch IN (SELECT id FROM launches WHERE id = ? AND finished IS NOT NULL);

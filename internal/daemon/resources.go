@@ -195,6 +195,8 @@ func (s *Server) leaseResources(
 		Content:  resourceContent(content),
 		Settings: resolved.Settings,
 	}
+	agx := s.nativeEndpoint(id, config.AgxMCP)
+	out.Mcp = append(out.Mcp, &v1.McpEndpoint{Id: string(agx.ID), Url: agx.URL})
 	for _, r := range snapshot.Resources {
 		e := endpoints[r.ID]
 		if r.Kind != "mcp" || e == nil {
@@ -253,7 +255,7 @@ func (s *Server) addLaunch(l *launch) error {
 
 // attachResources takes a resource lease under the directory's current configuration, which
 // it follows anyway.
-func (s *Server) attachResources(msg *v1.AttachLaunchRequest) (*launch, error) {
+func (s *Server) attachResources(ctx context.Context, msg *v1.AttachLaunchRequest) (*launch, error) {
 	view := msg.Launch
 	if len(msg.NativeArguments) != 0 || msg.Executable != "" || len(msg.Threads) != 0 || view.Mode != "" {
 		return nil, rpcError(connect.CodeInvalidArgument, "resource leases have no process arguments or threads")
@@ -276,6 +278,11 @@ func (s *Server) attachResources(msg *v1.AttachLaunchRequest) (*launch, error) {
 	}
 	l.endpoints, _ = s.endpoints(l.ctx, view.Id, snapshot, l.inputs, l.mcpDirectory)
 	l.resources, l.revision = s.leaseResources(view.Id, snapshot, content, l.endpoints)
+	if err := s.restoreAttachments(ctx, l); err != nil {
+		l.cancel()
+		closeEndpoints(l.endpoints)
+		return nil, err
+	}
 	return l, nil
 }
 

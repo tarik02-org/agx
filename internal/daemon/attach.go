@@ -131,7 +131,7 @@ func (s *Server) attachable(id, grant, lifecycle string) (*launch, error) {
 func (s *Server) attachProcess(ctx context.Context, msg *v1.AttachLaunchRequest) (*launch, error) {
 	view := msg.Launch
 	if view.Kind == v1.Launch_KIND_RESOURCES {
-		return s.attachResources(msg)
+		return s.attachResources(ctx, msg)
 	}
 	b, err := s.launchBasis(view.Directory, view.Harness, "", msg.NativeArguments)
 	if err != nil {
@@ -143,17 +143,22 @@ func (s *Server) attachProcess(ctx context.Context, msg *v1.AttachLaunchRequest)
 	l := s.newLaunch(view, b, msg.Grant, msg.LifecycleToken, nil)
 	inputs := attachedInputs(b.snapshot, msg.EnvironmentInputs, adapters.Forwarded(b.adapter))
 	l.inputs = inputs
-	if !b.threadServer {
+	if b.threadServer {
+		args, env, lookup, err := s.resolveHarness(ctx, b, inputs)
+		if err != nil {
+			l.cancel()
+			return nil, err
+		}
+		l.target = adapters.NewTarget(b.harness, args, env, msg.NativeArguments, lookup)
+		l.target.Resolved = msg.Executable
+	} else {
 		l.endpoints, _ = s.endpoints(l.ctx, view.Id, b.snapshot, inputs, b.snapshot.Directory)
-		return l, nil
 	}
-	args, env, lookup, err := s.resolveHarness(ctx, b, inputs)
-	if err != nil {
+	if err := s.restoreAttachments(ctx, l); err != nil {
 		l.cancel()
+		closeEndpoints(l.endpoints)
 		return nil, err
 	}
-	l.target = adapters.NewTarget(b.harness, args, env, msg.NativeArguments, lookup)
-	l.target.Resolved = msg.Executable
 	return l, nil
 }
 
@@ -197,6 +202,11 @@ func (s *Server) attachThread(parent *launch, thread *v1.AttachedThread) bool {
 	inputs := attachedInputs(snapshot, thread.EnvironmentInputs, nil)
 	l.inputs = inputs
 	l.endpoints, _ = s.endpoints(l.ctx, view.Id, snapshot, inputs, snapshot.Directory)
+	if err := s.restoreAttachments(parent.ctx, l); err != nil {
+		l.cancel()
+		closeEndpoints(l.endpoints)
+		return fail(err)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !active(parent.view.State) || s.stopped {

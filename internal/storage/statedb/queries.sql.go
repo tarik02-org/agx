@@ -28,6 +28,44 @@ func (q *Queries) AddLaunchSession(ctx context.Context, arg AddLaunchSessionPara
 	return err
 }
 
+const deleteFinishedLaunchAttachments = `-- name: DeleteFinishedLaunchAttachments :exec
+DELETE FROM launch_attachments WHERE launch IN (SELECT id FROM launches WHERE id = ? AND finished IS NOT NULL)
+`
+
+func (q *Queries) DeleteFinishedLaunchAttachments(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteFinishedLaunchAttachments, id)
+	return err
+}
+
+const deleteLaunchAttachment = `-- name: DeleteLaunchAttachment :exec
+DELETE FROM launch_attachments WHERE configuration = ? AND launch = ? AND mcp = ?
+`
+
+type DeleteLaunchAttachmentParams struct {
+	Configuration string
+	Launch        string
+	Mcp           string
+}
+
+func (q *Queries) DeleteLaunchAttachment(ctx context.Context, arg DeleteLaunchAttachmentParams) error {
+	_, err := q.db.ExecContext(ctx, deleteLaunchAttachment, arg.Configuration, arg.Launch, arg.Mcp)
+	return err
+}
+
+const deleteLaunchAttachments = `-- name: DeleteLaunchAttachments :exec
+DELETE FROM launch_attachments WHERE configuration = ? AND launch = ?
+`
+
+type DeleteLaunchAttachmentsParams struct {
+	Configuration string
+	Launch        string
+}
+
+func (q *Queries) DeleteLaunchAttachments(ctx context.Context, arg DeleteLaunchAttachmentsParams) error {
+	_, err := q.db.ExecContext(ctx, deleteLaunchAttachments, arg.Configuration, arg.Launch)
+	return err
+}
+
 const deleteLaunchSession = `-- name: DeleteLaunchSession :exec
 DELETE FROM launch_sessions WHERE launch = ? AND session = ?
 `
@@ -96,6 +134,43 @@ func (q *Queries) HasSecrets(ctx context.Context) (bool, error) {
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const listLaunchAttachments = `-- name: ListLaunchAttachments :many
+SELECT mcp, sealed FROM launch_attachments WHERE configuration = ? AND launch = ? ORDER BY mcp
+`
+
+type ListLaunchAttachmentsParams struct {
+	Configuration string
+	Launch        string
+}
+
+type ListLaunchAttachmentsRow struct {
+	Mcp    string
+	Sealed string
+}
+
+func (q *Queries) ListLaunchAttachments(ctx context.Context, arg ListLaunchAttachmentsParams) ([]ListLaunchAttachmentsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLaunchAttachments, arg.Configuration, arg.Launch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLaunchAttachmentsRow{}
+	for rows.Next() {
+		var i ListLaunchAttachmentsRow
+		if err := rows.Scan(&i.Mcp, &i.Sealed); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listLaunchSessions = `-- name: ListLaunchSessions :many
@@ -333,6 +408,28 @@ type PutDaemonPortParams struct {
 
 func (q *Queries) PutDaemonPort(ctx context.Context, arg PutDaemonPortParams) error {
 	_, err := q.db.ExecContext(ctx, putDaemonPort, arg.Configuration, arg.Port)
+	return err
+}
+
+const putLaunchAttachment = `-- name: PutLaunchAttachment :exec
+INSERT INTO launch_attachments(configuration, launch, mcp, sealed) VALUES (?, ?, ?, ?)
+ON CONFLICT(configuration, launch, mcp) DO UPDATE SET sealed = excluded.sealed
+`
+
+type PutLaunchAttachmentParams struct {
+	Configuration string
+	Launch        string
+	Mcp           string
+	Sealed        string
+}
+
+func (q *Queries) PutLaunchAttachment(ctx context.Context, arg PutLaunchAttachmentParams) error {
+	_, err := q.db.ExecContext(ctx, putLaunchAttachment,
+		arg.Configuration,
+		arg.Launch,
+		arg.Mcp,
+		arg.Sealed,
+	)
 	return err
 }
 

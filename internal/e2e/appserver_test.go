@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // appServer drives `agx codex app-server` the way T3 Code does: one process, many threads.
@@ -127,9 +129,9 @@ harnesses:
 	}
 
 	type thread struct {
-		id, grant, url string
-		tools          map[string]any
-		params         map[string]any
+		id, grant, url, agxURL string
+		tools                  map[string]any
+		params                 map[string]any
 	}
 	start := func(dir string) thread {
 		t.Helper()
@@ -150,10 +152,34 @@ harnesses:
 				th.grant = server["http_headers"].(map[string]any)["Authorization"].(string)
 			}
 		}
+		builtin := servers["agx"].(map[string]any)
+		th.agxURL = builtin["url"].(string)
 		return th
 	}
 	work := start(e.work)
 	second := start(other)
+	workClient := agxSession(t, work.agxURL, work.grant)
+	secondClient := agxSession(t, second.agxURL, second.grant)
+	agxTool(
+		t,
+		secondClient,
+		"attach_mcp",
+		map[string]any{
+			"id": "ephemeral",
+			"definition": map[string]any{
+				"command":     []string{binaries.mcp},
+				"environment": map[string]any{"ECHO_TOKEN": "thread-only"},
+			},
+		},
+	)
+	args := map[string]any{"server": "ephemeral", "tool": "echo", "arguments": map[string]any{"text": "hello"}}
+	if got := agxTool(t, secondClient, "call_tool", args).Content[0].(*mcp.TextContent).Text; got != "echo:hello:thread-only" {
+		t.Fatalf("thread attachment = %q", got)
+	}
+	denied, err := workClient.CallTool(t.Context(), &mcp.CallToolParams{Name: "call_tool", Arguments: args})
+	if err != nil || !denied.IsError {
+		t.Fatalf("another thread reached attachment: %+v, %v", denied, err)
+	}
 
 	if got := work.tools["agx-echo"]; got != "echo:hello:"+token+":"+sealed {
 		t.Errorf("work thread echo = %v (tools %v)", got, work.tools)
@@ -243,6 +269,11 @@ harnesses:
 	e.stopDaemon(false)
 	e.ok("secret", "status")
 	awaitServing(t, second.url, second.grant)
+	secondClient = agxSession(t, second.agxURL, second.grant)
+	if got := agxTool(t, secondClient, "call_tool", args).Content[0].(*mcp.TextContent).Text; got != "echo:hello:thread-only" {
+		t.Fatalf("thread attachment after restart = %q", got)
+	}
+
 	call := a.call("test/call", map[string]any{"threadId": second.id})
 	if tools, _ := call["tools"].(map[string]any); tools["agx-second"] != "echo:hello:second:other" ||
 		call["reinitialized"] != float64(1) {
