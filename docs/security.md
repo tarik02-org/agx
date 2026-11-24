@@ -45,8 +45,8 @@ and `!file` are resolved at launch. They are not written to
 agx's generated files, lockfiles, logs, `explain`, `--json` output, or error
 messages. Keychain secrets and OAuth tokens live in `state.db` in the state
 directory, encrypted under a key that the OS keychain holds; there is no
-plaintext fallback. Temporary attachment environment inputs are also encrypted in
-`state.db`, using a key derived from that launch's random grant so the wrapper
+plaintext fallback. Temporary attachments, with their definitions and environment
+inputs, are also encrypted in `state.db`, using a key derived from that launch's random grant so the wrapper
 can recover them after a daemon restart without an OS-keychain request. Other
 configuration literals, including ad-hoc definitions, are ordinary configuration;
 use injection references for credentials.

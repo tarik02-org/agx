@@ -124,8 +124,6 @@ func (s *Server) PrepareLaunch(
 		created:      time.Now(),
 		lease:        time.Duration(b.config.Daemon.LeaseSeconds) * time.Second,
 		threadServer: b.threadServer,
-		local:        config.EmptyLocal(),
-		temporary:    map[config.ID]config.MCPServer{},
 	}
 	l.extend(time.Now().Add(l.lease))
 	response := &v1.PrepareLaunchResponse{

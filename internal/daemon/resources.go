@@ -278,7 +278,7 @@ func (s *Server) attachResources(ctx context.Context, msg *v1.AttachLaunchReques
 	}
 	l.endpoints, _ = s.endpoints(l.ctx, view.Id, snapshot, l.inputs, l.mcpDirectory)
 	l.resources, l.revision = s.leaseResources(view.Id, snapshot, content, l.endpoints)
-	if err := s.restoreSession(ctx, l, msg.EnvironmentInputs); err != nil {
+	if err := s.restoreAttachments(ctx, l); err != nil {
 		l.cancel()
 		closeEndpoints(l.endpoints)
 		return nil, err

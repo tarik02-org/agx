@@ -260,13 +260,13 @@ Search and calls reuse the endpoint client pool; searches run at most four serve
 discoveries concurrently, with a 45-second deadline. Calls have a 10-minute deadline.
 No upstream discovery runs at launch or attachment time.
 
-Temporary definitions use private owners in the existing relational configuration
-tables. They never participate in normal configuration loading or export. Per-server
-environment inputs are encrypted under the launch grant hash with owner, server
-and input name as authenticated context. Definitions, inputs and revision commit
-atomically and are read in one transaction. The daemon restores them through
-`AttachLaunch`; a normal daemon shutdown or lease expiry retains them. Finish and
-revocation delete the private owner and its child rows. Durable launch completion
-also deletes retained attachment state if the finishing daemon no longer holds
-the launch. An abruptly abandoned wrapper can leave private state, just as it can
-leave an unfinished launch record; recovery does not depend on a time-based purge.
+Temporary attachments are rows of `launch_attachments`, one per server, outside
+the configuration tables, so they never take part in configuration loading or
+export. Each row seals the server and secret definitions and the environment
+inputs under the launch grant hash, with configuration, launch and server as
+authenticated context. The daemon restores them through `AttachLaunch`; a normal
+daemon shutdown or lease expiry retains them. Finish and revocation delete them.
+Durable launch completion also deletes them if the finishing daemon no longer
+holds the launch. An abruptly abandoned wrapper can leave them behind, just as it
+can leave an unfinished launch record; recovery does not depend on a time-based
+purge.

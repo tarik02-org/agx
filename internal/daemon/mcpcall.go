@@ -117,22 +117,16 @@ func (s *Server) launchScope(authorization string, management bool, id string) (
 		s.mu.Unlock()
 		return nil, rpcError(connect.CodeUnauthenticated, "invalid or expired launch grant")
 	}
-	endpoints, snapshot := maps.Clone(l.endpoints), l.snapshot
-	temporary := maps.Clone(l.temporary)
-	s.mu.Unlock()
 	scope := &callScope{
 		launch:    l,
-		endpoints: endpoints,
-		servers:   map[config.ID]config.MCPServer{},
+		endpoints: maps.Clone(l.allEndpoints()),
+		servers:   l.servers(),
 		outside:   "not selected for this launch; --all reaches every configured server",
 	}
-	if snapshot != nil {
-		scope.config = snapshot.Config
-		for id := range endpoints {
-			scope.servers[id] = snapshot.Config.MCP[id]
-		}
-		maps.Copy(scope.servers, temporary)
+	if l.snapshot != nil {
+		scope.config = l.snapshot.Config
 	}
+	s.mu.Unlock()
 	return scope, nil
 }
 

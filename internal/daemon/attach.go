@@ -12,7 +12,6 @@ import (
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
 	"github.com/tarik02-org/agx/internal/adapters"
-	"github.com/tarik02-org/agx/internal/config"
 )
 
 // AttachLaunch takes a launch from its wrapper when this daemon does not hold it, or let it
@@ -155,7 +154,7 @@ func (s *Server) attachProcess(ctx context.Context, msg *v1.AttachLaunchRequest)
 	} else {
 		l.endpoints, _ = s.endpoints(l.ctx, view.Id, b.snapshot, inputs, b.snapshot.Directory)
 	}
-	if err := s.restoreSession(ctx, l, inputs); err != nil {
+	if err := s.restoreAttachments(ctx, l); err != nil {
 		l.cancel()
 		closeEndpoints(l.endpoints)
 		return nil, err
@@ -203,7 +202,7 @@ func (s *Server) attachThread(parent *launch, thread *v1.AttachedThread) bool {
 	inputs := attachedInputs(snapshot, thread.EnvironmentInputs, nil)
 	l.inputs = inputs
 	l.endpoints, _ = s.endpoints(l.ctx, view.Id, snapshot, inputs, snapshot.Directory)
-	if err := s.restoreSession(parent.ctx, l, thread.EnvironmentInputs); err != nil {
+	if err := s.restoreAttachments(parent.ctx, l); err != nil {
 		l.cancel()
 		closeEndpoints(l.endpoints)
 		return fail(err)
@@ -246,8 +245,6 @@ func (s *Server) newLaunch(view *v1.Launch, b launchBasis, grant, lifecycle stri
 		snapshot:     b.snapshot,
 		created:      time.Now(),
 		threadServer: b.threadServer,
-		local:        config.EmptyLocal(),
-		temporary:    map[config.ID]config.MCPServer{},
 	}
 	if parent != nil {
 		l.lifecycle, l.lease, l.target = parent.lifecycle, parent.lease, parent.target

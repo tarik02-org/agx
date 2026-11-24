@@ -22,11 +22,11 @@ import (
 )
 
 func (s *Server) sessionHandler(l *launch) http.Handler {
-	l.sessionMu.Lock()
-	defer l.sessionMu.Unlock()
-	if l.agx != nil {
-		return l.agx
-	}
+	l.agxOnce.Do(func() { l.agx = s.newSessionHandler(l) })
+	return l.agx
+}
+
+func (s *Server) newSessionHandler(l *launch) http.Handler {
 	server := mcp.NewServer(&mcp.Implementation{Name: "agx", Version: control.Version}, &mcp.ServerOptions{
 		Instructions: "Manage agx resources and configuration here instead of editing harness-native files. " +
 			"Use list_resources to discover all configured resources, attach_mcp to add a server to this session, " +
@@ -70,7 +70,7 @@ func (s *Server) sessionHandler(l *launch) http.Handler {
 		"attach_mcp",
 		"Attach a configured server or an ad-hoc command/URL definition to this session only. It is immediately usable through search_tools and call_tool and survives daemon replacement. id selects a configured server, or names an ad-hoc attachment when definition supplies configuration JSON. Pass environment for missing $env inputs. This does not persist a user configuration definition or refresh the harness's native tool catalog.",
 		false,
-		func(ctx context.Context, in attachMCPInput) (any, error) { return s.attachSession(ctx, l, in) },
+		func(ctx context.Context, in attachMCPInput) (any, error) { return s.attach(ctx, l, in) },
 	)
 	addSessionTool(
 		server,
@@ -78,7 +78,7 @@ func (s *Server) sessionHandler(l *launch) http.Handler {
 		"detach_mcp",
 		"Remove a temporary MCP attachment from this session, closing its tool clients. Initial scope-selected servers cannot be detached with this tool.",
 		false,
-		func(ctx context.Context, in serverInput) (any, error) { return s.detachSession(ctx, l, in.Server) },
+		func(ctx context.Context, in serverInput) (any, error) { return s.detach(ctx, l, in.Server) },
 	)
 	addSessionTool(
 		server,
@@ -129,7 +129,6 @@ func (s *Server) sessionHandler(l *launch) http.Handler {
 			_ = session.Close()
 		}
 	})
-	l.agx = handler
 	return handler
 }
 
@@ -165,13 +164,9 @@ func (s *Server) sessionScope(l *launch) (*callScope, error) {
 		return nil, fmt.Errorf("session has ended")
 	}
 	scope := &callScope{
-		launch: l, endpoints: maps.Clone(l.endpoints), config: l.snapshot.Config,
-		servers: map[config.ID]config.MCPServer{}, outside: "not attached to this session; use attach_mcp first",
+		launch: l, endpoints: maps.Clone(l.allEndpoints()), config: l.snapshot.Config,
+		servers: l.servers(), outside: "not attached to this session; use attach_mcp first",
 	}
-	for id := range l.endpoints {
-		scope.servers[id] = l.snapshot.Config.MCP[id]
-	}
-	maps.Copy(scope.servers, l.temporary)
 	return scope, nil
 }
 
@@ -186,7 +181,7 @@ func (s *Server) sessionContext(l *launch) (any, error) {
 		"launch_id": l.view.Id, "parent_launch_id": l.view.ParentLaunchId,
 		"directory": l.view.Directory, "harness": l.view.Harness, "mode": l.view.Mode,
 		"configuration": c.Root, "revision": c.Local.Revision, "overlays": c.Files,
-		"selected": l.snapshot.Resources, "temporary_mcp": names(l.temporary),
+		"selected": l.snapshot.Resources, "temporary_mcp": names(l.attachments),
 	}, nil
 }
 
@@ -288,7 +283,7 @@ func (s *Server) sessionResources(l *launch, in resourceQuery) (any, error) {
 		selected[kind+"/"+string(resource.ID)] = true
 	}
 	s.mu.Lock()
-	temporary := maps.Clone(l.temporary)
+	temporary := maps.Clone(l.attachments)
 	s.mu.Unlock()
 	rows := []map[string]any{}
 	for _, kind := range config.Kinds {
@@ -331,10 +326,12 @@ func (s *Server) sessionResource(ctx context.Context, l *launch, in resourceInpu
 	id := config.ID(in.ID)
 	if in.Kind == "mcp" {
 		s.mu.Lock()
-		temporary, found := l.temporary[id]
+		a, found := l.attachments[id]
 		s.mu.Unlock()
 		if found {
-			return map[string]any{"id": id, "temporary": true, "definition": redactValues(mcpDocument(temporary))}, nil
+			return map[string]any{
+				"id": id, "temporary": true, "definition": redactValues(mcpDocument(a.definition())),
+			}, nil
 		}
 	}
 	if _, exists := configedit.Lookup(c, config.Kind(in.Kind), in.ID); !exists {
@@ -451,4 +448,106 @@ func sessionPage(key string, rows []map[string]any, offset, limit int) map[strin
 		page["next_offset"] = end
 	}
 	return page
+}
+
+func valueDocument(v config.Value) any {
+	switch {
+	case v.Env != "":
+		return map[string]any{"$env": v.Env}
+	case v.File != "":
+		return map[string]any{"$file": v.File}
+	case v.Secret != "":
+		return map[string]any{"$secret": string(v.Secret)}
+	default:
+		return v.Literal
+	}
+}
+
+func mcpDocument(server config.MCPServer) map[string]any {
+	document := map[string]any{"load": server.Load, "description": server.Description}
+	if server.URL != "" {
+		document["url"] = server.URL
+	} else {
+		document["command"] = server.Command
+	}
+	if server.Cwd != "" {
+		document["cwd"] = server.Cwd
+	}
+	switch {
+	case server.Auth.Inline != nil:
+		if !server.Auth.Inline.Implicit {
+			document["auth"] = secretDocument(*server.Auth.Inline)
+		}
+	case server.Auth.None:
+		document["auth"] = "none"
+	case server.URL != "":
+		document["auth"] = valueDocument(server.Auth.Value)
+	}
+	for name, values := range map[string]map[string]config.Value{"environment": server.Environment, "headers": server.Headers} {
+		if len(values) == 0 {
+			continue
+		}
+		items := map[string]any{}
+		for key, value := range values {
+			items[key] = valueDocument(value)
+		}
+		document[name] = items
+	}
+	if server.Share.Type != "" {
+		share := map[string]any{"type": server.Share.Type}
+		if server.Share.Idle != nil {
+			share["idle"] = server.Share.Idle.String()
+		}
+		document["share"] = share
+	}
+	return document
+}
+
+func secretDocument(secret config.Secret) map[string]any {
+	data, _ := json.Marshal(secret)
+	var value map[string]any
+	_ = json.Unmarshal(data, &value)
+	delete(value, "source")
+	delete(value, "owner")
+	delete(value, "implicit")
+	if secret.Kind == "sops" {
+		value["age_key"] = valueDocument(secret.AgeKey)
+	}
+	return value
+}
+
+func redactValues(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		for key, item := range value {
+			if key == "environment" || key == "headers" {
+				if fields, ok := item.(map[string]any); ok {
+					for name, content := range fields {
+						if _, literal := content.(string); literal {
+							fields[name] = "<redacted>"
+						}
+					}
+				}
+			}
+			if key == "literal" {
+				value[key] = "<redacted>"
+			}
+			if key == "auth" || key == "age_key" {
+				if text, literal := item.(string); literal && text != "none" && strings.TrimSpace(text) != "" {
+					value[key] = "<redacted>"
+				}
+			}
+			if key == "auth" {
+				if secret, ok := item.(map[string]any); ok && secret["kind"] != nil {
+					value[key] = map[string]any{"kind": secret["kind"]}
+				}
+			}
+			redactValues(item)
+		}
+	case []any:
+		for _, item := range value {
+			redactValues(item)
+		}
+	}
+	return value
 }

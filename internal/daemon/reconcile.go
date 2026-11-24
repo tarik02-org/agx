@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"maps"
 	"time"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
@@ -84,7 +83,7 @@ func (s *Server) reconcileLaunch(l *launch) {
 		return
 	}
 	s.mu.Lock()
-	current, inputs, temporary := l.endpoints, l.inputs, l.temporary
+	current, inputs, attachments := l.endpoints, l.inputs, l.attachments
 	s.mu.Unlock()
 	endpoints := map[config.ID]*mcpruntime.Endpoint{}
 	stale, fresh := map[config.ID]*mcpruntime.Endpoint{}, map[config.ID]*mcpruntime.Endpoint{}
@@ -94,7 +93,7 @@ func (s *Server) reconcileLaunch(l *launch) {
 		}
 		// A server attached to the launch alone keeps its ID, even once its directory selects one
 		// of the same name.
-		if _, attached := temporary[r.ID]; attached {
+		if _, attached := attachments[r.ID]; attached {
 			continue
 		}
 		definition, root, own := endpointBasis(snapshot, r.ID, inputs, directory)
@@ -106,7 +105,7 @@ func (s *Server) reconcileLaunch(l *launch) {
 		endpoints[r.ID] = e
 	}
 	for id, e := range current {
-		if _, attached := temporary[id]; !attached && endpoints[id] != e {
+		if endpoints[id] != e {
 			stale[id] = e
 		}
 	}
@@ -121,14 +120,7 @@ func (s *Server) reconcileLaunch(l *launch) {
 	changed := false
 	if !ended {
 		if len(stale) > 0 || len(fresh) > 0 {
-			// Attachments made or dropped meanwhile are the latest ones.
-			merged := maps.Clone(endpoints)
-			for id := range l.temporary {
-				if e := l.endpoints[id]; e != nil {
-					merged[id] = e
-				}
-			}
-			l.endpoints, l.snapshot = merged, snapshot
+			l.endpoints, l.snapshot = endpoints, snapshot
 			changed = true
 		}
 		if len(stale) > 0 {

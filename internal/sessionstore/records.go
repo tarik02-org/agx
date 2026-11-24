@@ -74,7 +74,7 @@ func (r Records) Start(record Record) error {
 			}); err != nil {
 				return err
 			}
-			return q.DeleteFinishedSessionConfiguration(context.Background(), record.Launch)
+			return q.DeleteFinishedLaunchAttachments(context.Background(), record.Launch)
 		}
 		return nil
 	})
@@ -88,7 +88,7 @@ func (r Records) Finish(launch string, at time.Time) error {
 		); err != nil {
 			return err
 		}
-		return q.DeleteFinishedSessionConfiguration(context.Background(), launch)
+		return q.DeleteFinishedLaunchAttachments(context.Background(), launch)
 	})
 }
 

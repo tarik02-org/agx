@@ -62,12 +62,9 @@ func (s *Server) resetUsers(id config.ID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, l := range s.launches {
-		for serverID, e := range l.endpoints {
-			server, temporary := l.temporary[serverID]
-			if !temporary {
-				server = l.snapshot.Config.MCP[serverID]
-			}
-			if id == "" || slices.Contains(server.Secrets(), id) {
+		servers := l.servers()
+		for serverID, e := range l.allEndpoints() {
+			if id == "" || slices.Contains(servers[serverID].Secrets(), id) {
 				go e.Reset()
 			}
 		}

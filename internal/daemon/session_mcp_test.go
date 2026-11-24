@@ -22,6 +22,7 @@ import (
 	"github.com/tarik02-org/agx/internal/configstore"
 	"github.com/tarik02-org/agx/internal/mcpruntime"
 	"github.com/tarik02-org/agx/internal/secretstore"
+	"github.com/tarik02-org/agx/internal/storage/statedb"
 )
 
 func sessionLaunch(t *testing.T, s *Server, dir, id string) (*launch, *mcp.ClientSession) {
@@ -36,9 +37,9 @@ func sessionLaunch(t *testing.T, s *Server, dir, id string) (*launch, *mcp.Clien
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	l := &launch{
-		ctx: ctx, cancel: cancel, snapshot: snapshot, local: config.EmptyLocal(), grant: verifier(id),
+		ctx: ctx, cancel: cancel, snapshot: snapshot, grant: verifier(id),
 		view:      &v1.Launch{Id: id, Directory: dir, State: v1.Launch_STATE_RUNNING},
-		endpoints: map[config.ID]*mcpruntime.Endpoint{}, temporary: map[config.ID]config.MCPServer{},
+		endpoints: map[config.ID]*mcpruntime.Endpoint{},
 	}
 	l.extend(time.Now().Add(time.Hour))
 	s.launches[id] = l
@@ -46,7 +47,7 @@ func sessionLaunch(t *testing.T, s *Server, dir, id string) (*launch, *mcp.Clien
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { cancel(); close(); closeEndpoints(l.endpoints) })
+	t.Cleanup(func() { cancel(); close(); closeEndpoints(l.allEndpoints()) })
 	return l, session
 }
 
@@ -202,8 +203,7 @@ func TestSessionMCP(t *testing.T) {
 	s.end(l, v1.Launch_STATE_FINISHED)
 	s.mu.Unlock()
 	eventually(t, "session configuration cleanup", func() bool {
-		local, _, err := configstore.ReadSession(t.Context(), s.paths.State, s.paths.Config, "first", l.grant)
-		return err == nil && local.Revision == 0
+		return len(savedAttachments(t, s, "first")) == 0
 	})
 	local, err := configstore.Read(t.Context(), s.paths.State, s.paths.Config)
 	if err != nil || len(local.Document) != 0 {
@@ -356,14 +356,14 @@ func TestSessionRestoresInlineCredentials(t *testing.T) {
 	}
 	t.Cleanup(replacement.clients.closeAll)
 	next := replacement.newLaunch(l.view, launchBasis{config: c, snapshot: snapshot}, "inline", "", nil)
-	if err := replacement.restoreSession(t.Context(), next, nil); err != nil {
+	if err := replacement.restoreAttachments(t.Context(), next); err != nil {
 		t.Fatal(err)
 	}
 	restored, close, err := connectHandler(t.Context(), replacement.sessionHandler(next))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { next.cancel(); close(); closeEndpoints(next.endpoints) })
+	t.Cleanup(func() { next.cancel(); close(); closeEndpoints(next.allEndpoints()) })
 	sessionCall(t, restored, "call_tool", adhocArgs)
 	if result := sessionObject(t, sessionCall(t, restored, "call_tool", args)); result["ok"] != true {
 		t.Fatalf("restored credential did not authenticate: %v", result)
@@ -402,4 +402,19 @@ func TestSessionResourcePagination(t *testing.T) {
 		last["next_offset"] != nil {
 		t.Fatalf("last page = %v", last)
 	}
+}
+
+func savedAttachments(t *testing.T, s *Server, launch string) []statedb.ListLaunchAttachmentsRow {
+	t.Helper()
+	var rows []statedb.ListLaunchAttachmentsRow
+	if err := s.attachmentsQuery(t.Context(), func(q *statedb.Queries) error {
+		var err error
+		rows, err = q.ListLaunchAttachments(t.Context(), statedb.ListLaunchAttachmentsParams{
+			Configuration: s.paths.Config, Launch: launch,
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return rows
 }

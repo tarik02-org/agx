@@ -34,15 +34,14 @@ in place, and one keeps its ID even when the directory later selects a server of
 the same name. Only temporary servers can be detached. Explicit process-sharing
 settings retain their existing meaning.
 
-Private session owners reuse relational configuration tables. Definitions and
-per-server environment inputs commit together; injected inputs are encrypted
-using the random launch grant's hash rather than the OS-keychain master key.
-Recovery therefore needs the wrapper's existing grant and does not prompt for a
-keychain. Explicit configuration literals have ordinary configuration storage
-semantics; resolved secret values are never copied. Referenced secret definitions
-and their dependencies are retained for recovery with their credential identity.
-The private document provides consistent secret definitions across a launch's
-attachments when persistent configuration changes.
+Each attachment is one row of the daemon's state: the server definition, the
+secret definitions it reads with their dependencies, and its environment inputs,
+sealed together under the random launch grant's hash rather than the OS-keychain
+master key. Ad-hoc definitions may carry literal credentials, so the definition is
+sealed too. Recovery therefore needs the wrapper's existing grant and does not
+prompt for a keychain. Resolved secret values are never copied; secret definitions
+keep their credential identity, so an attachment keeps working after its source
+leaves the configuration.
 
 Attachments survive daemon replacement and lease reattachment. Finish, revocation,
 and durable launch completion delete private state; lease expiry retains it so

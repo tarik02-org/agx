@@ -29,6 +29,13 @@ type Launch struct {
 	Exact     bool
 }
 
+type LaunchAttachment struct {
+	Configuration string
+	Launch        string
+	Mcp           string
+	Sealed        string
+}
+
 type LaunchSession struct {
 	Builtin string
 	Store   string
@@ -246,18 +253,5 @@ type Revocation struct {
 
 type Secret struct {
 	Key        string
-	Ciphertext string
-}
-
-type SessionConfiguration struct {
-	Configuration string
-	Launch        string
-	Owner         string
-}
-
-type SessionEnvironment struct {
-	Owner      string
-	Mcp        string
-	Name       string
 	Ciphertext string
 }
