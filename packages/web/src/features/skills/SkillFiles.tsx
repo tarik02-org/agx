@@ -14,8 +14,8 @@ export function SkillFiles({ files, selected, onSelect }: SkillFilesProps) {
     paths: files,
     initialSelectedPaths: selected === undefined ? [] : [selected],
     initialExpansion: "open",
-    onSelectionChange: (selected) => {
-      const file = selected.find((path) => files.includes(path));
+    onSelectionChange: (paths) => {
+      const file = paths.find((path) => files.includes(path));
       if (file !== undefined) {
         onSelect(file);
       }

@@ -1,17 +1,6 @@
+import type { MessageInitShape } from "@bufbuild/protobuf";
 import { createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
-import type { MessageInitShape } from "@bufbuild/protobuf";
-import * as Context from "effect/Context";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import * as Predicate from "effect/Predicate";
-import * as Schedule from "effect/Schedule";
-import * as Schema from "effect/Schema";
-import * as Stream from "effect/Stream";
-
-import { DaemonError, daemonError } from "~/daemon/error.ts";
-import { sessionHeaders } from "~/daemon/session.ts";
-import { ConfigSchema } from "~/lib/configSchema.ts";
 import {
   type ConfigChangeSchema,
   ConfigurationService,
@@ -19,12 +8,11 @@ import {
   type GetConfigurationResponse,
   type GetSkillResponse,
   type InstallResponse,
-  type PlannedFile,
   type PreviewSourceResponse,
   type SourceRef,
   type CompleteDirectoryResponse,
   type InspectSourceResponse,
-  InspectSourceRequestSchema,
+  type InspectSourceRequestSchema,
   type ReadFileResponse,
   type ReadPreviewFileResponse,
   LaunchService,
@@ -39,6 +27,17 @@ import {
   SecretService,
   type SecretStatus,
 } from "agx-client/protocol";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Predicate from "effect/Predicate";
+import * as Schedule from "effect/Schedule";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
+
+import { DaemonError, daemonError } from "~/daemon/error.ts";
+import { sessionHeaders } from "~/daemon/session.ts";
+import { ConfigSchema } from "~/lib/configSchema.ts";
 
 // The daemon that serves the page, reached with the session its sign-in handed over.
 export class Daemon extends Context.Service<
@@ -89,19 +88,15 @@ export class Daemon extends Context.Service<
     /** A configuration fragment, or a file of a configured skill or instructions definition. */
     readonly readFile: (path: string) => Effect.Effect<ReadFileResponse, DaemonError>;
     /**
-     * The diff each file would get, with the hashes the apply checks against. New definitions,
-     * rules, and packages go to file, or the only writable fragment when it is empty.
+     * Commits every change at once, or none when the local configuration is no longer at
+     * expectedRevision; returns its new revision.
      */
-    readonly planChanges: (
+    readonly updateConfiguration: (
       changes: ReadonlyArray<ConfigChangeInit>,
-      file: string,
-    ) => Effect.Effect<ReadonlyArray<PlannedFile>, DaemonError>;
-    /** Writes every change at once, or none when a planned file changed meanwhile. */
-    readonly applyChanges: (
-      changes: ReadonlyArray<ConfigChangeInit>,
-      file: string,
-      expected: ReadonlyArray<PlannedFile>,
-    ) => Effect.Effect<ReadonlyArray<string>, DaemonError>;
+      expectedRevision: bigint,
+    ) => Effect.Effect<bigint, DaemonError>;
+    /** Replaces the content of a configured skill's or instructions definition's file. */
+    readonly writeResourceFile: (path: string, content: string) => Effect.Effect<void, DaemonError>;
     /** Fetches a Git source and lists the skills it would add. */
     readonly previewSource: (source: string) => Effect.Effect<PreviewSourceResponse, DaemonError>;
     /** A Git source's branches and tags, without fetching it. */
@@ -143,7 +138,7 @@ const serverStream = <A>(
     Effect.gen(function* () {
       const controller = yield* Effect.acquireRelease(
         Effect.sync(() => new AbortController()),
-        (controller) => Effect.sync(() => controller.abort()),
+        (created) => Effect.sync(() => created.abort()),
       );
       return Stream.fromAsyncIterable(open(controller.signal), (cause) =>
         daemonError(operation, cause),
@@ -152,7 +147,7 @@ const serverStream = <A>(
   );
 
 const schemaFailure = (reason: DaemonError["reason"], message: string) =>
-  new DaemonError({ operation: "configSchema", reason, message, files: [] });
+  new DaemonError({ operation: "configSchema", reason, message });
 
 // fetchSchema reads the schema the daemon serves beside the UI, outside its RPCs.
 const fetchSchema = (origin: string): Effect.Effect<ConfigSchema, DaemonError> =>
@@ -172,7 +167,9 @@ const fetchSchema = (origin: string): Effect.Effect<ConfigSchema, DaemonError> =
       catch: () => schemaFailure("unreachable", "the response broke off"),
     });
     return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ConfigSchema))(body).pipe(
-      Effect.mapError(() => schemaFailure("internal", "the schema is not a JSON Schema object")),
+      Effect.catchTag("SchemaError", () =>
+        Effect.fail(schemaFailure("internal", "the schema is not a JSON Schema object")),
+      ),
     );
   });
 
@@ -261,17 +258,16 @@ export const makeDaemon = (): Daemon["Service"] => {
     skill: (skillId) =>
       call("getSkill", (signal) => configuration.getSkill({ skillId }, { signal })),
     readFile: (path) => call("readFile", (signal) => configuration.readFile({ path }, { signal })),
-    planChanges: (changes, file) =>
-      call("planChanges", (signal) =>
-        configuration.planChanges({ changes: [...changes], file }, { signal }),
-      ).pipe(Effect.map((response) => response.files)),
-    applyChanges: (changes, file, expected) =>
-      call("applyChanges", (signal) =>
-        configuration.applyChanges(
-          { changes: [...changes], file, expected: [...expected] },
-          { signal },
+    updateConfiguration: (changes, expectedRevision) =>
+      call("updateConfiguration", (signal) =>
+        configuration.updateConfiguration({ changes: [...changes], expectedRevision }, { signal }),
+      ).pipe(Effect.map((response) => response.revision)),
+    writeResourceFile: (path, content) =>
+      Effect.asVoid(
+        call("writeResourceFile", (signal) =>
+          configuration.writeResourceFile({ path, content }, { signal }),
         ),
-      ).pipe(Effect.map((response) => response.written)),
+      ),
     previewSource: (source) =>
       call("previewSource", (signal) => packages.previewSource({ source }, { signal })),
     inspectSource: (request) =>

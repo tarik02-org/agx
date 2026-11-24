@@ -1,5 +1,7 @@
 import { useQueries } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import type { Definition, GetSkillResponse, McpTools } from "agx-client/protocol";
+import { McpRuntime_State } from "agx-client/protocol";
 import { SearchIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
@@ -11,6 +13,7 @@ import { Daemon } from "~/daemon/Daemon.ts";
 import { DaemonError } from "~/daemon/error.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
 import { useRunEffect } from "~/effect/react.tsx";
+import { definitionValue, readList } from "~/features/config/definitionValue.ts";
 import { kinds } from "~/features/config/kinds.ts";
 import {
   definitionIcon,
@@ -20,12 +23,9 @@ import {
   sectionIcon,
   toolIcon,
 } from "~/features/config/treeIcons.ts";
-import { readList } from "~/features/config/yamlDocument.ts";
 import { useInspectorDirectory } from "~/features/mcp/tools.ts";
 import { mcpStates } from "~/features/runtime/states.ts";
 import { useEnabledHere, useScopeDirectory } from "~/features/scope/scope.ts";
-import type { Definition, GetSkillResponse, McpTools } from "agx-client/protocol";
-import { McpRuntime_State } from "agx-client/protocol";
 import { shortPath } from "~/lib/path.ts";
 
 /** Kinds a scope selects; the others apply wherever they are defined. */
@@ -51,7 +51,6 @@ type Target =
   | { readonly page: "skill"; readonly skill: string; readonly file?: string }
   | { readonly page: "server"; readonly server: string; readonly tool?: string }
   | { readonly page: "definition"; readonly kind: string; readonly id: string }
-  | { readonly page: "file"; readonly file: string }
   | { readonly page: "new"; readonly kind: string };
 
 /**
@@ -75,12 +74,13 @@ const savedGrouping = (): Grouping => {
 const savedByType = () => globalThis.localStorage?.getItem(byTypeKey) !== "false";
 
 const outsideBundles = "Not in a bundle";
-const filesFolder = "Files";
+// Definitions edited here rather than written in a file.
+const localGroup = "Local";
 
 /** The definitions a bundle selects, as kind/id keys; inline definitions name no ID. */
 const bundleMembers = (bundle: Definition): ReadonlyArray<string> =>
   ["skills", "instructions", "mcp", "bundles"].flatMap((kind) =>
-    readList(bundle.yaml, [kind]).map((id) => `${kind}/${id}`),
+    readList(definitionValue(bundle), [kind]).map((id) => `${kind}/${id}`),
   );
 
 /**
@@ -133,9 +133,11 @@ export function ConfigTree() {
         return [""];
       case "file":
         return [
-          definition.package === ""
-            ? relative(definition.source?.path ?? "")
-            : `package ${definition.package}`,
+          definition.package !== ""
+            ? `package ${definition.package}`
+            : definition.source?.local === true
+              ? localGroup
+              : relative(definition.source?.path ?? ""),
         ];
       case "bundle": {
         const key = `${definition.kind}/${definition.id}`;
@@ -194,21 +196,21 @@ export function ConfigTree() {
   });
   const skillFiles = new Map<string, Loading<GetSkillResponse>>(
     allSkills.flatMap((d, index) => {
-      const query = skills[index];
-      return query === undefined ? [] : [[d.id, query]];
+      const result = skills[index];
+      return result === undefined ? [] : [[d.id, result]];
     }),
   );
   const serverTools = new Map<string, Loading<McpTools>>(
     allServers.flatMap((d, index) => {
-      const query = servers[index];
-      return query === undefined ? [] : [[d.id, query]];
+      const result = servers[index];
+      return result === undefined ? [] : [[d.id, result]];
     }),
   );
 
   const targets = new Map<string, Target>();
   const lazy = new Map<string, boolean>();
   const decorations = new Map<string, string>();
-  const icons = new Map<string, TreeIcon>([[filesFolder, filesIcon]]);
+  const icons = new Map<string, TreeIcon>();
   const bundleIcon = sectionIcon("bundles");
   // Folders that stand for a kind, at the top or inside a bundle or file.
   const kindFolder = (folder: string, kind: string) => {
@@ -224,6 +226,12 @@ export function ConfigTree() {
       if (definitions.isSuccess && !filtering && !shown.some((d) => d.kind === kind)) {
         targets.set(`${label(kind)}/Add ${one(kind)}…`, { page: "new", kind });
       }
+    }
+  }
+  // Grouped by file, each file, and local configuration, is a folder of its own.
+  if (grouping === "file") {
+    for (const group of new Set(shown.flatMap(groupsOf))) {
+      icons.set(group, filesIcon);
     }
   }
   for (const definition of shown) {
@@ -319,19 +327,6 @@ export function ConfigTree() {
       }
     }
   }
-  // Grouped by file, each file is its own folder and opens itself; otherwise files have theirs.
-  for (const file of configuration.data?.files ?? []) {
-    const path =
-      grouping === "file" ? relative(file.path) : `${filesFolder}/${relative(file.path)}`;
-    targets.set(path, { page: "file", file: file.path });
-    if (grouping === "file") {
-      icons.set(path, filesIcon);
-    }
-    if (file.readOnly) {
-      decorations.set(path, "read-only");
-    }
-  }
-
   // The page's item, at its first place in the tree. A skill's file or a server's tool is
   // selected before it loads, so its folder opens for it.
   const itemLabel = search.kind === undefined ? undefined : label(search.kind);
@@ -340,19 +335,15 @@ export function ConfigTree() {
       ? undefined
       : shown.find((d) => d.kind === search.kind && d.id === search.id);
   const selected =
-    search.file !== undefined
-      ? [...targets].find(
-          ([, target]) => target.page === "file" && target.file === search.file,
-        )?.[0]
-      : itemLabel === undefined || search.id === undefined
-        ? undefined
-        : `${definition === undefined ? `${itemLabel}/${search.id}` : (placesOf(definition)[0] ?? definition.id)}${
-            search.kind === "skills" && search.path !== undefined
-              ? `/${search.path}`
-              : search.kind === "mcp" && search.tool !== undefined
-                ? `/${search.tool}`
-                : ""
-          }`;
+    itemLabel === undefined || search.id === undefined
+      ? undefined
+      : `${definition === undefined ? `${itemLabel}/${search.id}` : (placesOf(definition)[0] ?? definition.id)}${
+          search.kind === "skills" && search.path !== undefined
+            ? `/${search.path}`
+            : search.kind === "mcp" && search.tool !== undefined
+              ? `/${search.tool}`
+              : ""
+        }`;
 
   const order =
     grouping === "none"
@@ -361,8 +352,8 @@ export function ConfigTree() {
         : []
       : grouping === "bundle"
         ? all.filter((d) => d.kind === "bundles").map((d) => d.id)
-        : // The root first; it lists the others.
-          [relative(configuration.data?.root ?? "")];
+        : // Local definitions first, then the overlays in the order the root lists them.
+          [localGroup, ...(configuration.data?.overlays ?? []).map(relative)];
 
   return (
     <NavTree
@@ -379,7 +370,7 @@ export function ConfigTree() {
       lazy={lazy}
       onExpand={(folder) => setExpanded((current) => new Set([...current, folder]))}
       order={order}
-      last={grouping === "file" ? [] : [outsideBundles, filesFolder]}
+      last={grouping === "file" ? [] : [outsideBundles]}
       // Files and definitions are rows to open, not sections.
       sections={grouping === "bundle" || (grouping === "none" && byType)}
       icons={icons}
@@ -413,9 +404,6 @@ export function ConfigTree() {
             return;
           case "definition":
             void navigate({ to: "/config", search: { kind: target.kind, id: target.id, ...tab } });
-            return;
-          case "file":
-            void navigate({ to: "/config", search: { file: target.file } });
             return;
           case "new":
             void navigate({ to: "/config", search: { kind: target.kind, create: true } });
@@ -492,10 +480,16 @@ export function ConfigTree() {
   );
 }
 
-function TreeOption({ label, children }: { readonly label: string; readonly children: ReactNode }) {
+function TreeOption({
+  label: title,
+  children,
+}: {
+  readonly label: string;
+  readonly children: ReactNode;
+}) {
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-muted-foreground text-xs">{label}</span>
+      <span className="text-muted-foreground text-xs">{title}</span>
       {children}
     </div>
   );

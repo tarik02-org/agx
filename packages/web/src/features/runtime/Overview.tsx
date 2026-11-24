@@ -1,3 +1,9 @@
+import {
+  McpRuntime_State,
+  type RuntimeView,
+  type SecretStatus,
+  SecretStatus_State,
+} from "agx-client/protocol";
 import { cn } from "cn";
 import { KeyRoundIcon, ServerIcon } from "lucide-react";
 
@@ -23,12 +29,6 @@ import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
 import { refreshInterval } from "~/features/runtime/ProcessesCard.tsx";
 import { SecretActions } from "~/features/runtime/SecretsCard.tsx";
 import { isActiveLaunch, mcpStates, secretStates } from "~/features/runtime/states.ts";
-import {
-  McpRuntime_State,
-  type RuntimeView,
-  type SecretStatus,
-  SecretStatus_State,
-} from "agx-client/protocol";
 
 /** Counts at a glance, and what needs a hand before launches work as configured. */
 export function RuntimeOverview({ view }: { readonly view: RuntimeView }) {

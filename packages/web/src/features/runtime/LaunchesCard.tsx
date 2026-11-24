@@ -1,3 +1,4 @@
+import type { Launch } from "agx-client/protocol";
 import { XIcon } from "lucide-react";
 
 import { ConfirmAction } from "~/components/ConfirmAction.tsx";
@@ -16,7 +17,6 @@ import { toast } from "~/components/ui/toast.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonMutation } from "~/daemon/query.ts";
 import { isActiveLaunch, launchStates } from "~/features/runtime/states.ts";
-import type { Launch } from "agx-client/protocol";
 
 export function LaunchesCard({ launches }: { readonly launches: ReadonlyArray<Launch> }) {
   const revoke = useDaemonMutation(

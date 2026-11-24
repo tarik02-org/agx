@@ -64,7 +64,6 @@ export function useFork(
     const fiber = runtime.runFork(program);
     return () => fiber.interruptUnsafe();
     // The caller's deps describe `effect`, as with useEffect.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [runtime, ...deps]);
 }
 
@@ -99,7 +98,6 @@ export function useEffectCallback<Args extends ReadonlyArray<unknown>>(
       fiber.addObserver(() => fibers.current.delete(fiber));
     },
     // The caller's deps describe `callback`, as with useCallback.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
     [runtime, ...deps],
   );
 }

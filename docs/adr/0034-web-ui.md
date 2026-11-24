@@ -4,6 +4,7 @@ Status: accepted.
 
 agx is driven from the command line, plus the TUI launcher. That suits scripts
 and quick edits, but some questions are hard to answer from a terminal:
+
 - what a directory ends up with, and which rule decided each item;
 - which MCP servers run, which wait for a login, and what their tools do;
 - what a Git repository's skills contain before installing them.
@@ -17,7 +18,7 @@ the CLI already uses, and adds the few operations it needs.
 daemon serves the UI's static files from its binary and answers the UI's
 requests through the same Connect handlers as the CLI. There is no separate
 server process and no second port. The UI is a single-page React application,
-in `web/` of this repository.
+in `packages/web` of this repository's pnpm workspace.
 
 ### Why in the daemon, and why a browser
 
@@ -27,8 +28,8 @@ in `web/` of this repository.
   it.
 - A browser needs nothing installed. It works the same on macOS, Linux, and
   Windows, and on a remote machine through `ssh -L <port>:127.0.0.1:<port>`.
-- The protocol is already shared: `buf generate` writes a TypeScript client
-  (`gen/typescript`), so the UI calls typed RPCs without a second API.
+- The protocol is already shared: `buf generate` writes the TypeScript messages
+  that `agx-client` exports, so the UI calls typed RPCs without a second API.
 - What the UI shows is tables, trees, forms, Markdown, diffs, and graphs. Web
   libraries cover all of these.
 
@@ -70,32 +71,33 @@ Connecting to a remote daemon directly is out of scope.
 
 ## Frontend stack
 
-| Concern | Choice |
-| --- | --- |
-| Language | TypeScript 7 (the native compiler), `strict` plus `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax` |
-| Toolchain | Vite+ 1 (`vp dev`, `vp build`, `vp lint` with Oxlint, `vp fmt` with Oxfmt, `vp test` with Vitest), lint and format configs strict, CI failing on warnings |
-| Package manager | pnpm 12, lockfile committed, `web/` as its own package |
-| UI | React 19 with the React Compiler, through `@vitejs/plugin-react` with `compiler: true` (the Oxc-based Rust implementation, as T3 Code uses) |
-| Routing | TanStack Router, file-based, with code splitting |
-| Components | shadcn on Base UI, Tailwind CSS 4, a compact dark theme (light as an option), lucide icons |
-| RPC | `@connectrpc/connect-web` over the generated `gen/typescript` messages |
-| State and effects | Effect 4 in a `ManagedRuntime` with `useFork`-style hooks, TanStack Query for cached queries (see below) |
-| Markdown | `react-markdown` 10 with `remark-gfm`, code blocks highlighted with Shiki, as T3 Code renders chat and pull request Markdown |
-| Diffs and file trees | `@pierre/diffs` (also Shiki highlighting) and `@pierre/trees` |
-| Harness logos | `@lobehub/icons-static-svg` (MIT), as SVG files |
-| Editors | forms for definitions and scopes (below); CodeMirror 6 for skill files and as the YAML fallback, validated and completed against the configuration JSON Schema the daemon serves at `/ui/schema.json` for its own version and harnesses |
-| Local state | Zustand for the staged changes, which live in the tab until applied |
-| Graphs | React Flow (`@xyflow/react`), only for the scope view (below) |
+| Concern              | Choice                                                                                                                                                                                                                                  |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Language             | TypeScript 7 (the native compiler), `strict` plus `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`                                                                                                      |
+| Toolchain            | Vite+ 1 (`vp dev`, `vp build`, `vp lint` with Oxlint, `vp fmt` with Oxfmt, `vp test` with Vitest), lint and format configs strict, CI failing on warnings                                                                               |
+| Package manager      | pnpm, `packages/web` (`agx-web`) as a member of the repository's workspace, with its one committed lockfile                                                                                                                             |
+| UI                   | React 19 with the React Compiler, through `@vitejs/plugin-react` with `compiler: true` (the Oxc-based Rust implementation, as T3 Code uses)                                                                                             |
+| Routing              | TanStack Router, file-based, with code splitting                                                                                                                                                                                        |
+| Components           | shadcn on Base UI, Tailwind CSS 4, a compact dark theme (light as an option), lucide icons                                                                                                                                              |
+| RPC                  | `@connectrpc/connect-web` over the generated messages `agx-client/protocol` exports                                                                                                                                                     |
+| State and effects    | Effect 4 in a `ManagedRuntime` with `useFork`-style hooks, TanStack Query for cached queries (see below)                                                                                                                                |
+| Markdown             | `react-markdown` 10 with `remark-gfm`, code blocks highlighted with Shiki, as T3 Code renders chat and pull request Markdown                                                                                                            |
+| Diffs and file trees | `@pierre/diffs` (also Shiki highlighting) and `@pierre/trees`                                                                                                                                                                           |
+| Harness logos        | `@lobehub/icons-static-svg` (MIT), as SVG files                                                                                                                                                                                         |
+| Editors              | forms for definitions and scopes (below); CodeMirror 6 for skill files and as the JSON fallback, validated and completed against the configuration JSON Schema the daemon serves at `/ui/schema.json` for its own version and harnesses |
+| Local state          | Zustand for the staged changes, which live in the tab until applied                                                                                                                                                                     |
+| Graphs               | React Flow (`@xyflow/react`), only for the scope view (below)                                                                                                                                                                           |
 
 ### Effect
 
 The UI uses Effect for its data layer, not for rendering:
 
 - Every RPC goes through a small Effect service around the Connect client. Its
-  failures become a tagged error union decoded from `ErrorDetail.reason`
-  (`needs_login`, `mcp_failed`, `config_invalid`, …), and an unknown reason is
-  a defect. Components then handle each reason exhaustively instead of
-  catching `ConnectError`.
+  failures become a tagged error union classified from the Connect code
+  (`conflict`, `not_found`, …), with `config_invalid` for an error carrying a
+  configuration `ErrorDetail`, and `needs_login` and `mcp_failed` for an MCP
+  server's failures. Components then handle each reason exhaustively instead
+  of catching `ConnectError`.
 - Streams (`WatchRuntime`, `Install`, `Login`) are Effect streams whose
   scope ends with the component that runs them, so leaving a page closes the
   stream, and a reconnect after `agx daemon restart` is one retry schedule.
@@ -117,24 +119,25 @@ tool whose author already writes Effect, and Aperture uses the same model.
 
 ## Build and distribution
 
-- `web/` builds to `web/dist`. `internal/ui` embeds it with
-  `//go:embed all:dist` (copied there by the build).
+- `packages/web` builds into `internal/ui/dist`, which `internal/ui` embeds
+  with `//go:embed all:dist`.
 - A checked-in placeholder `index.html` keeps `go build` and `go install`
   working without Node: `agx ui` then says the binary was built without the
   UI.
-- The Nix package builds the UI first, with pnpm's fixed-output dependency
-  fetch and a `pnpmDeps` hash next to `vendorHash`. GoReleaser runs the same
+- The Nix package builds the UI first, with pnpm's fixed-output fetch of the
+  dependencies of `agx-web` and the packages it uses, and a `pnpmDeps` hash
+  next to `vendorHash`. GoReleaser runs the same
   build in a `before` hook. Release binaries and the flake always contain the
   UI.
-- CI runs `vp lint`, `vp fmt --check`, the TypeScript check, and `vp test`, and
-  builds the UI before the Go tests that serve it.
+- CI checks the workspace (`vp check`: lint, format, and types), runs its
+  tests, and builds the UI.
 
 ## Layout and scope
 
 - Each page has one header, one row as tall as the sidebar's, with the
   sidebar's toggle, the breadcrumbs, the page's views, and every action, an
   editor's Stage and Revert included, then the staged changes, so actions are
-  always at the top. What does not act (where a definition is, Form or YAML)
+  always at the top. What does not act (where a definition is, Form or JSON)
   sits with the content. The sidebar's top row holds the runtime page and New, and
   the scope (directory and harness) sits below it, above the tree it marks; in
   the header
@@ -197,7 +200,7 @@ Each feature is a page, listed in the order they ship.
      way `agx skill add` does. For each skill it shows the description, the
      rendered `SKILL.md`, and the files.
    - **Selecting skills:** choose skills and a scope (everywhere, a directory,
-     a harness), see the configuration diff, then confirm.
+     a harness), review the changes, then confirm.
    - **Packages:** status, lock, `agx install`, and `agx update` with progress.
 5. **Configuration editor**
    - Configuration is edited through the interface, not as text:
@@ -206,25 +209,26 @@ Each feature is a page, listed in the order they ship.
        for each kind;
      - scope rules are edited as lists of resources per directory and harness,
        with resources picked from what the configuration defines.
-   - Changes are staged, not written one by one. The page shows the pending
-     changes as one diff across every file they touch, and applies them
-     atomically:
-     - the daemon plans the whole set, validates the configuration it would
-       produce, and writes nothing if anything fails;
-     - files are rewritten the way the CLI's edit commands rewrite them, so
-       comments, order, and formatting of everything else survive;
-     - apply fails if a file changed since the plan, such as through a CLI
-       edit, and the plan is made again.
-   - Each definition's form shows the file and line it comes from, and new
-     definitions go to the file the CLI would pick, or one you choose.
+   - The UI edits local configuration, which the daemon keeps in its database
+     ([ADR 0029](0029-local-configuration.md)), with the same semantic changes
+     as the CLI's editing commands. Definitions that configuration files or
+     packages define open read-only, with the file and line they come from.
+   - Changes are staged, not written one by one. The page shows each pending
+     definition's value before and after, and applies the set atomically with
+     `UpdateConfiguration`:
+     - the daemon validates the configuration the changes produce, and commits
+       nothing if anything fails;
+     - apply fails if the local configuration's revision moved since the
+       review, such as through a CLI edit; the staged changes, being semantic,
+       are reviewed against what is there now and applied again.
    - A definition whose fields no form models yet, such as an unusual MCP
-     `auth` or harness `settings`, opens in a YAML editor for that one
-     definition (CodeMirror with the agx JSON Schema), staged like a form.
-   - Local skill files are edited in CodeMirror with Markdown support, staged
-     like the rest.
-   - A file is read-only when it is a symlink or not writable, which covers
-     files Nix or Home Manager link from `/nix/store`. Its definitions open
-     read-only, with the file's path and where the link points.
+     `auth` or harness `settings`, opens in a JSON editor for that one
+     definition's value (CodeMirror with the agx JSON Schema), staged like a
+     form. Injected values are written there as `{"$env": …}`, `{"$file": …}`,
+     or `{"$secret": …}`.
+   - Local skill files are edited in CodeMirror with Markdown support and saved
+     with `WriteResourceFile`; they are not configuration, so they are not
+     staged.
 6. **Scope graph** (optional)
    - A React Flow view: scopes and harnesses on the left, bundles in the
      middle, and resources on the right.
@@ -241,20 +245,20 @@ terminal emulator, is left to the launcher and integrations such as T3 Code.
 Most pages use existing RPCs. These are new, all requiring management
 authorization:
 
-| RPC | For |
-| --- | --- |
-| `UIService.CreateLoginCode` | `agx ui` |
-| `ConfigurationService.GetConfiguration` | the configuration as loaded: definitions, scopes, packages, files with read-only marks; the same model `--json` list commands print |
-| `ConfigurationService.PlanChanges`, `ApplyChanges` | the editor: plan a set of definition, scope, and file changes, validate the configuration it would produce, and return the diff; apply it atomically if no file changed since |
-| `PackageService.PreviewSource` | clone a Git source into a temporary directory under the cache, list its skills with `SKILL.md` and file trees, read a file; previews expire after 30 minutes |
-| `PackageService.AddSkills` | the selection of the preview, written as `agx skill add` would, through the same edit path |
-| `RuntimeService.RestartMcpProcess`, `StopMcpProcess` | process controls; a shared process restarts for all its clients |
-| `RuntimeService.ListSessions` | sessions as the launcher lists them, moved from the CLI to the daemon |
-| `ConfigurationService.CompleteDirectory` | directory completion in the explain page |
+| RPC                                                  | For                                                                                                                                                          |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `UIService.CreateLoginCode`                          | `agx ui`                                                                                                                                                     |
+| `ConfigurationService.GetConfiguration`              | the configuration as loaded: harnesses, scope directories, overlays, and the local configuration's revision                                                  |
+| `ConfigurationService.UpdateConfiguration`           | the editor: commit a set of definition, scope, and package changes atomically if the local configuration is still at the revision the UI reviewed            |
+| `PackageService.PreviewSource`                       | clone a Git source into a temporary directory under the cache, list its skills with `SKILL.md` and file trees, read a file; previews expire after 30 minutes |
+| `PackageService.AddSkills`                           | the selection of the preview, written as `agx skill add` would, through the same edit path                                                                   |
+| `RuntimeService.RestartMcpProcess`, `StopMcpProcess` | process controls; a shared process restarts for all its clients                                                                                              |
+| `RuntimeService.ListSessions`                        | sessions as the launcher lists them, moved from the CLI to the daemon                                                                                        |
+| `ConfigurationService.CompleteDirectory`             | directory completion in the explain page                                                                                                                     |
 
 The configuration edits the CLI makes (`skill add`, `mcp add`, `enable`, …)
-move from `internal/cli` into a package the daemon also uses. CLI and UI then
-write identical YAML and show identical diffs.
+move from `internal/cli` into a package the daemon also uses, so CLI and UI
+make identical changes.
 
 ## Alternatives
 
@@ -275,17 +279,18 @@ write identical YAML and show identical diffs.
 
 About three weeks, shippable after each step:
 
-1. `web/` scaffold:
+1. `packages/web` scaffold:
    - toolchain configs, theme, shell layout, and the Effect RPC layer;
    - login codes and sessions, embedding, and the Nix and GoReleaser
      builds;
    - CI for all of it.
 
    3 days.
+
 2. Runtime page and process controls: 2 days.
 3. Explain page, `GetConfiguration`, and directory completion: 2 days.
 4. MCP inspector with schema forms and content rendering: 3 days.
 5. Skills browser, Git preview, and adding skills, with edits moved into a
    shared package: 4 days.
-6. Configuration editor with plan and apply: 3 days.
+6. Configuration editor with staged changes: 3 days.
 7. Scope graph, if wanted: 2 days.

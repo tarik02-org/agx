@@ -1,5 +1,5 @@
-import { Code, Markdown } from "~/lib/markdown.tsx";
 import { fileLanguage } from "~/features/skills/SkillFiles.tsx";
+import { Code, Markdown } from "~/lib/markdown.tsx";
 
 /** SKILL.md split into its YAML front matter and Markdown body. */
 export const splitFrontmatter = (

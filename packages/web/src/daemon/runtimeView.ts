@@ -1,3 +1,4 @@
+import type { RuntimeView } from "agx-client/protocol";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { useState } from "react";
@@ -5,7 +6,6 @@ import { useState } from "react";
 import { Daemon } from "~/daemon/Daemon.ts";
 import type { DaemonError } from "~/daemon/error.ts";
 import { useFork } from "~/effect/react.tsx";
-import type { RuntimeView } from "agx-client/protocol";
 
 /** The daemon's runtime view as the stream last reported it. */
 export type RuntimeViewState =

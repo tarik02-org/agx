@@ -4,15 +4,15 @@ import { useState } from "react";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { PageActions } from "~/components/Page.tsx";
 import { Pending } from "~/components/Pending.tsx";
-import { UnsavedChanges } from "~/components/UnsavedChanges.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
 import { Button } from "~/components/ui/button.tsx";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card.tsx";
+import { Spinner } from "~/components/ui/spinner.tsx";
 import { toast } from "~/components/ui/toast.tsx";
+import { UnsavedChanges } from "~/components/UnsavedChanges.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
-import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
+import { queryKeys, useDaemonMutation, useDaemonQuery } from "~/daemon/query.ts";
 import { CodeEditor } from "~/features/config/CodeEditor.tsx";
-import { useStagedFile, useStaging, writeFile } from "~/features/config/staging.ts";
 import { FilePreview } from "~/features/skills/SkillDocument.tsx";
 import { shortPath } from "~/lib/path.ts";
 
@@ -68,28 +68,15 @@ export function SkillOverview({
         )}
       </Card>
       {file === undefined || file === "SKILL.md" ? (
-        <EditableFile
-          path={`${directory}/SKILL.md`}
-          original={skillMd}
-          editable={editable}
-          home={home}
-        />
+        <EditableFile path={`${directory}/SKILL.md`} original={skillMd} editable={editable} />
       ) : (
-        <SkillFile key={file} path={`${directory}/${file}`} editable={editable} home={home} />
+        <SkillFile key={file} path={`${directory}/${file}`} editable={editable} />
       )}
     </>
   );
 }
 
-function SkillFile({
-  path,
-  editable,
-  home,
-}: {
-  readonly path: string;
-  readonly editable: boolean;
-  readonly home: string;
-}) {
+function SkillFile({ path, editable }: { readonly path: string; readonly editable: boolean }) {
   const content = useDaemonQuery(
     queryKeys.file(path),
     Daemon.use((daemon) => daemon.readFile(path)),
@@ -108,39 +95,38 @@ function SkillFile({
       path={path}
       original={content.data.content}
       editable={editable && !content.data.readOnly}
-      home={home}
     />
   );
 }
 
-/** A skill file shown rendered, or edited and staged when the skill is a local directory. */
+/**
+ * A skill file shown rendered, or edited and saved when the skill is a local directory. Files
+ * are written at once: they are not configuration, so staged changes do not hold them.
+ */
 function EditableFile({
   path,
   original,
   editable,
-  home,
 }: {
   readonly path: string;
   readonly original: string;
   readonly editable: boolean;
-  readonly home: string;
 }) {
-  const staged = useStagedFile(path);
   const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(staged ?? original);
-  const stage = useStaging((state) => state.stage);
-  const unstage = useStaging((state) => state.unstage);
+  const [text, setText] = useState(original);
+  const save = useDaemonMutation(
+    (content: string) => Daemon.use((daemon) => daemon.writeResourceFile(path, content)),
+    // SKILL.md comes with its skill.
+    [queryKeys.file(path), ["skill"]],
+  );
   const name = path.slice(path.lastIndexOf("/") + 1);
   return (
     <Card size="sm">
-      <UnsavedChanges dirty={editing && text !== (staged ?? original)} />
+      <UnsavedChanges dirty={editing && text !== original} />
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 font-mono">
-          {name}
-          {staged !== undefined && <Badge>staged</Badge>}
-        </CardTitle>
+        <CardTitle className="font-mono">{name}</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-col gap-2">
         {editing ? (
           <CodeEditor
             language={name.toLowerCase().endsWith(".md") ? "markdown" : "text"}
@@ -150,6 +136,7 @@ function EditableFile({
         ) : (
           <FilePreview file={name} content={text} binary={false} />
         )}
+        {save.error !== null && <DaemonProblem error={save.error} />}
       </CardContent>
       {editable && (
         <PageActions>
@@ -159,7 +146,6 @@ function EditableFile({
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  unstage(`file/${path}`);
                   setText(original);
                   setEditing(false);
                 }}
@@ -169,14 +155,18 @@ function EditableFile({
               </Button>
               <Button
                 size="sm"
-                disabled={text === original && staged === undefined}
-                onClick={() => {
-                  stage(writeFile(path, text, home));
-                  setEditing(false);
-                  toast.add({ type: "success", title: `Staged ${name}` });
-                }}
+                disabled={text === original || save.isPending}
+                onClick={() =>
+                  save.mutate(text, {
+                    onSuccess: () => {
+                      setEditing(false);
+                      toast.add({ type: "success", title: `Saved ${name}` });
+                    },
+                  })
+                }
               >
-                Stage
+                {save.isPending && <Spinner data-icon="inline-start" />}
+                Save
               </Button>
             </>
           ) : (

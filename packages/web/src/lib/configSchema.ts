@@ -1,6 +1,6 @@
-import type { JSONSchema7, JSONSchema7Definition } from "json-schema";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
+import type { JSONSchema7, JSONSchema7Definition } from "json-schema";
 
 /** The configuration JSON Schema, opaque except for what the editors look up in it. */
 export type ConfigSchema = JSONSchema7;
@@ -22,14 +22,36 @@ export const definitionNames: { readonly [kind: string]: string } = {
   harnesses: "Harness",
 };
 
-/** A schema validating one entry of a configuration section, resolving refs into the whole. */
-export const definitionSchema = (schema: ConfigSchema, kind: string): JSONSchema7 => ({
-  $ref: `#/$defs/${definitionNames[kind] ?? ""}`,
-  $defs: schema.$defs ?? {},
-});
-
 const asSchema = (definition: JSONSchema7Definition | undefined): JSONSchema7 | undefined =>
   typeof definition === "object" ? definition : undefined;
+
+// A local value writes an injection as an object with the tag's $-key, where a configuration
+// file writes a tagged string.
+const injection = (key: string): JSONSchema7 => ({
+  type: "object",
+  properties: { [key]: { type: "string" } },
+  required: [key],
+  additionalProperties: false,
+});
+
+/**
+ * A schema validating a local definition's value as one entry of a configuration section,
+ * resolving refs into the whole.
+ */
+export const definitionSchema = (schema: ConfigSchema, kind: string): JSONSchema7 => {
+  const defs = schema.$defs ?? {};
+  const value = asSchema(defs["Value"]);
+  return {
+    $ref: `#/$defs/${definitionNames[kind] ?? ""}`,
+    $defs: {
+      ...defs,
+      Value: {
+        ...(value?.description === undefined ? {} : { description: value.description }),
+        oneOf: [{ type: "string" }, injection("$env"), injection("$file"), injection("$secret")],
+      },
+    },
+  };
+};
 
 /** What the schema says about a field of a section's entries. */
 export const fieldDescription = (

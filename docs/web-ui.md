@@ -9,7 +9,7 @@ and the scope stays in the address, so a scoped page can be shared and
 reloaded. Every page's header shows where the page is, every action it offers,
 and **Staged** while changes wait. Below the scope, the sidebar holds the
 configuration as a tree: ungrouped, grouped by bundle (each bundle with
-what it selects, then what no bundle selects), or grouped by file (each fragment
+what it selects, then what no bundle selects), or grouped by file (local definitions, then each configuration file
 with what it defines), and split by type or not. An empty kind offers to add
 one, and package skills sit under their package. Expanding a
 skill lists its files, and expanding an MCP server starts it and lists its
@@ -39,8 +39,10 @@ harness's resolved settings, grouped by key with where each was set; a package's
 source and what it provides; what a bundle adds; instructions' text; and a
 secret's state, with setting or logging in, and the MCP servers that use it. When the UI
 is scoped, it also says why the item is or is not part of a launch there, with
-the rules that added or removed it. **Definition** edits it with a form, or as
-YAML checked against the configuration schema. The tree's **In scope** mode
+the rules that added or removed it. **Definition** edits a local definition with
+a form, or as JSON checked against the configuration schema; injected values
+are written there as `{"$env": "NAME"}`, `{"$file": "PATH"}`, or
+`{"$secret": "ID"}`. The tree's **In scope** mode
 shows only what a launch in the scope directory gets for the scope's harness;
 **All**, the default, shows everything and marks what is in scope. **New**
 creates a definition of any kind or adds skills from Git. The runtime page
@@ -50,16 +52,20 @@ start or a secret waiting for a login.
 Adding skills is a wizard: a Git source (`owner/repo[@ref][/path]` or a URL),
 which the daemon fetches without configuring anything; the skills to enable,
 with their SKILL.md and files; where to enable them, starting with the scope;
-and the diff, applied at once or added to the staged changes.
+and the changes, applied at once or added to the staged changes.
 
-Configuration files are edited directly from the tree's files. Secrets stored in the keychain get their value from the runtime page.
+The UI edits local configuration, which the daemon keeps in its database, as
+the CLI's editing commands do (see
+[ADR 0029](adr/0029-local-configuration.md)). Definitions that configuration
+files or packages define are shown read-only, with where they come from; change
+them there. A local skill's files are saved directly. Secrets stored in the
+keychain get their value from the runtime page.
 
-Nothing is written while you edit. Changes are staged, and **Staged changes**
-lists them, with the diff of every file they touch on a second tab; **Apply** writes them all at once,
-formatted and commented as the CLI leaves them, or none if a file changed since
-the diff. New definitions go to the only writable fragment; with several, the review asks
-which one, or for a new file. Files that are links, such as those Home Manager manages, and
-definitions from packages are shown read-only. See
+Nothing else is written while you edit. Changes are staged, and **Staged changes**
+lists them, with each definition's value before and after on a second tab;
+**Apply** commits them all at once, or none if the local configuration changed
+since the review, such as through a CLI edit. The review then shows the changes
+against what is there now, to apply again. See
 [ADR 0034](adr/0034-web-ui.md) for the design.
 
 ```sh

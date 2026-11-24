@@ -6,23 +6,25 @@ import type { BundledLanguage } from "shiki";
 // Shiki loads its grammars on first use, so pages that render no code never fetch it.
 const highlighter = () => import("shiki");
 
+const isBundled = (language: string, languages: object): language is BundledLanguage =>
+  language in languages;
+
 /** Code highlighted with Shiki once it loads, plain until then. */
 export function Code({ code, language }: { readonly code: string; readonly language: string }) {
   const [html, setHtml] = useState<string | null>(null);
   useEffect(() => {
     let current = true;
-    void highlighter()
-      .then(({ codeToHtml, bundledLanguages }) =>
-        codeToHtml(code, {
-          lang: language in bundledLanguages ? (language as BundledLanguage) : "text",
-          theme: "github-dark-default",
-        }),
-      )
-      .then((rendered) => {
-        if (current) {
-          setHtml(rendered);
-        }
+    const render = async () => {
+      const { codeToHtml, bundledLanguages } = await highlighter();
+      const rendered = await codeToHtml(code, {
+        lang: isBundled(language, bundledLanguages) ? language : "text",
+        theme: "github-dark-default",
       });
+      if (current) {
+        setHtml(rendered);
+      }
+    };
+    void render();
     return () => {
       current = false;
     };
@@ -34,7 +36,6 @@ export function Code({ code, language }: { readonly code: string; readonly langu
   return (
     <div
       className="overflow-x-auto rounded-md text-xs [&_pre]:p-3"
-      // oxlint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

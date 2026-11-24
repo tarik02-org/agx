@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import type { PreviewSkill, PreviewSourceResponse } from "agx-client/protocol";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -8,8 +9,8 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
-import { Page } from "~/components/Page.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
+import { Page } from "~/components/Page.tsx";
 import { Pending } from "~/components/Pending.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
 import { Button } from "~/components/ui/button.tsx";
@@ -23,13 +24,13 @@ import {
 } from "~/components/ui/card.tsx";
 import { Checkbox } from "~/components/ui/checkbox.tsx";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "~/components/ui/field.tsx";
-import { Input } from "~/components/ui/input.tsx";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupInput,
 } from "~/components/ui/input-group.tsx";
+import { Input } from "~/components/ui/input.tsx";
 import {
   Item,
   ItemActions,
@@ -43,7 +44,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs.t
 import { toast } from "~/components/ui/toast.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonMutation, useDaemonQuery } from "~/daemon/query.ts";
-import { ChooseFile, PlannedFiles, useApply, usePlan } from "~/features/config/plan.tsx";
+import { StagedDiffs, useApply } from "~/features/config/apply.tsx";
 import { ScopePicker } from "~/features/config/ScopeDialog.tsx";
 import {
   addPackage,
@@ -55,7 +56,6 @@ import {
 import { useScopeDirectory } from "~/features/scope/scope.ts";
 import { FilePreview, SkillDocument } from "~/features/skills/SkillDocument.tsx";
 import { SkillFiles } from "~/features/skills/SkillFiles.tsx";
-import type { PreviewSkill, PreviewSourceResponse } from "agx-client/protocol";
 import { shortPath } from "~/lib/path.ts";
 
 export const Route = createFileRoute("/skills/add")({
@@ -302,7 +302,7 @@ function Wizard({
   );
 }
 
-/** The diff the package and its enabled skills make, applied now or staged with other edits. */
+/** The package and the skills it enables, applied now or staged with other edits. */
 function Review({
   changes,
   packageId,
@@ -318,22 +318,12 @@ function Review({
 }) {
   const navigate = useNavigate();
   const stage = useStaging((state) => state.stage);
-  const target = useStaging((state) => state.target);
   const configuration = useDaemonQuery(
     queryKeys.configuration,
     Daemon.use((daemon) => daemon.configuration),
   );
   const home = configuration.data?.home ?? "";
-  const [file, setFile] = useState("");
-  const plan = usePlan(
-    changes.map((change) => change.change),
-    file,
-    true,
-  );
-  const apply = useApply(
-    changes.map((change) => change.change),
-    file,
-  );
+  const apply = useApply();
   const done = () => void navigate({ to: "/config", search: { kind: "packages", id: packageId } });
   return (
     <Card size="sm">
@@ -347,14 +337,8 @@ function Review({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        {plan.isPending && <Pending className="h-40" />}
-        {plan.error?.reason === "choose_file" ? (
-          <ChooseFile files={plan.error.files} home={home} onChoose={setFile} />
-        ) : (
-          plan.isError && <DaemonProblem error={plan.error} />
-        )}
+        <StagedDiffs changes={changes} definitions={[]} />
         {apply.error !== null && <DaemonProblem error={apply.error} />}
-        {plan.isSuccess && <PlannedFiles files={plan.data} />}
       </CardContent>
       <CardFooter className="gap-2">
         <Button variant="outline" onClick={onBack}>
@@ -366,9 +350,6 @@ function Review({
           className="ml-auto"
           onClick={() => {
             stage(...changes);
-            if (file !== "") {
-              target(file);
-            }
             toast.add({ type: "success", title: "Added to staged changes" });
             done();
           }}
@@ -377,10 +358,10 @@ function Review({
           Add to staged changes
         </Button>
         <Button
-          disabled={!plan.isSuccess || apply.pending}
+          disabled={!configuration.isSuccess || apply.pending}
           onClick={() => {
-            if (plan.isSuccess) {
-              apply.run(plan.data, done);
+            if (configuration.isSuccess) {
+              apply.run(changes, configuration.data.revision, done);
             }
           }}
         >

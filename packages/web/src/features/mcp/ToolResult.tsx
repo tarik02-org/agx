@@ -1,9 +1,9 @@
+import type { CallToolResponse } from "agx-client/protocol";
 import { FileIcon, LinkIcon } from "lucide-react";
 
 import { Alert, AlertTitle } from "~/components/ui/alert.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
 import { type DecodedContent, decodeContent } from "~/features/mcp/content.ts";
-import type { CallToolResponse } from "agx-client/protocol";
 import { Code, Markdown } from "~/lib/markdown.tsx";
 
 const prettyJson = (json: string): string => {
@@ -26,7 +26,6 @@ export function ToolResult({ response }: { readonly response: CallToolResponse }
       )}
       {content.map((item, index) => (
         // Content items have no identity of their own; their order is the result's.
-        // oxlint-disable-next-line react/no-array-index-key
         <ContentView key={index} content={item} />
       ))}
       {response.structuredContentJson !== "" && (
@@ -58,7 +57,6 @@ function ContentView({ content }: { readonly content: DecodedContent }) {
     case "audio":
       return (
         // The tool's audio has no captions to offer.
-        // oxlint-disable-next-line jsx-a11y/media-has-caption
         <audio controls src={`data:${item.mimeType};base64,${item.data}`} />
       );
     case "resource_link":

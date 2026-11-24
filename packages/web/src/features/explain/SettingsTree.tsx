@@ -1,3 +1,4 @@
+import type { HarnessSetting } from "agx-client/protocol";
 import { ChevronRightIcon } from "lucide-react";
 
 import {
@@ -5,7 +6,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "~/components/ui/collapsible.tsx";
-import type { HarnessSetting } from "agx-client/protocol";
 import { shortPath } from "~/lib/path.ts";
 
 /** Settings grouped by key path: `model_providers › cpa › base_url` nests under its parents. */
@@ -68,7 +68,7 @@ function Group({ start, home }: { readonly start: SettingNode; readonly home: st
   if (start.setting !== undefined) {
     return <Leaf setting={start.setting} home={home} />;
   }
-  const { label, node } = collapse(start);
+  const { label, node: group } = collapse(start);
   return (
     <li>
       <Collapsible defaultOpen className="group/setting">
@@ -78,7 +78,7 @@ function Group({ start, home }: { readonly start: SettingNode; readonly home: st
         </CollapsibleTrigger>
         <CollapsibleContent>
           <ul className="ml-1.5 border-l pl-3">
-            {[...node.children.values()].map((child) => (
+            {[...group.children.values()].map((child) => (
               <Group key={child.key} start={child} home={home} />
             ))}
           </ul>

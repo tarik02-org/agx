@@ -1,22 +1,31 @@
+import type { SourceRef } from "agx-client/protocol";
 import * as Effect from "effect/Effect";
 import { FolderIcon, HashIcon } from "lucide-react";
 import { type ReactNode, useId, useRef, useState } from "react";
 
 import { Badge } from "~/components/ui/badge.tsx";
+import { Field, FieldGroup, FieldSeparator } from "~/components/ui/field.tsx";
 import { InputGroupButton } from "~/components/ui/input-group.tsx";
+import { Input } from "~/components/ui/input.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover.tsx";
 import { Spinner } from "~/components/ui/spinner.tsx";
 import { toast } from "~/components/ui/toast.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
-import { Field, FieldGroup, FieldSeparator } from "~/components/ui/field.tsx";
-import { Input } from "~/components/ui/input.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonMutation, useDaemonQuery } from "~/daemon/query.ts";
-import type { SourceRef } from "agx-client/protocol";
 import { CodeEditor } from "~/features/config/CodeEditor.tsx";
-import { shortPath } from "~/lib/path.ts";
-import { DirectoryBrowser } from "~/features/scope/DirectoryBrowser.tsx";
-import { absoluteDirectory } from "~/features/scope/scope.ts";
+import {
+  ensureField,
+  type FieldPath,
+  putFields,
+  type TakenFields,
+  takeFields,
+  hasField,
+  isStructured,
+  readString,
+  removeFields,
+  writeField,
+} from "~/features/config/definitionValue.ts";
 import {
   BooleanField,
   ChoiceField,
@@ -33,20 +42,11 @@ import {
   ValueField,
   VariantField,
 } from "~/features/config/fields.tsx";
-import {
-  ensureField,
-  type FieldPath,
-  putFields,
-  type TakenFields,
-  takeFields,
-  hasField,
-  isStructured,
-  readString,
-  removeFields,
-  writeField,
-} from "~/features/config/yamlDocument.ts";
+import { DirectoryBrowser } from "~/features/scope/DirectoryBrowser.tsx";
+import { absoluteDirectory } from "~/features/scope/scope.ts";
+import { shortPath } from "~/lib/path.ts";
 
-/** The kinds with a form; the others are edited as YAML. */
+/** The kinds with a form; the others are edited as JSON. */
 export const hasForm = (kind: string): boolean =>
   kind === "mcp" ||
   kind === "secrets" ||
@@ -78,7 +78,7 @@ export function DefinitionForm({
 }
 
 // A field written at all marks the source, even empty while it is being filled in.
-const has = (form: DefinitionText, field: string) => hasField(form.text, [field]);
+const has = (form: DefinitionText, field: string) => hasField(form.value, [field]);
 
 // Where a configured definition comes from is fixed: a new source makes a different thing, so
 // it is removed and added again rather than edited. Its pins stay editable.
@@ -98,8 +98,8 @@ const sourceNote = (form: DefinitionText) =>
 const useSourceSwitch = (form: DefinitionText) => {
   const kept = useRef(new Map<string, TakenFields>());
   return (from: string, to: string, drop: ReadonlyArray<string>, mark?: string) => {
-    kept.current.set(from, takeFields(form.text, drop));
-    let text = removeFields(form.text, drop);
+    kept.current.set(from, takeFields(form.value, drop));
+    let text = removeFields(form.value, drop);
     const back = kept.current.get(to);
     if (back !== undefined) {
       text = putFields(text, back);
@@ -183,12 +183,12 @@ const shares: ReadonlyArray<Option> = [
 function ShareField({ form }: { readonly form: DefinitionText }) {
   const typeId = useId();
   const idleId = useId();
-  const structured = isStructured(form.text, ["share"]);
-  const written = readString(form.text, structured ? ["share", "type"] : ["share"]);
+  const structured = isStructured(form.value, ["share"]);
+  const written = readString(form.value, structured ? ["share", "type"] : ["share"]);
   const type = written === "" ? "none" : written;
-  const idle = structured ? readString(form.text, ["share", "idle"]) : "";
+  const idle = structured ? readString(form.value, ["share", "idle"]) : "";
   const write = (nextType: string, nextIdle: string) => {
-    const cleared = removeFields(form.text, ["share"]);
+    const cleared = removeFields(form.value, ["share"]);
     if (nextIdle === "") {
       form.onChange(nextType === "none" ? cleared : writeField(cleared, ["share"], nextType));
       return;
@@ -252,7 +252,7 @@ const secretKinds = [
 ];
 
 function SecretForm({ form }: { readonly form: DefinitionText }) {
-  const kind = readString(form.text, ["kind"]);
+  const kind = readString(form.value, ["kind"]);
   return (
     <FieldGroup>
       <ChoiceField form={form} path={["kind"]} label="Kind" options={secretKinds} />
@@ -297,7 +297,7 @@ const refKind = (ref: SourceRef) => (ref.default ? "default" : ref.tag ? "tag" :
  * of it once its URL is filled in; a ref's commit is what a revision takes.
  */
 function PinFields({ form }: { readonly form: DefinitionText }) {
-  const git = readString(form.text, ["git"]);
+  const git = readString(form.value, ["git"]);
   const refs = useDaemonQuery(
     queryKeys.sourceRefs(git),
     Daemon.use((daemon) => daemon.sourceRefs(git)),
@@ -340,7 +340,7 @@ function AuthField({ form }: { readonly form: DefinitionText }) {
       path={["auth"]}
       label="Auth"
       placeholder="OAuth when the server asks"
-      description="oauth, keychain, none, or a secret ID; !env, !file, and inline secrets are edited on the YAML tab."
+      description="oauth, keychain, none, or a secret ID; !env, !file, and inline secrets are edited on the JSON tab."
       suggestions={[
         { value: "oauth", detail: "sign in when asked" },
         { value: "keychain", detail: "a token kept in the keychain" },
@@ -359,7 +359,7 @@ function BrowseFolder({ form, path }: { readonly form: DefinitionText; readonly 
     Daemon.use((daemon) => daemon.configuration),
   );
   const home = configuration.data?.home ?? "";
-  const written = absoluteDirectory(readString(form.text, path), home);
+  const written = absoluteDirectory(readString(form.value, path), home);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -377,7 +377,7 @@ function BrowseFolder({ form, path }: { readonly form: DefinitionText; readonly 
           shortcuts={configuration.data?.scopeDirectories ?? []}
           onPick={(directory) => {
             setOpen(false);
-            form.onChange(writeField(form.text, path, shortPath(directory, home)));
+            form.onChange(writeField(form.value, path, shortPath(directory, home)));
           }}
         />
       </PopoverContent>
@@ -392,7 +392,7 @@ function HashField({ form }: { readonly form: DefinitionText }) {
       Daemon.use((daemon) => daemon.inspectSource(request)),
     [],
   );
-  const read = (field: string) => readString(form.text, [field]);
+  const read = (field: string) => readString(form.value, [field]);
   return (
     <TextField
       form={form}
@@ -416,7 +416,7 @@ function HashField({ form }: { readonly form: DefinitionText }) {
                       },
                       {
                         onSuccess: (inspection) =>
-                          form.onChange(writeField(form.text, ["hash"], inspection.hash)),
+                          form.onChange(writeField(form.value, ["hash"], inspection.hash)),
                         onError: (error) =>
                           toast.add({
                             type: "error",
@@ -442,8 +442,8 @@ function HashField({ form }: { readonly form: DefinitionText }) {
 /** A package's subdirectory, offering the source's directories once the list is opened. */
 function SubdirectoryField({ form }: { readonly form: DefinitionText }) {
   const [wanted, setWanted] = useState(false);
-  const git = readString(form.text, ["git"]);
-  const ref = readString(form.text, ["ref"]);
+  const git = readString(form.value, ["git"]);
+  const ref = readString(form.value, ["ref"]);
   // Listing means checking the source out, so it waits until someone opens the list.
   const directories = useDaemonQuery(
     queryKeys.sourceDirectories(git, ref),
@@ -673,8 +673,8 @@ function MarkdownField({
         language="markdown"
         className="min-h-40"
         readOnly={form.readOnly}
-        value={readString(form.text, [field])}
-        onChange={(value) => form.onChange(writeField(form.text, [field], value))}
+        value={readString(form.value, [field])}
+        onChange={(value) => form.onChange(writeField(form.value, [field], value))}
       />
     </div>
   );

@@ -120,24 +120,24 @@ In `--header` and `--env`, a value written `!secret <id>`, `!env NAME`, or
 
 ## Runtime
 
-| Command                                               | Description                                                                       |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Command                                               | Description                                                                              |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | `agx ui [--print]`                                    | open the web UI signed in and scoped to the current directory, or print its sign-in link |
-| `agx doctor [dir] [--all]`                            | check configuration, harnesses, daemon, MCP servers, secrets, and shims           |
-| `agx daemon start`                                    | start the daemon                                                                  |
-| `agxd [--config path] [--cache path]`                 | serve in the foreground; also accepts `--version`                                 |
-| `agx daemon status`                                   | show whether it runs, its version, and its launches                               |
-| `agx daemon stop [--force] [--timeout <duration>]`    | stop it, keeping running launches unless `--force`                                |
-| `agx daemon restart [--force] [--timeout <duration>]` | stop it and start this version                                                    |
-| `agx launch list`                                     | list launches                                                                     |
-| `agx launch show <launch-id>`                         | show one launch and its MCP servers                                               |
-| `agx launch revoke <launch-id>`                       | cut off a launch's MCP access                                                     |
-| `agx secret status [secret-id]`                       | show secret states, never values                                                  |
-| `agx secret set <secret-id>`                          | store a keychain secret read from stdin                                           |
-| `agx secret login <secret-id> [--no-browser]`         | log in to an OAuth secret                                                         |
-| `agx secret logout <secret-id>`                       | delete a stored secret or OAuth login                                             |
-| `agx secret logout --all`                             | delete every stored credential, including deleted definitions; keep configuration |
-| `agx secret rotate <secret-id>`                       | renew an OAuth secret's access token now                                          |
+| `agx doctor [dir] [--all]`                            | check configuration, harnesses, daemon, MCP servers, secrets, and shims                  |
+| `agx daemon start`                                    | start the daemon                                                                         |
+| `agxd [--config path] [--cache path]`                 | serve in the foreground; also accepts `--version`                                        |
+| `agx daemon status`                                   | show whether it runs, its version, and its launches                                      |
+| `agx daemon stop [--force] [--timeout <duration>]`    | stop it, keeping running launches unless `--force`                                       |
+| `agx daemon restart [--force] [--timeout <duration>]` | stop it and start this version                                                           |
+| `agx launch list`                                     | list launches                                                                            |
+| `agx launch show <launch-id>`                         | show one launch and its MCP servers                                                      |
+| `agx launch revoke <launch-id>`                       | cut off a launch's MCP access                                                            |
+| `agx secret status [secret-id]`                       | show secret states, never values                                                         |
+| `agx secret set <secret-id>`                          | store a keychain secret read from stdin                                                  |
+| `agx secret login <secret-id> [--no-browser]`         | log in to an OAuth secret                                                                |
+| `agx secret logout <secret-id>`                       | delete a stored secret or OAuth login                                                    |
+| `agx secret logout --all`                             | delete every stored credential, including deleted definitions; keep configuration        |
+| `agx secret rotate <secret-id>`                       | renew an OAuth secret's access token now                                                 |
 
 See [The daemon](daemon.md) and [Secrets](secrets.md).
 

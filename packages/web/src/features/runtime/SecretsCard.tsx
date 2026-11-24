@@ -1,14 +1,15 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { LoginFinished_Outcome, type SecretStatus, SecretStatus_State } from "agx-client/protocol";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { LogInIcon, LogOutIcon } from "lucide-react";
 
 import { ConfirmAction } from "~/components/ConfirmAction.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
+import { Pending } from "~/components/Pending.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
 import { Button } from "~/components/ui/button.tsx";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card.tsx";
-import { Pending } from "~/components/Pending.tsx";
 import {
   Table,
   TableBody,
@@ -23,11 +24,6 @@ import { queryKeys, useDaemonMutation, useDaemonQuery } from "~/daemon/query.ts"
 import { useEffectCallback } from "~/effect/react.tsx";
 import { SetSecretDialog } from "~/features/runtime/SetSecretDialog.tsx";
 import { secretStates } from "~/features/runtime/states.ts";
-import {
-  LoginFinished_Outcome,
-  type SecretStatus,
-  SecretStatus_State,
-} from "agx-client/protocol";
 
 export function SecretsCard() {
   const secrets = useDaemonQuery(

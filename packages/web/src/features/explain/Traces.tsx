@@ -1,8 +1,8 @@
+import type { ResourceRef, ResourceTrace, ResolutionStep } from "agx-client/protocol";
+import { ResolutionStep_Change } from "agx-client/protocol";
 import { ArrowRightIcon, CircleCheckIcon, CircleXIcon } from "lucide-react";
 
 import { Badge } from "~/components/ui/badge.tsx";
-import type { ResourceRef, ResourceTrace, ResolutionStep } from "agx-client/protocol";
-import { ResolutionStep_Change } from "agx-client/protocol";
 import { shortPath } from "~/lib/path.ts";
 
 /** A resource's kind and ID, from the reference's set field. */

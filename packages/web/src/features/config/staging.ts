@@ -1,22 +1,22 @@
+import type { JsonObject } from "@bufbuild/protobuf";
 import { create } from "zustand";
 
 import type { ConfigChangeInit } from "~/daemon/Daemon.ts";
-import { shortPath } from "~/lib/path.ts";
+import { toValue } from "~/features/config/definitionValue.ts";
 
-/** A change waiting for the next apply, which writes all staged changes at once. */
+/** A change waiting for the next apply, which commits all staged changes at once. */
 export interface StagedChange {
   /** Staging a change with the key of one already staged replaces it. */
   readonly key: string;
   readonly label: string;
   readonly change: ConfigChangeInit;
+  /** A definition's value as staged, to edit again and compare with the current one. */
+  readonly value?: JsonObject;
 }
 
 interface Staging {
   readonly changes: ReadonlyArray<StagedChange>;
   readonly reviewing: boolean;
-  /** The fragment new definitions, rules, and packages go to; empty lets the daemon choose. */
-  readonly file: string;
-  readonly target: (file: string) => void;
   readonly stage: (...changes: ReadonlyArray<StagedChange>) => void;
   readonly unstage: (key: string) => void;
   readonly clear: () => void;
@@ -32,35 +32,30 @@ const upsert = (
     ? changes.map((change) => (change.key === next.key ? next : change))
     : [...changes, next];
 
-/** Staged configuration changes; they live in this tab until applied or discarded. */
+/**
+ * Staged configuration changes; they live in this tab until applied or discarded. They are
+ * semantic, so a configuration changed meanwhile only needs them reviewed and applied again.
+ */
 export const useStaging = create<Staging>()((set) => ({
   changes: [],
   reviewing: false,
-  file: "",
-  target: (file) => set({ file }),
   stage: (...next) => set(({ changes }) => ({ changes: next.reduce(upsert, changes) })),
   unstage: (key) => set(({ changes }) => ({ changes: changes.filter((c) => c.key !== key) })),
-  clear: () => set({ changes: [], reviewing: false, file: "" }),
+  clear: () => set({ changes: [], reviewing: false }),
   review: (open) => set({ reviewing: open }),
 }));
 
-const definitionKey = (kind: string, id: string) => `definition/${kind}/${id}`;
+export const definitionKey = (kind: string, id: string) => `definition/${kind}/${id}`;
 
-/** The staged change of a definition, if any: its new YAML, or its removal. */
+/** The staged change of a definition, if any: its new value, or its removal. */
 export const useStagedDefinition = (kind: string, id: string): StagedChange | undefined =>
   useStaging((state) => state.changes.find((change) => change.key === definitionKey(kind, id)));
 
-/** The staged content of a file, if any. */
-export const useStagedFile = (path: string): string | undefined =>
-  useStaging((state) => {
-    const staged = state.changes.find((change) => change.key === `file/${path}`)?.change.change;
-    return staged?.case === "writeFile" ? staged.value.content : undefined;
-  });
-
-export const define = (kind: string, id: string, yaml: string): StagedChange => ({
+export const define = (kind: string, id: string, value: JsonObject): StagedChange => ({
   key: definitionKey(kind, id),
   label: `Define ${kind} ${id}`,
-  change: { change: { case: "define", value: { kind, id, yaml } } },
+  change: { change: { case: "define", value: { kind, id, value: toValue(value) } } },
+  value,
 });
 
 export const undefine = (kind: string, id: string): StagedChange => ({
@@ -93,12 +88,6 @@ export const select = (
       value: { kind, id, directory: scope.directory, harnesses: [...scope.harnesses] },
     },
   },
-});
-
-export const writeFile = (path: string, content: string, home: string): StagedChange => ({
-  key: `file/${path}`,
-  label: `Write ${shortPath(path, home)}`,
-  change: { change: { case: "writeFile", value: { path, content } } },
 });
 
 export interface PackageSource {

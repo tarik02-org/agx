@@ -1,7 +1,9 @@
+import type { McpProcess } from "agx-client/protocol";
 import { RotateCwIcon } from "lucide-react";
 
 import { ConfirmAction } from "~/components/ConfirmAction.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
+import { Pending } from "~/components/Pending.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
 import { Button } from "~/components/ui/button.tsx";
 import {
@@ -11,7 +13,6 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card.tsx";
-import { Pending } from "~/components/Pending.tsx";
 import {
   Table,
   TableBody,
@@ -23,7 +24,6 @@ import {
 import { toast } from "~/components/ui/toast.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonMutation, useDaemonQuery } from "~/daemon/query.ts";
-import type { McpProcess } from "agx-client/protocol";
 
 // Processes have no stream of their own; a short poll keeps idle countdowns and sessions current.
 export const refreshInterval = 2000;

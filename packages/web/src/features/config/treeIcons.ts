@@ -1,56 +1,58 @@
 import claudeLogo from "@lobehub/icons-static-svg/icons/claude-color.svg?raw";
 import codexLogo from "@lobehub/icons-static-svg/icons/codex-color.svg?raw";
 import piLogo from "@lobehub/icons-static-svg/icons/pi.svg?raw";
-import type { LucideIconData } from "lucide-react";
-import { __iconData as activity } from "lucide-react/dist/esm/icons/activity.mjs";
-import { __iconData as audioLines } from "lucide-react/dist/esm/icons/audio-lines.mjs";
-import { __iconData as blocks } from "lucide-react/dist/esm/icons/blocks.mjs";
-import { __iconData as bookOpen } from "lucide-react/dist/esm/icons/book-open.mjs";
-import { __iconData as bot } from "lucide-react/dist/esm/icons/bot.mjs";
-import { __iconData as boxes } from "lucide-react/dist/esm/icons/boxes.mjs";
-import { __iconData as braces } from "lucide-react/dist/esm/icons/braces.mjs";
-import { __iconData as brain } from "lucide-react/dist/esm/icons/brain.mjs";
-import { __iconData as bug } from "lucide-react/dist/esm/icons/bug.mjs";
-import { __iconData as calculator } from "lucide-react/dist/esm/icons/calculator.mjs";
-import { __iconData as calendar } from "lucide-react/dist/esm/icons/calendar.mjs";
-import { __iconData as clock } from "lucide-react/dist/esm/icons/clock.mjs";
-import { __iconData as cloud } from "lucide-react/dist/esm/icons/cloud.mjs";
-import { __iconData as code } from "lucide-react/dist/esm/icons/code.mjs";
-import { __iconData as cog } from "lucide-react/dist/esm/icons/cog.mjs";
-import { __iconData as container } from "lucide-react/dist/esm/icons/container.mjs";
-import { __iconData as database } from "lucide-react/dist/esm/icons/database.mjs";
-import { __iconData as fileCode } from "lucide-react/dist/esm/icons/file-code.mjs";
-import { __iconData as fileText } from "lucide-react/dist/esm/icons/file-text.mjs";
-import { __iconData as flaskConical } from "lucide-react/dist/esm/icons/flask-conical.mjs";
-import { __iconData as folder } from "lucide-react/dist/esm/icons/folder.mjs";
-import { __iconData as folderOpen } from "lucide-react/dist/esm/icons/folder-open.mjs";
-import { __iconData as gitBranch } from "lucide-react/dist/esm/icons/git-branch.mjs";
-import { __iconData as globe } from "lucide-react/dist/esm/icons/globe.mjs";
-import { __iconData as image } from "lucide-react/dist/esm/icons/image.mjs";
-import { __iconData as keyRound } from "lucide-react/dist/esm/icons/key-round.mjs";
-import { __iconData as languages } from "lucide-react/dist/esm/icons/languages.mjs";
-import { __iconData as lightbulb } from "lucide-react/dist/esm/icons/lightbulb.mjs";
-import { __iconData as listTodo } from "lucide-react/dist/esm/icons/list-todo.mjs";
-import { __iconData as mail } from "lucide-react/dist/esm/icons/mail.mjs";
-import { __iconData as mapPin } from "lucide-react/dist/esm/icons/map-pin.mjs";
-import { __iconData as messageSquare } from "lucide-react/dist/esm/icons/message-square.mjs";
-import { __iconData as notebookPen } from "lucide-react/dist/esm/icons/notebook-pen.mjs";
-import { __iconData as packageIcon } from "lucide-react/dist/esm/icons/package.mjs";
-import { __iconData as palette } from "lucide-react/dist/esm/icons/palette.mjs";
-import { __iconData as penLine } from "lucide-react/dist/esm/icons/pen-line.mjs";
-import { __iconData as plug } from "lucide-react/dist/esm/icons/plug.mjs";
-import { __iconData as scanEye } from "lucide-react/dist/esm/icons/scan-eye.mjs";
-import { __iconData as scrollText } from "lucide-react/dist/esm/icons/scroll-text.mjs";
-import { __iconData as search } from "lucide-react/dist/esm/icons/search.mjs";
-import { __iconData as server } from "lucide-react/dist/esm/icons/server.mjs";
-import { __iconData as shield } from "lucide-react/dist/esm/icons/shield.mjs";
-import { __iconData as snowflake } from "lucide-react/dist/esm/icons/snowflake.mjs";
-import { __iconData as sparkles } from "lucide-react/dist/esm/icons/sparkles.mjs";
-import { __iconData as tag } from "lucide-react/dist/esm/icons/tag.mjs";
-import { __iconData as terminal } from "lucide-react/dist/esm/icons/terminal.mjs";
-import { __iconData as video } from "lucide-react/dist/esm/icons/video.mjs";
-import { __iconData as wandSparkles } from "lucide-react/dist/esm/icons/wand-sparkles.mjs";
-import { __iconData as wrench } from "lucide-react/dist/esm/icons/wrench.mjs";
+import {
+  Activity as activity,
+  AudioLines as audioLines,
+  Blocks as blocks,
+  BookOpen as bookOpen,
+  Bot as bot,
+  Boxes as boxes,
+  Braces as braces,
+  Brain as brain,
+  Bug as bug,
+  Calculator as calculator,
+  Calendar as calendar,
+  Clock as clock,
+  Cloud as cloud,
+  Code as code,
+  Cog as cog,
+  Container as container,
+  Database as database,
+  FileCode as fileCode,
+  FileText as fileText,
+  FlaskConical as flaskConical,
+  Folder as folder,
+  FolderOpen as folderOpen,
+  GitBranch as gitBranch,
+  Globe as globe,
+  Image as imageIcon,
+  KeyRound as keyRound,
+  Languages as languages,
+  Lightbulb as lightbulb,
+  ListTodo as listTodo,
+  Mail as mail,
+  MapPin as mapPin,
+  MessageSquare as messageSquare,
+  NotebookPen as notebookPen,
+  Package as packageIcon,
+  Palette as palette,
+  PenLine as penLine,
+  Plug as plug,
+  ScanEye as scanEye,
+  ScrollText as scrollText,
+  Search as search,
+  Server as server,
+  Shield as shield,
+  Snowflake as snowflake,
+  Sparkles as sparkles,
+  Tag as tag,
+  Terminal as terminal,
+  Video as video,
+  WandSparkles as wandSparkles,
+  Wrench as wrench,
+  type IconNode,
+} from "lucide";
 
 import type { TreeIcon } from "~/components/NavTree.tsx";
 import { iconMask } from "~/lib/iconMask.ts";
@@ -60,8 +62,8 @@ import { iconMask } from "~/lib/iconMask.ts";
 const containerColor = "var(--muted-foreground)";
 
 interface KindStyle {
-  readonly section: LucideIconData;
-  readonly item: LucideIconData;
+  readonly section: IconNode;
+  readonly item: IconNode;
   readonly color: string;
   /** Whether a definition's name and description choose its icon. */
   readonly guessed: boolean;
@@ -78,7 +80,7 @@ const kindStyles: Readonly<Record<string, KindStyle>> = {
 };
 
 // Words in a definition's name or description, and the icon they suggest, most specific first.
-const hints: ReadonlyArray<readonly [ReadonlyArray<string>, LucideIconData]> = [
+const hints: ReadonlyArray<readonly [ReadonlyArray<string>, IconNode]> = [
   [["test", "tdd", "spec", "qa"], flaskConical],
   [["review", "lint", "audit"], scanEye],
   [["changelog", "release", "version"], tag],
@@ -96,7 +98,7 @@ const hints: ReadonlyArray<readonly [ReadonlyArray<string>, LucideIconData]> = [
   [["calendar", "schedule", "meeting"], calendar],
   [["filesystem", "fs", "file", "files", "folder", "directory"], folderOpen],
   [["shell", "terminal", "bash", "zsh", "cli", "command", "script"], terminal],
-  [["image", "photo", "screenshot", "picture", "png"], image],
+  [["image", "photo", "screenshot", "picture", "png"], imageIcon],
   [["pdf", "docx", "office", "spreadsheet", "excel"], fileText],
   [["memory", "knowledge", "remember", "context"], brain],
   [["time", "clock", "timer", "date"], clock],
@@ -128,7 +130,7 @@ const words = (text: string): ReadonlyArray<string> =>
  * The icon some words hint at: a word equal to a hint, or, for hints of four letters or more,
  * one starting with it, so "testing" and "databases" count.
  */
-const hinted = (text: string): LucideIconData | undefined => {
+const hinted = (text: string): IconNode | undefined => {
   const found = words(text);
   return hints.find(([keys]) =>
     keys.some((key) =>
@@ -137,7 +139,7 @@ const hinted = (text: string): LucideIconData | undefined => {
   )?.[1];
 };
 
-const draw = (icon: LucideIconData, color: string): TreeIcon => ({
+const draw = (icon: IconNode, color: string): TreeIcon => ({
   mask: iconMask(icon),
   color,
 });

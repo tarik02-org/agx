@@ -1,14 +1,13 @@
+import { cn } from "cn";
 import type { JSONSchema7 } from "json-schema";
 import { lazy, Suspense } from "react";
 
-import { cn } from "cn";
-
-export type EditorLanguage = "yaml" | "markdown" | "text";
+export type EditorLanguage = "json" | "markdown" | "text";
 
 export interface CodeEditorProps {
   readonly value: string;
   readonly onChange: (value: string) => void;
-  /** YAML is validated, completed, and documented on hover against the schema when given. */
+  /** JSON is validated, completed, and documented on hover against the schema when given. */
   readonly language: EditorLanguage;
   readonly schema?: JSONSchema7 | undefined;
   readonly readOnly?: boolean;

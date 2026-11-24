@@ -1,4 +1,10 @@
 import { Link } from "@tanstack/react-router";
+import {
+  type CallToolResponse,
+  McpTools_Load,
+  type McpTool,
+  type McpTools,
+} from "agx-client/protocol";
 import { CircleAlertIcon, HistoryIcon, RotateCwIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -24,12 +30,6 @@ import { ToolResult } from "~/features/mcp/ToolResult.tsx";
 import { useServerTools } from "~/features/mcp/tools.ts";
 import { ProcessTable, refreshInterval } from "~/features/runtime/ProcessesCard.tsx";
 import { mcpStates } from "~/features/runtime/states.ts";
-import {
-  type CallToolResponse,
-  McpTools_Load,
-  type McpTool,
-  type McpTools,
-} from "agx-client/protocol";
 import { parseSchema } from "~/lib/jsonSchema.ts";
 import { Markdown } from "~/lib/markdown.tsx";
 

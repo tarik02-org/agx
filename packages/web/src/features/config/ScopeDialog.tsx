@@ -23,8 +23,8 @@ import {
   FieldSet,
 } from "~/components/ui/field.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover.tsx";
-import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group.tsx";
 import { toast } from "~/components/ui/toast.tsx";
+import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
 import { type Scope, scopeLabel, select, useStaging } from "~/features/config/staging.ts";

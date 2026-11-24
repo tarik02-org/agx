@@ -1,14 +1,14 @@
 import { useQueryClient } from "@tanstack/react-query";
-import * as Effect from "effect/Effect";
 import { cn } from "cn";
+import * as Effect from "effect/Effect";
 import { CheckIcon, CopyIcon, RotateCwIcon } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button.tsx";
 import { Spinner } from "~/components/ui/spinner.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
-import { Daemon } from "~/daemon/Daemon.ts";
 import { type ConnectionLoss, useConnection } from "~/daemon/connection.ts";
+import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
 import { useEffectCallback, useFork } from "~/effect/react.tsx";
 

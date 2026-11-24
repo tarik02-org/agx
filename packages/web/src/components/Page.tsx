@@ -82,7 +82,6 @@ export function Page({
           <BreadcrumbList className="flex-nowrap">
             {crumbs.map((crumb, index) => (
               // Crumbs are a path; a position names one.
-              // oxlint-disable-next-line react/no-array-index-key
               <Fragment key={index}>
                 {index > 0 && <BreadcrumbSeparator />}
                 <BreadcrumbItem className={cn("min-w-0", crumb.mono === true && "font-mono")}>

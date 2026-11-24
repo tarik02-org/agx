@@ -1,9 +1,10 @@
-import { CheckIcon, GitCompareArrowsIcon, Trash2Icon, XIcon } from "lucide-react";
+import { CheckIcon, GitCompareArrowsIcon, RefreshCwIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useState } from "react";
 
 import { ConfirmAction } from "~/components/ConfirmAction.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Pending } from "~/components/Pending.tsx";
+import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert.tsx";
 import { Badge } from "~/components/ui/badge.tsx";
 import { Button } from "~/components/ui/button.tsx";
 import {
@@ -27,35 +28,31 @@ import { Spinner } from "~/components/ui/spinner.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
-import { ChooseFile, PlannedFiles, useApply, usePlan } from "~/features/config/plan.tsx";
+import { StagedDiffs, useApply } from "~/features/config/apply.tsx";
 import { useStaging } from "~/features/config/staging.ts";
-import { shortPath } from "~/lib/path.ts";
 
-/** The staged changes, the diff they make, and the apply that writes them at once. */
+/** The staged changes, the diff they make, and the apply that commits them at once. */
 export function ReviewChanges() {
-  const { changes, reviewing, review, unstage, clear, file, target } = useStaging();
-  const [tab, setTab] = useState<"changes" | "files">("changes");
+  const { changes, reviewing, review, unstage, clear } = useStaging();
+  const [tab, setTab] = useState<"changes" | "diff">("changes");
   const configuration = useDaemonQuery(
     queryKeys.configuration,
     Daemon.use((daemon) => daemon.configuration),
   );
-  const home = configuration.data?.home ?? "";
-  const plan = usePlan(
-    changes.map((change) => change.change),
-    file,
-    reviewing,
+  const definitions = useDaemonQuery(
+    queryKeys.definitions,
+    Daemon.use((daemon) => daemon.definitions),
   );
-  const apply = useApply(
-    changes.map((change) => change.change),
-    file,
-  );
+  const apply = useApply();
+  const ready = configuration.isSuccess && definitions.isSuccess;
   return (
     <Sheet open={reviewing} onOpenChange={review}>
       <SheetContent className="data-[side=right]:sm:max-w-3xl">
         <SheetHeader>
           <SheetTitle>Staged changes</SheetTitle>
           <SheetDescription>
-            Applied together: every file is written, or none when one changed since this diff.
+            Applied together: every change is committed, or none when the configuration changed
+            since this diff.
           </SheetDescription>
         </SheetHeader>
         {changes.length === 0 ? (
@@ -71,70 +68,63 @@ export function ReviewChanges() {
             </EmptyHeader>
           </Empty>
         ) : (
-          <>
-            {plan.error?.reason === "choose_file" && (
-              <div className="px-4">
-                <ChooseFile files={plan.error.files} home={home} onChoose={target} />
-              </div>
-            )}
-            {file !== "" && (
-              <div className="flex items-center gap-2 px-4 text-xs">
-                <span className="text-muted-foreground">New definitions go to</span>
-                <span className="truncate font-mono">{shortPath(file, home)}</span>
-                <Button variant="link" size="xs" onClick={() => target("")}>
-                  Change
-                </Button>
-              </div>
-            )}
-            <Tabs
-              value={tab}
-              onValueChange={(next) => setTab(next === "files" ? "files" : "changes")}
-              className="min-h-0 flex-1 px-4"
-            >
-              <TabsList>
-                <TabsTrigger value="changes">Changes ({changes.length})</TabsTrigger>
-                <TabsTrigger value="files">
-                  Files{plan.isSuccess && ` (${plan.data.length})`}
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="changes" className="min-h-0">
-                <ScrollArea className="h-full">
-                  <ItemGroup>
-                    {changes.map((change) => (
-                      <Item key={change.key} size="sm" variant="outline">
-                        <ItemContent>
-                          <ItemTitle className="font-mono">{change.label}</ItemTitle>
-                        </ItemContent>
-                        <ItemActions>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label={`Unstage ${change.label}`}
-                            onClick={() => unstage(change.key)}
-                          >
-                            <XIcon />
-                          </Button>
-                        </ItemActions>
-                      </Item>
-                    ))}
-                  </ItemGroup>
-                </ScrollArea>
-              </TabsContent>
-              <TabsContent value="files" className="min-h-0">
-                <ScrollArea className="h-full">
-                  {plan.isPending && <Pending className="h-40" />}
-                  {plan.isError && plan.error.reason !== "choose_file" && (
-                    <DaemonProblem error={plan.error} />
-                  )}
-                  {plan.isSuccess && <PlannedFiles files={plan.data} />}
-                </ScrollArea>
-              </TabsContent>
-            </Tabs>
-          </>
+          <Tabs
+            value={tab}
+            onValueChange={(next) => setTab(next === "diff" ? "diff" : "changes")}
+            className="min-h-0 flex-1 px-4"
+          >
+            <TabsList>
+              <TabsTrigger value="changes">Changes ({changes.length})</TabsTrigger>
+              <TabsTrigger value="diff">Diff</TabsTrigger>
+            </TabsList>
+            <TabsContent value="changes" className="min-h-0">
+              <ScrollArea className="h-full">
+                <ItemGroup>
+                  {changes.map((change) => (
+                    <Item key={change.key} size="sm" variant="outline">
+                      <ItemContent>
+                        <ItemTitle className="font-mono">{change.label}</ItemTitle>
+                      </ItemContent>
+                      <ItemActions>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Unstage ${change.label}`}
+                          onClick={() => unstage(change.key)}
+                        >
+                          <XIcon />
+                        </Button>
+                      </ItemActions>
+                    </Item>
+                  ))}
+                </ItemGroup>
+              </ScrollArea>
+            </TabsContent>
+            <TabsContent value="diff" className="min-h-0">
+              <ScrollArea className="h-full">
+                {definitions.isPending && <Pending className="h-40" />}
+                {definitions.isError && <DaemonProblem error={definitions.error} />}
+                {definitions.isSuccess && (
+                  <StagedDiffs changes={changes} definitions={definitions.data} />
+                )}
+              </ScrollArea>
+            </TabsContent>
+          </Tabs>
         )}
         {apply.error !== null && (
           <div className="px-4">
-            <DaemonProblem error={apply.error} />
+            {apply.error.reason === "conflict" ? (
+              <Alert>
+                <RefreshCwIcon />
+                <AlertTitle>Changed meanwhile</AlertTitle>
+                <AlertDescription>
+                  The configuration changed since this diff, which now shows the latest. Review it
+                  and apply again.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <DaemonProblem error={apply.error} />
+            )}
           </div>
         )}
         <SheetFooter className="flex-row justify-end">
@@ -151,10 +141,10 @@ export function ReviewChanges() {
             onConfirm={clear}
           />
           <Button
-            disabled={!plan.isSuccess || changes.length === 0 || apply.pending}
+            disabled={!ready || changes.length === 0 || apply.pending}
             onClick={() => {
-              if (plan.isSuccess) {
-                apply.run(plan.data, clear);
+              if (configuration.isSuccess) {
+                apply.run(changes, configuration.data.revision, clear);
               }
             }}
           >

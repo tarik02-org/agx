@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
+import type { Definition } from "agx-client/protocol";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { parseDocument } from "yaml";
 
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
 import { Pending } from "~/components/Pending.tsx";
@@ -10,16 +10,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card.t
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "~/components/ui/item.tsx";
 import { Daemon } from "~/daemon/Daemon.ts";
 import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
+import { definitionValue } from "~/features/config/definitionValue.ts";
 import { kinds } from "~/features/config/kinds.ts";
 import { SecretActions } from "~/features/runtime/SecretsCard.tsx";
 import { secretStates } from "~/features/runtime/states.ts";
-import type { Definition } from "agx-client/protocol";
 import { Markdown } from "~/lib/markdown.tsx";
 import { shortPath } from "~/lib/path.ts";
 
-/** A definition's value as written, decoded with a schema; none when it does not match. */
-const decodeYaml = <A,>(schema: Schema.Decoder<A>, yaml: string): Option.Option<A> =>
-  Schema.decodeUnknownOption(schema)(parseDocument(yaml).toJS());
+/**
+ * A local definition's value, decoded with a schema; none when it does not match, or for one a
+ * file or package defines, whose value the daemon does not send.
+ */
+const decodeValue = <A,>(schema: Schema.Decoder<A>, definition: Definition | undefined) =>
+  definition?.value === undefined
+    ? Option.none<A>()
+    : Schema.decodeUnknownOption(schema)(definitionValue(definition));
 
 /** Links to definitions, each with its description. */
 function DefinitionLinks({
@@ -98,7 +103,7 @@ export function PackageOverview({
   readonly definitions: ReadonlyArray<Definition>;
 }) {
   const id = definition?.id ?? "";
-  const spec = decodeYaml(PackageSpec, definition?.yaml ?? "").pipe(Option.getOrUndefined);
+  const spec = decodeValue(PackageSpec, definition).pipe(Option.getOrUndefined);
   const source: ReadonlyArray<readonly [string, string | undefined]> = [
     ["Git", spec?.git],
     ["Path", spec?.path],
@@ -160,7 +165,7 @@ export function BundleOverview({
   readonly definition: Definition | undefined;
   readonly definitions: ReadonlyArray<Definition>;
 }) {
-  const spec = decodeYaml(BundleSpec, definition?.yaml ?? "").pipe(Option.getOrUndefined);
+  const spec = decodeValue(BundleSpec, definition).pipe(Option.getOrUndefined);
   const members = (["skills", "instructions", "mcp", "bundles"] as const).flatMap((kind) =>
     (spec?.[kind] ?? []).map((member) => {
       const id = typeof member === "string" ? member : (member.id ?? "inline");
@@ -193,10 +198,15 @@ export function SecretOverview({
     Daemon.use((daemon) => daemon.secrets),
   );
   const secret = secrets.data?.find((s) => s.secretId === id);
-  // Servers name a secret with the !secret tag in a value, or as their auth's secret.
-  const reference = new RegExp(String.raw`(?:!secret\s+|secret:\s*)${escapeRegExp(id)}(?![\w-])`);
+  // Servers name a secret with a $secret injection in a value, or as their auth's secret. Only
+  // local servers come with their value.
+  const reference = new RegExp(String.raw`"(?:\$secret|secret|auth)":"${escapeRegExp(id)}"`);
   const users = definitions
-    .filter((d) => d.kind === "mcp" && (reference.test(d.yaml) || d.id === secret?.mcpId))
+    .filter(
+      (d) =>
+        d.kind === "mcp" &&
+        (reference.test(JSON.stringify(definitionValue(d))) || d.id === secret?.mcpId),
+    )
     .map((d) => ({ kind: d.kind, id: d.id, description: d.description }));
   return (
     <>
@@ -243,7 +253,7 @@ export function InstructionsOverview({
   readonly definition: Definition | undefined;
   readonly home: string;
 }) {
-  const text = decodeYaml(InstructionsSpec, definition?.yaml ?? "").pipe(
+  const text = decodeValue(InstructionsSpec, definition).pipe(
     Option.flatMap((spec) => Option.fromUndefinedOr(spec.text)),
     Option.getOrUndefined,
   );

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { Page } from "~/components/Page.tsx";
 import { DaemonProblem } from "~/components/DaemonProblem.tsx";
+import { Page } from "~/components/Page.tsx";
 import { Pending } from "~/components/Pending.tsx";
 import { useRuntimeView } from "~/daemon/runtimeView.ts";
 import { InstallButton } from "~/features/runtime/InstallButton.tsx";

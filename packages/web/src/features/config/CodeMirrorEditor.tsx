@@ -1,13 +1,13 @@
+import { json } from "@codemirror/lang-json";
 import { markdown } from "@codemirror/lang-markdown";
-import { yaml } from "@codemirror/lang-yaml";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import CodeMirror from "@uiw/react-codemirror";
-import { yamlSchema } from "codemirror-json-schema/yaml";
+import { cn } from "cn";
+import { jsonSchema } from "codemirror-json-schema";
 import type { JSONSchema7 } from "json-schema";
 
-import { cn } from "cn";
 import type { CodeEditorProps, EditorLanguage } from "~/features/config/CodeEditor.tsx";
 
 // The editor takes the UI's palette: the page's surface and text, the accent for the cursor and
@@ -64,8 +64,8 @@ const highlight = HighlightStyle.define([
 
 const languageExtensions = (language: EditorLanguage, schema?: JSONSchema7) => {
   switch (language) {
-    case "yaml":
-      return schema === undefined ? [yaml()] : yamlSchema(schema);
+    case "json":
+      return schema === undefined ? [json()] : jsonSchema(schema);
     case "markdown":
       return [markdown()];
     case "text":

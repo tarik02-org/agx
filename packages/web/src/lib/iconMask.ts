@@ -1,11 +1,11 @@
-import type { LucideIconData } from "lucide-react";
+import type { IconNode } from "lucide";
 
 /**
  * A lucide icon as a CSS mask image, for drawing it in currentColor where only CSS reaches, such
  * as inside a shadow root.
  */
-export const iconMask = (icon: LucideIconData): string => {
-  const shapes = icon.node
+export const iconMask = (icon: IconNode): string => {
+  const shapes = icon
     .map(([tag, attributes]) => {
       const pairs = Object.entries(attributes)
         .filter(([name]) => name !== "key")

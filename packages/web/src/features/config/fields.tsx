@@ -1,3 +1,4 @@
+import type { JsonObject } from "@bufbuild/protobuf";
 import { InfoIcon, LockIcon, XIcon } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 
@@ -16,6 +17,7 @@ import {
   useComboboxAnchor,
 } from "~/components/ui/combobox.tsx";
 import { Field, FieldDescription, FieldLabel } from "~/components/ui/field.tsx";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group.tsx";
 import { Input } from "~/components/ui/input.tsx";
 import {
   Select,
@@ -25,13 +27,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select.tsx";
-import { Switch } from "~/components/ui/switch.tsx";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group.tsx";
 import { Spinner } from "~/components/ui/spinner.tsx";
-import { shortPath } from "~/lib/path.ts";
-import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
-import { Daemon } from "~/daemon/Daemon.ts";
+import { Switch } from "~/components/ui/switch.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip.tsx";
+import { Daemon } from "~/daemon/Daemon.ts";
+import { queryKeys, useDaemonQuery } from "~/daemon/query.ts";
 import {
   type FieldPath,
   isStructured,
@@ -46,12 +46,13 @@ import {
   writeField,
   writeMap,
   writeValue,
-} from "~/features/config/yamlDocument.ts";
+} from "~/features/config/definitionValue.ts";
+import { shortPath } from "~/lib/path.ts";
 
-/** A definition's YAML as a form edits it, with what the schema says about each field. */
+/** A definition's value as a form edits it, with what the schema says about each field. */
 export interface DefinitionText {
-  readonly text: string;
-  readonly onChange: (text: string) => void;
+  readonly value: JsonObject;
+  readonly onChange: (value: JsonObject) => void;
   readonly describe: (field: string) => string | undefined;
   readonly readOnly: boolean;
   /** The definition is already configured, so where it comes from is fixed. */
@@ -155,12 +156,12 @@ export function HintedLabel({
   );
 }
 
-// A field written as a map or list where a plain value is expected stays for the YAML tab.
+// A field written as a map or list where a plain value is expected stays for the JSON tab.
 function StructuredNote({ label }: { readonly label: string }) {
   return (
     <Field>
       <FieldLabel>{label}</FieldLabel>
-      <FieldDescription>Written as structured YAML; edit it on the YAML tab.</FieldDescription>
+      <FieldDescription>Written as a structured value; edit it on the JSON tab.</FieldDescription>
     </Field>
   );
 }
@@ -178,7 +179,7 @@ export function TextField({
   readonly action?: ReactNode;
 }) {
   const id = useId();
-  if (isStructured(form.text, path)) {
+  if (isStructured(form.value, path)) {
     return <StructuredNote label={label} />;
   }
   return (
@@ -193,8 +194,8 @@ export function TextField({
           spellCheck={false}
           readOnly={form.readOnly}
           placeholder={placeholder}
-          value={readString(form.text, path)}
-          onChange={(event) => form.onChange(writeField(form.text, path, event.target.value))}
+          value={readString(form.value, path)}
+          onChange={(event) => form.onChange(writeField(form.value, path, event.target.value))}
         />
       ) : (
         <InputGroup>
@@ -204,8 +205,8 @@ export function TextField({
             spellCheck={false}
             readOnly={form.readOnly}
             placeholder={placeholder}
-            value={readString(form.text, path)}
-            onChange={(event) => form.onChange(writeField(form.text, path, event.target.value))}
+            value={readString(form.value, path)}
+            onChange={(event) => form.onChange(writeField(form.value, path, event.target.value))}
           />
           <InputGroupAddon align="inline-end">{action}</InputGroupAddon>
         </InputGroup>
@@ -227,10 +228,10 @@ export function NumberField({ form, path, label, placeholder, description }: Fie
         className="w-32! font-mono"
         readOnly={form.readOnly}
         placeholder={placeholder}
-        value={readString(form.text, path)}
+        value={readString(form.value, path)}
         onChange={(event) => {
           const number = event.target.valueAsNumber;
-          form.onChange(writeField(form.text, path, Number.isNaN(number) ? "" : number));
+          form.onChange(writeField(form.value, path, Number.isNaN(number) ? "" : number));
         }}
       />
     </Field>
@@ -244,8 +245,8 @@ export function BooleanField({ form, path, label, description }: FieldProps) {
       <Switch
         id={id}
         disabled={form.readOnly}
-        checked={readBoolean(form.text, path)}
-        onCheckedChange={(checked) => form.onChange(writeField(form.text, path, checked))}
+        checked={readBoolean(form.value, path)}
+        onCheckedChange={(checked) => form.onChange(writeField(form.value, path, checked))}
       />
       <HintedLabel htmlFor={id} hint={meaning(form, path, label, description)}>
         {label}
@@ -282,13 +283,13 @@ const leftRow = (event: React.FocusEvent<HTMLElement>) =>
  */
 export function ListField({ form, path, label, placeholder, description }: FieldProps) {
   const id = useId();
-  const items = readList(form.text, path);
+  const items = readList(form.value, path);
   const [rows, setRows] = useState(() => listRows(items));
-  // The YAML changed elsewhere, such as by Revert or on the YAML tab: show what it holds.
+  // The value changed elsewhere, such as by Revert or on the JSON tab: show what it holds.
   if (JSON.stringify(listValues(rows)) !== JSON.stringify(items)) {
     setRows(listRows(items));
   }
-  if (items.length === 0 && isStructured(form.text, path)) {
+  if (items.length === 0 && isStructured(form.value, path)) {
     return <StructuredNote label={label} />;
   }
   const examples = (placeholder ?? "").split("\n");
@@ -299,7 +300,7 @@ export function ListField({ form, path, label, placeholder, description }: Field
         ? [...next, { row: newRowId(), value: "" }]
         : [...next],
     );
-    form.onChange(writeField(form.text, path, listValues(next)));
+    form.onChange(writeField(form.value, path, listValues(next)));
   };
   return (
     <Field>
@@ -382,9 +383,9 @@ export function SuggestField({
   readonly onOpenChange?: (open: boolean) => void;
 }) {
   const id = useId();
-  const value = readString(form.text, path);
+  const value = readString(form.value, path);
   const details = new Map(suggestions.map((item) => [item.value, item.detail]));
-  if (isStructured(form.text, path)) {
+  if (isStructured(form.value, path)) {
     return <StructuredNote label={label} />;
   }
   return (
@@ -396,7 +397,7 @@ export function SuggestField({
         items={suggestions.map((item) => item.value)}
         inputValue={value}
         readOnly={form.readOnly}
-        onInputValueChange={(next) => form.onChange(writeField(form.text, path, next))}
+        onInputValueChange={(next) => form.onChange(writeField(form.value, path, next))}
         {...(onOpenChange === undefined ? {} : { onOpenChange })}
       >
         <ComboboxInput
@@ -448,11 +449,11 @@ export function TagsField({
 }: FieldProps & { readonly suggestions?: ReadonlyArray<string> }) {
   const id = useId();
   const anchor = useComboboxAnchor();
-  const values = readList(form.text, path);
+  const values = readList(form.value, path);
   const [query, setQuery] = useState("");
   const typed = query.trim();
   const items = [...new Set([...(typed === "" ? [] : [typed]), ...values, ...suggestions])];
-  if (values.length === 0 && isStructured(form.text, path)) {
+  if (values.length === 0 && isStructured(form.value, path)) {
     return <StructuredNote label={label} />;
   }
   return (
@@ -470,7 +471,7 @@ export function TagsField({
         onInputValueChange={setQuery}
         onValueChange={(next: ReadonlyArray<string>) => {
           setQuery("");
-          form.onChange(writeField(form.text, path, [...next]));
+          form.onChange(writeField(form.value, path, [...next]));
         }}
       >
         <ComboboxChips ref={anchor}>
@@ -581,10 +582,10 @@ export function ChoiceField({
       </HintedLabel>
       <OptionSelect
         id={id}
-        value={readString(form.text, path)}
+        value={readString(form.value, path)}
         options={[...(empty === undefined ? [] : [{ value: "", label: empty }]), ...options]}
         disabled={form.readOnly}
-        onChange={(next) => form.onChange(writeField(form.text, path, next))}
+        onChange={(next) => form.onChange(writeField(form.value, path, next))}
       />
     </Field>
   );
@@ -775,7 +776,7 @@ function ValueInput({
 /** A literal, or a variable, file, or secret resolved at launch. */
 export function ValueField({ form, path, label, description }: FieldProps) {
   const id = useId();
-  if (isStructured(form.text, path)) {
+  if (isStructured(form.value, path)) {
     return <StructuredNote label={label} />;
   }
   return (
@@ -785,9 +786,9 @@ export function ValueField({ form, path, label, description }: FieldProps) {
       </HintedLabel>
       <ValueInput
         id={id}
-        value={readValue(form.text, path)}
+        value={readValue(form.value, path)}
         readOnly={form.readOnly}
-        onChange={(value) => form.onChange(writeValue(form.text, path, value))}
+        onChange={(value) => form.onChange(writeValue(form.value, path, value))}
       />
     </Field>
   );
@@ -807,7 +808,7 @@ const mapRows = (values: ReadonlyArray<MapEntry>): ReadonlyArray<Row> => [
   emptyRow(),
 ];
 
-// A map's entries as plain tuples, to compare what rows hold with what the YAML holds.
+// A map's entries as plain tuples, to compare what rows hold with what the value holds.
 const entryKey = (entries: ReadonlyArray<MapEntry>) =>
   JSON.stringify(entries.map(({ key, value }) => [key, value.tag, value.value]));
 
@@ -820,16 +821,16 @@ const mapEntries = (rows: ReadonlyArray<Row>): ReadonlyArray<MapEntry> =>
  * always empty, for adding one; a row emptied is dropped once focus leaves it.
  */
 export function MapField({ form, path, label, placeholder, description }: FieldProps) {
-  const entries = readMap(form.text, path);
+  const entries = readMap(form.value, path);
   const [rows, setRows] = useState(() => mapRows(entries));
-  // The YAML changed elsewhere, such as by Revert or on the YAML tab: show what it holds.
+  // The value changed elsewhere, such as by Revert or on the JSON tab: show what it holds.
   if (entryKey(mapEntries(rows)) !== entryKey(entries)) {
     setRows(mapRows(entries));
   }
   const write = (next: ReadonlyArray<Row>) => {
     const last = next.at(-1);
     setRows(last === undefined || !isEmptyRow(last) ? [...next, emptyRow()] : next);
-    form.onChange(writeMap(form.text, path, mapEntries(next)));
+    form.onChange(writeMap(form.value, path, mapEntries(next)));
   };
   return (
     <Field>

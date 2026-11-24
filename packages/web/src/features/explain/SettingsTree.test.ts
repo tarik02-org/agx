@@ -1,8 +1,8 @@
+import { create } from "@bufbuild/protobuf";
+import { HarnessSettingSchema } from "agx-client/protocol";
 import { describe, expect, it } from "vite-plus/test";
 
 import { settingsTree } from "~/features/explain/SettingsTree.tsx";
-import { create } from "@bufbuild/protobuf";
-import { HarnessSettingSchema } from "agx-client/protocol";
 
 const setting = (path: ReadonlyArray<string>, valueJson: string) =>
   create(HarnessSettingSchema, { path: [...path], valueJson });
