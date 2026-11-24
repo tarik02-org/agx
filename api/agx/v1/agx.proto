@@ -70,9 +70,10 @@ service LaunchService {
 service ResourceService {
   rpc ResolveResources(ResolveResourcesRequest) returns (ResolveResourcesResponse);
   rpc PrepareResources(PrepareResourcesRequest) returns (PrepareResourcesResponse);
-  // Brings a resource lease to its directory's current configuration, keeping its identity and
-  // credentials. Authorized by the lease's lifecycle token.
-  rpc SyncResources(SyncResourcesRequest) returns (SyncResourcesResponse);
+  // Keeps a resource lease on its directory's current configuration and streams what it provides:
+  // first its current resources, then each change. The lease keeps its identity and credentials.
+  // Authorized by the lease's lifecycle token.
+  rpc WatchResources(WatchResourcesRequest) returns (stream WatchResourcesResponse);
 }
 
 // Integrations publish session summaries bound to configured harnesses.
@@ -316,10 +317,10 @@ message PrepareResourcesResponse {
   // Canonical daemon-side directory, retained for AttachLaunch; empty when unnecessary.
   string mcp_directory = 6;
 }
-// What a resource lease provides under its directory's configuration at the time of the call.
+// What a resource lease provides under its directory's current configuration.
 message LeaseResources {
-  // Its required_environment names the inputs the selection reads; the integration sends values
-  // for names it has not sent yet with SyncResources.
+  // Its required_environment names the inputs the selection reads. An integration holding values
+  // for names it has not sent opens a new watch with them.
   Snapshot snapshot = 1;
   ResourceContent content = 2;
   repeated McpEndpoint mcp = 3;
@@ -327,14 +328,21 @@ message LeaseResources {
   string mcp_revision = 4;
   repeated HarnessSetting settings = 5;
 }
-message SyncResourcesRequest {
+message WatchResourcesRequest {
   string launch_id = 1;
-  // Sensitive: replaces the lease's environment inputs. Names the configuration does not read
-  // are dropped.
+  // Sensitive: replaces the lease's environment inputs for this watch. Names the configuration
+  // does not read are dropped.
   map<string, string> environment_inputs = 2;
 }
-message SyncResourcesResponse {
-  LeaseResources resources = 1;
+// The configuration could not be resolved; the lease keeps its last resources until it can.
+message ResourceWatchInvalid {
+  repeated Diagnostic diagnostics = 1;
+}
+message WatchResourcesResponse {
+  oneof state {
+    LeaseResources resources = 1;
+    ResourceWatchInvalid invalid = 2;
+  }
 }
 message ResourceContent {
   repeated SkillContent skills = 1;

@@ -118,6 +118,8 @@ type Server struct {
 	installs       sync.WaitGroup
 	installsClosed bool
 	port           int
+	// edited wakes resource watchers when an edit is committed through this daemon.
+	edited notifier
 	// changed wakes runtime watchers when launches or their MCP servers change.
 	changed *notifier
 	// clients pools the daemon's own MCP client sessions for ListTools and CallTool.
@@ -445,18 +447,18 @@ func (g gate) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.St
 
 // selfAuthorized are the procedures that check their own credentials.
 var selfAuthorized = map[string]bool{
-	agxv1connect.ResourceServiceSyncResourcesProcedure: true,
-	agxv1connect.LaunchServiceRenewLaunchProcedure:     true,
-	agxv1connect.LaunchServiceFinishLaunchProcedure:    true,
-	agxv1connect.RuntimeServiceListToolsProcedure:      true,
-	agxv1connect.RuntimeServiceCallToolProcedure:       true,
+	agxv1connect.ResourceServiceWatchResourcesProcedure: true,
+	agxv1connect.LaunchServiceRenewLaunchProcedure:      true,
+	agxv1connect.LaunchServiceFinishLaunchProcedure:     true,
+	agxv1connect.RuntimeServiceListToolsProcedure:       true,
+	agxv1connect.RuntimeServiceCallToolProcedure:        true,
 }
 
 // startsWork are the procedures a stopping daemon refuses, so that callers retry them with the
 // next daemon.
 var startsWork = map[string]bool{
 	agxv1connect.ResourceServicePrepareResourcesProcedure:         true,
-	agxv1connect.ResourceServiceSyncResourcesProcedure:            true,
+	agxv1connect.ResourceServiceWatchResourcesProcedure:           true,
 	agxv1connect.LaunchServicePrepareLaunchProcedure:              true,
 	agxv1connect.LaunchServiceAttachLaunchProcedure:               true,
 	agxv1connect.LaunchServicePrepareThreadLaunchProcedure:        true,

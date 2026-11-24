@@ -69,6 +69,18 @@ export const LeaseResources = Schema.Struct({
 });
 export type LeaseResources = typeof LeaseResources.Type;
 
+export const ResourceWatchEvent = Schema.Struct({
+  state: Schema.Union([
+    Schema.Struct({ case: Schema.Literal("resources"), value: LeaseResources }),
+    Schema.Struct({
+      case: Schema.Literal("invalid"),
+      value: Schema.Struct({
+        diagnostics: Schema.Array(Schema.Struct({ code: Schema.String, summary: Schema.String })),
+      }),
+    }),
+  ]),
+});
+
 export const Prepared = Schema.Struct({
   ...LeaseEnvelope.fields,
   resources: LeaseResources,

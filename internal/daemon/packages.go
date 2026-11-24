@@ -68,6 +68,7 @@ func (s *Server) install(request *v1.InstallRequest) *v1.InstallResponse {
 	if err == nil && result.LocalLock != nil {
 		local.Lock = *result.LocalLock
 		_, err = configstore.Write(s.ctx, s.paths.State, s.paths.Config, local)
+		s.edited.notify()
 	}
 	warnings := []string{}
 	if err == nil && !frozen && !request.PackagesOnly {

@@ -27,7 +27,7 @@ manifest, the user guide, and license notices.
 The native end-to-end fixture installs this bundle from a temporary Git repository
 using OpenCode's plugin manager, then runs the real server and daemon. It covers
 resource selection, virtual skills, executable assets, instructions, MCP calls,
-credential isolation, cleanup, restart/crash/port recovery, reload, revocation and
+credential isolation, cleanup, restart/crash/port recovery, automatic reload, revocation and
 OpenCode-managed Git package updates.
 
 For local development, configure the package directory directly in OpenCode:
@@ -78,9 +78,15 @@ npm packages live under `packages/opencode/licenses`.
 
 One resource lease belongs to each OpenCode location. Sessions in that location
 share its skills and MCP catalog; locations resolve independently. AGX instruction
-text is included in primary, compaction, generation and title requests. `/agx-reload`
-syncs the location's lease with current configuration and reloads only the native
-catalogs that changed; the lease keeps its ID and grant.
+text is included in primary, compaction, generation and title requests.
+
+The plugin watches its lease. The daemon resolves the location once a second, and
+at once after an edit committed through it, and sends the lease's resources when
+they change, so configuration, overlay, skill and instruction file edits apply
+without a command. Skill catalogs reload when selected skill identities or content
+change; MCP catalogs reload when an endpoint starts, stops or moves. Unrelated
+edits reload nothing, and the lease keeps its ID and grant throughout. Invalid
+configuration leaves the last valid resources in place until it is fixed.
 Native process settings such as executable, argv and environment are not applied.
 
 Text-only skills use OpenCode's virtual `skill://` paths and create no files.
@@ -97,8 +103,8 @@ that location. Upstream MCP environment inputs and management/lifecycle tokens
 are removed from shell environments. The server's global environment is unchanged.
 
 The plugin renews leases and watches discovery. A daemon replacement reattaches
-the existing lease and syncs it; changed configuration or endpoint origin reloads the
-affected native catalogs. Revocation is respected. A crashed daemon
+the existing lease and watches it again; changed configuration or endpoint origin
+reloads the affected native catalogs. Revocation is respected. A crashed daemon
 can be restarted through the CLI's startup-lock checks; an intentional daemon
 stop is left stopped. Runtime operations fail while their resources are unavailable.
 

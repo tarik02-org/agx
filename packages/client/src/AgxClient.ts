@@ -7,10 +7,12 @@ import {
   type Transport,
 } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 
 import {
   LaunchService,
@@ -20,7 +22,7 @@ import {
   type ResolveResourcesRequestSchema,
   type PrepareResourcesResponse,
   type ResolveResourcesResponse,
-  type SyncResourcesResponse,
+  type WatchResourcesResponse,
 } from "../gen/agx/v1/agx_pb.ts";
 import { DaemonError, EndState } from "./error.ts";
 import type { Discovery, LifecycleToken } from "./schema.ts";
@@ -40,12 +42,12 @@ export class AgxClient extends Context.Service<
       target: Discovery,
       input: PrepareInput,
     ) => Effect.Effect<PrepareResourcesResponse, DaemonError>;
-    readonly sync: (
+    readonly watch: (
       target: Discovery,
       launchId: string,
       environmentInputs: Record<string, string>,
       token: LifecycleToken,
-    ) => Effect.Effect<SyncResourcesResponse, DaemonError>;
+    ) => Stream.Stream<WatchResourcesResponse, DaemonError>;
     readonly renew: (
       target: Discovery,
       launchId: string,
@@ -73,21 +75,48 @@ const call = <A>(
       headers: { Authorization: `Bearer ${token}` },
     }),
   ).pipe(
-    Effect.catchTag("UnknownError", (error) => {
-      if (!Schema.is(Schema.instanceOf(ConnectError))(error.cause)) {
-        return Effect.die(error.cause);
-      }
-      const cause = error.cause;
-      const ended = cause.metadata.get("Agx-Launch-Ended");
-      return Effect.fail(
-        new DaemonError({
-          operation,
-          code: cause.code,
-          ended: Schema.is(EndState)(ended) ? ended : null,
-          cause,
-        }),
+    Effect.catchTag("UnknownError", (error) =>
+      Schema.is(Schema.instanceOf(ConnectError))(error.cause)
+        ? Effect.fail(daemonError(operation, error.cause))
+        : Effect.die(error.cause),
+    ),
+  );
+
+const daemonError = (operation: string, cause: ConnectError) => {
+  const ended = cause.metadata.get("Agx-Launch-Ended");
+  return new DaemonError({
+    operation,
+    code: cause.code,
+    ended: Schema.is(EndState)(ended) ? ended : null,
+    cause,
+  });
+};
+
+const watch = (
+  target: Discovery,
+  launchId: string,
+  environmentInputs: Record<string, string>,
+  token: LifecycleToken,
+) =>
+  Stream.unwrap(
+    Effect.fn("AgxClient.watch")(function* () {
+      const controller = new AbortController();
+      yield* Effect.addFinalizer(() => Effect.sync(() => controller.abort()));
+      const responses = createClient(
+        ResourceService,
+        createConnectTransport({ baseUrl: target.url.origin }),
+      ).watchResources(
+        { launchId, environmentInputs },
+        { signal: controller.signal, headers: { Authorization: `Bearer ${token}` } },
       );
-    }),
+      return Stream.fromAsyncIterable(responses, (cause) => new Cause.UnknownError(cause)).pipe(
+        Stream.catchTag("UnknownError", (error) =>
+          Schema.is(Schema.instanceOf(ConnectError))(error.cause)
+            ? Stream.fail(daemonError("watch resources", error.cause))
+            : Stream.die(error.cause),
+        ),
+      );
+    })(),
   );
 
 export const makeAgxClient = Effect.fn("makeAgxClient")(() =>
@@ -102,21 +131,6 @@ export const makeAgxClient = Effect.fn("makeAgxClient")(() =>
       call(target, "prepare resources", target.token, (transport, options) =>
         createClient(ResourceService, transport).prepareResources(input, options),
       ),
-    );
-
-    const sync = Effect.fn("AgxClient.sync")(
-      (
-        target: Discovery,
-        launchId: string,
-        environmentInputs: Record<string, string>,
-        token: LifecycleToken,
-      ) =>
-        call(target, "sync resources", token, (transport, options) =>
-          createClient(ResourceService, transport).syncResources(
-            { launchId, environmentInputs },
-            options,
-          ),
-        ),
     );
 
     const renew = Effect.fn("AgxClient.renew")(
@@ -152,7 +166,7 @@ export const makeAgxClient = Effect.fn("makeAgxClient")(() =>
       ),
     );
 
-    return AgxClient.of({ resolve, prepare, sync, renew, attach, release });
+    return AgxClient.of({ resolve, prepare, watch, renew, attach, release });
   }),
 );
 

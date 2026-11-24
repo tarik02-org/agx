@@ -10,12 +10,20 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Option from "effect/Option";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import * as Stream from "effect/Stream";
 
 import { Configuration } from "./Configuration.ts";
-import { IntegrationError } from "./error.ts";
-import { LeaseEnvelope, LeaseResources, Prepared, Snapshot } from "./schema.ts";
+import { IntegrationError, type IntegrationFailure } from "./error.ts";
+import {
+  LeaseEnvelope,
+  type LeaseResources,
+  Prepared,
+  ResourceWatchEvent,
+  Snapshot,
+} from "./schema.ts";
 import { SkillDeployer } from "./SkillDeployer.ts";
 
 export interface ResourceChanges {
@@ -30,7 +38,7 @@ interface Applied {
 }
 
 // One lease for the plugin's lifetime: it follows the directory's configuration through
-// SyncResources, so its ID, grant and lifecycle token never change.
+// WatchResources, so its ID, grant and lifecycle token never change.
 export interface ActiveLease extends Applied {
   readonly prepared: Prepared;
   readonly configuration: string;
@@ -39,13 +47,6 @@ export interface ActiveLease extends Applied {
   instance: string;
   renewAt: number;
 }
-
-const decodeResources = (raw: unknown) =>
-  Schema.decodeUnknownEffect(LeaseResources)(raw).pipe(
-    Effect.catchTag("SchemaError", (cause) =>
-      Effect.fail(new IntegrationError({ operation: "lease resources", reason: "content", cause })),
-    ),
-  );
 
 const skillsOf = (skills: LeaseResources["content"]["skills"]) =>
   skills.map((skill) => `${skill.id}:${skill.digest}`).join("\n");
@@ -171,24 +172,12 @@ export const acquireLease = Effect.fn("acquireLease")(function* (
     renewAt: (yield* Clock.currentTimeMillis) + prepared.renewAfterSeconds * 1000,
   };
 
-  // Changes a failed catalog reload left unapplied, retried by the next sync.
+  // Changes a failed catalog reload left unapplied, retried with the next event.
   let pending: ResourceChanges = { skills: false, mcp: false };
-  const sync = Effect.fn("lease.sync")(function* (target: Discovery) {
-    const request = (inputs: Record<string, string>) =>
-      client
-        .sync(target, prepared.launch.id, inputs, prepared.lifecycleToken)
-        .pipe(Effect.flatMap((response) => decodeResources(response.resources)));
-    let inputs = active.environmentInputs;
-    let resources = yield* request(inputs);
-    // The daemon names the inputs its current selection reads; values only go to those names.
-    const wanted = yield* environmentFor(resources.snapshot.requiredEnvironment);
-    if (
-      Object.keys(wanted).length !== Object.keys(inputs).length ||
-      Object.entries(wanted).some(([name, value]) => inputs[name] !== value)
-    ) {
-      inputs = wanted;
-      resources = yield* request(inputs);
-    }
+  const receive = Effect.fn("lease.receive")(function* (
+    target: Discovery,
+    resources: LeaseResources,
+  ) {
     const next = yield* apply(target, resources);
     const changes: ResourceChanges = {
       skills:
@@ -199,7 +188,7 @@ export const acquireLease = Effect.fn("acquireLease")(function* (
         active.resources.mcpRevision !== next.resources.mcpRevision ||
         urlsOf(active) !== urlsOf(next),
     };
-    Object.assign(active, next, { environmentInputs: inputs, origin: target.url.origin });
+    Object.assign(active, next, { origin: target.url.origin });
     if (changes.skills || changes.mcp) {
       pending = changes;
       yield* onChange(changes);
@@ -217,24 +206,14 @@ export const acquireLease = Effect.fn("acquireLease")(function* (
     });
     active.instance = target.instance_id;
     active.renewAt = (yield* Clock.currentTimeMillis) + prepared.renewAfterSeconds * 1000;
-    yield* sync(target);
   });
 
-  const synchronize = Effect.fn("lease.synchronize")(function* (refresh: boolean) {
+  const synchronize = Effect.fn("lease.synchronize")(function* () {
     const target = yield* connection.poll();
     if (active.instance !== target.instance_id) {
       return yield* restore(target);
     }
     const now = yield* Clock.currentTimeMillis;
-    if (refresh) {
-      return yield* sync(target).pipe(
-        Effect.catchTag("DaemonError", (error) =>
-          error.code === Code.NotFound || error.ended === "expired"
-            ? restore(target)
-            : Effect.fail(error),
-        ),
-      );
-    }
     if (now < active.renewAt) {
       return undefined;
     }
@@ -252,24 +231,77 @@ export const acquireLease = Effect.fn("acquireLease")(function* (
   });
 
   let terminal: DaemonError | null = null;
-  const guarded = (refresh: boolean) =>
-    Effect.suspend(() => (terminal === null ? synchronize(refresh) : Effect.fail(terminal))).pipe(
-      Effect.catchTag("DaemonError", (error) =>
-        error.ended === "revoked" || error.ended === "finished"
-          ? Effect.sync(() => {
-              terminal = error;
-            }).pipe(Effect.andThen(Effect.fail(error)))
-          : error.code === Code.Unavailable ||
-              error.code === Code.Unknown ||
-              error.code === Code.DeadlineExceeded
-            ? connection.reconnect(active.instance).pipe(Effect.andThen(synchronize(refresh)))
-            : Effect.fail(error),
+  const refused = (error: DaemonError) =>
+    error.ended === "revoked" || error.ended === "finished"
+      ? Effect.sync(() => {
+          terminal = error;
+        }).pipe(Effect.andThen(Effect.fail(error)))
+      : Effect.fail(error);
+  const ensure: Effect.Effect<void, IntegrationFailure> = Effect.suspend(() =>
+    terminal === null ? synchronize() : Effect.fail(terminal),
+  ).pipe(
+    Effect.catchTag("DaemonError", (error) =>
+      error.code === Code.Unavailable ||
+      error.code === Code.Unknown ||
+      error.code === Code.DeadlineExceeded
+        ? connection.reconnect(active.instance).pipe(Effect.andThen(synchronize()))
+        : refused(error),
+    ),
+    lock.withPermits(1),
+  );
+
+  // The daemon reconciles the lease while this watch is open and sends what it provides when that
+  // changes. A watch carries the inputs it opened with, so one naming an input this process holds
+  // but has not sent ends and opens again with it.
+  let invalid = false;
+  const consume = Effect.fn("lease.consume")(function* (target: Discovery, message: unknown) {
+    const event = yield* Schema.decodeUnknownEffect(ResourceWatchEvent)(message).pipe(
+      Effect.catchTag("SchemaError", (cause) =>
+        Effect.fail(
+          new IntegrationError({ operation: "resource watch event", reason: "content", cause }),
+        ),
       ),
-      lock.withPermits(1),
     );
-  return {
-    current: (): ActiveLease => active,
-    ensure: guarded(false),
-    refresh: guarded(true),
-  };
+    if (event.state.case === "invalid") {
+      if (!invalid) {
+        invalid = true;
+        yield* Effect.logWarning("AGX resources are invalid; keeping the last valid resources");
+      }
+      return true;
+    }
+    if (invalid) {
+      invalid = false;
+      yield* Effect.logInfo("AGX resources are valid again");
+    }
+    const resources = event.state.value;
+    const wanted = yield* environmentFor(resources.snapshot.requiredEnvironment);
+    const sent = active.environmentInputs;
+    if (
+      Object.keys(wanted).length !== Object.keys(sent).length ||
+      Object.entries(wanted).some(([name, value]) => sent[name] !== value)
+    ) {
+      active.environmentInputs = wanted;
+      return false;
+    }
+    yield* receive(target, resources);
+    return true;
+  }, lock.withPermits(1));
+  const watch = Effect.gen(function* () {
+    yield* ensure;
+    const target = yield* connection.poll();
+    yield* client
+      .watch(target, prepared.launch.id, active.environmentInputs, prepared.lifecycleToken)
+      .pipe(Stream.runForEachWhile((message) => consume(target, message)));
+  }).pipe(Effect.catchTag("DaemonError", refused));
+  yield* Effect.suspend(() => (terminal === null ? watch : Effect.never)).pipe(
+    Effect.catchTags({
+      ConnectionError: (error) => Effect.logWarning(error.message),
+      DaemonError: (error) => Effect.logWarning(error.message),
+      IntegrationError: (error) => Effect.logWarning(error.message),
+    }),
+    Effect.repeat(Schedule.spaced("1 second")),
+    Effect.forkScoped,
+  );
+
+  return { current: (): ActiveLease => active, ensure };
 });

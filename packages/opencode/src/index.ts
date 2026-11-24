@@ -114,13 +114,6 @@ const register = Effect.fn("register")(function* (ctx: Context) {
       }),
     ),
   );
-  yield* ctx.command.transform((editor) =>
-    editor.add({
-      name: "agx-reload",
-      description: "Reload this location's AGX configuration",
-      execute: () => lease.refresh,
-    }),
-  );
   let warned = false;
   const warn = (error: IntegrationFailure) => {
     if (warned) {
