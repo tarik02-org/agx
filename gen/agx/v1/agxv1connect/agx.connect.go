@@ -1002,9 +1002,9 @@ func (UnimplementedLaunchServiceHandler) AttachLaunch(context.Context, *connect.
 type ResourceServiceClient interface {
 	ResolveResources(context.Context, *connect.Request[v1.ResolveResourcesRequest]) (*connect.Response[v1.ResolveResourcesResponse], error)
 	PrepareResources(context.Context, *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error)
-	// Keeps a resource lease on its directory's current configuration and streams what it provides:
-	// first its current resources, then each change. The lease keeps its identity and credentials.
-	// Authorized by the lease's lifecycle token.
+	// Streams what a resource lease provides as the daemon keeps it on its directory's current
+	// configuration: first its current resources, then each change. Authorized by the lease's
+	// lifecycle token.
 	WatchResources(context.Context, *connect.Request[v1.WatchResourcesRequest]) (*connect.ServerStreamForClient[v1.WatchResourcesResponse], error)
 }
 
@@ -1066,9 +1066,9 @@ func (c *resourceServiceClient) WatchResources(ctx context.Context, req *connect
 type ResourceServiceHandler interface {
 	ResolveResources(context.Context, *connect.Request[v1.ResolveResourcesRequest]) (*connect.Response[v1.ResolveResourcesResponse], error)
 	PrepareResources(context.Context, *connect.Request[v1.PrepareResourcesRequest]) (*connect.Response[v1.PrepareResourcesResponse], error)
-	// Keeps a resource lease on its directory's current configuration and streams what it provides:
-	// first its current resources, then each change. The lease keeps its identity and credentials.
-	// Authorized by the lease's lifecycle token.
+	// Streams what a resource lease provides as the daemon keeps it on its directory's current
+	// configuration: first its current resources, then each change. Authorized by the lease's
+	// lifecycle token.
 	WatchResources(context.Context, *connect.Request[v1.WatchResourcesRequest], *connect.ServerStream[v1.WatchResourcesResponse]) error
 }
 

@@ -120,6 +120,7 @@ func (s *Server) PrepareLaunch(
 		endpoints:    endpoints,
 		snapshot:     snapshot,
 		target:       target,
+		inputs:       inputs,
 		created:      time.Now(),
 		lease:        time.Duration(b.config.Daemon.LeaseSeconds) * time.Second,
 		threadServer: b.threadServer,

@@ -4403,9 +4403,9 @@ export const ResourceService: GenService<{
     output: typeof PrepareResourcesResponseSchema;
   },
   /**
-   * Keeps a resource lease on its directory's current configuration and streams what it provides:
-   * first its current resources, then each change. The lease keeps its identity and credentials.
-   * Authorized by the lease's lifecycle token.
+   * Streams what a resource lease provides as the daemon keeps it on its directory's current
+   * configuration: first its current resources, then each change. Authorized by the lease's
+   * lifecycle token.
    *
    * @generated from rpc agx.v1.ResourceService.WatchResources
    */

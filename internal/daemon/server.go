@@ -75,12 +75,16 @@ type launch struct {
 	// wrapperPID and harnessPID are the processes the last renewal reported, for telling why the
 	// lease ran out; zero when unknown.
 	wrapperPID, harnessPID int
-	// A resource lease follows its directory's configuration. endpointKeys identify what each
-	// endpoint runs, so a sync restarts only the servers whose basis changed; mcpDirectory is
-	// where they run. syncMu serializes the lease's syncs.
-	endpointKeys map[config.ID]string
+	// inputs are the environment inputs its MCP servers read, kept so that servers its directory
+	// selects later get theirs.
+	inputs map[string]string
+	// mcpDirectory is where a resource lease's MCP servers run; a process launch's run in its
+	// directory.
 	mcpDirectory string
-	syncMu       sync.Mutex
+	// resources is what a resource lease provides now and revision identifies it, "invalid" while
+	// its configuration cannot be resolved.
+	resources *v1.LeaseResources
+	revision  string
 }
 
 type Server struct {
@@ -118,7 +122,9 @@ type Server struct {
 	installs       sync.WaitGroup
 	installsClosed bool
 	port           int
-	// edited wakes resource watchers when an edit is committed through this daemon.
+	// reconcileMu serializes bringing launches to their directories' configuration.
+	reconcileMu sync.Mutex
+	// edited wakes the reconciler when an edit is committed through this daemon.
 	edited notifier
 	// changed wakes runtime watchers when launches or their MCP servers change.
 	changed *notifier
@@ -276,6 +282,7 @@ func Serve(
 	defer sweep.Stop()
 	slog.Info("daemon started", "version", control.Version, "pid", os.Getpid(), "url", discovery.URL)
 	s.manager = auth.New(discovery.URL+"/oauth/callback", secretstore.Open(paths.State))
+	go s.reconcileLaunches()
 	mux := http.NewServeMux()
 	s.handle(mux, discovery.Token)
 	mux.HandleFunc("/launch/", s.serveMCP)

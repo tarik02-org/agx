@@ -2,7 +2,7 @@ package daemon
 
 import (
 	"context"
-	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,7 +12,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	v1 "github.com/tarik02-org/agx/gen/agx/v1"
-	"github.com/tarik02-org/agx/internal/adapters"
 	"github.com/tarik02-org/agx/internal/config"
 	"github.com/tarik02-org/agx/internal/mcpruntime"
 	"github.com/tarik02-org/agx/internal/platform"
@@ -28,9 +27,17 @@ func (s *Server) resourceSnapshot(directory, harness string) (*config.Snapshot, 
 	if err != nil {
 		return nil, configError(err)
 	}
-	snapshot, err := c.ResolveContext(directory, harness)
+	snapshot, err := resolveResources(c, directory, harness)
 	if err != nil {
 		return nil, rpcError(connect.CodeFailedPrecondition, err.Error())
+	}
+	return snapshot, nil
+}
+
+func resolveResources(c *config.Config, directory, harness string) (*config.Snapshot, error) {
+	snapshot, err := c.ResolveContext(directory, harness)
+	if err != nil {
+		return nil, err
 	}
 	// Process arguments and environment are outside a resource consumer's contract.
 	snapshot.RequiredEnvironment = snapshot.MCPEnvironment()
@@ -80,12 +87,12 @@ func (s *Server) PrepareResources(
 		Id: id, SnapshotId: snapshot.ID, Directory: snapshot.Directory, Harness: snapshot.Harness,
 		Kind: v1.Launch_KIND_RESOURCES,
 	}, launchBasis{config: snapshot.Config, snapshot: snapshot}, grant, lifecycle, nil)
-	l.mcpDirectory = directory
-	var native []adapters.Endpoint
-	l.endpoints, l.endpointKeys, native = s.resourceEndpoints(l, snapshot, inputs, nil, nil)
+	l.inputs, l.mcpDirectory = inputs, directory
+	l.endpoints, _ = s.endpoints(l.ctx, id, snapshot, inputs, directory)
+	l.resources, l.revision = s.leaseResources(l.view.Id, snapshot, content, l.endpoints)
 	response := &v1.PrepareResourcesResponse{
 		Launch:    proto.Clone(l.view).(*v1.Launch),
-		Resources: leaseResources(snapshot, content, native, l.endpointKeys),
+		Resources: l.resources,
 		Grant:     grant, LifecycleToken: lifecycle,
 		RenewAfterSeconds: uint32(snapshot.Config.Daemon.RenewSeconds),
 		McpDirectory:      directory,
@@ -98,15 +105,8 @@ func (s *Server) PrepareResources(
 	return connect.NewResponse(response), nil
 }
 
-// Polling keeps change detection daemon-owned, including skill and instruction files that
-// config.Inputs does not track. An edit committed through this daemon is applied at once.
-const resourceWatchInterval = time.Second
-
-// WatchResources keeps a resource lease on its directory's configuration while its integration
-// watches. Each pass reconciles the lease's endpoints: servers whose definition, share root,
-// inputs and secrets are unchanged keep running, the others restart behind the same URL, and
-// deselected ones close. A pass that changes what the lease provides sends it. The lease keeps
-// its ID, grant and lifecycle token, so revoking or finishing it ends the watch and nothing else.
+// WatchResources streams what a resource lease provides: first its current resources, then each
+// change the reconciler makes. Revoking, finishing or expiring the lease ends the watch.
 func (s *Server) WatchResources(
 	ctx context.Context,
 	req *connect.Request[v1.WatchResourcesRequest],
@@ -114,34 +114,40 @@ func (s *Server) WatchResources(
 ) error {
 	s.mu.Lock()
 	l, err := s.resourceLease(req.Msg.LaunchId, req.Header().Get("Authorization"))
+	changed := false
+	if err == nil {
+		inputs := attachedInputs(l.snapshot, req.Msg.EnvironmentInputs, nil)
+		changed = !maps.Equal(inputs, l.inputs)
+		l.inputs = inputs
+	}
 	s.mu.Unlock()
 	if err != nil {
 		return err
 	}
-	ticker := time.NewTicker(resourceWatchInterval)
-	defer ticker.Stop()
+	if changed {
+		s.reconcileLaunch(l)
+	}
 	previous := ""
 	for {
-		// Taken before resolving, so an edit committed meanwhile is not missed.
-		edited := s.edited.next()
-		resources, revision, err := s.syncLease(l, req.Msg.EnvironmentInputs)
-		var ended *ended
-		if errors.As(err, &ended) {
-			return ended.err
-		}
-		message := &v1.WatchResourcesResponse{}
-		if err != nil {
-			revision = "invalid"
-			message.State = &v1.WatchResourcesResponse_Invalid{Invalid: &v1.ResourceWatchInvalid{
-				Diagnostics: []*v1.Diagnostic{diagnostic(
-					"invalid_resources",
-					"Resources could not be resolved; keeping the last valid resources. Run agx config validate.",
-				)},
-			}}
-		} else {
-			message.State = &v1.WatchResourcesResponse_Resources{Resources: resources}
+		next := s.changed.next()
+		s.mu.Lock()
+		state, resources, revision := l.view.State, l.resources, l.revision
+		s.mu.Unlock()
+		if !active(state) {
+			return endedError(state)
 		}
 		if revision != previous {
+			message := &v1.WatchResourcesResponse{
+				State: &v1.WatchResourcesResponse_Resources{Resources: resources},
+			}
+			if revision == invalidRevision {
+				message.State = &v1.WatchResourcesResponse_Invalid{Invalid: &v1.ResourceWatchInvalid{
+					Diagnostics: []*v1.Diagnostic{diagnostic(
+						"invalid_resources",
+						"Resources could not be resolved; keeping the last valid resources. Run agx config validate.",
+					)},
+				}}
+			}
 			if err := stream.Send(message); err != nil {
 				return err
 			}
@@ -152,84 +158,9 @@ func (s *Server) WatchResources(
 			return ctx.Err()
 		case <-s.drain.stopping.Done():
 			return refusal()
-		case <-ticker.C:
-		case <-edited:
+		case <-next:
 		}
 	}
-}
-
-// ended is a lease that ended while it was being synced.
-type ended struct{ err error }
-
-func (e *ended) Error() string { return e.err.Error() }
-
-// syncLease brings resource lease l to its directory's current configuration with inputs and
-// returns what it provides and a revision of that, which unrelated configuration edits leave
-// unchanged. An integration that has not sent an input a server reads gets that server failing
-// alone, as after attaching, until it watches again with the input.
-func (s *Server) syncLease(l *launch, given map[string]string) (*v1.LeaseResources, string, error) {
-	l.syncMu.Lock()
-	defer l.syncMu.Unlock()
-	snapshot, err := s.resourceSnapshot(l.view.Directory, l.view.Harness)
-	if err != nil {
-		return nil, "", err
-	}
-	directory, err := resourceMCPDirectory(snapshot, l.mcpDirectory)
-	if err != nil {
-		return nil, "", err
-	}
-	content, err := snapshot.Content()
-	if err != nil {
-		return nil, "", err
-	}
-	inputs := attachedInputs(snapshot, given, nil)
-	s.mu.Lock()
-	current, keys := l.endpoints, l.endpointKeys
-	s.mu.Unlock()
-	l.mcpDirectory = directory
-	endpoints, nextKeys, native := s.resourceEndpoints(l, snapshot, inputs, current, keys)
-	stale, fresh := map[config.ID]*mcpruntime.Endpoint{}, map[config.ID]*mcpruntime.Endpoint{}
-	for id, e := range current {
-		if endpoints[id] != e {
-			stale[id] = e
-		}
-	}
-	for id, e := range endpoints {
-		if current[id] != e {
-			fresh[id] = e
-		}
-	}
-	s.mu.Lock()
-	// end closes the endpoints the lease holds, so a lease that ended meanwhile closes these.
-	over := !active(l.view.State) || time.Now().After(l.expires)
-	if !over && (len(stale) > 0 || len(fresh) > 0 || l.view.SnapshotId != snapshot.ID) {
-		l.endpoints, l.endpointKeys, l.snapshot = endpoints, nextKeys, snapshot
-		l.view.SnapshotId = snapshot.ID
-		if len(stale) > 0 {
-			s.clients.closeLaunch(l.view.Id)
-		}
-		s.changed.notify()
-	}
-	state := l.view.State
-	s.mu.Unlock()
-	if over {
-		go closeEndpoints(fresh)
-		return nil, "", &ended{err: endedError(state)}
-	}
-	go closeEndpoints(stale)
-	resources := leaseResources(snapshot, content, native, nextKeys)
-	skills := []string{}
-	for _, skill := range content.Skills {
-		skills = append(skills, skill.ID+":"+skill.Digest)
-	}
-	settings := [][]string{}
-	for _, setting := range resources.Settings {
-		settings = append(settings, append(slices.Clone(setting.Path), setting.ValueJson))
-	}
-	return resources, config.Digest([]any{
-		skills, content.Instructions, resources.McpRevision, native, settings,
-		snapshot.RequiredEnvironment, snapshot.Missing,
-	}), nil
 }
 
 // resourceLease must run with s.mu held. Only a running resource lease's lifecycle token
@@ -249,67 +180,45 @@ func (s *Server) resourceLease(id, authorization string) (*launch, error) {
 	return l, nil
 }
 
-// resourceEndpoints lists the endpoints of snapshot's MCP servers for resource lease l, keeping
-// those of current whose key is unchanged and starting the others.
-func (s *Server) resourceEndpoints(
-	l *launch,
-	snapshot *config.Snapshot,
-	inputs map[string]string,
-	current map[config.ID]*mcpruntime.Endpoint,
-	keys map[config.ID]string,
-) (map[config.ID]*mcpruntime.Endpoint, map[config.ID]string, []adapters.Endpoint) {
-	endpoints := map[config.ID]*mcpruntime.Endpoint{}
-	nextKeys := map[config.ID]string{}
-	native := []adapters.Endpoint{}
-	for _, r := range snapshot.Resources {
-		if r.Kind != "mcp" {
-			continue
-		}
-		definition, root, own := endpointBasis(snapshot, r.ID, inputs, l.mcpDirectory)
-		key := endpointKey(snapshot.Config, definition, root, own)
-		e := current[r.ID]
-		if e == nil || keys[r.ID] != key {
-			e = mcpruntime.New(l.ctx, r.ID, definition, snapshot.Config.Secrets, own, s.manager, s.shared, root)
-		}
-		endpoints[r.ID], nextKeys[r.ID] = e, key
-		if definition.Load != config.LoadOnDemand {
-			native = append(native, s.nativeEndpoint(l.view.Id, r.ID))
-		}
-	}
-	return endpoints, nextKeys, native
-}
-
-// endpointKey identifies what an endpoint runs. Source positions are left out, so editing
-// another entry of the same file restarts nothing. The key holds input values only as a digest
-// and stays in this daemon, though the lease's MCP revision is derived from it.
-func endpointKey(c *config.Config, definition config.MCPServer, root string, inputs map[string]string) string {
-	definition.Source = config.Source{}
-	secrets := map[config.ID]config.Secret{}
-	for _, id := range definition.Secrets() {
-		secret := c.Secrets[id]
-		secret.Source = config.Source{}
-		secrets[id] = secret
-	}
-	return config.Digest([]any{definition, root, inputs, secrets})
-}
-
-func leaseResources(
+// leaseResources is what resource lease id provides with endpoints under snapshot, and a revision
+// of it that unrelated configuration edits leave unchanged.
+func (s *Server) leaseResources(
+	id string,
 	snapshot *config.Snapshot,
 	content resources.Set,
-	native []adapters.Endpoint,
-	keys map[config.ID]string,
-) *v1.LeaseResources {
+	endpoints map[config.ID]*mcpruntime.Endpoint,
+) (*v1.LeaseResources, string) {
 	resolved := resolveMessage(snapshot)
+	bases := map[config.ID]string{}
 	out := &v1.LeaseResources{
-		Snapshot:    resolved.Snapshot,
-		Content:     resourceContent(content),
-		McpRevision: config.Digest(keys),
-		Settings:    resolved.Settings,
+		Snapshot: resolved.Snapshot,
+		Content:  resourceContent(content),
+		Settings: resolved.Settings,
 	}
-	for _, endpoint := range native {
-		out.Mcp = append(out.Mcp, &v1.McpEndpoint{Id: string(endpoint.ID), Url: endpoint.URL})
+	for _, r := range snapshot.Resources {
+		e := endpoints[r.ID]
+		if r.Kind != "mcp" || e == nil {
+			continue
+		}
+		bases[r.ID] = e.Basis()
+		if snapshot.Config.MCP[r.ID].Load != config.LoadOnDemand {
+			native := s.nativeEndpoint(id, r.ID)
+			out.Mcp = append(out.Mcp, &v1.McpEndpoint{Id: string(native.ID), Url: native.URL})
+		}
 	}
-	return out
+	out.McpRevision = config.Digest(bases)
+	skills := []string{}
+	for _, skill := range content.Skills {
+		skills = append(skills, skill.ID+":"+skill.Digest)
+	}
+	settings := [][]string{}
+	for _, setting := range out.Settings {
+		settings = append(settings, append(slices.Clone(setting.Path), setting.ValueJson))
+	}
+	return out, config.Digest([]any{
+		skills, content.Instructions, out.McpRevision, out.Mcp, settings,
+		snapshot.RequiredEnvironment, snapshot.Missing,
+	})
 }
 
 func resourceContent(content resources.Set) *v1.ResourceContent {
@@ -343,7 +252,7 @@ func (s *Server) addLaunch(l *launch) error {
 }
 
 // attachResources takes a resource lease under the directory's current configuration, which
-// it follows anyway; the integration syncs after attaching to learn what changed.
+// it follows anyway.
 func (s *Server) attachResources(msg *v1.AttachLaunchRequest) (*launch, error) {
 	view := msg.Launch
 	if len(msg.NativeArguments) != 0 || msg.Executable != "" || len(msg.Threads) != 0 || view.Mode != "" {
@@ -353,15 +262,20 @@ func (s *Server) attachResources(msg *v1.AttachLaunchRequest) (*launch, error) {
 	if err != nil {
 		return nil, err
 	}
+	content, err := snapshot.Content()
+	if err != nil {
+		return nil, rpcError(connect.CodeAborted, err.Error())
+	}
 	view.SnapshotId = snapshot.ID
 	l := s.newLaunch(view, launchBasis{config: snapshot.Config, snapshot: snapshot}, msg.Grant, msg.LifecycleToken, nil)
-	inputs := attachedInputs(snapshot, msg.EnvironmentInputs, nil)
+	l.inputs = attachedInputs(snapshot, msg.EnvironmentInputs, nil)
 	l.mcpDirectory, err = resourceMCPDirectory(snapshot, msg.McpDirectory)
 	if err != nil {
 		l.cancel()
 		return nil, err
 	}
-	l.endpoints, l.endpointKeys, _ = s.resourceEndpoints(l, snapshot, inputs, nil, nil)
+	l.endpoints, _ = s.endpoints(l.ctx, view.Id, snapshot, l.inputs, l.mcpDirectory)
+	l.resources, l.revision = s.leaseResources(view.Id, snapshot, content, l.endpoints)
 	return l, nil
 }
 

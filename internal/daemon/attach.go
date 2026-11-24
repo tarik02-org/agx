@@ -142,6 +142,7 @@ func (s *Server) attachProcess(ctx context.Context, msg *v1.AttachLaunchRequest)
 	}
 	l := s.newLaunch(view, b, msg.Grant, msg.LifecycleToken, nil)
 	inputs := attachedInputs(b.snapshot, msg.EnvironmentInputs, adapters.Forwarded(b.adapter))
+	l.inputs = inputs
 	if !b.threadServer {
 		l.endpoints, _ = s.endpoints(l.ctx, view.Id, b.snapshot, inputs, b.snapshot.Directory)
 		return l, nil
@@ -194,6 +195,7 @@ func (s *Server) attachThread(parent *launch, thread *v1.AttachedThread) bool {
 	l := s.newLaunch(view, launchBasis{snapshot: snapshot}, thread.Grant, "", parent)
 	s.mu.Unlock()
 	inputs := attachedInputs(snapshot, thread.EnvironmentInputs, nil)
+	l.inputs = inputs
 	l.endpoints, _ = s.endpoints(l.ctx, view.Id, snapshot, inputs, snapshot.Directory)
 	s.mu.Lock()
 	defer s.mu.Unlock()

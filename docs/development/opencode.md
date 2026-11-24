@@ -80,13 +80,14 @@ One resource lease belongs to each OpenCode location. Sessions in that location
 share its skills and MCP catalog; locations resolve independently. AGX instruction
 text is included in primary, compaction, generation and title requests.
 
-The plugin watches its lease. The daemon resolves the location once a second, and
-at once after an edit committed through it, and sends the lease's resources when
-they change, so configuration, overlay, skill and instruction file edits apply
-without a command. Skill catalogs reload when selected skill identities or content
-change; MCP catalogs reload when an endpoint starts, stops or moves. Unrelated
-edits reload nothing, and the lease keeps its ID and grant throughout. Invalid
-configuration leaves the last valid resources in place until it is fixed.
+The daemon keeps the location's lease on current configuration, resolving it once
+a second and at once after an edit committed through it. The plugin watches the
+lease and gets its resources when they change, so configuration, overlay, skill
+and instruction file edits apply without a command. Skill catalogs reload when
+selected skill identities or content change; MCP catalogs reload when an endpoint
+starts, stops or moves. Unrelated edits reload nothing, and the lease keeps its ID
+and grant throughout. Invalid configuration leaves the last valid resources in
+place until it is fixed.
 Native process settings such as executable, argv and environment are not applied.
 
 Text-only skills use OpenCode's virtual `skill://` paths and create no files.

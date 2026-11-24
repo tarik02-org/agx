@@ -26,7 +26,7 @@ written.
 | [0029](0029-local-configuration.md)                          | Local configuration with declarative overlays                             | accepted                                   |
 | [0031](0031-portable-resource-consumption.md)                | Consume configuration independently of process launch and storage         | accepted; resource leases revised by 0033  |
 | [0032](0032-acp-agents.md)                                   | Relay ACP agents, giving each session its directory's resources           | accepted                                   |
-| [0033](0033-resource-leases-follow-configuration.md)         | Resource leases follow their directory's configuration                    | accepted                                   |
+| [0033](0033-launches-follow-configuration.md)                | Launches follow their directory's configuration                           | accepted                                   |
 
 ## Numbers without a record
 
