@@ -25,6 +25,7 @@ type client struct {
 	launches  agxv1connect.LaunchServiceClient
 	runtime   agxv1connect.RuntimeServiceClient
 	secrets   agxv1connect.SecretServiceClient
+	ui        agxv1connect.UIServiceClient
 }
 
 func newClient(paths platform.Paths) (*client, error) {
@@ -66,6 +67,7 @@ func dial(d control.Discovery) *client {
 		launches:  agxv1connect.NewLaunchServiceClient(httpClient, d.URL, options),
 		runtime:   agxv1connect.NewRuntimeServiceClient(httpClient, d.URL, options),
 		secrets:   agxv1connect.NewSecretServiceClient(httpClient, d.URL, options),
+		ui:        agxv1connect.NewUIServiceClient(httpClient, d.URL, options),
 	}
 }
 

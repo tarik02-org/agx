@@ -3,6 +3,7 @@
   installShellFiles,
   lib,
   stdenv,
+  web,
   # The flake passes its commit and when it was made.
   rev ? null,
   lastModified ? null,
@@ -34,6 +35,11 @@ buildGoModule (finalAttrs: {
     "cmd/agx"
     "cmd/agxd"
   ];
+
+  # The binary embeds the web UI from internal/ui/dist.
+  preBuild = ''
+    cp -r ${web}/. internal/ui/dist/
+  '';
 
   nativeBuildInputs = [ installShellFiles ];
 

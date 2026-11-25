@@ -138,6 +138,8 @@ type Server struct {
 	clients   *clientPool
 	sessions  *sessionstore.Catalog
 	providers *sessionprovider.Catalog
+	// ui holds the web UI's login codes and sessions.
+	ui *uiSessions
 	// shared runs the stdio MCP servers launches share.
 	shared *mcpruntime.Shared
 	// editMu serializes planning and applying configuration changes, so an apply checks and
@@ -260,6 +262,7 @@ func Serve(
 		revoked:   state.Revoked,
 		port:      listener.Addr().(*net.TCPAddr).Port,
 		clients:   newClientPool(),
+		ui:        newUISessions(),
 		sessions:  sessionstore.NewCatalog(serverCtx, registry, paths.Cache, paths.State),
 		icons:     newMCPIcons(storage.Cache(paths.Cache)),
 		changed:   &notifier{},
@@ -395,10 +398,14 @@ loop:
 	return nil
 }
 
-// handle serves the daemon's Connect services on mux to callers holding token.
+// handle serves the daemon's Connect services and web UI on mux to callers holding token or a UI
+// session.
 func (s *Server) handle(mux *http.ServeMux, token string) {
 	opts := []connect.HandlerOption{
-		connect.WithInterceptors(gate{token: token, draining: s.drain.draining}),
+		connect.WithInterceptors(gate{
+			managed:  func(h http.Header) bool { return managed(h, token, s.ui) },
+			draining: s.drain.draining,
+		}),
 		connect.WithReadMaxBytes(16 * 1024 * 1024),
 	}
 	path, handler := agxv1connect.NewConfigurationServiceHandler(s, opts...)
@@ -415,19 +422,24 @@ func (s *Server) handle(mux *http.ServeMux, token string) {
 	mux.Handle(path, handler)
 	path, handler = agxv1connect.NewSecretServiceHandler(s, opts...)
 	mux.Handle(path, handler)
+	path, handler = agxv1connect.NewUIServiceHandler(s, opts...)
+	mux.Handle(path, handler)
+	mux.HandleFunc("/ui/login", s.serveUILogin)
+	mux.HandleFunc("/ui/schema.json", s.serveUISchema)
+	mux.Handle("/ui/", s.serveUI())
 }
 
 // gate admits a call to a procedure. A unary interceptor alone would leave streaming procedures
 // open to callers without the management token.
 type gate struct {
-	token    string
+	managed  func(http.Header) bool
 	draining func() bool
 }
 
 func (g gate) admit(spec connect.Spec, header http.Header) error {
 	// Lifecycle procedures check the lifecycle token, and tool procedures accept a launch
 	// grant instead of the management token; they authorize themselves.
-	if !selfAuthorized[spec.Procedure] && !equalBearer(header.Get("Authorization"), g.token) {
+	if !selfAuthorized[spec.Procedure] && !g.managed(header) {
 		return rpcError(connect.CodeUnauthenticated, "management credential required")
 	}
 	if g.draining() && startsWork[spec.Procedure] {

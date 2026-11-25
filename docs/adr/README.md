@@ -28,6 +28,7 @@ written.
 | [0031](0031-portable-resource-consumption.md)                | Consume configuration independently of process launch and storage         | accepted; resource leases revised by 0033  |
 | [0032](0032-acp-agents.md)                                   | Relay ACP agents, giving each session its directory's resources           | accepted                                   |
 | [0033](0033-launches-follow-configuration.md)                | Launches follow their directory's configuration                           | accepted                                   |
+| [0034](0034-web-ui.md)                                       | Serve a web UI from the daemon                                            | accepted                                   |
 
 ## Numbers without a record
 

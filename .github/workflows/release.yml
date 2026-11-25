@@ -46,6 +46,11 @@ jobs:
         # GoReleaser would take one on the same commit, or the last one, as the current or
         # previous tag.
         run: git tag --list 'nightly*' | xargs --no-run-if-empty git tag --delete
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
           version: "~> v2"

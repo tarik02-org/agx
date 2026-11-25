@@ -245,6 +245,7 @@ func run(osArgs []string, stdout io.Writer) int {
 		sessionsCommand(a),
 		daemonCommand(a),
 		doctorCommand(a),
+		uiCommand(a),
 		launchCommand(a),
 		secretCommand(a),
 		shimsCommand(a),
