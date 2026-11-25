@@ -5,6 +5,7 @@ result
 dist/
 completions/
 manpages/
+!/internal/ui/dist/
 /internal/ui/dist/*
 !/internal/ui/dist/.keep
 node_modules/
